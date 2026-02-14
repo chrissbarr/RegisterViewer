@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { useAppState, useAppDispatch } from '../../context/app-context';
 import { useEditContext } from '../../context/edit-context';
 import { ValueInputBar } from './value-input-bar';
@@ -24,13 +23,6 @@ export function MainPanel() {
 
   const activeRegister = registers.find((r) => r.id === activeRegisterId);
   const activeDraft = activeRegisterId ? getDraft(activeRegisterId) : undefined;
-
-  // When activeRegisterId changes while in edit mode, ensure a draft exists for the new register
-  useEffect(() => {
-    if (isEditing && activeRegister && !getDraft(activeRegister.id)) {
-      enterEditMode(activeRegister);
-    }
-  }, [isEditing, activeRegister, getDraft, enterEditMode]);
 
   function handleDraftChange(updated: RegisterDef) {
     setDraft(updated.id, updated);
@@ -71,20 +63,18 @@ export function MainPanel() {
     );
   }
 
-  if (isEditing) {
+  if (isEditing && activeDraft) {
     return (
       <main className="flex-1 overflow-y-auto p-4">
-        {activeDraft && (
-          <RegisterEditor
-            draft={activeDraft}
-            onDraftChange={handleDraftChange}
-            onSave={handleSave}
-            onCancel={handleCancel}
-            onSaveAll={dirtyCount > 1 ? handleSaveAll : undefined}
-            onCancelAll={dirtyCount > 1 ? handleCancelAll : undefined}
-            dirtyCount={dirtyCount}
-          />
-        )}
+        <RegisterEditor
+          draft={activeDraft}
+          onDraftChange={handleDraftChange}
+          onSave={handleSave}
+          onCancel={handleCancel}
+          onSaveAll={dirtyCount > 1 ? handleSaveAll : undefined}
+          onCancelAll={dirtyCount > 1 ? handleCancelAll : undefined}
+          dirtyCount={dirtyCount}
+        />
       </main>
     );
   }

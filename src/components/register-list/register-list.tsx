@@ -23,7 +23,7 @@ import { RegisterListItemOverlay } from './register-list-item-overlay';
 export function RegisterList() {
   const { registers, activeRegisterId } = useAppState();
   const dispatch = useAppDispatch();
-  const { dirtyDraftIds } = useEditContext();
+  const { isEditing, enterEditMode, dirtyDraftIds } = useEditContext();
   const [activeId, setActiveId] = useState<string | null>(null);
 
   const sensors = useSensors(
@@ -87,7 +87,10 @@ export function RegisterList() {
                 register={reg}
                 isActive={reg.id === activeRegisterId}
                 hasPendingEdit={dirtyDraftIds.has(reg.id)}
-                onSelect={() => dispatch({ type: 'SET_ACTIVE_REGISTER', registerId: reg.id })}
+                onSelect={() => {
+                  dispatch({ type: 'SET_ACTIVE_REGISTER', registerId: reg.id });
+                  if (isEditing) enterEditMode(reg);
+                }}
                 onDelete={() => dispatch({ type: 'DELETE_REGISTER', registerId: reg.id })}
               />
             ))}
