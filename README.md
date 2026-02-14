@@ -44,6 +44,29 @@ Open http://localhost:5173 in your browser. On first launch, an example 32-bit S
 | `npm run build` | Type-check and build for production |
 | `npm run preview` | Preview the production build locally |
 | `npm run lint` | Run ESLint |
+| `npm test` | Run all unit tests |
+| `npm run test:watch` | Run tests in watch mode (re-runs on file changes) |
+| `npm run test:coverage` | Run tests with V8 coverage report |
+
+## Testing
+
+Unit tests use [Vitest](https://vitest.dev/) and live alongside source files as `.test.ts` siblings.
+
+```bash
+npm test                # Run once
+npm run test:watch      # Watch mode
+npm run test:coverage   # Coverage report
+```
+
+Test files:
+- `src/utils/bitwise.test.ts` — bit extraction, replacement, signed/unsigned conversion
+- `src/utils/float.test.ts` — IEEE 754 half/single/double encode/decode
+- `src/utils/fixed-point.test.ts` — Qm.n fixed-point encode/decode
+- `src/utils/decode.test.ts` — field decoding for all 5 field types
+- `src/utils/encode.test.ts` — field encoding for all 5 field types
+- `src/utils/validation.test.ts` — register/field validation, overlap detection
+- `src/utils/storage.test.ts` — serialization, localStorage, JSON import/export
+- `src/context/app-context.test.ts` — all reducer actions
 
 ## Project Structure
 

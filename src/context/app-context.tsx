@@ -31,7 +31,7 @@ function toggleBit(value: bigint, bit: number): bigint {
 
 // --- Reducer ---
 
-function appReducer(state: AppState, action: Action): AppState {
+export function appReducer(state: AppState, action: Action): AppState {
   switch (action.type) {
     case 'SET_REGISTER_VALUE': {
       return {
