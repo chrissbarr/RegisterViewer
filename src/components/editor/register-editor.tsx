@@ -179,7 +179,7 @@ export function RegisterEditor({
         <div>
           {/* Field list */}
           <div className="space-y-2 mb-3">
-            {draft.fields.map((field) => (
+            {[...draft.fields].sort((a, b) => b.msb - a.msb).map((field) => (
               <div key={field.id}>
                 {editingFieldId === field.id ? (
                   <FieldDefinitionForm

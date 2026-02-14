@@ -31,11 +31,14 @@ export function FieldTable({ register }: Props) {
           </tr>
         </thead>
         <tbody>
-          {register.fields.map((field, i) => (
+          {register.fields
+            .map((field, i) => ({ field, originalIndex: i }))
+            .sort((a, b) => b.field.msb - a.field.msb)
+            .map(({ field, originalIndex }) => (
             <FieldRow
               key={field.id}
               field={field}
-              fieldIndex={i}
+              fieldIndex={originalIndex}
               registerId={register.id}
               registerValue={value}
               decoded={decodeField(value, field)}

@@ -96,13 +96,16 @@ export function BitGrid({ register }: Props) {
       {/* Field legend */}
       {register.fields.length > 0 && (
         <div className="flex flex-wrap gap-2 mt-2">
-          {register.fields.map((field, i) => (
+          {register.fields
+            .map((field, i) => ({ field, originalIndex: i }))
+            .sort((a, b) => b.field.msb - a.field.msb)
+            .map(({ field, originalIndex }) => (
             <span
               key={field.id}
               className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded"
               style={{
-                backgroundColor: FIELD_COLORS[i % FIELD_COLORS.length],
-                borderLeft: `3px solid ${FIELD_BORDER_COLORS[i % FIELD_BORDER_COLORS.length]}`,
+                backgroundColor: FIELD_COLORS[originalIndex % FIELD_COLORS.length],
+                borderLeft: `3px solid ${FIELD_BORDER_COLORS[originalIndex % FIELD_BORDER_COLORS.length]}`,
               }}
             >
               {field.name}
