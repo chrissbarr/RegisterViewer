@@ -48,49 +48,51 @@ export function BitGrid({ register }: Props) {
   const dispatch = useAppDispatch();
   const value = state.registerValues[register.id] ?? 0n;
 
-  // Render bits from MSB to LSB, in rows of 16
+  // Render bits from MSB to LSB, grouped into 8-bit blocks
   const bits: number[] = [];
   for (let i = register.width - 1; i >= 0; i--) {
     bits.push(i);
   }
 
-  // Group into rows of 16 for readability
-  const rows: number[][] = [];
-  for (let i = 0; i < bits.length; i += 16) {
-    rows.push(bits.slice(i, i + 16));
+  // Group into 8-bit blocks
+  const blocks: number[][] = [];
+  for (let i = 0; i < bits.length; i += 8) {
+    blocks.push(bits.slice(i, i + 8));
   }
 
   return (
-    <div className="mb-4 overflow-x-auto">
-      {rows.map((row, rowIdx) => (
-        <div key={rowIdx} className="flex gap-0 mb-1">
-          {row.map((bitIdx) => {
-            const match = getFieldForBit(bitIdx, register.fields);
-            const bgColor = match ? FIELD_COLORS[match.index % FIELD_COLORS.length] : undefined;
-            const borderColor = match ? FIELD_BORDER_COLORS[match.index % FIELD_BORDER_COLORS.length] : undefined;
+    <div className="mb-4">
+      <div className="flex flex-wrap gap-2">
+        {blocks.map((block, blockIdx) => (
+          <div key={blockIdx} className="flex gap-0">
+            {block.map((bitIdx) => {
+              const match = getFieldForBit(bitIdx, register.fields);
+              const bgColor = match ? FIELD_COLORS[match.index % FIELD_COLORS.length] : undefined;
+              const borderColor = match ? FIELD_BORDER_COLORS[match.index % FIELD_BORDER_COLORS.length] : undefined;
 
-            return (
-              <div
-                key={bitIdx}
-                onClick={() => dispatch({ type: 'TOGGLE_BIT', registerId: register.id, bit: bitIdx })}
-                title={match ? `Bit ${bitIdx} (${match.field.name})` : `Bit ${bitIdx}`}
-                className="flex flex-col items-center justify-center w-8 h-12 border border-gray-300 dark:border-gray-600 text-xs cursor-pointer hover:brightness-125 transition-all select-none"
-                style={{
-                  backgroundColor: bgColor,
-                  borderColor: borderColor,
-                }}
-              >
-                <span className="text-[10px] text-gray-500 dark:text-gray-400 leading-none">
-                  {bitIdx}
-                </span>
-                <span className="font-bold text-sm leading-none mt-0.5">
-                  {getBit(value, bitIdx)}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      ))}
+              return (
+                <div
+                  key={bitIdx}
+                  onClick={() => dispatch({ type: 'TOGGLE_BIT', registerId: register.id, bit: bitIdx })}
+                  title={match ? `Bit ${bitIdx} (${match.field.name})` : `Bit ${bitIdx}`}
+                  className="flex flex-col items-center justify-center w-8 h-12 border border-gray-300 dark:border-gray-600 text-xs cursor-pointer hover:brightness-125 transition-all select-none"
+                  style={{
+                    backgroundColor: bgColor,
+                    borderColor: borderColor,
+                  }}
+                >
+                  <span className="text-[10px] text-gray-500 dark:text-gray-400 leading-none">
+                    {bitIdx}
+                  </span>
+                  <span className="font-bold text-sm leading-none mt-0.5">
+                    {getBit(value, bitIdx)}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
       {/* Field legend */}
       {register.fields.length > 0 && (
         <div className="flex flex-wrap gap-2 mt-2">

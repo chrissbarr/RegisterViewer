@@ -61,43 +61,46 @@ export function ValueInputBar({ register }: Props) {
   }
 
   const inputClass =
-    'px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-blue-500';
+    'flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-lg font-mono shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
+
+  const labelClass =
+    'text-sm font-semibold text-gray-500 dark:text-gray-400 w-10 shrink-0';
 
   return (
-    <div className="flex flex-wrap items-center gap-3 mb-4">
-      <label className="flex items-center gap-1.5">
-        <span className="text-xs text-gray-500 dark:text-gray-400 w-8">HEX</span>
-        <input
-          type="text"
-          value={'0x' + hexInput}
-          onChange={(e) => setHexInput(e.target.value.replace(/^0x/i, ''))}
-          onBlur={handleHexBlur}
-          onKeyDown={(e) => handleKeyDown(e, handleHexBlur)}
-          className={inputClass + ' w-48'}
-          spellCheck={false}
-        />
-      </label>
-      <label className="flex items-center gap-1.5">
-        <span className="text-xs text-gray-500 dark:text-gray-400 w-8">BIN</span>
-        <input
-          type="text"
-          value={'0b' + binInput}
-          onChange={(e) => setBinInput(e.target.value.replace(/^0b/i, ''))}
-          onBlur={handleBinBlur}
-          onKeyDown={(e) => handleKeyDown(e, handleBinBlur)}
-          className={inputClass + ' w-80'}
-          spellCheck={false}
-        />
-      </label>
-      <label className="flex items-center gap-1.5">
-        <span className="text-xs text-gray-500 dark:text-gray-400 w-8">DEC</span>
+    <div className="flex flex-col gap-3 mb-4 max-w-2xl">
+      <label className="flex items-center gap-2">
+        <span className={labelClass}>DEC</span>
         <input
           type="text"
           value={decInput}
           onChange={(e) => setDecInput(e.target.value)}
           onBlur={handleDecBlur}
           onKeyDown={(e) => handleKeyDown(e, handleDecBlur)}
-          className={inputClass + ' w-40'}
+          className={inputClass}
+          spellCheck={false}
+        />
+      </label>
+      <label className="flex items-center gap-2">
+        <span className={labelClass}>HEX</span>
+        <input
+          type="text"
+          value={'0x' + hexInput}
+          onChange={(e) => setHexInput(e.target.value.replace(/^0x/i, ''))}
+          onBlur={handleHexBlur}
+          onKeyDown={(e) => handleKeyDown(e, handleHexBlur)}
+          className={inputClass}
+          spellCheck={false}
+        />
+      </label>
+      <label className="flex items-center gap-2">
+        <span className={labelClass}>BIN</span>
+        <input
+          type="text"
+          value={'0b' + binInput}
+          onChange={(e) => setBinInput(e.target.value.replace(/^0b/i, ''))}
+          onBlur={handleBinBlur}
+          onKeyDown={(e) => handleKeyDown(e, handleBinBlur)}
+          className={inputClass}
           spellCheck={false}
         />
       </label>
