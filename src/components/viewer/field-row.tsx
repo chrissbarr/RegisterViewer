@@ -1,7 +1,6 @@
 import type { Field } from '../../types/register';
 import type { DecodedValue } from '../../types/register';
 import { extractBits } from '../../utils/bitwise';
-import { formatDecodedValue } from '../../utils/decode';
 import { encodeField } from '../../utils/encode';
 import { useAppDispatch } from '../../context/app-context';
 import { FIELD_BORDER_COLORS } from './bit-grid';
@@ -27,31 +26,40 @@ export function FieldRow({ field, fieldIndex, registerId, registerValue, decoded
     dispatch({ type: 'SET_FIELD_VALUE', registerId, field, rawBits: newBits });
   }
 
-  function renderEditControl() {
+  function renderValueControl() {
     switch (field.type) {
-      case 'flag':
+      case 'flag': {
+        const isSet = decoded.type === 'flag' && decoded.value;
+        const label = isSet
+          ? (field.flagLabels?.set ?? 'set')
+          : (field.flagLabels?.clear ?? 'clear');
         return (
-          <input
-            type="checkbox"
-            checked={decoded.type === 'flag' && decoded.value}
-            onChange={(e) => handleFieldEdit(e.target.checked)}
-            className="w-4 h-4 accent-blue-500"
-          />
+          <button
+            type="button"
+            onClick={() => handleFieldEdit(!isSet)}
+            className={`px-2 py-0.5 text-sm font-mono rounded cursor-pointer select-none transition-colors ${
+              isSet
+                ? 'bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900/40 dark:text-green-300 dark:hover:bg-green-800/40'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-400 dark:hover:bg-gray-600'
+            }`}
+          >
+            {label}
+          </button>
         );
+      }
 
       case 'enum':
         return (
           <select
             value={decoded.type === 'enum' ? decoded.value : 0}
             onChange={(e) => handleFieldEdit(e.target.value)}
-            className="px-1.5 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="px-1.5 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"
           >
             {field.enumEntries?.map((entry) => (
               <option key={entry.value} value={entry.value}>
                 {entry.name} ({entry.value})
               </option>
             ))}
-            {/* If current value isn't in the enum, show it as unknown */}
             {decoded.type === 'enum' && decoded.name === null && (
               <option value={decoded.value}>
                 Unknown ({decoded.value})
@@ -75,8 +83,8 @@ export function FieldRow({ field, fieldIndex, registerId, registerValue, decoded
             defaultValue={displayVal}
             onBlur={(e) => handleFieldEdit(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-            className="w-28 px-1.5 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"
-            key={registerValue.toString()} // reset when external value changes
+            className="w-32 px-1.5 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"
+            key={registerValue.toString()}
           />
         );
       }
@@ -94,11 +102,8 @@ export function FieldRow({ field, fieldIndex, registerId, registerValue, decoded
       <td className="px-3 py-2 text-sm font-mono text-gray-600 dark:text-gray-300">
         {binaryStr}
       </td>
-      <td className="px-3 py-2 text-sm font-mono">
-        {formatDecodedValue(decoded)}
-      </td>
       <td className="px-3 py-2 text-sm">
-        {renderEditControl()}
+        {renderValueControl()}
       </td>
     </tr>
   );

@@ -23,6 +23,7 @@ export function FieldDefinitionForm({ field, regWidth, onUpdate, onDelete, onDon
     // Set sensible defaults when changing type
     if (type === 'flag') {
       partial.msb = draft.lsb; // force 1-bit
+      if (!draft.flagLabels) partial.flagLabels = { clear: 'clear', set: 'set' };
     } else if (type === 'enum' && !draft.enumEntries?.length) {
       partial.enumEntries = [{ value: 0, name: 'VALUE_0' }];
     } else if (type === 'float') {
@@ -123,6 +124,29 @@ export function FieldDefinitionForm({ field, regWidth, onUpdate, onDelete, onDon
       </label>
 
       {/* Type-specific options */}
+      {draft.type === 'flag' && (
+        <div className="flex items-center gap-3">
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-gray-500 dark:text-gray-400">Label when 0</span>
+            <input
+              type="text"
+              value={draft.flagLabels?.clear ?? 'clear'}
+              onChange={(e) => update({ flagLabels: { clear: e.target.value, set: draft.flagLabels?.set ?? 'set' } })}
+              className={inputClass + ' w-32'}
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-gray-500 dark:text-gray-400">Label when 1</span>
+            <input
+              type="text"
+              value={draft.flagLabels?.set ?? 'set'}
+              onChange={(e) => update({ flagLabels: { clear: draft.flagLabels?.clear ?? 'clear', set: e.target.value } })}
+              className={inputClass + ' w-32'}
+            />
+          </label>
+        </div>
+      )}
+
       {draft.type === 'integer' && (
         <label className="flex items-center gap-2">
           <input

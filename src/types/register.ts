@@ -21,6 +21,7 @@ export interface Field {
   enumEntries?: EnumEntry[]; // for 'enum'
   floatType?: 'half' | 'single' | 'double'; // for 'float'
   qFormat?: QFormat;         // for 'fixed-point' (Qm.n)
+  flagLabels?: { clear: string; set: string }; // for 'flag'
 }
 
 export interface RegisterDef {

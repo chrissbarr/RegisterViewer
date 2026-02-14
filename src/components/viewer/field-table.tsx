@@ -28,7 +28,6 @@ export function FieldTable({ register }: Props) {
             <th className="px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Bits</th>
             <th className="px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Binary</th>
             <th className="px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Value</th>
-            <th className="px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Edit</th>
           </tr>
         </thead>
         <tbody>
