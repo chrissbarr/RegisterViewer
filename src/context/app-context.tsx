@@ -1,4 +1,5 @@
 import { createContext, useContext, useReducer, type ReactNode, type Dispatch } from 'react';
+import { arrayMove } from '@dnd-kit/sortable';
 import type { AppState, RegisterDef, Field } from '../types/register';
 
 // --- Actions ---
@@ -13,7 +14,8 @@ export type Action =
   | { type: 'SET_ACTIVE_REGISTER'; registerId: string }
   | { type: 'TOGGLE_THEME' }
   | { type: 'IMPORT_REGISTERS'; registers: RegisterDef[] }
-  | { type: 'LOAD_STATE'; state: AppState };
+  | { type: 'LOAD_STATE'; state: AppState }
+  | { type: 'REORDER_REGISTERS'; oldIndex: number; newIndex: number };
 
 // --- Helpers ---
 
@@ -108,6 +110,9 @@ export function appReducer(state: AppState, action: Action): AppState {
     }
     case 'LOAD_STATE': {
       return action.state;
+    }
+    case 'REORDER_REGISTERS': {
+      return { ...state, registers: arrayMove(state.registers, action.oldIndex, action.newIndex) };
     }
     default:
       return state;

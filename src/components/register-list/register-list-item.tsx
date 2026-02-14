@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import type { RegisterDef } from '../../types/register';
 
 interface Props {
@@ -9,16 +11,62 @@ interface Props {
   onDelete: () => void;
 }
 
+export function GripIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      width="12"
+      height="12"
+      fill="currentColor"
+      className={className}
+    >
+      <circle cx="5" cy="3" r="1.5" />
+      <circle cx="11" cy="3" r="1.5" />
+      <circle cx="5" cy="8" r="1.5" />
+      <circle cx="11" cy="8" r="1.5" />
+      <circle cx="5" cy="13" r="1.5" />
+      <circle cx="11" cy="13" r="1.5" />
+    </svg>
+  );
+}
+
 export function RegisterListItem({ register, isActive, hasPendingEdit, onSelect, onDelete }: Props) {
   const [confirming, setConfirming] = useState(false);
+  const {
+    setNodeRef,
+    attributes,
+    listeners,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: register.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : undefined,
+  };
 
   if (confirming) {
     return (
       <li
+        ref={setNodeRef}
+        style={style}
         className="flex items-center justify-between px-3 py-2 rounded-md text-sm
           bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800"
       >
-        <span className="text-red-700 dark:text-red-300 truncate">Delete?</span>
+        <div className="flex items-center gap-2">
+          <button
+            {...attributes}
+            {...listeners}
+            onClick={(e) => e.stopPropagation()}
+            className="cursor-grab touch-none text-gray-400 dark:text-gray-500"
+            tabIndex={-1}
+          >
+            <GripIcon />
+          </button>
+          <span className="text-red-700 dark:text-red-300 truncate">Delete?</span>
+        </div>
         <div className="flex gap-1 shrink-0 ml-2">
           <button
             onClick={() => { onDelete(); setConfirming(false); }}
@@ -39,6 +87,8 @@ export function RegisterListItem({ register, isActive, hasPendingEdit, onSelect,
 
   return (
     <li
+      ref={setNodeRef}
+      style={style}
       onClick={onSelect}
       className={`flex items-center justify-between px-3 py-2 rounded-md cursor-pointer text-sm transition-colors ${
         isActive
@@ -47,6 +97,15 @@ export function RegisterListItem({ register, isActive, hasPendingEdit, onSelect,
       }`}
     >
       <div className="flex items-center gap-2 min-w-0">
+        <button
+          {...attributes}
+          {...listeners}
+          onClick={(e) => e.stopPropagation()}
+          className="cursor-grab touch-none text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 shrink-0"
+          title="Drag to reorder"
+        >
+          <GripIcon />
+        </button>
         {hasPendingEdit && (
           <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" title="Unsaved changes" />
         )}
