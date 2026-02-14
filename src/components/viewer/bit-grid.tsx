@@ -1,6 +1,14 @@
 import { useAppState, useAppDispatch } from '../../context/app-context';
 import type { RegisterDef, Field } from '../../types/register';
 import { getBit } from '../../utils/bitwise';
+import { useContainerWidth } from '../../hooks/use-container-width';
+import {
+  computeBitsPerRow,
+  buildRowBits,
+  bitToGridColumn,
+  gridTemplateColumns,
+  fieldsForRow,
+} from '../../utils/bit-grid-layout';
 
 /** Color palette for fields — inline styles since TW v4 custom colors need dynamic application. */
 const FIELD_COLORS = [
@@ -47,75 +55,85 @@ export function BitGrid({ register }: Props) {
   const state = useAppState();
   const dispatch = useAppDispatch();
   const value = state.registerValues[register.id] ?? 0n;
+  const [containerRef, containerWidth] = useContainerWidth<HTMLDivElement>();
 
-  // Render bits from MSB to LSB, grouped into 8-bit blocks
-  const bits: number[] = [];
-  for (let i = register.width - 1; i >= 0; i--) {
-    bits.push(i);
-  }
-
-  // Group into 8-bit blocks
-  const blocks: number[][] = [];
-  for (let i = 0; i < bits.length; i += 8) {
-    blocks.push(bits.slice(i, i + 8));
-  }
+  const bitsPerRow = computeBitsPerRow(containerWidth, register.width);
+  const rows = buildRowBits(register.width, bitsPerRow);
 
   return (
-    <div className="mb-4">
-      <div className="flex flex-wrap gap-2">
-        {blocks.map((block, blockIdx) => (
-          <div key={blockIdx} className="flex gap-0">
-            {block.map((bitIdx) => {
-              const match = getFieldForBit(bitIdx, register.fields);
-              const bgColor = match ? FIELD_COLORS[match.index % FIELD_COLORS.length] : undefined;
-              const borderColor = match ? FIELD_BORDER_COLORS[match.index % FIELD_BORDER_COLORS.length] : undefined;
+    <div className="mb-4" ref={containerRef}>
+      <div className="flex flex-col gap-1">
+        {rows.map((row, rowIdx) => {
+          const rowFields = fieldsForRow(row, register.fields);
+          const gtc = gridTemplateColumns(row.bits.length);
 
-              return (
-                <div
-                  key={bitIdx}
-                  onClick={() => dispatch({ type: 'TOGGLE_BIT', registerId: register.id, bit: bitIdx })}
-                  title={match ? `Bit ${bitIdx} (${match.field.name})` : `Bit ${bitIdx}`}
-                  className="flex flex-col items-center justify-center w-8 h-12 border border-gray-300 dark:border-gray-600 text-xs cursor-pointer hover:brightness-125 transition-all select-none"
-                  style={{
-                    backgroundColor: bgColor,
-                    borderColor: borderColor,
-                  }}
-                >
-                  <span className="text-[10px] text-gray-500 dark:text-gray-400 leading-none">
-                    {bitIdx}
-                  </span>
-                  <span className="font-bold text-sm leading-none mt-0.5">
-                    {getBit(value, bitIdx)}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        ))}
-      </div>
-      {/* Field legend */}
-      {register.fields.length > 0 && (
-        <div className="flex flex-wrap gap-2 mt-2">
-          {register.fields
-            .map((field, i) => ({ field, originalIndex: i }))
-            .sort((a, b) => b.field.msb - a.field.msb)
-            .map(({ field, originalIndex }) => (
-            <span
-              key={field.id}
-              className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded"
+          return (
+            <div
+              key={rowIdx}
               style={{
-                backgroundColor: FIELD_COLORS[originalIndex % FIELD_COLORS.length],
-                borderLeft: `3px solid ${FIELD_BORDER_COLORS[originalIndex % FIELD_BORDER_COLORS.length]}`,
+                display: 'grid',
+                gridTemplateColumns: gtc,
+                gridTemplateRows: rowFields.length > 0 ? 'auto auto' : 'auto',
               }}
             >
-              {field.name}
-              <span className="text-gray-500 dark:text-gray-400">
-                [{field.msb === field.lsb ? field.msb : `${field.msb}:${field.lsb}`}]
-              </span>
-            </span>
-          ))}
-        </div>
-      )}
+              {/* Bit cells */}
+              {row.bits.map((bitIdx) => {
+                const match = getFieldForBit(bitIdx, register.fields);
+                const bgColor = match ? FIELD_COLORS[match.index % FIELD_COLORS.length] : undefined;
+                const borderColor = match ? FIELD_BORDER_COLORS[match.index % FIELD_BORDER_COLORS.length] : undefined;
+                const col = bitToGridColumn(bitIdx, row.startBit, row.bits.length);
+
+                return (
+                  <div
+                    key={bitIdx}
+                    onClick={() => dispatch({ type: 'TOGGLE_BIT', registerId: register.id, bit: bitIdx })}
+                    title={match ? `Bit ${bitIdx} (${match.field.name})` : `Bit ${bitIdx}`}
+                    className="flex flex-col items-center justify-center h-12 border border-gray-300 dark:border-gray-600 text-xs cursor-pointer hover:brightness-125 transition-all select-none"
+                    style={{
+                      gridRow: 1,
+                      gridColumn: col,
+                      backgroundColor: bgColor,
+                      borderColor: borderColor,
+                    }}
+                  >
+                    <span className="text-[10px] text-gray-500 dark:text-gray-400 leading-none">
+                      {bitIdx}
+                    </span>
+                    <span className="font-bold text-sm leading-none mt-0.5">
+                      {getBit(value, bitIdx)}
+                    </span>
+                  </div>
+                );
+              })}
+
+              {/* Field labels */}
+              {rowFields.map((fi) => {
+                const bgColor = FIELD_COLORS[fi.fieldIndex % FIELD_COLORS.length];
+                const borderColor = FIELD_BORDER_COLORS[fi.fieldIndex % FIELD_BORDER_COLORS.length];
+                const label = fi.isPartial ? `${fi.field.name} (cont.)` : fi.field.name;
+
+                return (
+                  <div
+                    key={fi.field.id}
+                    title={fi.field.name}
+                    className="text-[10px] truncate px-1 py-0.5 text-center"
+                    style={{
+                      gridRow: 2,
+                      gridColumn: `${fi.startCol} / ${fi.endCol}`,
+                      backgroundColor: bgColor,
+                      borderLeft: `2px solid ${borderColor}`,
+                      borderRight: `2px solid ${borderColor}`,
+                      borderBottom: `2px solid ${borderColor}`,
+                    }}
+                  >
+                    {label}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
