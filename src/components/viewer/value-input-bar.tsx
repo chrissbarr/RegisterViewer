@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAppState, useAppDispatch } from '../../context/app-context';
 import type { RegisterDef } from '../../types/register';
 import { clampToWidth } from '../../utils/bitwise';
@@ -15,12 +15,16 @@ export function ValueInputBar({ register }: Props) {
   const [hexInput, setHexInput] = useState('');
   const [binInput, setBinInput] = useState('');
   const [decInput, setDecInput] = useState('');
+  const focusedField = useRef<'hex' | 'bin' | 'dec' | null>(null);
 
-  // Sync display strings from current value
+  // Sync display strings from current value, skipping the focused field
   useEffect(() => {
-    setHexInput(value.toString(16).toUpperCase().padStart(Math.ceil(register.width / 4), '0'));
-    setBinInput(value.toString(2).padStart(register.width, '0'));
-    setDecInput(value.toString(10));
+    if (focusedField.current !== 'hex')
+      setHexInput(value.toString(16).toUpperCase().padStart(Math.ceil(register.width / 4), '0'));
+    if (focusedField.current !== 'bin')
+      setBinInput(value.toString(2).padStart(register.width, '0'));
+    if (focusedField.current !== 'dec')
+      setDecInput(value.toString(10));
   }, [value, register.width]);
 
   function commitValue(raw: bigint) {
@@ -73,8 +77,13 @@ export function ValueInputBar({ register }: Props) {
         <input
           type="text"
           value={decInput}
-          onChange={(e) => setDecInput(e.target.value)}
-          onBlur={handleDecBlur}
+          onFocus={() => (focusedField.current = 'dec')}
+          onChange={(e) => {
+            const raw = e.target.value;
+            setDecInput(raw);
+            try { commitValue(BigInt(raw)); } catch { /* partial input */ }
+          }}
+          onBlur={() => { focusedField.current = null; handleDecBlur(); }}
           onKeyDown={(e) => handleKeyDown(e, handleDecBlur)}
           className={inputClass}
           spellCheck={false}
@@ -85,8 +94,13 @@ export function ValueInputBar({ register }: Props) {
         <input
           type="text"
           value={'0x' + hexInput}
-          onChange={(e) => setHexInput(e.target.value.replace(/^0x/i, ''))}
-          onBlur={handleHexBlur}
+          onFocus={() => (focusedField.current = 'hex')}
+          onChange={(e) => {
+            const cleaned = e.target.value.replace(/^0x/i, '');
+            setHexInput(cleaned);
+            try { commitValue(BigInt('0x' + cleaned)); } catch { /* partial input */ }
+          }}
+          onBlur={() => { focusedField.current = null; handleHexBlur(); }}
           onKeyDown={(e) => handleKeyDown(e, handleHexBlur)}
           className={inputClass}
           spellCheck={false}
@@ -97,8 +111,13 @@ export function ValueInputBar({ register }: Props) {
         <input
           type="text"
           value={'0b' + binInput}
-          onChange={(e) => setBinInput(e.target.value.replace(/^0b/i, ''))}
-          onBlur={handleBinBlur}
+          onFocus={() => (focusedField.current = 'bin')}
+          onChange={(e) => {
+            const cleaned = e.target.value.replace(/^0b/i, '');
+            setBinInput(cleaned);
+            try { commitValue(BigInt('0b' + cleaned)); } catch { /* partial input */ }
+          }}
+          onBlur={() => { focusedField.current = null; handleBinBlur(); }}
           onKeyDown={(e) => handleKeyDown(e, handleBinBlur)}
           className={inputClass}
           spellCheck={false}
