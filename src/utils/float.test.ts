@@ -226,6 +226,26 @@ describe('float16ToBits', () => {
   it('encodes 2.0 to 0x4000', () => {
     expect(float16ToBits(2.0)).toBe(0x4000n);
   });
+
+  it('handles mantissa overflow by incrementing exponent', () => {
+    // Pick a value whose mantissa rounds up past 1023, triggering
+    // the mantissa overflow path (mantissa=0, exponent+=1).
+    // 2047.5 → mantissa = round((2047.5/1024 - 1)*1024) = round(1023.5) = 1024 > 1023
+    const bits = float16ToBits(2047.5);
+    // Should produce exponent+1 with mantissa=0, i.e. exactly 2048 = 0x6800
+    expect(bits).toBe(0x6800n);
+    expect(bitsToFloat16(bits)).toBe(2048);
+  });
+
+  it('overflows to +infinity when mantissa carry pushes exponent past 30', () => {
+    // 65520 is above max finite half (65504). Exponent = floor(log2(65520)) = 15,
+    // biased = 30. Mantissa rounds to 1024 > 1023, so exponent becomes 31 > 30.
+    expect(float16ToBits(65520)).toBe(0x7C00n);
+  });
+
+  it('overflows to -infinity when negative mantissa carry pushes exponent past 30', () => {
+    expect(float16ToBits(-65520)).toBe(0xFC00n);
+  });
 });
 
 describe('float16 round-trips', () => {

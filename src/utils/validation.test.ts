@@ -133,6 +133,16 @@ describe('field-level validation', () => {
     expect(errors.some((e) => e.message.includes('Q4.2') && e.message.includes('6'))).toBe(true);
   });
 
+  it('returns error for float with undefined floatType and wrong width', () => {
+    const reg = makeRegister({
+      width: 64,
+      fields: [makeField({ type: 'float', msb: 15, lsb: 0 })],
+      // floatType is undefined, defaults to 'single' (32-bit), but field is 16-bit
+    });
+    const errors = validateRegisterDef(reg);
+    expect(errors.some((e) => e.message.includes('single') && e.message.includes('32'))).toBe(true);
+  });
+
   it('no error for fixed-point with matching m+n', () => {
     const reg = makeRegister({
       width: 32,

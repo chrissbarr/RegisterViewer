@@ -150,6 +150,17 @@ describe('decodeField — fixed-point', () => {
 });
 
 // ---------------------------------------------------------------------------
+// decodeField — unknown type (default case)
+// ---------------------------------------------------------------------------
+describe('decodeField — unknown type', () => {
+  it('falls back to integer for an unrecognized field type', () => {
+    const field = makeField({ type: 'unknown-type' as never, msb: 7, lsb: 0 });
+    const result = decodeField(0xABn, field);
+    expect(result).toEqual({ type: 'integer', value: 0xABn });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // formatDecodedValue
 // ---------------------------------------------------------------------------
 describe('formatDecodedValue', () => {

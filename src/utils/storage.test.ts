@@ -183,6 +183,39 @@ describe('importFromJson', () => {
     expect(importFromJson(json)).toBeNull();
   });
 
+  it('resolves UUID-keyed registerValues by matching register id', () => {
+    const uuid = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+    const json = JSON.stringify({
+      version: 1,
+      registers: [{ id: uuid, name: 'STATUS', width: 32, fields: [] }],
+      registerValues: { [uuid]: '0xBEEF' },
+    });
+    const result = importFromJson(json);
+    expect(result).not.toBeNull();
+    expect(result!.values[uuid]).toBe(0xBEEFn);
+  });
+
+  it('handles registers with no fields property (fields defaults to [])', () => {
+    const json = JSON.stringify({
+      version: 1,
+      registers: [{ name: 'REG', width: 8 }],
+    });
+    const result = importFromJson(json);
+    expect(result).not.toBeNull();
+    expect(result!.registers[0].fields).toEqual([]);
+  });
+
+  it('ignores registerValues keys that match neither UUID nor register name', () => {
+    const json = JSON.stringify({
+      version: 1,
+      registers: [{ name: 'REG', width: 8, fields: [] }],
+      registerValues: { NONEXISTENT: '0xFF' },
+    });
+    const result = importFromJson(json);
+    expect(result).not.toBeNull();
+    expect(Object.keys(result!.values)).toHaveLength(0);
+  });
+
   it('falls back to 0n for invalid hex value', () => {
     const json = JSON.stringify({
       version: 1,

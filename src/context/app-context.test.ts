@@ -240,3 +240,11 @@ describe('LOAD_STATE', () => {
     expect(next).toEqual(replacement);
   });
 });
+
+describe('default case', () => {
+  it('returns state unchanged for an unknown action type', () => {
+    const state = makeState({ theme: 'dark' });
+    const next = appReducer(state, { type: 'UNKNOWN_ACTION' } as never);
+    expect(next).toBe(state);
+  });
+});

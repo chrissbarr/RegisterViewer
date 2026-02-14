@@ -150,6 +150,16 @@ describe('encodeField — fixed-point', () => {
 });
 
 // ---------------------------------------------------------------------------
+// encodeField — unknown type (default case)
+// ---------------------------------------------------------------------------
+describe('encodeField — unknown type', () => {
+  it('returns 0n for an unrecognized field type', () => {
+    const field = makeField({ type: 'unknown-type' as never, msb: 7, lsb: 0 });
+    expect(encodeField('42', field)).toBe(0n);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Round-trip: decode then encode back to the same raw value
 // ---------------------------------------------------------------------------
 describe('round-trip — decode then encode', () => {
