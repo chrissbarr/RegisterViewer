@@ -1,4 +1,4 @@
-import type { AppState, SerializedAppState } from '../types/register';
+import type { AppState, Field, RegisterDef, SerializedAppState } from '../types/register';
 
 const STORAGE_KEY = 'register-viewer-state';
 
@@ -52,32 +52,80 @@ export function loadFromLocalStorage(): AppState | null {
   }
 }
 
+type ExportField = Omit<Field, 'id'>;
+type ExportRegister = Omit<RegisterDef, 'id' | 'fields'> & { fields: ExportField[] };
+
+function stripIds(register: RegisterDef): ExportRegister {
+  const { id: _regId, fields, ...rest } = register;
+  void _regId;
+  const cleanFields: ExportField[] = fields.map(({ id: _fieldId, ...fieldRest }) => {
+    void _fieldId;
+    return fieldRest;
+  });
+  return { ...rest, fields: cleanFields };
+}
+
 export function exportToJson(state: AppState): string {
+  const cleanRegisters = state.registers.map(stripIds);
+  const registerValues: Record<string, string> = {};
+  for (const reg of state.registers) {
+    const value = state.registerValues[reg.id];
+    if (value !== undefined) {
+      registerValues[reg.name] = '0x' + value.toString(16);
+    }
+  }
   const data = {
     version: 1,
-    registers: state.registers,
-    registerValues: Object.fromEntries(
-      Object.entries(state.registerValues).map(([id, v]) => [id, '0x' + v.toString(16)])
-    ),
+    registers: cleanRegisters,
+    registerValues,
   };
   return JSON.stringify(data, null, 2);
 }
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function importFromJson(json: string): { registers: AppState['registers']; values: Record<string, bigint> } | null {
   try {
     const data = JSON.parse(json);
     if (!data.registers || !Array.isArray(data.registers)) return null;
+
+    // Auto-generate IDs for registers and fields that lack them
+    const registers: RegisterDef[] = data.registers.map((reg: Partial<RegisterDef>) => ({
+      ...reg,
+      id: reg.id || crypto.randomUUID(),
+      fields: (reg.fields ?? []).map((f: Partial<Field>) => ({
+        ...f,
+        id: f.id || crypto.randomUUID(),
+      })),
+    }));
+
+    // Build a name-to-id lookup for resolving name-based registerValues keys
+    const nameToId = new Map<string, string>();
+    for (const reg of registers) {
+      nameToId.set(reg.name, reg.id);
+    }
+
     const values: Record<string, bigint> = {};
     if (data.registerValues) {
-      for (const [id, hex] of Object.entries(data.registerValues)) {
-        try {
-          values[id] = BigInt(hex as string);
-        } catch {
-          values[id] = 0n;
+      for (const [key, hex] of Object.entries(data.registerValues)) {
+        // Resolve key: if it's a UUID matching a register id, use as-is;
+        // otherwise treat it as a register name and map to the generated id
+        let resolvedId: string | undefined;
+        if (UUID_RE.test(key) && registers.some((r: RegisterDef) => r.id === key)) {
+          resolvedId = key;
+        } else {
+          resolvedId = nameToId.get(key);
+        }
+        if (resolvedId) {
+          try {
+            values[resolvedId] = BigInt(hex as string);
+          } catch {
+            values[resolvedId] = 0n;
+          }
         }
       }
     }
-    return { registers: data.registers, values };
+    return { registers, values };
   } catch {
     return null;
   }

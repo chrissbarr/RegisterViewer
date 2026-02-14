@@ -1,6 +1,12 @@
 import { useState, useEffect } from 'react';
 import type { RegisterDef } from '../../types/register';
 
+function stripIdsFromRegister(register: RegisterDef) {
+  const { id: _regId, fields, ...rest } = register;
+  const cleanFields = fields.map(({ id: _fieldId, ...fieldRest }) => fieldRest);
+  return { ...rest, fields: cleanFields };
+}
+
 interface Props {
   register: RegisterDef;
   onUpdate: (register: RegisterDef) => void;
@@ -11,7 +17,7 @@ export function JsonConfigEditor({ register, onUpdate }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setText(JSON.stringify(register, null, 2));
+    setText(JSON.stringify(stripIdsFromRegister(register), null, 2));
     setError(null);
   }, [register]);
 
