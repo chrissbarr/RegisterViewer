@@ -1,9 +1,11 @@
 import { useAppState, useAppDispatch } from '../../context/app-context';
+import { useEditContext } from '../../context/edit-context';
 import { RegisterListItem } from './register-list-item';
 
 export function RegisterList() {
   const { registers, activeRegisterId } = useAppState();
   const dispatch = useAppDispatch();
+  const { dirtyDraftIds } = useEditContext();
 
   function handleAdd() {
     const id = crypto.randomUUID();
@@ -26,6 +28,7 @@ export function RegisterList() {
             key={reg.id}
             register={reg}
             isActive={reg.id === activeRegisterId}
+            hasPendingEdit={dirtyDraftIds.has(reg.id)}
             onSelect={() => dispatch({ type: 'SET_ACTIVE_REGISTER', registerId: reg.id })}
             onDelete={() => dispatch({ type: 'DELETE_REGISTER', registerId: reg.id })}
           />

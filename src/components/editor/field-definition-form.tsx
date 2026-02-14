@@ -11,6 +11,7 @@ interface Props {
 
 export function FieldDefinitionForm({ field, regWidth, onUpdate, onDelete, onDone }: Props) {
   const [draft, setDraft] = useState<Field>({ ...field });
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   function update(partial: Partial<Field>) {
     const updated = { ...draft, ...partial };
@@ -250,12 +251,30 @@ export function FieldDefinitionForm({ field, regWidth, onUpdate, onDelete, onDon
 
       {/* Actions */}
       <div className="flex justify-between pt-2 border-t border-gray-200 dark:border-gray-700">
-        <button
-          onClick={onDelete}
-          className="text-sm text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300"
-        >
-          Delete field
-        </button>
+        {confirmingDelete ? (
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-red-600 dark:text-red-400">Delete?</span>
+            <button
+              onClick={onDelete}
+              className="px-2 py-0.5 rounded text-xs font-medium bg-red-600 text-white hover:bg-red-700 transition-colors"
+            >
+              Yes
+            </button>
+            <button
+              onClick={() => setConfirmingDelete(false)}
+              className="px-2 py-0.5 rounded text-xs font-medium bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+            >
+              No
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setConfirmingDelete(true)}
+            className="text-sm text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300"
+          >
+            Delete field
+          </button>
+        )}
         <button
           onClick={onDone}
           className="px-3 py-1 rounded text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors"

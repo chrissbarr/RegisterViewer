@@ -1,29 +1,35 @@
 import { useState } from 'react';
 import type { RegisterDef, Field, FieldType } from '../../types/register';
-import { useAppDispatch } from '../../context/app-context';
 import { FieldDefinitionForm } from './field-definition-form';
 import { JsonConfigEditor } from './json-config-editor';
 
 interface Props {
-  register: RegisterDef;
-  onClose: () => void;
+  draft: RegisterDef;
+  onDraftChange: (draft: RegisterDef) => void;
+  onSave: () => void;
+  onCancel: () => void;
+  onSaveAll?: () => void;
+  onCancelAll?: () => void;
+  dirtyCount: number;
 }
 
 type EditorTab = 'gui' | 'json';
 
-export function RegisterEditor({ register, onClose }: Props) {
-  const dispatch = useAppDispatch();
-  const [draft, setDraft] = useState<RegisterDef>({ ...register, fields: [...register.fields] });
+export function RegisterEditor({
+  draft,
+  onDraftChange,
+  onSave,
+  onCancel,
+  onSaveAll,
+  onCancelAll,
+  dirtyCount,
+}: Props) {
   const [tab, setTab] = useState<EditorTab>('gui');
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
-
-  function save() {
-    dispatch({ type: 'UPDATE_REGISTER', register: draft });
-    onClose();
-  }
+  const [confirmingDeleteFieldId, setConfirmingDeleteFieldId] = useState<string | null>(null);
 
   function updateMeta(partial: Partial<Pick<RegisterDef, 'name' | 'description' | 'width'>>) {
-    setDraft((d) => ({ ...d, ...partial }));
+    onDraftChange({ ...draft, ...partial });
   }
 
   function addField() {
@@ -38,27 +44,27 @@ export function RegisterEditor({ register, onClose }: Props) {
       lsb: Math.min(nextLsb, draft.width - 1),
       type: 'flag' as FieldType,
     };
-    setDraft((d) => ({ ...d, fields: [...d.fields, newField] }));
+    onDraftChange({ ...draft, fields: [...draft.fields, newField] });
     setEditingFieldId(id);
   }
 
   function updateField(updated: Field) {
-    setDraft((d) => ({
-      ...d,
-      fields: d.fields.map((f) => (f.id === updated.id ? updated : f)),
-    }));
+    onDraftChange({
+      ...draft,
+      fields: draft.fields.map((f) => (f.id === updated.id ? updated : f)),
+    });
   }
 
   function deleteField(fieldId: string) {
-    setDraft((d) => ({
-      ...d,
-      fields: d.fields.filter((f) => f.id !== fieldId),
-    }));
+    onDraftChange({
+      ...draft,
+      fields: draft.fields.filter((f) => f.id !== fieldId),
+    });
     if (editingFieldId === fieldId) setEditingFieldId(null);
   }
 
   function handleJsonUpdate(updated: RegisterDef) {
-    setDraft(updated);
+    onDraftChange(updated);
   }
 
   const inputClass =
@@ -69,16 +75,35 @@ export function RegisterEditor({ register, onClose }: Props) {
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-xl font-bold">Edit Register</h2>
         <div className="flex gap-2">
+          {onCancelAll && (
+            <button
+              onClick={onCancelAll}
+              className="px-3 py-1.5 rounded-md text-sm font-medium
+                bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200
+                hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+            >
+              Cancel All ({dirtyCount})
+            </button>
+          )}
           <button
-            onClick={onClose}
+            onClick={onCancel}
             className="px-3 py-1.5 rounded-md text-sm font-medium
               bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200
               hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
           >
             Cancel
           </button>
+          {onSaveAll && (
+            <button
+              onClick={onSaveAll}
+              className="px-3 py-1.5 rounded-md text-sm font-medium
+                bg-green-600 text-white hover:bg-green-700 transition-colors"
+            >
+              Save All ({dirtyCount})
+            </button>
+          )}
           <button
-            onClick={save}
+            onClick={onSave}
             className="px-3 py-1.5 rounded-md text-sm font-medium
               bg-blue-600 text-white hover:bg-blue-700 transition-colors"
           >
@@ -86,6 +111,12 @@ export function RegisterEditor({ register, onClose }: Props) {
           </button>
         </div>
       </div>
+
+      {dirtyCount > 1 && (
+        <div className="mb-3 px-3 py-2 rounded-md bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-sm text-amber-700 dark:text-amber-300">
+          {dirtyCount} registers with unsaved changes
+        </div>
+      )}
 
       {/* Register metadata */}
       <div className="grid grid-cols-3 gap-3 mb-4">
@@ -158,6 +189,24 @@ export function RegisterEditor({ register, onClose }: Props) {
                     onDelete={() => deleteField(field.id)}
                     onDone={() => setEditingFieldId(null)}
                   />
+                ) : confirmingDeleteFieldId === field.id ? (
+                  <div className="flex items-center justify-between px-3 py-2 rounded border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20">
+                    <span className="text-sm text-red-700 dark:text-red-300">Delete {field.name}?</span>
+                    <div className="flex gap-1 shrink-0 ml-2">
+                      <button
+                        onClick={() => { deleteField(field.id); setConfirmingDeleteFieldId(null); }}
+                        className="px-2 py-0.5 rounded text-xs font-medium bg-red-600 text-white hover:bg-red-700 transition-colors"
+                      >
+                        Yes
+                      </button>
+                      <button
+                        onClick={() => setConfirmingDeleteFieldId(null)}
+                        className="px-2 py-0.5 rounded text-xs font-medium bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                      >
+                        No
+                      </button>
+                    </div>
+                  </div>
                 ) : (
                   <div
                     onClick={() => setEditingFieldId(field.id)}
@@ -173,7 +222,7 @@ export function RegisterEditor({ register, onClose }: Props) {
                       </span>
                     </div>
                     <button
-                      onClick={(e) => { e.stopPropagation(); deleteField(field.id); }}
+                      onClick={(e) => { e.stopPropagation(); setConfirmingDeleteFieldId(field.id); }}
                       className="text-gray-400 hover:text-red-500 dark:hover:text-red-400"
                     >
                       &times;

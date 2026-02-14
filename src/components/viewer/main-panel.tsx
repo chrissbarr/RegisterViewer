@@ -1,14 +1,64 @@
-import { useState } from 'react';
-import { useAppState } from '../../context/app-context';
+import { useEffect } from 'react';
+import { useAppState, useAppDispatch } from '../../context/app-context';
+import { useEditContext } from '../../context/edit-context';
 import { ValueInputBar } from './value-input-bar';
 import { BitGrid } from './bit-grid';
 import { FieldTable } from './field-table';
 import { RegisterEditor } from '../editor/register-editor';
+import type { RegisterDef } from '../../types/register';
 
 export function MainPanel() {
   const { registers, activeRegisterId } = useAppState();
+  const dispatch = useAppDispatch();
+  const {
+    dirtyCount,
+    isEditing,
+    enterEditMode,
+    getDraft,
+    setDraft,
+    saveDraft,
+    discardDraft,
+    saveAllDrafts,
+    discardAllDrafts,
+  } = useEditContext();
+
   const activeRegister = registers.find((r) => r.id === activeRegisterId);
-  const [editMode, setEditMode] = useState(false);
+  const activeDraft = activeRegisterId ? getDraft(activeRegisterId) : undefined;
+
+  // When activeRegisterId changes while in edit mode, ensure a draft exists for the new register
+  useEffect(() => {
+    if (isEditing && activeRegister && !getDraft(activeRegister.id)) {
+      enterEditMode(activeRegister);
+    }
+  }, [isEditing, activeRegister, getDraft, enterEditMode]);
+
+  function handleDraftChange(updated: RegisterDef) {
+    setDraft(updated.id, updated);
+  }
+
+  function handleSave() {
+    if (!activeRegisterId) return;
+    const draft = saveDraft(activeRegisterId);
+    if (draft) {
+      dispatch({ type: 'UPDATE_REGISTER', register: draft });
+    }
+  }
+
+  function handleCancel() {
+    if (!activeRegisterId) return;
+    discardDraft(activeRegisterId);
+  }
+
+  function handleSaveAll() {
+    const allDrafts = saveAllDrafts();
+    for (const draft of allDrafts) {
+      dispatch({ type: 'UPDATE_REGISTER', register: draft });
+    }
+  }
+
+  function handleCancelAll() {
+    discardAllDrafts();
+  }
 
   if (!activeRegister) {
     return (
@@ -21,10 +71,20 @@ export function MainPanel() {
     );
   }
 
-  if (editMode) {
+  if (isEditing) {
     return (
       <main className="flex-1 overflow-y-auto p-4">
-        <RegisterEditor register={activeRegister} onClose={() => setEditMode(false)} />
+        {activeDraft && (
+          <RegisterEditor
+            draft={activeDraft}
+            onDraftChange={handleDraftChange}
+            onSave={handleSave}
+            onCancel={handleCancel}
+            onSaveAll={dirtyCount > 1 ? handleSaveAll : undefined}
+            onCancelAll={dirtyCount > 1 ? handleCancelAll : undefined}
+            dirtyCount={dirtyCount}
+          />
+        )}
       </main>
     );
   }
@@ -40,7 +100,7 @@ export function MainPanel() {
           </p>
         </div>
         <button
-          onClick={() => setEditMode(true)}
+          onClick={() => enterEditMode(activeRegister)}
           className="px-3 py-1.5 rounded-md text-sm font-medium
             bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300
             hover:bg-blue-200 dark:hover:bg-blue-800/40 transition-colors"

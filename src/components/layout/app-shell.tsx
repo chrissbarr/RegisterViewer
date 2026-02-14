@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useAppState } from '../../context/app-context';
+import { EditProvider } from '../../context/edit-context';
 import { saveToLocalStorage } from '../../utils/storage';
 import { Header } from './header';
 import { Sidebar } from './sidebar';
@@ -19,12 +20,14 @@ export function AppShell() {
   }, [state]);
 
   return (
-    <div className="h-screen flex flex-col bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100">
-      <Header />
-      <div className="flex flex-1 overflow-hidden">
-        <Sidebar />
-        <MainPanel />
+    <EditProvider>
+      <div className="h-screen flex flex-col bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100">
+        <Header />
+        <div className="flex flex-1 overflow-hidden">
+          <Sidebar />
+          <MainPanel />
+        </div>
       </div>
-    </div>
+    </EditProvider>
   );
 }
