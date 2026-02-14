@@ -22,10 +22,10 @@ Enter a raw register value (hex, binary, or decimal) and instantly see how it br
 
 ## Tech Stack
 
-- **React 18** + **TypeScript** (strict mode)
+- **React 19** + **TypeScript** (strict mode)
 - **Vite** for builds and dev server
 - **Tailwind CSS v4** for styling
-- **No runtime dependencies** beyond React
+- **@dnd-kit** for drag-and-drop register reordering
 
 ## Getting Started
 
@@ -100,7 +100,6 @@ src/
       main-panel.tsx            # Main content area (viewer or editor mode)
       value-input-bar.tsx       # Hex/binary/decimal value inputs
       bit-grid.tsx              # Visual bit grid with field coloring
-      bit-cell.tsx              # Single clickable bit (unused, inlined in grid)
       field-table.tsx           # Decoded field values table
       field-row.tsx             # Single field with edit controls
     editor/
