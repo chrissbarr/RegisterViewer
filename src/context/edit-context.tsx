@@ -41,14 +41,13 @@ export function EditProvider({ children }: { children: ReactNode }) {
 
   const enterEditMode = useCallback((register: RegisterDef) => {
     setIsEditing(true);
-    const copy = { ...register, fields: [...register.fields] };
     setDrafts((prev) => {
       if (prev[register.id]) return prev;
-      return { ...prev, [register.id]: copy };
+      return { ...prev, [register.id]: structuredClone(register) };
     });
     setOriginals((prev) => {
       if (prev[register.id]) return prev;
-      return { ...prev, [register.id]: copy };
+      return { ...prev, [register.id]: structuredClone(register) };
     });
   }, []);
 

@@ -22,8 +22,12 @@ export function FieldRow({ field, fieldIndex, registerId, registerValue, decoded
   const borderColor = FIELD_BORDER_COLORS[fieldIndex % FIELD_BORDER_COLORS.length];
 
   function handleFieldEdit(input: string | number | boolean) {
-    const newBits = encodeField(input, field);
-    dispatch({ type: 'SET_FIELD_VALUE', registerId, field, rawBits: newBits });
+    try {
+      const newBits = encodeField(input, field);
+      dispatch({ type: 'SET_FIELD_VALUE', registerId, field, rawBits: newBits });
+    } catch {
+      // Silently discard invalid input (e.g. empty string for integer fields)
+    }
   }
 
   function renderValueControl() {

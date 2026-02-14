@@ -57,6 +57,7 @@ export function encodeField(input: string | number | boolean, field: Field): big
 /** Parse a string as bigint, supporting 0x, 0b, 0o prefixes and plain decimal. */
 function parseBigInt(s: string): bigint {
   s = s.trim();
+  if (s === '') throw new SyntaxError('Cannot convert empty string to BigInt');
   if (s.startsWith('-')) {
     return -parseBigInt(s.slice(1));
   }
