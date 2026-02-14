@@ -1,11 +1,13 @@
 import { useRef } from 'react';
 import { ThemeToggle } from '../common/theme-toggle';
 import { useAppState, useAppDispatch } from '../../context/app-context';
+import { useEditContext } from '../../context/edit-context';
 import { exportToJson, importFromJson } from '../../utils/storage';
 
 export function Header() {
   const state = useAppState();
   const dispatch = useAppDispatch();
+  const { exitEditMode } = useEditContext();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function handleExport() {
@@ -30,6 +32,7 @@ export function Header() {
     reader.onload = () => {
       const result = importFromJson(reader.result as string);
       if (result) {
+        exitEditMode();
         dispatch({ type: 'IMPORT_REGISTERS', registers: result.registers });
         // Restore values for imported registers
         for (const [id, value] of Object.entries(result.values)) {
