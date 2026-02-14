@@ -214,7 +214,7 @@ export function FieldDefinitionForm({ field, regWidth, onUpdate, onDelete, onDon
           <span className="text-xs text-gray-500 dark:text-gray-400 block mb-1">Enum values</span>
           <div className="space-y-1 mb-2">
             {(draft.enumEntries ?? []).map((entry, i) => (
-              <div key={i} className="flex items-center gap-2">
+              <div key={entry.value} className="flex items-center gap-2">
                 <input
                   type="number"
                   value={entry.value}

@@ -1,6 +1,7 @@
 import { createContext, useContext, useReducer, type ReactNode, type Dispatch } from 'react';
 import { arrayMove } from '@dnd-kit/sortable';
 import type { AppState, RegisterDef, Field } from '../types/register';
+import { replaceBits, toggleBit } from '../utils/bitwise';
 
 // --- Actions ---
 
@@ -16,20 +17,6 @@ export type Action =
   | { type: 'IMPORT_REGISTERS'; registers: RegisterDef[] }
   | { type: 'LOAD_STATE'; state: AppState }
   | { type: 'REORDER_REGISTERS'; oldIndex: number; newIndex: number };
-
-// --- Helpers ---
-
-function replaceBits(value: bigint, msb: number, lsb: number, fieldValue: bigint): bigint {
-  const width = msb - lsb + 1;
-  const mask = ((1n << BigInt(width)) - 1n) << BigInt(lsb);
-  const cleared = value & ~mask;
-  const shifted = (fieldValue & ((1n << BigInt(width)) - 1n)) << BigInt(lsb);
-  return cleared | shifted;
-}
-
-function toggleBit(value: bigint, bit: number): bigint {
-  return value ^ (1n << BigInt(bit));
-}
 
 // --- Reducer ---
 
@@ -128,8 +115,8 @@ const initialState: AppState = {
   theme: 'dark',
 };
 
-const AppStateContext = createContext<AppState>(initialState);
-const AppDispatchContext = createContext<Dispatch<Action>>(() => {});
+const AppStateContext = createContext<AppState | null>(null);
+const AppDispatchContext = createContext<Dispatch<Action> | null>(null);
 
 export function AppProvider({ children, savedState }: { children: ReactNode; savedState?: AppState }) {
   const [state, dispatch] = useReducer(appReducer, savedState ?? initialState);
@@ -143,9 +130,13 @@ export function AppProvider({ children, savedState }: { children: ReactNode; sav
 }
 
 export function useAppState() {
-  return useContext(AppStateContext);
+  const ctx = useContext(AppStateContext);
+  if (!ctx) throw new Error('useAppState must be used within AppProvider');
+  return ctx;
 }
 
 export function useAppDispatch() {
-  return useContext(AppDispatchContext);
+  const ctx = useContext(AppDispatchContext);
+  if (!ctx) throw new Error('useAppDispatch must be used within AppProvider');
+  return ctx;
 }
