@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useAppState, useAppDispatch } from '../../context/app-context';
 import type { RegisterDef } from '../../types/register';
 import { clampToWidth } from '../../utils/bitwise';
+import { formatBinary } from '../../utils/format';
 
 interface Props {
   register: RegisterDef;
@@ -16,6 +17,9 @@ export function ValueInputBar({ register }: Props) {
   const [binInput, setBinInput] = useState('');
   const [decInput, setDecInput] = useState('');
   const focusedField = useRef<'hex' | 'bin' | 'dec' | null>(null);
+  const binRef = useRef<HTMLInputElement>(null);
+  const binCursorRef = useRef<number>(0);
+  const binCursorPending = useRef(false);
 
   // Sync display strings from current value, skipping the focused field
   useEffect(() => {
@@ -26,6 +30,16 @@ export function ValueInputBar({ register }: Props) {
     if (focusedField.current !== 'dec')
       setDecInput(value.toString(10));
   }, [value, register.width]);
+
+  // Restore BIN cursor position only after a programmatic value change
+  useLayoutEffect(() => {
+    if (!binCursorPending.current) return;
+    binCursorPending.current = false;
+    const el = binRef.current;
+    if (el && focusedField.current === 'bin') {
+      el.setSelectionRange(binCursorRef.current, binCursorRef.current);
+    }
+  });
 
   function commitValue(raw: bigint) {
     const clamped = clampToWidth(raw, register.width);
@@ -61,6 +75,60 @@ export function ValueInputBar({ register }: Props) {
 
   function handleKeyDown(e: React.KeyboardEvent, onBlur: () => void) {
     if (e.key === 'Enter') onBlur();
+  }
+
+  /** Map a 0-based digit index to a cursor position in the formatted string. */
+  function digitToFormattedPos(digitIndex: number, formatted: string): number {
+    let pos = 0;
+    let count = 0;
+    for (let i = 0; i < formatted.length; i++) {
+      if (count >= digitIndex) break;
+      if (formatted[i] !== ' ') count++;
+      pos = i + 1;
+    }
+    return pos;
+  }
+
+  /** Overwrite-mode keydown handler for the BIN input. */
+  function handleBinKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Enter') { handleBinBlur(); return; }
+    if (e.key !== '0' && e.key !== '1') return;
+
+    const el = e.currentTarget;
+    const start = el.selectionStart ?? 0;
+    const end = el.selectionEnd ?? 0;
+
+    // If there's a selection, let onChange handle it (replacement / select-all)
+    if (start !== end) return;
+
+    const formatted = el.value;
+
+    // Find the digit at or after cursor (skip spaces)
+    let pos = start;
+    while (pos < formatted.length && formatted[pos] === ' ') pos++;
+
+    // If cursor is at the end, let onChange handle it (append mode)
+    if (pos >= formatted.length) return;
+
+    // Map formatted position to digit index
+    let digitIndex = 0;
+    for (let i = 0; i < pos; i++) {
+      if (formatted[i] !== ' ') digitIndex++;
+    }
+
+    // Overwrite digit in the full-width binary string
+    const full = binInput.padStart(register.width, '0');
+    const updated = full.slice(0, digitIndex) + e.key + full.slice(digitIndex + 1);
+
+    setBinInput(updated);
+    commitValue(BigInt('0b' + updated));
+
+    // Advance cursor past the overwritten digit
+    const newFormatted = formatBinary(updated);
+    binCursorRef.current = digitToFormattedPos(digitIndex + 1, newFormatted);
+    binCursorPending.current = true;
+
+    e.preventDefault();
   }
 
   const inputBase =
@@ -131,16 +199,50 @@ export function ValueInputBar({ register }: Props) {
           <div className="flex flex-1 min-w-0">
             <span className={addonSecondary}>0b</span>
             <input
+              ref={binRef}
               type="text"
-              value={binInput}
+              value={formatBinary(binInput.padStart(register.width, '0'))}
               onFocus={() => (focusedField.current = 'bin')}
               onChange={(e) => {
-                const filtered = e.target.value.replace(/[^01]/g, '');
-                setBinInput(filtered);
-                try { commitValue(BigInt('0b' + (filtered || '0'))); } catch { /* partial input */ }
+                const rawCursor = e.target.selectionStart ?? 0;
+                const rawValue = e.target.value;
+
+                // Count binary digits AFTER cursor in the raw input.
+                // Using right-anchored counting because padStart shifts digits
+                // left and slice(-width) drops the MSB — the distance from the
+                // right edge is invariant to both operations.
+                let digitsAfterCursor = 0;
+                for (let i = rawCursor; i < rawValue.length; i++) {
+                  if (rawValue[i] !== ' ') digitsAfterCursor++;
+                }
+
+                const stripped = rawValue.replace(/\s/g, '');
+                const filtered = stripped.replace(/[^01]/g, '');
+                const capped = filtered.length > register.width
+                  ? filtered.slice(-register.width)
+                  : filtered;
+
+                // Map from right: target digit position from left = width - digitsAfter
+                const targetDigit = Math.max(0, Math.min(
+                  register.width - digitsAfterCursor,
+                  register.width,
+                ));
+                const newFormatted = formatBinary(capped.padStart(register.width, '0'));
+                let newCursor = 0;
+                let count = 0;
+                for (let i = 0; i < newFormatted.length; i++) {
+                  if (count >= targetDigit) break;
+                  if (newFormatted[i] !== ' ') count++;
+                  newCursor = i + 1;
+                }
+                binCursorRef.current = newCursor;
+                binCursorPending.current = true;
+
+                setBinInput(capped);
+                try { commitValue(BigInt('0b' + (capped || '0'))); } catch { /* partial input */ }
               }}
               onBlur={() => { focusedField.current = null; handleBinBlur(); }}
-              onKeyDown={(e) => handleKeyDown(e, handleBinBlur)}
+              onKeyDown={handleBinKeyDown}
               className={inputSecondaryWithAddon}
               spellCheck={false}
             />
