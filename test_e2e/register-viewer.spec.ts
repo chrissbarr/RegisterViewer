@@ -67,6 +67,37 @@ test.describe('Register Viewer - Bit Grid', () => {
   });
 });
 
+test.describe('Register Viewer - Copy Buttons', () => {
+  test.beforeEach(async ({ page, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await resetApp(page);
+  });
+
+  test('copy buttons are visible for all three inputs', async ({ page }) => {
+    await expect(page.getByRole('button', { name: 'Copy hex value' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Copy decimal value' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Copy binary value' })).toBeVisible();
+  });
+
+  test('hex copy button copies value with 0x prefix', async ({ page }) => {
+    await page.getByRole('button', { name: 'Copy hex value' }).click();
+    const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
+    expect(clipboardText).toBe('0xDEADBEEF');
+  });
+
+  test('decimal copy button copies raw decimal value', async ({ page }) => {
+    await page.getByRole('button', { name: 'Copy decimal value' }).click();
+    const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
+    expect(clipboardText).toBe('3735928559');
+  });
+
+  test('binary copy button copies value with 0b prefix and no spaces', async ({ page }) => {
+    await page.getByRole('button', { name: 'Copy binary value' }).click();
+    const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
+    expect(clipboardText).toBe('0b' + (0xDEADBEEF).toString(2).padStart(32, '0'));
+  });
+});
+
 test.describe('Register Viewer - Field Editing', () => {
   test.beforeEach(async ({ page }) => {
     await resetApp(page);
