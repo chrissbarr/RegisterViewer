@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useAppState, useAppDispatch } from '../../context/app-context';
 import { useEditContext } from '../../context/edit-context';
 import { ValueInputBar } from './value-input-bar';
@@ -10,6 +11,7 @@ import { formatOffset } from '../../utils/format';
 export function MainPanel() {
   const { registers, activeRegisterId } = useAppState();
   const dispatch = useAppDispatch();
+  const [hoveredFieldIndex, setHoveredFieldIndex] = useState<number | null>(null);
   const {
     dirtyCount,
     isEditing,
@@ -101,11 +103,11 @@ export function MainPanel() {
         </button>
       </div>
       <ValueInputBar register={activeRegister} />
-      <BitGrid register={activeRegister} />
+      <BitGrid register={activeRegister} hoveredFieldIndex={hoveredFieldIndex} onFieldHover={setHoveredFieldIndex} />
       <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-2 mt-6">
         Field Breakdown
       </h3>
-      <FieldTable register={activeRegister} />
+      <FieldTable register={activeRegister} hoveredFieldIndex={hoveredFieldIndex} onFieldHover={setHoveredFieldIndex} />
     </main>
   );
 }

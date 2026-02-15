@@ -5,9 +5,11 @@ import { FieldRow } from './field-row';
 
 interface Props {
   register: RegisterDef;
+  hoveredFieldIndex: number | null;
+  onFieldHover: (index: number | null) => void;
 }
 
-export function FieldTable({ register }: Props) {
+export function FieldTable({ register, hoveredFieldIndex, onFieldHover }: Props) {
   const state = useAppState();
   const value = state.registerValues[register.id] ?? 0n;
 
@@ -45,6 +47,9 @@ export function FieldTable({ register }: Props) {
               registerValue={value}
               registerWidth={register.width}
               decoded={decodeField(value, field)}
+              isHighlighted={hoveredFieldIndex === originalIndex}
+              onMouseEnter={() => onFieldHover(originalIndex)}
+              onMouseLeave={() => onFieldHover(null)}
             />
           ))}
         </tbody>

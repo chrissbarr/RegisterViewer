@@ -12,9 +12,12 @@ interface Props {
   registerValue: bigint;
   registerWidth: number;
   decoded: DecodedValue;
+  isHighlighted: boolean;
+  onMouseEnter: () => void;
+  onMouseLeave: () => void;
 }
 
-export function FieldRow({ field, fieldIndex, registerId, registerValue, registerWidth, decoded }: Props) {
+export function FieldRow({ field, fieldIndex, registerId, registerValue, registerWidth, decoded, isHighlighted, onMouseEnter, onMouseLeave }: Props) {
   const dispatch = useAppDispatch();
   const rawBits = extractBits(registerValue, field.msb, field.lsb);
   const bitWidth = field.msb - field.lsb + 1;
@@ -23,6 +26,8 @@ export function FieldRow({ field, fieldIndex, registerId, registerValue, registe
   const mask = ((1n << BigInt(bitWidth)) - 1n) << BigInt(field.lsb);
   const maskStr = '0x' + mask.toString(16).toUpperCase().padStart(Math.ceil(registerWidth / 4), '0');
   const borderColor = FIELD_BORDER_COLORS[fieldIndex % FIELD_BORDER_COLORS.length];
+  const tintBg = borderColor.replace('rgb(', 'rgba(').replace(')', ',0.06)');
+  const highlightBg = borderColor.replace('rgb(', 'rgba(').replace(')', ',0.15)');
 
   function handleFieldEdit(input: string | number | boolean) {
     try {
@@ -99,8 +104,13 @@ export function FieldRow({ field, fieldIndex, registerId, registerValue, registe
   }
 
   return (
-    <tr className="border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/50">
-      <td className="px-3 py-2 text-sm font-medium truncate" title={field.name} style={{ borderLeft: `3px solid ${borderColor}` }}>
+    <tr
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      className="border-b border-gray-200 dark:border-gray-700 transition-colors duration-150 motion-reduce:transition-none"
+      style={{ backgroundColor: isHighlighted ? highlightBg : tintBg }}
+    >
+      <td className="px-3 py-2 text-sm font-medium truncate" title={field.name} style={{ borderLeft: `4px solid ${borderColor}` }}>
         {field.name}
       </td>
       <td className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400 font-mono">

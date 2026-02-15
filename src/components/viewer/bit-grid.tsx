@@ -50,9 +50,11 @@ function getFieldForBit(bit: number, fields: Field[]): { field: Field; index: nu
 
 interface Props {
   register: RegisterDef;
+  hoveredFieldIndex: number | null;
+  onFieldHover: (index: number | null) => void;
 }
 
-export function BitGrid({ register }: Props) {
+export function BitGrid({ register, hoveredFieldIndex, onFieldHover }: Props) {
   const state = useAppState();
   const dispatch = useAppDispatch();
   const value = state.registerValues[register.id] ?? 0n;
@@ -84,15 +86,19 @@ export function BitGrid({ register }: Props) {
                 const match = getFieldForBit(bitIdx, register.fields);
                 const isUnassigned = !match;
                 const bgColor = match ? FIELD_COLORS[match.index % FIELD_COLORS.length] : undefined;
+                const highlightBgColor = match ? FIELD_COLORS[match.index % FIELD_COLORS.length].replace(/[\d.]+\)$/, '0.45)') : undefined;
                 const borderColor = match ? FIELD_BORDER_COLORS[match.index % FIELD_BORDER_COLORS.length] : undefined;
+                const isHighlighted = match !== null && hoveredFieldIndex === match.index;
                 const col = bitToGridColumn(bitIdx, row.startBit, row.bits.length);
 
                 return (
                   <div
                     key={bitIdx}
                     onClick={() => dispatch({ type: 'TOGGLE_BIT', registerId: register.id, bit: bitIdx })}
+                    onMouseEnter={() => match && onFieldHover(match.index)}
+                    onMouseLeave={() => onFieldHover(null)}
                     title={match ? `Bit ${bitIdx} (${match.field.name})` : `Bit ${bitIdx} (reserved)`}
-                    className={`flex flex-col items-center justify-center h-12 border text-xs cursor-pointer hover:brightness-125 transition-all select-none ${
+                    className={`flex flex-col items-center justify-center h-12 border text-xs cursor-pointer hover:brightness-125 transition-all duration-150 motion-reduce:transition-none select-none ${
                       isUnassigned
                         ? 'bit-unassigned border-gray-300/60 dark:border-gray-600/60'
                         : 'border-gray-300 dark:border-gray-600'
@@ -101,7 +107,7 @@ export function BitGrid({ register }: Props) {
                       gridRow: 1,
                       gridColumn: col,
                       ...(match && {
-                        backgroundColor: bgColor,
+                        backgroundColor: isHighlighted ? highlightBgColor : bgColor,
                         borderColor: borderColor,
                       }),
                     }}
@@ -125,18 +131,22 @@ export function BitGrid({ register }: Props) {
               {/* Field labels */}
               {rowFields.map((fi) => {
                 const bgColor = FIELD_COLORS[fi.fieldIndex % FIELD_COLORS.length];
+                const highlightBgColor = FIELD_COLORS[fi.fieldIndex % FIELD_COLORS.length].replace(/[\d.]+\)$/, '0.45)');
                 const borderColor = FIELD_BORDER_COLORS[fi.fieldIndex % FIELD_BORDER_COLORS.length];
+                const isHighlighted = hoveredFieldIndex === fi.fieldIndex;
                 const label = fi.isPartial ? `${fi.field.name} (cont.)` : fi.field.name;
 
                 return (
                   <div
                     key={fi.field.id}
                     title={fi.field.name}
-                    className="text-[10px] truncate px-1 py-0.5 text-center"
+                    onMouseEnter={() => onFieldHover(fi.fieldIndex)}
+                    onMouseLeave={() => onFieldHover(null)}
+                    className="text-[10px] truncate px-1 py-0.5 text-center transition-colors duration-150 motion-reduce:transition-none"
                     style={{
                       gridRow: 2,
                       gridColumn: `${fi.startCol} / ${fi.endCol}`,
-                      backgroundColor: bgColor,
+                      backgroundColor: isHighlighted ? highlightBgColor : bgColor,
                       borderLeft: `2px solid ${borderColor}`,
                       borderRight: `2px solid ${borderColor}`,
                       borderBottom: `2px solid ${borderColor}`,
