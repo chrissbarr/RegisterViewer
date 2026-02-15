@@ -107,5 +107,5 @@ src/
       field-definition-form.tsx # GUI form for defining a single field
       json-config-editor.tsx    # Raw JSON editor with validation
     common/
-      theme-toggle.tsx          # Dark/light mode switch
+      dropdown-menu.tsx         # Reusable dropdown menu with action/toggle items
 ```

@@ -1,8 +1,18 @@
 import { useRef } from 'react';
-import { ThemeToggle } from '../common/theme-toggle';
+import { DropdownMenu, type MenuItem } from '../common/dropdown-menu';
 import { useAppState, useAppDispatch } from '../../context/app-context';
 import { useEditContext } from '../../context/edit-context';
 import { exportToJson, importFromJson } from '../../utils/storage';
+
+function MenuIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" className="block">
+      <rect x="1" y="2" width="14" height="2" rx="0.5" />
+      <rect x="1" y="7" width="14" height="2" rx="0.5" />
+      <rect x="1" y="12" width="14" height="2" rx="0.5" />
+    </svg>
+  );
+}
 
 export function Header() {
   const state = useAppState();
@@ -45,29 +55,29 @@ export function Header() {
     e.target.value = '';
   }
 
+  const menuItems: MenuItem[] = [
+    { kind: 'action', label: 'Import', onAction: handleImport },
+    { kind: 'action', label: 'Export', onAction: handleExport },
+    { kind: 'separator' },
+    {
+      kind: 'toggle',
+      label: 'Dark mode',
+      checked: state.theme === 'dark',
+      onToggle: () => dispatch({ type: 'TOGGLE_THEME' }),
+    },
+  ];
+
   return (
     <header className="flex items-center justify-between px-4 py-2 border-b border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900">
       <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">
         Register Viewer
       </h1>
       <div className="flex items-center gap-2">
-        <button
-          onClick={handleImport}
-          className="px-3 py-1.5 rounded-md text-sm font-medium
-            bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200
-            hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
-        >
-          Import
-        </button>
-        <button
-          onClick={handleExport}
-          className="px-3 py-1.5 rounded-md text-sm font-medium
-            bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200
-            hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
-        >
-          Export
-        </button>
-        <ThemeToggle />
+        <DropdownMenu
+          items={menuItems}
+          triggerLabel="Application menu"
+          triggerContent={<MenuIcon />}
+        />
         <input
           ref={fileInputRef}
           type="file"
