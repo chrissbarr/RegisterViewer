@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "registers": [
+    {
+      "name": "CTRL_REG",
+      "width": 16,
+      "offset": 0,
+      "fields": [
+        {
+          "name": "EN",
+          "msb": 0,
+          "lsb": 0,
+          "type": "flag"
+        },
+        {
+          "name": "MODE",
+          "msb": 3,
+          "lsb": 1,
+          "type": "enum",
+          "enumEntries": [
+            { "value": 0, "name": "OFF" },
+            { "value": 1, "name": "ON" },
+            { "value": 2, "name": "AUTO" }
+          ]
+        },
+        {
+          "name": "COUNT",
+          "msb": 15,
+          "lsb": 8,
+          "type": "integer",
+          "signed": false
+        }
+      ]
+    }
+  ],
+  "registerValues": {
+    "CTRL_REG": "0x0103"
+  }
+}
