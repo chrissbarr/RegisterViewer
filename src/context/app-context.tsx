@@ -16,7 +16,8 @@ export type Action =
   | { type: 'TOGGLE_THEME' }
   | { type: 'IMPORT_REGISTERS'; registers: RegisterDef[] }
   | { type: 'LOAD_STATE'; state: AppState }
-  | { type: 'REORDER_REGISTERS'; oldIndex: number; newIndex: number };
+  | { type: 'REORDER_REGISTERS'; oldIndex: number; newIndex: number }
+  | { type: 'SORT_REGISTERS_BY_OFFSET' };
 
 // --- Reducer ---
 
@@ -100,6 +101,15 @@ export function appReducer(state: AppState, action: Action): AppState {
     }
     case 'REORDER_REGISTERS': {
       return { ...state, registers: arrayMove(state.registers, action.oldIndex, action.newIndex) };
+    }
+    case 'SORT_REGISTERS_BY_OFFSET': {
+      const sorted = [...state.registers].sort((a, b) => {
+        if (a.offset == null && b.offset == null) return 0;
+        if (a.offset == null) return 1;
+        if (b.offset == null) return -1;
+        return a.offset - b.offset;
+      });
+      return { ...state, registers: sorted };
     }
     default:
       return state;

@@ -241,6 +241,44 @@ describe('LOAD_STATE', () => {
   });
 });
 
+describe('SORT_REGISTERS_BY_OFFSET', () => {
+  it('sorts registers ascending by offset', () => {
+    const r1 = makeRegister({ id: 'reg-1', name: 'A', offset: 0x08 });
+    const r2 = makeRegister({ id: 'reg-2', name: 'B', offset: 0x00 });
+    const r3 = makeRegister({ id: 'reg-3', name: 'C', offset: 0x04 });
+    const state = makeState({ registers: [r1, r2, r3] });
+    const next = appReducer(state, { type: 'SORT_REGISTERS_BY_OFFSET' });
+    expect(next.registers.map((r) => r.id)).toEqual(['reg-2', 'reg-3', 'reg-1']);
+  });
+
+  it('puts registers without offset at the end', () => {
+    const r1 = makeRegister({ id: 'reg-1', name: 'A' }); // no offset
+    const r2 = makeRegister({ id: 'reg-2', name: 'B', offset: 0x04 });
+    const r3 = makeRegister({ id: 'reg-3', name: 'C', offset: 0x00 });
+    const state = makeState({ registers: [r1, r2, r3] });
+    const next = appReducer(state, { type: 'SORT_REGISTERS_BY_OFFSET' });
+    expect(next.registers.map((r) => r.id)).toEqual(['reg-3', 'reg-2', 'reg-1']);
+  });
+
+  it('preserves relative order of registers without offset', () => {
+    const r1 = makeRegister({ id: 'reg-1', name: 'A' }); // no offset
+    const r2 = makeRegister({ id: 'reg-2', name: 'B' }); // no offset
+    const r3 = makeRegister({ id: 'reg-3', name: 'C', offset: 0x00 });
+    const state = makeState({ registers: [r1, r2, r3] });
+    const next = appReducer(state, { type: 'SORT_REGISTERS_BY_OFFSET' });
+    expect(next.registers.map((r) => r.id)).toEqual(['reg-3', 'reg-1', 'reg-2']);
+  });
+
+  it('does not mutate the original state', () => {
+    const r1 = makeRegister({ id: 'reg-1', offset: 0x08 });
+    const r2 = makeRegister({ id: 'reg-2', offset: 0x00 });
+    const state = makeState({ registers: [r1, r2] });
+    const next = appReducer(state, { type: 'SORT_REGISTERS_BY_OFFSET' });
+    expect(state.registers[0].id).toBe('reg-1');
+    expect(next.registers[0].id).toBe('reg-2');
+  });
+});
+
 describe('default case', () => {
   it('returns state unchanged for an unknown action type', () => {
     const state = makeState({ theme: 'dark' });

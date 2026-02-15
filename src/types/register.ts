@@ -29,6 +29,7 @@ export interface RegisterDef {
   name: string;
   description?: string;
   width: number; // total bits
+  offset?: number; // byte address offset
   fields: Field[];
 }
 

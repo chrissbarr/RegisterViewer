@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { RegisterDef, Field, FieldType } from '../../types/register';
 import { FieldDefinitionForm } from './field-definition-form';
 import { JsonConfigEditor } from './json-config-editor';
+import { formatOffset } from '../../utils/format';
 
 interface Props {
   draft: RegisterDef;
@@ -27,8 +28,15 @@ export function RegisterEditor({
   const [tab, setTab] = useState<EditorTab>('gui');
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
   const [confirmingDeleteFieldId, setConfirmingDeleteFieldId] = useState<string | null>(null);
+  const [offsetText, setOffsetText] = useState(
+    draft.offset != null ? formatOffset(draft.offset) : ''
+  );
 
-  function updateMeta(partial: Partial<Pick<RegisterDef, 'name' | 'description' | 'width'>>) {
+  useEffect(() => {
+    setOffsetText(draft.offset != null ? formatOffset(draft.offset) : '');
+  }, [draft.id, draft.offset]);
+
+  function updateMeta(partial: Partial<Pick<RegisterDef, 'name' | 'description' | 'width' | 'offset'>>) {
     onDraftChange({ ...draft, ...partial });
   }
 
@@ -119,7 +127,7 @@ export function RegisterEditor({
       )}
 
       {/* Register metadata */}
-      <div className="grid grid-cols-3 gap-3 mb-4">
+      <div className="grid grid-cols-4 gap-3 mb-4">
         <label className="flex flex-col gap-1">
           <span className="text-xs text-gray-500 dark:text-gray-400">Name</span>
           <input
@@ -137,6 +145,31 @@ export function RegisterEditor({
             min={1}
             max={256}
             onChange={(e) => updateMeta({ width: parseInt(e.target.value) || 32 })}
+            className={inputClass}
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs text-gray-500 dark:text-gray-400">Offset</span>
+          <input
+            type="text"
+            value={offsetText}
+            placeholder="e.g. 0x04"
+            onChange={(e) => setOffsetText(e.target.value)}
+            onBlur={() => {
+              const raw = offsetText.trim();
+              if (raw === '' || raw === '0x' || raw === '0X') {
+                updateMeta({ offset: undefined });
+                setOffsetText('');
+              } else {
+                const parsed = parseInt(raw, raw.startsWith('0x') || raw.startsWith('0X') ? 16 : 10);
+                if (!isNaN(parsed) && parsed >= 0) {
+                  updateMeta({ offset: parsed });
+                  setOffsetText(formatOffset(parsed));
+                } else {
+                  setOffsetText(draft.offset != null ? formatOffset(draft.offset) : '');
+                }
+              }
+            }}
             className={inputClass}
           />
         </label>

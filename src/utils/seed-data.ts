@@ -8,6 +8,7 @@ export function createSeedRegisters(): RegisterDef[] {
       name: 'STATUS_REG',
       description: 'Example: device status register',
       width: 32,
+      offset: 0x00,
       fields: [
         {
           id: crypto.randomUUID(),

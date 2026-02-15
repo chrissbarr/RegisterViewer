@@ -83,6 +83,46 @@ describe('save/loadFromLocalStorage', () => {
   });
 });
 
+describe('offset round-trip', () => {
+  it('preserves offset through export/import', () => {
+    const reg = makeRegister({ id: 'reg-1', name: 'STATUS', offset: 0x04 });
+    const state = makeState({
+      registers: [reg],
+      registerValues: { 'reg-1': 0n },
+    });
+    const json = exportToJson(state);
+    const result = importFromJson(json);
+    expect(result).not.toBeNull();
+    expect(result!.registers[0].offset).toBe(0x04);
+  });
+
+  it('preserves undefined offset through export/import', () => {
+    const reg = makeRegister({ id: 'reg-1', name: 'STATUS' }); // no offset
+    const state = makeState({
+      registers: [reg],
+      registerValues: { 'reg-1': 0n },
+    });
+    const json = exportToJson(state);
+    const result = importFromJson(json);
+    expect(result).not.toBeNull();
+    expect(result!.registers[0].offset).toBeUndefined();
+  });
+
+  it('preserves offset through localStorage round-trip', () => {
+    localStorage.clear();
+    const reg = makeRegister({ id: 'reg-1', name: 'STATUS', offset: 0xFF });
+    const state = makeState({
+      registers: [reg],
+      activeRegisterId: 'reg-1',
+      registerValues: { 'reg-1': 0n },
+    });
+    saveToLocalStorage(state);
+    const loaded = loadFromLocalStorage();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.registers[0].offset).toBe(0xFF);
+  });
+});
+
 describe('exportToJson', () => {
   it('includes version 1 property', () => {
     const state = makeState({ registers: [] });

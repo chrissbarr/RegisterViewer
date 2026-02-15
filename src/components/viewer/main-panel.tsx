@@ -5,6 +5,7 @@ import { BitGrid } from './bit-grid';
 import { FieldTable } from './field-table';
 import { RegisterEditor } from '../editor/register-editor';
 import type { RegisterDef } from '../../types/register';
+import { formatOffset } from '../../utils/format';
 
 export function MainPanel() {
   const { registers, activeRegisterId } = useAppState();
@@ -85,6 +86,7 @@ export function MainPanel() {
         <div>
           <h2 className="text-xl font-bold">{activeRegister.name}</h2>
           <p className="text-sm text-gray-500 dark:text-gray-400">
+            {activeRegister.offset != null && `${formatOffset(activeRegister.offset)} · `}
             {activeRegister.width}-bit register
             {activeRegister.description && ` — ${activeRegister.description}`}
           </p>

@@ -1,5 +1,6 @@
 import type { RegisterDef } from '../../types/register';
 import { GripIcon } from './register-list-item';
+import { formatOffset } from '../../utils/format';
 
 interface Props {
   register: RegisterDef;
@@ -22,6 +23,11 @@ export function RegisterListItemOverlay({ register, isActive, hasPendingEdit }: 
         </span>
         {hasPendingEdit && (
           <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" title="Unsaved changes" />
+        )}
+        {register.offset != null && (
+          <span className="text-xs font-mono text-gray-500 dark:text-gray-500 shrink-0">
+            {formatOffset(register.offset)}
+          </span>
         )}
         <span className="truncate font-medium">{register.name}</span>
         <span className="text-xs text-gray-500 dark:text-gray-500 shrink-0">

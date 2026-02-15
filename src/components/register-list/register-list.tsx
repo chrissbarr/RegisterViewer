@@ -106,7 +106,7 @@ export function RegisterList() {
           ) : null}
         </DragOverlay>
       </DndContext>
-      <div className="p-2">
+      <div className="p-2 space-y-1">
         <button
           onClick={handleAdd}
           className="w-full px-3 py-1.5 rounded-md text-sm font-medium
@@ -116,6 +116,19 @@ export function RegisterList() {
             transition-colors"
         >
           + Add Register
+        </button>
+        <button
+          onClick={() => dispatch({ type: 'SORT_REGISTERS_BY_OFFSET' })}
+          disabled={!registers.some((r) => r.offset != null)}
+          className="w-full px-3 py-1.5 rounded-md text-sm font-medium
+            border border-gray-300 dark:border-gray-600
+            text-gray-600 dark:text-gray-400
+            hover:border-blue-500 hover:text-blue-500 dark:hover:border-blue-400 dark:hover:text-blue-400
+            disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-gray-300 disabled:hover:text-gray-600
+            dark:disabled:hover:border-gray-600 dark:disabled:hover:text-gray-400
+            transition-colors"
+        >
+          Sort by Offset
         </button>
       </div>
     </div>
