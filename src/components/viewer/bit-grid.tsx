@@ -56,10 +56,12 @@ export function BitGrid({ register, hoveredFieldIndex, onFieldHover }: Props) {
               }}
             >
               {/* Hex digit row */}
-              {rowNibbles.map((nibble) => {
+              {rowNibbles.map((nibble, nibbleIdx) => {
                 const bgColor = nibble.fieldIndex !== null
                   ? fieldColor(nibble.fieldIndex, 0.15)
                   : 'rgba(128,128,128,0.1)';
+                // Low nibble (even index) within a byte — add left border as nibble separator
+                const isNibbleSep = nibble.nibbleIndex % 2 === 0 && nibbleIdx > 0;
 
                 return (
                   <div
@@ -72,6 +74,9 @@ export function BitGrid({ register, hoveredFieldIndex, onFieldHover }: Props) {
                       gridRow: 1,
                       gridColumn: `${nibble.startCol} / ${nibble.endCol}`,
                       backgroundColor: bgColor,
+                      ...(isNibbleSep && {
+                        borderLeft: '1px solid rgba(156,163,175,0.4)',
+                      }),
                     }}
                   >
                     {nibble.hexDigit}
