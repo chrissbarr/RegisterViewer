@@ -1,0 +1,263 @@
+{
+  "version": 1,
+  "registers": [
+    {
+      "name": "STATUS_CTRL",
+      "description": "Status and control register demonstrating flag and enum fields",
+      "width": 16,
+      "fields": [
+        {
+          "name": "ENABLE",
+          "description": "Module enable flag (default labels)",
+          "msb": 0,
+          "lsb": 0,
+          "type": "flag"
+        },
+        {
+          "name": "LOCKED",
+          "description": "Lock flag with custom labels",
+          "msb": 1,
+          "lsb": 1,
+          "type": "flag",
+          "flagLabels": { "clear": "Unlocked", "set": "Locked" }
+        },
+        {
+          "name": "IRQ",
+          "description": "Interrupt pending",
+          "msb": 2,
+          "lsb": 2,
+          "type": "flag",
+          "flagLabels": { "clear": "No IRQ", "set": "IRQ Pending" }
+        },
+        {
+          "name": "MODE",
+          "description": "Operating mode selector",
+          "msb": 5,
+          "lsb": 3,
+          "type": "enum",
+          "enumEntries": [
+            { "value": 0, "name": "IDLE" },
+            { "value": 1, "name": "RUN" },
+            { "value": 2, "name": "SLEEP" },
+            { "value": 3, "name": "LOW_POWER" },
+            { "value": 4, "name": "CALIBRATE" },
+            { "value": 5, "name": "TEST" },
+            { "value": 6, "name": "BOOTLOADER" },
+            { "value": 7, "name": "RESERVED" }
+          ]
+        },
+        {
+          "name": "PRIORITY",
+          "description": "Interrupt priority (unsigned 3-bit integer)",
+          "msb": 8,
+          "lsb": 6,
+          "type": "integer",
+          "signed": false
+        },
+        {
+          "name": "TRIM",
+          "description": "Oscillator trim (signed 4-bit integer, range -8..+7)",
+          "msb": 12,
+          "lsb": 9,
+          "type": "integer",
+          "signed": true
+        }
+      ]
+    },
+    {
+      "name": "FLOAT_REGS",
+      "description": "Register demonstrating half and single IEEE 754 float widths",
+      "width": 64,
+      "fields": [
+        {
+          "name": "HALF_COEFF",
+          "description": "Half-precision (16-bit) coefficient",
+          "msb": 15,
+          "lsb": 0,
+          "type": "float",
+          "floatType": "half"
+        },
+        {
+          "name": "SINGLE_GAIN",
+          "description": "Single-precision (32-bit) gain",
+          "msb": 47,
+          "lsb": 16,
+          "type": "float",
+          "floatType": "single"
+        }
+      ]
+    },
+    {
+      "name": "SINGLE_FLOAT",
+      "description": "Standalone 32-bit single-precision float register",
+      "width": 32,
+      "fields": [
+        {
+          "name": "VALUE",
+          "description": "IEEE 754 single-precision value",
+          "msb": 31,
+          "lsb": 0,
+          "type": "float",
+          "floatType": "single"
+        }
+      ]
+    },
+    {
+      "name": "DOUBLE_FLOAT",
+      "description": "Full 64-bit double-precision float register",
+      "width": 64,
+      "fields": [
+        {
+          "name": "VALUE",
+          "description": "IEEE 754 double-precision value",
+          "msb": 63,
+          "lsb": 0,
+          "type": "float",
+          "floatType": "double"
+        }
+      ]
+    },
+    {
+      "name": "FIXED_POINT_REG",
+      "description": "Register demonstrating fixed-point (Qm.n) fields",
+      "width": 32,
+      "fields": [
+        {
+          "name": "VOLTAGE",
+          "description": "Q8.8 voltage reading (8 integer bits, 8 fractional bits)",
+          "msb": 15,
+          "lsb": 0,
+          "type": "fixed-point",
+          "qFormat": { "m": 8, "n": 8 }
+        },
+        {
+          "name": "GAIN",
+          "description": "Q4.4 gain coefficient",
+          "msb": 23,
+          "lsb": 16,
+          "type": "fixed-point",
+          "qFormat": { "m": 4, "n": 4 }
+        },
+        {
+          "name": "PHASE",
+          "description": "Q1.7 normalized phase (-1.0 to ~+1.0)",
+          "msb": 31,
+          "lsb": 24,
+          "type": "fixed-point",
+          "qFormat": { "m": 1, "n": 7 },
+          "signed": true
+        }
+      ]
+    },
+    {
+      "name": "GPIO_CFG",
+      "description": "Minimal 8-bit register with no field descriptions",
+      "width": 8,
+      "fields": [
+        {
+          "name": "DIR",
+          "msb": 0,
+          "lsb": 0,
+          "type": "flag",
+          "flagLabels": { "clear": "Input", "set": "Output" }
+        },
+        {
+          "name": "PULL",
+          "msb": 2,
+          "lsb": 1,
+          "type": "enum",
+          "enumEntries": [
+            { "value": 0, "name": "NONE" },
+            { "value": 1, "name": "PULL_UP" },
+            { "value": 2, "name": "PULL_DOWN" },
+            { "value": 3, "name": "RESERVED" }
+          ]
+        },
+        {
+          "name": "DRIVE",
+          "msb": 4,
+          "lsb": 3,
+          "type": "integer",
+          "signed": false
+        },
+        {
+          "name": "SLEW",
+          "msb": 5,
+          "lsb": 5,
+          "type": "flag"
+        },
+        {
+          "name": "SCHMITT",
+          "msb": 6,
+          "lsb": 6,
+          "type": "flag",
+          "flagLabels": { "clear": "Disabled", "set": "Enabled" }
+        },
+        {
+          "name": "OPEN_DRAIN",
+          "msb": 7,
+          "lsb": 7,
+          "type": "flag",
+          "flagLabels": { "clear": "Push-Pull", "set": "Open-Drain" }
+        }
+      ]
+    },
+    {
+      "name": "WIDE_DATA",
+      "description": "64-bit register mixing integers, enums, and flags at wide offsets",
+      "width": 64,
+      "fields": [
+        {
+          "name": "PAYLOAD",
+          "description": "32-bit unsigned data payload",
+          "msb": 31,
+          "lsb": 0,
+          "type": "integer",
+          "signed": false
+        },
+        {
+          "name": "CHANNEL",
+          "description": "DMA channel selector",
+          "msb": 35,
+          "lsb": 32,
+          "type": "enum",
+          "enumEntries": [
+            { "value": 0, "name": "CH0" },
+            { "value": 1, "name": "CH1" },
+            { "value": 2, "name": "CH2" },
+            { "value": 3, "name": "CH3" },
+            { "value": 4, "name": "CH4" },
+            { "value": 5, "name": "CH5" },
+            { "value": 6, "name": "CH6" },
+            { "value": 7, "name": "CH7" }
+          ]
+        },
+        {
+          "name": "OFFSET",
+          "description": "Signed 16-bit address offset",
+          "msb": 55,
+          "lsb": 40,
+          "type": "integer",
+          "signed": true
+        },
+        {
+          "name": "VALID",
+          "description": "Payload valid flag",
+          "msb": 63,
+          "lsb": 63,
+          "type": "flag",
+          "flagLabels": { "clear": "Invalid", "set": "Valid" }
+        }
+      ]
+    }
+  ],
+  "registerValues": {
+    "STATUS_CTRL": "0x1a0b",
+    "FLOAT_REGS": "0x3f8000003c00",
+    "SINGLE_FLOAT": "0x40490fdb",
+    "DOUBLE_FLOAT": "0x400921fb54442d18",
+    "FIXED_POINT_REG": "0xc01280ff",
+    "GPIO_CFG": "0xe5",
+    "WIDE_DATA": "0x80000012000300deadbeef"
+  }
+}

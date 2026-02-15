@@ -1,5 +1,6 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { DropdownMenu, type MenuItem } from '../common/dropdown-menu';
+import { ExamplesDialog } from '../common/examples-dialog';
 import { useAppState, useAppDispatch } from '../../context/app-context';
 import { useEditContext } from '../../context/edit-context';
 import { exportToJson, importFromJson } from '../../utils/storage';
@@ -19,6 +20,18 @@ export function Header() {
   const dispatch = useAppDispatch();
   const { exitEditMode } = useEditContext();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [examplesOpen, setExamplesOpen] = useState(false);
+
+  function applyImportedData(json: string) {
+    const result = importFromJson(json);
+    if (result) {
+      exitEditMode();
+      dispatch({ type: 'IMPORT_REGISTERS', registers: result.registers });
+      for (const [id, value] of Object.entries(result.values)) {
+        dispatch({ type: 'SET_REGISTER_VALUE', registerId: id, value });
+      }
+    }
+  }
 
   function handleExport() {
     const json = exportToJson(state);
@@ -40,15 +53,7 @@ export function Header() {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
-      const result = importFromJson(reader.result as string);
-      if (result) {
-        exitEditMode();
-        dispatch({ type: 'IMPORT_REGISTERS', registers: result.registers });
-        // Restore values for imported registers
-        for (const [id, value] of Object.entries(result.values)) {
-          dispatch({ type: 'SET_REGISTER_VALUE', registerId: id, value });
-        }
-      }
+      applyImportedData(reader.result as string);
     };
     reader.readAsText(file);
     // Reset so the same file can be imported again
@@ -58,6 +63,7 @@ export function Header() {
   const menuItems: MenuItem[] = [
     { kind: 'action', label: 'Import', onAction: handleImport },
     { kind: 'action', label: 'Export', onAction: handleExport },
+    { kind: 'action', label: 'Examples', onAction: () => setExamplesOpen(true) },
     { kind: 'separator' },
     {
       kind: 'toggle',
@@ -84,6 +90,11 @@ export function Header() {
           accept=".json"
           onChange={handleFileChange}
           className="hidden"
+        />
+        <ExamplesDialog
+          open={examplesOpen}
+          onClose={() => setExamplesOpen(false)}
+          onLoad={applyImportedData}
         />
       </div>
     </header>

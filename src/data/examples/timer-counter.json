@@ -1,0 +1,210 @@
+{
+  "version": 1,
+  "registers": [
+    {
+      "name": "TCCR0A",
+      "description": "Timer/Counter0 Control Register A",
+      "width": 8,
+      "fields": [
+        {
+          "name": "WGM0[1:0]",
+          "description": "Waveform Generation Mode bits [1:0] (combine with WGM02 in TCCR0B)",
+          "msb": 1,
+          "lsb": 0,
+          "type": "integer",
+          "signed": false
+        },
+        {
+          "name": "COM0B",
+          "description": "Compare Output Mode for Channel B (non-PWM)",
+          "msb": 5,
+          "lsb": 4,
+          "type": "enum",
+          "enumEntries": [
+            { "value": 0, "name": "DISCONNECTED" },
+            { "value": 1, "name": "TOGGLE" },
+            { "value": 2, "name": "CLEAR" },
+            { "value": 3, "name": "SET" }
+          ]
+        },
+        {
+          "name": "COM0A",
+          "description": "Compare Output Mode for Channel A (non-PWM)",
+          "msb": 7,
+          "lsb": 6,
+          "type": "enum",
+          "enumEntries": [
+            { "value": 0, "name": "DISCONNECTED" },
+            { "value": 1, "name": "TOGGLE" },
+            { "value": 2, "name": "CLEAR" },
+            { "value": 3, "name": "SET" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "TCCR0B",
+      "description": "Timer/Counter0 Control Register B",
+      "width": 8,
+      "fields": [
+        {
+          "name": "CS0",
+          "description": "Clock Select (prescaler)",
+          "msb": 2,
+          "lsb": 0,
+          "type": "enum",
+          "enumEntries": [
+            { "value": 0, "name": "STOPPED" },
+            { "value": 1, "name": "CLK/1" },
+            { "value": 2, "name": "CLK/8" },
+            { "value": 3, "name": "CLK/64" },
+            { "value": 4, "name": "CLK/256" },
+            { "value": 5, "name": "CLK/1024" },
+            { "value": 6, "name": "EXT_FALLING" },
+            { "value": 7, "name": "EXT_RISING" }
+          ]
+        },
+        {
+          "name": "WGM02",
+          "description": "Waveform Generation Mode bit 2 (combine with WGM0[1:0] in TCCR0A)",
+          "msb": 3,
+          "lsb": 3,
+          "type": "flag",
+          "flagLabels": { "clear": "0", "set": "1" }
+        },
+        {
+          "name": "FOC0B",
+          "description": "Force Output Compare B",
+          "msb": 6,
+          "lsb": 6,
+          "type": "flag",
+          "flagLabels": { "clear": "No Force", "set": "Force" }
+        },
+        {
+          "name": "FOC0A",
+          "description": "Force Output Compare A",
+          "msb": 7,
+          "lsb": 7,
+          "type": "flag",
+          "flagLabels": { "clear": "No Force", "set": "Force" }
+        }
+      ]
+    },
+    {
+      "name": "TCNT0",
+      "description": "Timer/Counter0 Register (8-bit counter value)",
+      "width": 8,
+      "fields": [
+        {
+          "name": "TCNT0",
+          "description": "Timer/Counter0 value",
+          "msb": 7,
+          "lsb": 0,
+          "type": "integer",
+          "signed": false
+        }
+      ]
+    },
+    {
+      "name": "OCR0A",
+      "description": "Timer/Counter0 Output Compare Register A",
+      "width": 8,
+      "fields": [
+        {
+          "name": "OCR0A",
+          "description": "Output Compare value for channel A",
+          "msb": 7,
+          "lsb": 0,
+          "type": "integer",
+          "signed": false
+        }
+      ]
+    },
+    {
+      "name": "OCR0B",
+      "description": "Timer/Counter0 Output Compare Register B",
+      "width": 8,
+      "fields": [
+        {
+          "name": "OCR0B",
+          "description": "Output Compare value for channel B",
+          "msb": 7,
+          "lsb": 0,
+          "type": "integer",
+          "signed": false
+        }
+      ]
+    },
+    {
+      "name": "TIMSK0",
+      "description": "Timer/Counter0 Interrupt Mask Register",
+      "width": 8,
+      "fields": [
+        {
+          "name": "TOIE0",
+          "description": "Timer/Counter0 Overflow Interrupt Enable",
+          "msb": 0,
+          "lsb": 0,
+          "type": "flag",
+          "flagLabels": { "clear": "Disabled", "set": "Enabled" }
+        },
+        {
+          "name": "OCIE0A",
+          "description": "Output Compare A Match Interrupt Enable",
+          "msb": 1,
+          "lsb": 1,
+          "type": "flag",
+          "flagLabels": { "clear": "Disabled", "set": "Enabled" }
+        },
+        {
+          "name": "OCIE0B",
+          "description": "Output Compare B Match Interrupt Enable",
+          "msb": 2,
+          "lsb": 2,
+          "type": "flag",
+          "flagLabels": { "clear": "Disabled", "set": "Enabled" }
+        }
+      ]
+    },
+    {
+      "name": "TIFR0",
+      "description": "Timer/Counter0 Interrupt Flag Register",
+      "width": 8,
+      "fields": [
+        {
+          "name": "TOV0",
+          "description": "Timer/Counter0 Overflow Flag",
+          "msb": 0,
+          "lsb": 0,
+          "type": "flag",
+          "flagLabels": { "clear": "No Overflow", "set": "Overflow" }
+        },
+        {
+          "name": "OCF0A",
+          "description": "Output Compare A Match Flag",
+          "msb": 1,
+          "lsb": 1,
+          "type": "flag",
+          "flagLabels": { "clear": "No Match", "set": "Match" }
+        },
+        {
+          "name": "OCF0B",
+          "description": "Output Compare B Match Flag",
+          "msb": 2,
+          "lsb": 2,
+          "type": "flag",
+          "flagLabels": { "clear": "No Match", "set": "Match" }
+        }
+      ]
+    }
+  ],
+  "registerValues": {
+    "TCCR0A": "0x00",
+    "TCCR0B": "0x00",
+    "TCNT0": "0x00",
+    "OCR0A": "0x00",
+    "OCR0B": "0x00",
+    "TIMSK0": "0x00",
+    "TIFR0": "0x00"
+  }
+}

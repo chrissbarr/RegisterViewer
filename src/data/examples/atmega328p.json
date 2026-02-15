@@ -1,0 +1,1452 @@
+{
+  "version": 1,
+  "registers": [
+    {
+      "name": "PINB",
+      "description": "Port B Input Pins Address",
+      "width": 8,
+      "offset": 35,
+      "fields": [
+        { "name": "PINB0", "description": "Port B pin 0 input", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PINB1", "description": "Port B pin 1 input", "msb": 1, "lsb": 1, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PINB2", "description": "Port B pin 2 input", "msb": 2, "lsb": 2, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PINB3", "description": "Port B pin 3 input", "msb": 3, "lsb": 3, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PINB4", "description": "Port B pin 4 input", "msb": 4, "lsb": 4, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PINB5", "description": "Port B pin 5 input", "msb": 5, "lsb": 5, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PINB6", "description": "Port B pin 6 input", "msb": 6, "lsb": 6, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PINB7", "description": "Port B pin 7 input", "msb": 7, "lsb": 7, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } }
+      ]
+    },
+    {
+      "name": "DDRB",
+      "description": "Port B Data Direction Register",
+      "width": 8,
+      "offset": 36,
+      "fields": [
+        { "name": "DDB0", "description": "Port B data direction bit 0", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "Input", "set": "Output" } },
+        { "name": "DDB1", "description": "Port B data direction bit 1", "msb": 1, "lsb": 1, "type": "flag", "flagLabels": { "clear": "Input", "set": "Output" } },
+        { "name": "DDB2", "description": "Port B data direction bit 2", "msb": 2, "lsb": 2, "type": "flag", "flagLabels": { "clear": "Input", "set": "Output" } },
+        { "name": "DDB3", "description": "Port B data direction bit 3", "msb": 3, "lsb": 3, "type": "flag", "flagLabels": { "clear": "Input", "set": "Output" } },
+        { "name": "DDB4", "description": "Port B data direction bit 4", "msb": 4, "lsb": 4, "type": "flag", "flagLabels": { "clear": "Input", "set": "Output" } },
+        { "name": "DDB5", "description": "Port B data direction bit 5", "msb": 5, "lsb": 5, "type": "flag", "flagLabels": { "clear": "Input", "set": "Output" } },
+        { "name": "DDB6", "description": "Port B data direction bit 6", "msb": 6, "lsb": 6, "type": "flag", "flagLabels": { "clear": "Input", "set": "Output" } },
+        { "name": "DDB7", "description": "Port B data direction bit 7", "msb": 7, "lsb": 7, "type": "flag", "flagLabels": { "clear": "Input", "set": "Output" } }
+      ]
+    },
+    {
+      "name": "PORTB",
+      "description": "Port B Data Register",
+      "width": 8,
+      "offset": 37,
+      "fields": [
+        { "name": "PORTB0", "description": "Port B data bit 0", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PORTB1", "description": "Port B data bit 1", "msb": 1, "lsb": 1, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PORTB2", "description": "Port B data bit 2", "msb": 2, "lsb": 2, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PORTB3", "description": "Port B data bit 3", "msb": 3, "lsb": 3, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PORTB4", "description": "Port B data bit 4", "msb": 4, "lsb": 4, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PORTB5", "description": "Port B data bit 5", "msb": 5, "lsb": 5, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PORTB6", "description": "Port B data bit 6", "msb": 6, "lsb": 6, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PORTB7", "description": "Port B data bit 7", "msb": 7, "lsb": 7, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } }
+      ]
+    },
+    {
+      "name": "PINC",
+      "description": "Port C Input Pins Address",
+      "width": 8,
+      "offset": 38,
+      "fields": [
+        { "name": "PINC0", "description": "Port C pin 0 input", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PINC1", "description": "Port C pin 1 input", "msb": 1, "lsb": 1, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PINC2", "description": "Port C pin 2 input", "msb": 2, "lsb": 2, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PINC3", "description": "Port C pin 3 input", "msb": 3, "lsb": 3, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PINC4", "description": "Port C pin 4 input", "msb": 4, "lsb": 4, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PINC5", "description": "Port C pin 5 input", "msb": 5, "lsb": 5, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PINC6", "description": "Port C pin 6 input (RESET pin)", "msb": 6, "lsb": 6, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } }
+      ]
+    },
+    {
+      "name": "DDRC",
+      "description": "Port C Data Direction Register",
+      "width": 8,
+      "offset": 39,
+      "fields": [
+        { "name": "DDC0", "description": "Port C data direction bit 0", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "Input", "set": "Output" } },
+        { "name": "DDC1", "description": "Port C data direction bit 1", "msb": 1, "lsb": 1, "type": "flag", "flagLabels": { "clear": "Input", "set": "Output" } },
+        { "name": "DDC2", "description": "Port C data direction bit 2", "msb": 2, "lsb": 2, "type": "flag", "flagLabels": { "clear": "Input", "set": "Output" } },
+        { "name": "DDC3", "description": "Port C data direction bit 3", "msb": 3, "lsb": 3, "type": "flag", "flagLabels": { "clear": "Input", "set": "Output" } },
+        { "name": "DDC4", "description": "Port C data direction bit 4", "msb": 4, "lsb": 4, "type": "flag", "flagLabels": { "clear": "Input", "set": "Output" } },
+        { "name": "DDC5", "description": "Port C data direction bit 5", "msb": 5, "lsb": 5, "type": "flag", "flagLabels": { "clear": "Input", "set": "Output" } },
+        { "name": "DDC6", "description": "Port C data direction bit 6", "msb": 6, "lsb": 6, "type": "flag", "flagLabels": { "clear": "Input", "set": "Output" } }
+      ]
+    },
+    {
+      "name": "PORTC",
+      "description": "Port C Data Register",
+      "width": 8,
+      "offset": 40,
+      "fields": [
+        { "name": "PORTC0", "description": "Port C data bit 0", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PORTC1", "description": "Port C data bit 1", "msb": 1, "lsb": 1, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PORTC2", "description": "Port C data bit 2", "msb": 2, "lsb": 2, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PORTC3", "description": "Port C data bit 3", "msb": 3, "lsb": 3, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PORTC4", "description": "Port C data bit 4", "msb": 4, "lsb": 4, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PORTC5", "description": "Port C data bit 5", "msb": 5, "lsb": 5, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PORTC6", "description": "Port C data bit 6", "msb": 6, "lsb": 6, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } }
+      ]
+    },
+    {
+      "name": "PIND",
+      "description": "Port D Input Pins Address",
+      "width": 8,
+      "offset": 41,
+      "fields": [
+        { "name": "PIND0", "description": "Port D pin 0 input", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PIND1", "description": "Port D pin 1 input", "msb": 1, "lsb": 1, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PIND2", "description": "Port D pin 2 input", "msb": 2, "lsb": 2, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PIND3", "description": "Port D pin 3 input", "msb": 3, "lsb": 3, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PIND4", "description": "Port D pin 4 input", "msb": 4, "lsb": 4, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PIND5", "description": "Port D pin 5 input", "msb": 5, "lsb": 5, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PIND6", "description": "Port D pin 6 input", "msb": 6, "lsb": 6, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PIND7", "description": "Port D pin 7 input", "msb": 7, "lsb": 7, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } }
+      ]
+    },
+    {
+      "name": "DDRD",
+      "description": "Port D Data Direction Register",
+      "width": 8,
+      "offset": 42,
+      "fields": [
+        { "name": "DDD0", "description": "Port D data direction bit 0", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "Input", "set": "Output" } },
+        { "name": "DDD1", "description": "Port D data direction bit 1", "msb": 1, "lsb": 1, "type": "flag", "flagLabels": { "clear": "Input", "set": "Output" } },
+        { "name": "DDD2", "description": "Port D data direction bit 2", "msb": 2, "lsb": 2, "type": "flag", "flagLabels": { "clear": "Input", "set": "Output" } },
+        { "name": "DDD3", "description": "Port D data direction bit 3", "msb": 3, "lsb": 3, "type": "flag", "flagLabels": { "clear": "Input", "set": "Output" } },
+        { "name": "DDD4", "description": "Port D data direction bit 4", "msb": 4, "lsb": 4, "type": "flag", "flagLabels": { "clear": "Input", "set": "Output" } },
+        { "name": "DDD5", "description": "Port D data direction bit 5", "msb": 5, "lsb": 5, "type": "flag", "flagLabels": { "clear": "Input", "set": "Output" } },
+        { "name": "DDD6", "description": "Port D data direction bit 6", "msb": 6, "lsb": 6, "type": "flag", "flagLabels": { "clear": "Input", "set": "Output" } },
+        { "name": "DDD7", "description": "Port D data direction bit 7", "msb": 7, "lsb": 7, "type": "flag", "flagLabels": { "clear": "Input", "set": "Output" } }
+      ]
+    },
+    {
+      "name": "PORTD",
+      "description": "Port D Data Register",
+      "width": 8,
+      "offset": 43,
+      "fields": [
+        { "name": "PORTD0", "description": "Port D data bit 0", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PORTD1", "description": "Port D data bit 1", "msb": 1, "lsb": 1, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PORTD2", "description": "Port D data bit 2", "msb": 2, "lsb": 2, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PORTD3", "description": "Port D data bit 3", "msb": 3, "lsb": 3, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PORTD4", "description": "Port D data bit 4", "msb": 4, "lsb": 4, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PORTD5", "description": "Port D data bit 5", "msb": 5, "lsb": 5, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PORTD6", "description": "Port D data bit 6", "msb": 6, "lsb": 6, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } },
+        { "name": "PORTD7", "description": "Port D data bit 7", "msb": 7, "lsb": 7, "type": "flag", "flagLabels": { "clear": "Low", "set": "High" } }
+      ]
+    },
+    {
+      "name": "TIFR0",
+      "description": "Timer/Counter0 Interrupt Flag Register",
+      "width": 8,
+      "offset": 53,
+      "fields": [
+        { "name": "TOV0", "description": "Timer/Counter0 Overflow Flag", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "No Overflow", "set": "Overflow" } },
+        { "name": "OCF0A", "description": "Output Compare A Match Flag", "msb": 1, "lsb": 1, "type": "flag", "flagLabels": { "clear": "No Match", "set": "Match" } },
+        { "name": "OCF0B", "description": "Output Compare B Match Flag", "msb": 2, "lsb": 2, "type": "flag", "flagLabels": { "clear": "No Match", "set": "Match" } }
+      ]
+    },
+    {
+      "name": "TIFR1",
+      "description": "Timer/Counter1 Interrupt Flag Register",
+      "width": 8,
+      "offset": 54,
+      "fields": [
+        { "name": "TOV1", "description": "Timer/Counter1 Overflow Flag", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "No Overflow", "set": "Overflow" } },
+        { "name": "OCF1A", "description": "Output Compare 1A Match Flag", "msb": 1, "lsb": 1, "type": "flag", "flagLabels": { "clear": "No Match", "set": "Match" } },
+        { "name": "OCF1B", "description": "Output Compare 1B Match Flag", "msb": 2, "lsb": 2, "type": "flag", "flagLabels": { "clear": "No Match", "set": "Match" } },
+        { "name": "ICF1", "description": "Input Capture 1 Flag", "msb": 5, "lsb": 5, "type": "flag", "flagLabels": { "clear": "No Capture", "set": "Capture" } }
+      ]
+    },
+    {
+      "name": "TIFR2",
+      "description": "Timer/Counter2 Interrupt Flag Register",
+      "width": 8,
+      "offset": 55,
+      "fields": [
+        { "name": "TOV2", "description": "Timer/Counter2 Overflow Flag", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "No Overflow", "set": "Overflow" } },
+        { "name": "OCF2A", "description": "Output Compare 2A Match Flag", "msb": 1, "lsb": 1, "type": "flag", "flagLabels": { "clear": "No Match", "set": "Match" } },
+        { "name": "OCF2B", "description": "Output Compare 2B Match Flag", "msb": 2, "lsb": 2, "type": "flag", "flagLabels": { "clear": "No Match", "set": "Match" } }
+      ]
+    },
+    {
+      "name": "PCIFR",
+      "description": "Pin Change Interrupt Flag Register",
+      "width": 8,
+      "offset": 59,
+      "fields": [
+        { "name": "PCIF0", "description": "Pin Change Interrupt Flag 0", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "No Change", "set": "Change" } },
+        { "name": "PCIF1", "description": "Pin Change Interrupt Flag 1", "msb": 1, "lsb": 1, "type": "flag", "flagLabels": { "clear": "No Change", "set": "Change" } },
+        { "name": "PCIF2", "description": "Pin Change Interrupt Flag 2", "msb": 2, "lsb": 2, "type": "flag", "flagLabels": { "clear": "No Change", "set": "Change" } }
+      ]
+    },
+    {
+      "name": "EIFR",
+      "description": "External Interrupt Flag Register",
+      "width": 8,
+      "offset": 60,
+      "fields": [
+        { "name": "INTF0", "description": "External Interrupt Flag 0", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "No Interrupt", "set": "Interrupt" } },
+        { "name": "INTF1", "description": "External Interrupt Flag 1", "msb": 1, "lsb": 1, "type": "flag", "flagLabels": { "clear": "No Interrupt", "set": "Interrupt" } }
+      ]
+    },
+    {
+      "name": "EIMSK",
+      "description": "External Interrupt Mask Register",
+      "width": 8,
+      "offset": 61,
+      "fields": [
+        { "name": "INT0", "description": "External Interrupt Request 0 Enable", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "INT1", "description": "External Interrupt Request 1 Enable", "msb": 1, "lsb": 1, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } }
+      ]
+    },
+    {
+      "name": "GPIOR0",
+      "description": "General Purpose I/O Register 0",
+      "width": 8,
+      "offset": 62,
+      "fields": [
+        { "name": "GPIOR0", "description": "General purpose I/O register 0 value", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+      ]
+    },
+    {
+      "name": "EECR",
+      "description": "EEPROM Control Register",
+      "width": 8,
+      "offset": 63,
+      "fields": [
+        { "name": "EERE", "description": "EEPROM Read Enable", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "Idle", "set": "Read" } },
+        { "name": "EEPE", "description": "EEPROM Write Enable", "msb": 1, "lsb": 1, "type": "flag", "flagLabels": { "clear": "Idle", "set": "Write" } },
+        { "name": "EEMPE", "description": "EEPROM Master Write Enable", "msb": 2, "lsb": 2, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "EERIE", "description": "EEPROM Ready Interrupt Enable", "msb": 3, "lsb": 3, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        {
+          "name": "EEPM",
+          "description": "EEPROM Programming Mode",
+          "msb": 5,
+          "lsb": 4,
+          "type": "enum",
+          "enumEntries": [
+            { "value": 0, "name": "ERASE_WRITE" },
+            { "value": 1, "name": "ERASE_ONLY" },
+            { "value": 2, "name": "WRITE_ONLY" },
+            { "value": 3, "name": "RESERVED" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "EEDR",
+      "description": "EEPROM Data Register",
+      "width": 8,
+      "offset": 64,
+      "fields": [
+        { "name": "EEDR", "description": "EEPROM data value", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+      ]
+    },
+    {
+      "name": "EEARL",
+      "description": "EEPROM Address Register Low",
+      "width": 8,
+      "offset": 65,
+      "fields": [
+        { "name": "EEARL", "description": "EEPROM address bits 7:0", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+      ]
+    },
+    {
+      "name": "EEARH",
+      "description": "EEPROM Address Register High",
+      "width": 8,
+      "offset": 66,
+      "fields": [
+        { "name": "EEAR8", "description": "EEPROM address bit 8", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "0", "set": "1" } }
+      ]
+    },
+    {
+      "name": "GTCCR",
+      "description": "General Timer/Counter Control Register",
+      "width": 8,
+      "offset": 67,
+      "fields": [
+        { "name": "PSRSYNC", "description": "Prescaler Reset for Timer/Counter0 and Timer/Counter1", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "Normal", "set": "Reset" } },
+        { "name": "PSRASY", "description": "Prescaler Reset Timer/Counter2", "msb": 1, "lsb": 1, "type": "flag", "flagLabels": { "clear": "Normal", "set": "Reset" } },
+        { "name": "TSM", "description": "Timer/Counter Synchronization Mode", "msb": 7, "lsb": 7, "type": "flag", "flagLabels": { "clear": "Normal", "set": "Sync Hold" } }
+      ]
+    },
+    {
+      "name": "TCCR0A",
+      "description": "Timer/Counter0 Control Register A",
+      "width": 8,
+      "offset": 68,
+      "fields": [
+        {
+          "name": "WGM0[1:0]",
+          "description": "Waveform Generation Mode bits [1:0] (combine with WGM02 in TCCR0B)",
+          "msb": 1,
+          "lsb": 0,
+          "type": "integer",
+          "signed": false
+        },
+        {
+          "name": "COM0B",
+          "description": "Compare Output Mode for Channel B",
+          "msb": 5,
+          "lsb": 4,
+          "type": "enum",
+          "enumEntries": [
+            { "value": 0, "name": "DISCONNECTED" },
+            { "value": 1, "name": "TOGGLE" },
+            { "value": 2, "name": "CLEAR" },
+            { "value": 3, "name": "SET" }
+          ]
+        },
+        {
+          "name": "COM0A",
+          "description": "Compare Output Mode for Channel A",
+          "msb": 7,
+          "lsb": 6,
+          "type": "enum",
+          "enumEntries": [
+            { "value": 0, "name": "DISCONNECTED" },
+            { "value": 1, "name": "TOGGLE" },
+            { "value": 2, "name": "CLEAR" },
+            { "value": 3, "name": "SET" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "TCCR0B",
+      "description": "Timer/Counter0 Control Register B",
+      "width": 8,
+      "offset": 69,
+      "fields": [
+        {
+          "name": "CS0",
+          "description": "Clock Select (prescaler)",
+          "msb": 2,
+          "lsb": 0,
+          "type": "enum",
+          "enumEntries": [
+            { "value": 0, "name": "STOPPED" },
+            { "value": 1, "name": "CLK/1" },
+            { "value": 2, "name": "CLK/8" },
+            { "value": 3, "name": "CLK/64" },
+            { "value": 4, "name": "CLK/256" },
+            { "value": 5, "name": "CLK/1024" },
+            { "value": 6, "name": "EXT_FALLING" },
+            { "value": 7, "name": "EXT_RISING" }
+          ]
+        },
+        { "name": "WGM02", "description": "Waveform Generation Mode bit 2", "msb": 3, "lsb": 3, "type": "flag", "flagLabels": { "clear": "0", "set": "1" } },
+        { "name": "FOC0B", "description": "Force Output Compare B", "msb": 6, "lsb": 6, "type": "flag", "flagLabels": { "clear": "No Force", "set": "Force" } },
+        { "name": "FOC0A", "description": "Force Output Compare A", "msb": 7, "lsb": 7, "type": "flag", "flagLabels": { "clear": "No Force", "set": "Force" } }
+      ]
+    },
+    {
+      "name": "TCNT0",
+      "description": "Timer/Counter0 Register (8-bit counter value)",
+      "width": 8,
+      "offset": 70,
+      "fields": [
+        { "name": "TCNT0", "description": "Timer/Counter0 value", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+      ]
+    },
+    {
+      "name": "OCR0A",
+      "description": "Timer/Counter0 Output Compare Register A",
+      "width": 8,
+      "offset": 71,
+      "fields": [
+        { "name": "OCR0A", "description": "Output Compare value for channel A", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+      ]
+    },
+    {
+      "name": "OCR0B",
+      "description": "Timer/Counter0 Output Compare Register B",
+      "width": 8,
+      "offset": 72,
+      "fields": [
+        { "name": "OCR0B", "description": "Output Compare value for channel B", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+      ]
+    },
+    {
+      "name": "GPIOR1",
+      "description": "General Purpose I/O Register 1",
+      "width": 8,
+      "offset": 74,
+      "fields": [
+        { "name": "GPIOR1", "description": "General purpose I/O register 1 value", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+      ]
+    },
+    {
+      "name": "GPIOR2",
+      "description": "General Purpose I/O Register 2",
+      "width": 8,
+      "offset": 75,
+      "fields": [
+        { "name": "GPIOR2", "description": "General purpose I/O register 2 value", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+      ]
+    },
+    {
+      "name": "SPCR",
+      "description": "SPI Control Register",
+      "width": 8,
+      "offset": 76,
+      "fields": [
+        {
+          "name": "SPR",
+          "description": "SPI Clock Rate Select",
+          "msb": 1,
+          "lsb": 0,
+          "type": "enum",
+          "enumEntries": [
+            { "value": 0, "name": "FOSC/4" },
+            { "value": 1, "name": "FOSC/16" },
+            { "value": 2, "name": "FOSC/64" },
+            { "value": 3, "name": "FOSC/128" }
+          ]
+        },
+        { "name": "CPHA", "description": "Clock Phase", "msb": 2, "lsb": 2, "type": "flag", "flagLabels": { "clear": "Sample Leading", "set": "Sample Trailing" } },
+        { "name": "CPOL", "description": "Clock Polarity", "msb": 3, "lsb": 3, "type": "flag", "flagLabels": { "clear": "SCK Low Idle", "set": "SCK High Idle" } },
+        { "name": "MSTR", "description": "Master/Slave Select", "msb": 4, "lsb": 4, "type": "flag", "flagLabels": { "clear": "Slave", "set": "Master" } },
+        { "name": "DORD", "description": "Data Order", "msb": 5, "lsb": 5, "type": "flag", "flagLabels": { "clear": "MSB First", "set": "LSB First" } },
+        { "name": "SPE", "description": "SPI Enable", "msb": 6, "lsb": 6, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "SPIE", "description": "SPI Interrupt Enable", "msb": 7, "lsb": 7, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } }
+      ]
+    },
+    {
+      "name": "SPSR",
+      "description": "SPI Status Register",
+      "width": 8,
+      "offset": 77,
+      "fields": [
+        { "name": "SPI2X", "description": "Double SPI Speed Bit", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "Normal Speed", "set": "Double Speed" } },
+        { "name": "WCOL", "description": "Write Collision Flag", "msb": 6, "lsb": 6, "type": "flag", "flagLabels": { "clear": "No Collision", "set": "Collision" } },
+        { "name": "SPIF", "description": "SPI Interrupt Flag", "msb": 7, "lsb": 7, "type": "flag", "flagLabels": { "clear": "Not Complete", "set": "Complete" } }
+      ]
+    },
+    {
+      "name": "SPDR",
+      "description": "SPI Data Register",
+      "width": 8,
+      "offset": 78,
+      "fields": [
+        { "name": "SPDR", "description": "SPI data value", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+      ]
+    },
+    {
+      "name": "ACSR",
+      "description": "Analog Comparator Control and Status Register",
+      "width": 8,
+      "offset": 80,
+      "fields": [
+        {
+          "name": "ACIS",
+          "description": "Analog Comparator Interrupt Mode Select",
+          "msb": 1,
+          "lsb": 0,
+          "type": "enum",
+          "enumEntries": [
+            { "value": 0, "name": "TOGGLE" },
+            { "value": 1, "name": "RESERVED" },
+            { "value": 2, "name": "FALLING_EDGE" },
+            { "value": 3, "name": "RISING_EDGE" }
+          ]
+        },
+        { "name": "ACIC", "description": "Analog Comparator Input Capture Enable", "msb": 2, "lsb": 2, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "ACIE", "description": "Analog Comparator Interrupt Enable", "msb": 3, "lsb": 3, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "ACI", "description": "Analog Comparator Interrupt Flag", "msb": 4, "lsb": 4, "type": "flag", "flagLabels": { "clear": "No Interrupt", "set": "Interrupt" } },
+        { "name": "ACO", "description": "Analog Comparator Output", "msb": 5, "lsb": 5, "type": "flag", "flagLabels": { "clear": "AIN0 < AIN1", "set": "AIN0 > AIN1" } },
+        { "name": "ACBG", "description": "Analog Comparator Bandgap Select", "msb": 6, "lsb": 6, "type": "flag", "flagLabels": { "clear": "AIN0", "set": "Bandgap" } },
+        { "name": "ACD", "description": "Analog Comparator Disable", "msb": 7, "lsb": 7, "type": "flag", "flagLabels": { "clear": "Enabled", "set": "Disabled" } }
+      ]
+    },
+    {
+      "name": "SMCR",
+      "description": "Sleep Mode Control Register",
+      "width": 8,
+      "offset": 83,
+      "fields": [
+        { "name": "SE", "description": "Sleep Enable", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        {
+          "name": "SM",
+          "description": "Sleep Mode Select",
+          "msb": 3,
+          "lsb": 1,
+          "type": "enum",
+          "enumEntries": [
+            { "value": 0, "name": "IDLE" },
+            { "value": 1, "name": "ADC_NOISE_REDUCTION" },
+            { "value": 2, "name": "POWER_DOWN" },
+            { "value": 3, "name": "POWER_SAVE" },
+            { "value": 4, "name": "RESERVED" },
+            { "value": 5, "name": "RESERVED" },
+            { "value": 6, "name": "STANDBY" },
+            { "value": 7, "name": "EXT_STANDBY" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "MCUSR",
+      "description": "MCU Status Register",
+      "width": 8,
+      "offset": 84,
+      "fields": [
+        { "name": "PORF", "description": "Power-on Reset Flag", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "No Reset", "set": "Reset" } },
+        { "name": "EXTRF", "description": "External Reset Flag", "msb": 1, "lsb": 1, "type": "flag", "flagLabels": { "clear": "No Reset", "set": "Reset" } },
+        { "name": "BORF", "description": "Brown-out Reset Flag", "msb": 2, "lsb": 2, "type": "flag", "flagLabels": { "clear": "No Reset", "set": "Reset" } },
+        { "name": "WDRF", "description": "Watchdog System Reset Flag", "msb": 3, "lsb": 3, "type": "flag", "flagLabels": { "clear": "No Reset", "set": "Reset" } }
+      ]
+    },
+    {
+      "name": "MCUCR",
+      "description": "MCU Control Register",
+      "width": 8,
+      "offset": 85,
+      "fields": [
+        { "name": "IVCE", "description": "Interrupt Vector Change Enable", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "IVSEL", "description": "Interrupt Vector Select", "msb": 1, "lsb": 1, "type": "flag", "flagLabels": { "clear": "App Section", "set": "Boot Section" } },
+        { "name": "PUD", "description": "Pull-up Disable", "msb": 4, "lsb": 4, "type": "flag", "flagLabels": { "clear": "Enabled", "set": "Disabled" } },
+        { "name": "BODSE", "description": "BOD Sleep Enable", "msb": 5, "lsb": 5, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "BODS", "description": "BOD Sleep", "msb": 6, "lsb": 6, "type": "flag", "flagLabels": { "clear": "BOD Active", "set": "BOD Disabled" } }
+      ]
+    },
+    {
+      "name": "SPMCSR",
+      "description": "Store Program Memory Control and Status Register",
+      "width": 8,
+      "offset": 87,
+      "fields": [
+        { "name": "SELFPRGEN", "description": "Self Programming Enable", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "PGERS", "description": "Page Erase", "msb": 1, "lsb": 1, "type": "flag", "flagLabels": { "clear": "Idle", "set": "Erase" } },
+        { "name": "PGWRT", "description": "Page Write", "msb": 2, "lsb": 2, "type": "flag", "flagLabels": { "clear": "Idle", "set": "Write" } },
+        { "name": "BLBSET", "description": "Boot Lock Bit Set", "msb": 3, "lsb": 3, "type": "flag", "flagLabels": { "clear": "Idle", "set": "Set" } },
+        { "name": "RWWSRE", "description": "Read-While-Write Section Read Enable", "msb": 4, "lsb": 4, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "RWWSB", "description": "Read-While-Write Section Busy", "msb": 6, "lsb": 6, "type": "flag", "flagLabels": { "clear": "Ready", "set": "Busy" } },
+        { "name": "SPMIE", "description": "SPM Interrupt Enable", "msb": 7, "lsb": 7, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } }
+      ]
+    },
+    {
+      "name": "SPL",
+      "description": "Stack Pointer Low",
+      "width": 8,
+      "offset": 93,
+      "fields": [
+        { "name": "SPL", "description": "Stack Pointer bits 7:0", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+      ]
+    },
+    {
+      "name": "SPH",
+      "description": "Stack Pointer High",
+      "width": 8,
+      "offset": 94,
+      "fields": [
+        { "name": "SP[10:8]", "description": "Stack Pointer bits 10:8", "msb": 2, "lsb": 0, "type": "integer", "signed": false }
+      ]
+    },
+    {
+      "name": "SREG",
+      "description": "AVR Status Register",
+      "width": 8,
+      "offset": 95,
+      "fields": [
+        { "name": "C", "description": "Carry Flag", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "0", "set": "1" } },
+        { "name": "Z", "description": "Zero Flag", "msb": 1, "lsb": 1, "type": "flag", "flagLabels": { "clear": "0", "set": "1" } },
+        { "name": "N", "description": "Negative Flag", "msb": 2, "lsb": 2, "type": "flag", "flagLabels": { "clear": "0", "set": "1" } },
+        { "name": "V", "description": "Two's Complement Overflow Flag", "msb": 3, "lsb": 3, "type": "flag", "flagLabels": { "clear": "0", "set": "1" } },
+        { "name": "S", "description": "Sign Bit (N xor V)", "msb": 4, "lsb": 4, "type": "flag", "flagLabels": { "clear": "0", "set": "1" } },
+        { "name": "H", "description": "Half Carry Flag", "msb": 5, "lsb": 5, "type": "flag", "flagLabels": { "clear": "0", "set": "1" } },
+        { "name": "T", "description": "Bit Copy Storage", "msb": 6, "lsb": 6, "type": "flag", "flagLabels": { "clear": "0", "set": "1" } },
+        { "name": "I", "description": "Global Interrupt Enable", "msb": 7, "lsb": 7, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } }
+      ]
+    },
+    {
+      "name": "WDTCSR",
+      "description": "Watchdog Timer Control Register",
+      "width": 8,
+      "offset": 96,
+      "fields": [
+        {
+          "name": "WDP[2:0]",
+          "description": "Watchdog Timer Prescaler bits 2:0 (combine with WDP3)",
+          "msb": 2,
+          "lsb": 0,
+          "type": "integer",
+          "signed": false
+        },
+        { "name": "WDE", "description": "Watchdog System Reset Enable", "msb": 3, "lsb": 3, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "WDCE", "description": "Watchdog Change Enable", "msb": 4, "lsb": 4, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "WDP3", "description": "Watchdog Timer Prescaler bit 3", "msb": 5, "lsb": 5, "type": "flag", "flagLabels": { "clear": "0", "set": "1" } },
+        { "name": "WDIE", "description": "Watchdog Interrupt Enable", "msb": 6, "lsb": 6, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "WDIF", "description": "Watchdog Interrupt Flag", "msb": 7, "lsb": 7, "type": "flag", "flagLabels": { "clear": "No Timeout", "set": "Timeout" } }
+      ]
+    },
+    {
+      "name": "CLKPR",
+      "description": "Clock Prescale Register",
+      "width": 8,
+      "offset": 97,
+      "fields": [
+        {
+          "name": "CLKPS",
+          "description": "Clock Prescaler Select",
+          "msb": 3,
+          "lsb": 0,
+          "type": "enum",
+          "enumEntries": [
+            { "value": 0, "name": "DIV_1" },
+            { "value": 1, "name": "DIV_2" },
+            { "value": 2, "name": "DIV_4" },
+            { "value": 3, "name": "DIV_8" },
+            { "value": 4, "name": "DIV_16" },
+            { "value": 5, "name": "DIV_32" },
+            { "value": 6, "name": "DIV_64" },
+            { "value": 7, "name": "DIV_128" },
+            { "value": 8, "name": "DIV_256" }
+          ]
+        },
+        { "name": "CLKPCE", "description": "Clock Prescaler Change Enable", "msb": 7, "lsb": 7, "type": "flag", "flagLabels": { "clear": "Locked", "set": "Unlocked" } }
+      ]
+    },
+    {
+      "name": "PRR",
+      "description": "Power Reduction Register",
+      "width": 8,
+      "offset": 100,
+      "fields": [
+        { "name": "PRADC", "description": "Power Reduction ADC", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "Enabled", "set": "Shut Down" } },
+        { "name": "PRUSART0", "description": "Power Reduction USART0", "msb": 1, "lsb": 1, "type": "flag", "flagLabels": { "clear": "Enabled", "set": "Shut Down" } },
+        { "name": "PRSPI", "description": "Power Reduction SPI", "msb": 2, "lsb": 2, "type": "flag", "flagLabels": { "clear": "Enabled", "set": "Shut Down" } },
+        { "name": "PRTIM1", "description": "Power Reduction Timer/Counter1", "msb": 3, "lsb": 3, "type": "flag", "flagLabels": { "clear": "Enabled", "set": "Shut Down" } },
+        { "name": "PRTIM0", "description": "Power Reduction Timer/Counter0", "msb": 5, "lsb": 5, "type": "flag", "flagLabels": { "clear": "Enabled", "set": "Shut Down" } },
+        { "name": "PRTIM2", "description": "Power Reduction Timer/Counter2", "msb": 6, "lsb": 6, "type": "flag", "flagLabels": { "clear": "Enabled", "set": "Shut Down" } },
+        { "name": "PRTWI", "description": "Power Reduction TWI", "msb": 7, "lsb": 7, "type": "flag", "flagLabels": { "clear": "Enabled", "set": "Shut Down" } }
+      ]
+    },
+    {
+      "name": "OSCCAL",
+      "description": "Oscillator Calibration Register",
+      "width": 8,
+      "offset": 102,
+      "fields": [
+        { "name": "CAL", "description": "Oscillator calibration value", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+      ]
+    },
+    {
+      "name": "PCICR",
+      "description": "Pin Change Interrupt Control Register",
+      "width": 8,
+      "offset": 104,
+      "fields": [
+        { "name": "PCIE0", "description": "Pin Change Interrupt Enable 0 (PCINT7..0)", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "PCIE1", "description": "Pin Change Interrupt Enable 1 (PCINT14..8)", "msb": 1, "lsb": 1, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "PCIE2", "description": "Pin Change Interrupt Enable 2 (PCINT23..16)", "msb": 2, "lsb": 2, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } }
+      ]
+    },
+    {
+      "name": "EICRA",
+      "description": "External Interrupt Control Register A",
+      "width": 8,
+      "offset": 105,
+      "fields": [
+        {
+          "name": "ISC0",
+          "description": "Interrupt Sense Control 0",
+          "msb": 1,
+          "lsb": 0,
+          "type": "enum",
+          "enumEntries": [
+            { "value": 0, "name": "LOW_LEVEL" },
+            { "value": 1, "name": "ANY_CHANGE" },
+            { "value": 2, "name": "FALLING_EDGE" },
+            { "value": 3, "name": "RISING_EDGE" }
+          ]
+        },
+        {
+          "name": "ISC1",
+          "description": "Interrupt Sense Control 1",
+          "msb": 3,
+          "lsb": 2,
+          "type": "enum",
+          "enumEntries": [
+            { "value": 0, "name": "LOW_LEVEL" },
+            { "value": 1, "name": "ANY_CHANGE" },
+            { "value": 2, "name": "FALLING_EDGE" },
+            { "value": 3, "name": "RISING_EDGE" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "PCMSK0",
+      "description": "Pin Change Mask Register 0 (PCINT7..0)",
+      "width": 8,
+      "offset": 107,
+      "fields": [
+        { "name": "PCINT0", "description": "Pin Change Enable Mask bit 0", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "PCINT1", "description": "Pin Change Enable Mask bit 1", "msb": 1, "lsb": 1, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "PCINT2", "description": "Pin Change Enable Mask bit 2", "msb": 2, "lsb": 2, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "PCINT3", "description": "Pin Change Enable Mask bit 3", "msb": 3, "lsb": 3, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "PCINT4", "description": "Pin Change Enable Mask bit 4", "msb": 4, "lsb": 4, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "PCINT5", "description": "Pin Change Enable Mask bit 5", "msb": 5, "lsb": 5, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "PCINT6", "description": "Pin Change Enable Mask bit 6", "msb": 6, "lsb": 6, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "PCINT7", "description": "Pin Change Enable Mask bit 7", "msb": 7, "lsb": 7, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } }
+      ]
+    },
+    {
+      "name": "PCMSK1",
+      "description": "Pin Change Mask Register 1 (PCINT14..8)",
+      "width": 8,
+      "offset": 108,
+      "fields": [
+        { "name": "PCINT8", "description": "Pin Change Enable Mask bit 8", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "PCINT9", "description": "Pin Change Enable Mask bit 9", "msb": 1, "lsb": 1, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "PCINT10", "description": "Pin Change Enable Mask bit 10", "msb": 2, "lsb": 2, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "PCINT11", "description": "Pin Change Enable Mask bit 11", "msb": 3, "lsb": 3, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "PCINT12", "description": "Pin Change Enable Mask bit 12", "msb": 4, "lsb": 4, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "PCINT13", "description": "Pin Change Enable Mask bit 13", "msb": 5, "lsb": 5, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "PCINT14", "description": "Pin Change Enable Mask bit 14", "msb": 6, "lsb": 6, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } }
+      ]
+    },
+    {
+      "name": "PCMSK2",
+      "description": "Pin Change Mask Register 2 (PCINT23..16)",
+      "width": 8,
+      "offset": 109,
+      "fields": [
+        { "name": "PCINT16", "description": "Pin Change Enable Mask bit 16", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "PCINT17", "description": "Pin Change Enable Mask bit 17", "msb": 1, "lsb": 1, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "PCINT18", "description": "Pin Change Enable Mask bit 18", "msb": 2, "lsb": 2, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "PCINT19", "description": "Pin Change Enable Mask bit 19", "msb": 3, "lsb": 3, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "PCINT20", "description": "Pin Change Enable Mask bit 20", "msb": 4, "lsb": 4, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "PCINT21", "description": "Pin Change Enable Mask bit 21", "msb": 5, "lsb": 5, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "PCINT22", "description": "Pin Change Enable Mask bit 22", "msb": 6, "lsb": 6, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "PCINT23", "description": "Pin Change Enable Mask bit 23", "msb": 7, "lsb": 7, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } }
+      ]
+    },
+    {
+      "name": "TIMSK0",
+      "description": "Timer/Counter0 Interrupt Mask Register",
+      "width": 8,
+      "offset": 110,
+      "fields": [
+        { "name": "TOIE0", "description": "Timer/Counter0 Overflow Interrupt Enable", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "OCIE0A", "description": "Output Compare A Match Interrupt Enable", "msb": 1, "lsb": 1, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "OCIE0B", "description": "Output Compare B Match Interrupt Enable", "msb": 2, "lsb": 2, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } }
+      ]
+    },
+    {
+      "name": "TIMSK1",
+      "description": "Timer/Counter1 Interrupt Mask Register",
+      "width": 8,
+      "offset": 111,
+      "fields": [
+        { "name": "TOIE1", "description": "Timer/Counter1 Overflow Interrupt Enable", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "OCIE1A", "description": "Output Compare 1A Match Interrupt Enable", "msb": 1, "lsb": 1, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "OCIE1B", "description": "Output Compare 1B Match Interrupt Enable", "msb": 2, "lsb": 2, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "ICIE1", "description": "Input Capture Interrupt Enable", "msb": 5, "lsb": 5, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } }
+      ]
+    },
+    {
+      "name": "TIMSK2",
+      "description": "Timer/Counter2 Interrupt Mask Register",
+      "width": 8,
+      "offset": 112,
+      "fields": [
+        { "name": "TOIE2", "description": "Timer/Counter2 Overflow Interrupt Enable", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "OCIE2A", "description": "Output Compare 2A Match Interrupt Enable", "msb": 1, "lsb": 1, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "OCIE2B", "description": "Output Compare 2B Match Interrupt Enable", "msb": 2, "lsb": 2, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } }
+      ]
+    },
+    {
+      "name": "ADCL",
+      "description": "ADC Data Register Low",
+      "width": 8,
+      "offset": 120,
+      "fields": [
+        { "name": "ADCL", "description": "ADC result bits 7:0", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+      ]
+    },
+    {
+      "name": "ADCH",
+      "description": "ADC Data Register High",
+      "width": 8,
+      "offset": 121,
+      "fields": [
+        { "name": "ADCH", "description": "ADC result bits 9:8 (right adjusted) or 9:2 (left adjusted)", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+      ]
+    },
+    {
+      "name": "ADCSRA",
+      "description": "ADC Control and Status Register A",
+      "width": 8,
+      "offset": 122,
+      "fields": [
+        {
+          "name": "ADPS",
+          "description": "ADC Prescaler Select",
+          "msb": 2,
+          "lsb": 0,
+          "type": "enum",
+          "enumEntries": [
+            { "value": 0, "name": "DIV_2" },
+            { "value": 1, "name": "DIV_2" },
+            { "value": 2, "name": "DIV_4" },
+            { "value": 3, "name": "DIV_8" },
+            { "value": 4, "name": "DIV_16" },
+            { "value": 5, "name": "DIV_32" },
+            { "value": 6, "name": "DIV_64" },
+            { "value": 7, "name": "DIV_128" }
+          ]
+        },
+        { "name": "ADIE", "description": "ADC Interrupt Enable", "msb": 3, "lsb": 3, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "ADIF", "description": "ADC Interrupt Flag", "msb": 4, "lsb": 4, "type": "flag", "flagLabels": { "clear": "Not Complete", "set": "Complete" } },
+        { "name": "ADATE", "description": "ADC Auto Trigger Enable", "msb": 5, "lsb": 5, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "ADSC", "description": "ADC Start Conversion", "msb": 6, "lsb": 6, "type": "flag", "flagLabels": { "clear": "Idle", "set": "Start" } },
+        { "name": "ADEN", "description": "ADC Enable", "msb": 7, "lsb": 7, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } }
+      ]
+    },
+    {
+      "name": "ADCSRB",
+      "description": "ADC Control and Status Register B",
+      "width": 8,
+      "offset": 123,
+      "fields": [
+        {
+          "name": "ADTS",
+          "description": "ADC Auto Trigger Source",
+          "msb": 2,
+          "lsb": 0,
+          "type": "enum",
+          "enumEntries": [
+            { "value": 0, "name": "FREE_RUNNING" },
+            { "value": 1, "name": "ANALOG_COMP" },
+            { "value": 2, "name": "EXT_INT0" },
+            { "value": 3, "name": "TC0_COMP_A" },
+            { "value": 4, "name": "TC0_OVF" },
+            { "value": 5, "name": "TC1_COMP_B" },
+            { "value": 6, "name": "TC1_OVF" },
+            { "value": 7, "name": "TC1_CAPTURE" }
+          ]
+        },
+        { "name": "ACME", "description": "Analog Comparator Multiplexer Enable", "msb": 6, "lsb": 6, "type": "flag", "flagLabels": { "clear": "AIN1", "set": "ADC MUX" } }
+      ]
+    },
+    {
+      "name": "ADMUX",
+      "description": "ADC Multiplexer Selection Register",
+      "width": 8,
+      "offset": 124,
+      "fields": [
+        {
+          "name": "MUX",
+          "description": "Analog Channel Selection",
+          "msb": 3,
+          "lsb": 0,
+          "type": "enum",
+          "enumEntries": [
+            { "value": 0, "name": "ADC0" },
+            { "value": 1, "name": "ADC1" },
+            { "value": 2, "name": "ADC2" },
+            { "value": 3, "name": "ADC3" },
+            { "value": 4, "name": "ADC4" },
+            { "value": 5, "name": "ADC5" },
+            { "value": 6, "name": "ADC6" },
+            { "value": 7, "name": "ADC7" },
+            { "value": 8, "name": "TEMP_SENSOR" },
+            { "value": 14, "name": "1.1V_REF" },
+            { "value": 15, "name": "GND" }
+          ]
+        },
+        { "name": "ADLAR", "description": "ADC Left Adjust Result", "msb": 5, "lsb": 5, "type": "flag", "flagLabels": { "clear": "Right Adjusted", "set": "Left Adjusted" } },
+        {
+          "name": "REFS",
+          "description": "Reference Selection",
+          "msb": 7,
+          "lsb": 6,
+          "type": "enum",
+          "enumEntries": [
+            { "value": 0, "name": "AREF_EXT" },
+            { "value": 1, "name": "AVCC" },
+            { "value": 2, "name": "RESERVED" },
+            { "value": 3, "name": "INTERNAL_1V1" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "DIDR0",
+      "description": "Digital Input Disable Register 0",
+      "width": 8,
+      "offset": 126,
+      "fields": [
+        { "name": "ADC0D", "description": "ADC0 Digital Input Disable", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "Enabled", "set": "Disabled" } },
+        { "name": "ADC1D", "description": "ADC1 Digital Input Disable", "msb": 1, "lsb": 1, "type": "flag", "flagLabels": { "clear": "Enabled", "set": "Disabled" } },
+        { "name": "ADC2D", "description": "ADC2 Digital Input Disable", "msb": 2, "lsb": 2, "type": "flag", "flagLabels": { "clear": "Enabled", "set": "Disabled" } },
+        { "name": "ADC3D", "description": "ADC3 Digital Input Disable", "msb": 3, "lsb": 3, "type": "flag", "flagLabels": { "clear": "Enabled", "set": "Disabled" } },
+        { "name": "ADC4D", "description": "ADC4 Digital Input Disable", "msb": 4, "lsb": 4, "type": "flag", "flagLabels": { "clear": "Enabled", "set": "Disabled" } },
+        { "name": "ADC5D", "description": "ADC5 Digital Input Disable", "msb": 5, "lsb": 5, "type": "flag", "flagLabels": { "clear": "Enabled", "set": "Disabled" } }
+      ]
+    },
+    {
+      "name": "DIDR1",
+      "description": "Digital Input Disable Register 1",
+      "width": 8,
+      "offset": 127,
+      "fields": [
+        { "name": "AIN0D", "description": "AIN0 Digital Input Disable", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "Enabled", "set": "Disabled" } },
+        { "name": "AIN1D", "description": "AIN1 Digital Input Disable", "msb": 1, "lsb": 1, "type": "flag", "flagLabels": { "clear": "Enabled", "set": "Disabled" } }
+      ]
+    },
+    {
+      "name": "TCCR1A",
+      "description": "Timer/Counter1 Control Register A",
+      "width": 8,
+      "offset": 128,
+      "fields": [
+        {
+          "name": "WGM1[1:0]",
+          "description": "Waveform Generation Mode bits [1:0] (combine with WGM1[3:2] in TCCR1B)",
+          "msb": 1,
+          "lsb": 0,
+          "type": "integer",
+          "signed": false
+        },
+        {
+          "name": "COM1B",
+          "description": "Compare Output Mode for Channel B",
+          "msb": 5,
+          "lsb": 4,
+          "type": "enum",
+          "enumEntries": [
+            { "value": 0, "name": "DISCONNECTED" },
+            { "value": 1, "name": "TOGGLE" },
+            { "value": 2, "name": "CLEAR" },
+            { "value": 3, "name": "SET" }
+          ]
+        },
+        {
+          "name": "COM1A",
+          "description": "Compare Output Mode for Channel A",
+          "msb": 7,
+          "lsb": 6,
+          "type": "enum",
+          "enumEntries": [
+            { "value": 0, "name": "DISCONNECTED" },
+            { "value": 1, "name": "TOGGLE" },
+            { "value": 2, "name": "CLEAR" },
+            { "value": 3, "name": "SET" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "TCCR1B",
+      "description": "Timer/Counter1 Control Register B",
+      "width": 8,
+      "offset": 129,
+      "fields": [
+        {
+          "name": "CS1",
+          "description": "Clock Select (prescaler)",
+          "msb": 2,
+          "lsb": 0,
+          "type": "enum",
+          "enumEntries": [
+            { "value": 0, "name": "STOPPED" },
+            { "value": 1, "name": "CLK/1" },
+            { "value": 2, "name": "CLK/8" },
+            { "value": 3, "name": "CLK/64" },
+            { "value": 4, "name": "CLK/256" },
+            { "value": 5, "name": "CLK/1024" },
+            { "value": 6, "name": "EXT_FALLING" },
+            { "value": 7, "name": "EXT_RISING" }
+          ]
+        },
+        {
+          "name": "WGM1[3:2]",
+          "description": "Waveform Generation Mode bits [3:2] (combine with WGM1[1:0] in TCCR1A)",
+          "msb": 4,
+          "lsb": 3,
+          "type": "integer",
+          "signed": false
+        },
+        { "name": "ICES1", "description": "Input Capture Edge Select", "msb": 6, "lsb": 6, "type": "flag", "flagLabels": { "clear": "Falling Edge", "set": "Rising Edge" } },
+        { "name": "ICNC1", "description": "Input Capture Noise Canceler", "msb": 7, "lsb": 7, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } }
+      ]
+    },
+    {
+      "name": "TCCR1C",
+      "description": "Timer/Counter1 Control Register C",
+      "width": 8,
+      "offset": 130,
+      "fields": [
+        { "name": "FOC1B", "description": "Force Output Compare for Channel B", "msb": 6, "lsb": 6, "type": "flag", "flagLabels": { "clear": "No Force", "set": "Force" } },
+        { "name": "FOC1A", "description": "Force Output Compare for Channel A", "msb": 7, "lsb": 7, "type": "flag", "flagLabels": { "clear": "No Force", "set": "Force" } }
+      ]
+    },
+    {
+      "name": "TCNT1L",
+      "description": "Timer/Counter1 Register Low Byte",
+      "width": 8,
+      "offset": 132,
+      "fields": [
+        { "name": "TCNT1L", "description": "Timer/Counter1 value bits 7:0", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+      ]
+    },
+    {
+      "name": "TCNT1H",
+      "description": "Timer/Counter1 Register High Byte",
+      "width": 8,
+      "offset": 133,
+      "fields": [
+        { "name": "TCNT1H", "description": "Timer/Counter1 value bits 15:8", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+      ]
+    },
+    {
+      "name": "ICR1L",
+      "description": "Input Capture Register 1 Low Byte",
+      "width": 8,
+      "offset": 134,
+      "fields": [
+        { "name": "ICR1L", "description": "Input Capture value bits 7:0", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+      ]
+    },
+    {
+      "name": "ICR1H",
+      "description": "Input Capture Register 1 High Byte",
+      "width": 8,
+      "offset": 135,
+      "fields": [
+        { "name": "ICR1H", "description": "Input Capture value bits 15:8", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+      ]
+    },
+    {
+      "name": "OCR1AL",
+      "description": "Output Compare Register 1A Low Byte",
+      "width": 8,
+      "offset": 136,
+      "fields": [
+        { "name": "OCR1AL", "description": "Output Compare 1A value bits 7:0", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+      ]
+    },
+    {
+      "name": "OCR1AH",
+      "description": "Output Compare Register 1A High Byte",
+      "width": 8,
+      "offset": 137,
+      "fields": [
+        { "name": "OCR1AH", "description": "Output Compare 1A value bits 15:8", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+      ]
+    },
+    {
+      "name": "OCR1BL",
+      "description": "Output Compare Register 1B Low Byte",
+      "width": 8,
+      "offset": 138,
+      "fields": [
+        { "name": "OCR1BL", "description": "Output Compare 1B value bits 7:0", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+      ]
+    },
+    {
+      "name": "OCR1BH",
+      "description": "Output Compare Register 1B High Byte",
+      "width": 8,
+      "offset": 139,
+      "fields": [
+        { "name": "OCR1BH", "description": "Output Compare 1B value bits 15:8", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+      ]
+    },
+    {
+      "name": "TCCR2A",
+      "description": "Timer/Counter2 Control Register A",
+      "width": 8,
+      "offset": 176,
+      "fields": [
+        {
+          "name": "WGM2[1:0]",
+          "description": "Waveform Generation Mode bits [1:0] (combine with WGM22 in TCCR2B)",
+          "msb": 1,
+          "lsb": 0,
+          "type": "integer",
+          "signed": false
+        },
+        {
+          "name": "COM2B",
+          "description": "Compare Output Mode for Channel B",
+          "msb": 5,
+          "lsb": 4,
+          "type": "enum",
+          "enumEntries": [
+            { "value": 0, "name": "DISCONNECTED" },
+            { "value": 1, "name": "TOGGLE" },
+            { "value": 2, "name": "CLEAR" },
+            { "value": 3, "name": "SET" }
+          ]
+        },
+        {
+          "name": "COM2A",
+          "description": "Compare Output Mode for Channel A",
+          "msb": 7,
+          "lsb": 6,
+          "type": "enum",
+          "enumEntries": [
+            { "value": 0, "name": "DISCONNECTED" },
+            { "value": 1, "name": "TOGGLE" },
+            { "value": 2, "name": "CLEAR" },
+            { "value": 3, "name": "SET" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "TCCR2B",
+      "description": "Timer/Counter2 Control Register B",
+      "width": 8,
+      "offset": 177,
+      "fields": [
+        {
+          "name": "CS2",
+          "description": "Clock Select",
+          "msb": 2,
+          "lsb": 0,
+          "type": "enum",
+          "enumEntries": [
+            { "value": 0, "name": "STOPPED" },
+            { "value": 1, "name": "CLK/1" },
+            { "value": 2, "name": "CLK/8" },
+            { "value": 3, "name": "CLK/32" },
+            { "value": 4, "name": "CLK/64" },
+            { "value": 5, "name": "CLK/128" },
+            { "value": 6, "name": "CLK/256" },
+            { "value": 7, "name": "CLK/1024" }
+          ]
+        },
+        { "name": "WGM22", "description": "Waveform Generation Mode bit 2", "msb": 3, "lsb": 3, "type": "flag", "flagLabels": { "clear": "0", "set": "1" } },
+        { "name": "FOC2B", "description": "Force Output Compare B", "msb": 6, "lsb": 6, "type": "flag", "flagLabels": { "clear": "No Force", "set": "Force" } },
+        { "name": "FOC2A", "description": "Force Output Compare A", "msb": 7, "lsb": 7, "type": "flag", "flagLabels": { "clear": "No Force", "set": "Force" } }
+      ]
+    },
+    {
+      "name": "TCNT2",
+      "description": "Timer/Counter2 Register (8-bit counter value)",
+      "width": 8,
+      "offset": 178,
+      "fields": [
+        { "name": "TCNT2", "description": "Timer/Counter2 value", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+      ]
+    },
+    {
+      "name": "OCR2A",
+      "description": "Timer/Counter2 Output Compare Register A",
+      "width": 8,
+      "offset": 179,
+      "fields": [
+        { "name": "OCR2A", "description": "Output Compare value for channel A", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+      ]
+    },
+    {
+      "name": "OCR2B",
+      "description": "Timer/Counter2 Output Compare Register B",
+      "width": 8,
+      "offset": 180,
+      "fields": [
+        { "name": "OCR2B", "description": "Output Compare value for channel B", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+      ]
+    },
+    {
+      "name": "ASSR",
+      "description": "Asynchronous Status Register",
+      "width": 8,
+      "offset": 182,
+      "fields": [
+        { "name": "TCR2BUB", "description": "Timer/Counter Control Register 2B Update Busy", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "Ready", "set": "Busy" } },
+        { "name": "TCR2AUB", "description": "Timer/Counter Control Register 2A Update Busy", "msb": 1, "lsb": 1, "type": "flag", "flagLabels": { "clear": "Ready", "set": "Busy" } },
+        { "name": "OCR2BUB", "description": "Output Compare Register 2B Update Busy", "msb": 2, "lsb": 2, "type": "flag", "flagLabels": { "clear": "Ready", "set": "Busy" } },
+        { "name": "OCR2AUB", "description": "Output Compare Register 2A Update Busy", "msb": 3, "lsb": 3, "type": "flag", "flagLabels": { "clear": "Ready", "set": "Busy" } },
+        { "name": "TCN2UB", "description": "Timer/Counter2 Update Busy", "msb": 4, "lsb": 4, "type": "flag", "flagLabels": { "clear": "Ready", "set": "Busy" } },
+        { "name": "AS2", "description": "Asynchronous Timer/Counter2", "msb": 5, "lsb": 5, "type": "flag", "flagLabels": { "clear": "Synchronous", "set": "Asynchronous" } },
+        { "name": "EXCLK", "description": "Enable External Clock Input", "msb": 6, "lsb": 6, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } }
+      ]
+    },
+    {
+      "name": "TWBR",
+      "description": "TWI Bit Rate Register",
+      "width": 8,
+      "offset": 184,
+      "fields": [
+        { "name": "TWBR", "description": "TWI bit rate value", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+      ]
+    },
+    {
+      "name": "TWSR",
+      "description": "TWI Status Register",
+      "width": 8,
+      "offset": 185,
+      "fields": [
+        {
+          "name": "TWPS",
+          "description": "TWI Prescaler",
+          "msb": 1,
+          "lsb": 0,
+          "type": "enum",
+          "enumEntries": [
+            { "value": 0, "name": "PRESCALER_1" },
+            { "value": 1, "name": "PRESCALER_4" },
+            { "value": 2, "name": "PRESCALER_16" },
+            { "value": 3, "name": "PRESCALER_64" }
+          ]
+        },
+        { "name": "TWS", "description": "TWI Status", "msb": 7, "lsb": 3, "type": "integer", "signed": false }
+      ]
+    },
+    {
+      "name": "TWAR",
+      "description": "TWI (Slave) Address Register",
+      "width": 8,
+      "offset": 186,
+      "fields": [
+        { "name": "TWGCE", "description": "TWI General Call Recognition Enable", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "TWA", "description": "TWI Slave Address", "msb": 7, "lsb": 1, "type": "integer", "signed": false }
+      ]
+    },
+    {
+      "name": "TWDR",
+      "description": "TWI Data Register",
+      "width": 8,
+      "offset": 187,
+      "fields": [
+        { "name": "TWDR", "description": "TWI data value", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+      ]
+    },
+    {
+      "name": "TWCR",
+      "description": "TWI Control Register",
+      "width": 8,
+      "offset": 188,
+      "fields": [
+        { "name": "TWIE", "description": "TWI Interrupt Enable", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "TWEN", "description": "TWI Enable", "msb": 2, "lsb": 2, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "TWWC", "description": "TWI Write Collision Flag", "msb": 3, "lsb": 3, "type": "flag", "flagLabels": { "clear": "No Collision", "set": "Collision" } },
+        { "name": "TWSTO", "description": "TWI STOP Condition", "msb": 4, "lsb": 4, "type": "flag", "flagLabels": { "clear": "No Stop", "set": "Stop" } },
+        { "name": "TWSTA", "description": "TWI START Condition", "msb": 5, "lsb": 5, "type": "flag", "flagLabels": { "clear": "No Start", "set": "Start" } },
+        { "name": "TWEA", "description": "TWI Enable Acknowledge", "msb": 6, "lsb": 6, "type": "flag", "flagLabels": { "clear": "No ACK", "set": "ACK" } },
+        { "name": "TWINT", "description": "TWI Interrupt Flag", "msb": 7, "lsb": 7, "type": "flag", "flagLabels": { "clear": "No Interrupt", "set": "Interrupt" } }
+      ]
+    },
+    {
+      "name": "TWAMR",
+      "description": "TWI (Slave) Address Mask Register",
+      "width": 8,
+      "offset": 189,
+      "fields": [
+        { "name": "TWAM", "description": "TWI Address Mask", "msb": 7, "lsb": 1, "type": "integer", "signed": false }
+      ]
+    },
+    {
+      "name": "UCSR0A",
+      "description": "USART Control and Status Register 0A",
+      "width": 8,
+      "offset": 192,
+      "fields": [
+        { "name": "MPCM0", "description": "Multi-processor Communication Mode", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "U2X0", "description": "Double the USART Transmission Speed", "msb": 1, "lsb": 1, "type": "flag", "flagLabels": { "clear": "Normal", "set": "Double" } },
+        { "name": "UPE0", "description": "USART Parity Error", "msb": 2, "lsb": 2, "type": "flag", "flagLabels": { "clear": "No Error", "set": "Error" } },
+        { "name": "DOR0", "description": "Data OverRun", "msb": 3, "lsb": 3, "type": "flag", "flagLabels": { "clear": "No Overrun", "set": "Overrun" } },
+        { "name": "FE0", "description": "Frame Error", "msb": 4, "lsb": 4, "type": "flag", "flagLabels": { "clear": "No Error", "set": "Error" } },
+        { "name": "UDRE0", "description": "USART Data Register Empty", "msb": 5, "lsb": 5, "type": "flag", "flagLabels": { "clear": "Not Empty", "set": "Empty" } },
+        { "name": "TXC0", "description": "USART Transmit Complete", "msb": 6, "lsb": 6, "type": "flag", "flagLabels": { "clear": "Not Complete", "set": "Complete" } },
+        { "name": "RXC0", "description": "USART Receive Complete", "msb": 7, "lsb": 7, "type": "flag", "flagLabels": { "clear": "Not Complete", "set": "Complete" } }
+      ]
+    },
+    {
+      "name": "UCSR0B",
+      "description": "USART Control and Status Register 0B",
+      "width": 8,
+      "offset": 193,
+      "fields": [
+        { "name": "TXB80", "description": "Transmit Data Bit 8", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "0", "set": "1" } },
+        { "name": "RXB80", "description": "Receive Data Bit 8", "msb": 1, "lsb": 1, "type": "flag", "flagLabels": { "clear": "0", "set": "1" } },
+        { "name": "UCSZ02", "description": "Character Size bit 2", "msb": 2, "lsb": 2, "type": "flag", "flagLabels": { "clear": "0", "set": "1" } },
+        { "name": "TXEN0", "description": "Transmitter Enable", "msb": 3, "lsb": 3, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "RXEN0", "description": "Receiver Enable", "msb": 4, "lsb": 4, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "UDRIE0", "description": "Data Register Empty Interrupt Enable", "msb": 5, "lsb": 5, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "TXCIE0", "description": "TX Complete Interrupt Enable", "msb": 6, "lsb": 6, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
+        { "name": "RXCIE0", "description": "RX Complete Interrupt Enable", "msb": 7, "lsb": 7, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } }
+      ]
+    },
+    {
+      "name": "UCSR0C",
+      "description": "USART Control and Status Register 0C",
+      "width": 8,
+      "offset": 194,
+      "fields": [
+        { "name": "UCPOL0", "description": "Clock Polarity (synchronous mode only)", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "TX Rising/RX Falling", "set": "TX Falling/RX Rising" } },
+        {
+          "name": "UCSZ0[1:0]",
+          "description": "Character Size bits [1:0] (combine with UCSZ02 in UCSR0B)",
+          "msb": 2,
+          "lsb": 1,
+          "type": "enum",
+          "enumEntries": [
+            { "value": 0, "name": "5-BIT" },
+            { "value": 1, "name": "6-BIT" },
+            { "value": 2, "name": "7-BIT" },
+            { "value": 3, "name": "8-BIT" }
+          ]
+        },
+        { "name": "USBS0", "description": "Stop Bit Select", "msb": 3, "lsb": 3, "type": "flag", "flagLabels": { "clear": "1-bit", "set": "2-bit" } },
+        {
+          "name": "UPM0",
+          "description": "Parity Mode",
+          "msb": 5,
+          "lsb": 4,
+          "type": "enum",
+          "enumEntries": [
+            { "value": 0, "name": "DISABLED" },
+            { "value": 1, "name": "RESERVED" },
+            { "value": 2, "name": "EVEN" },
+            { "value": 3, "name": "ODD" }
+          ]
+        },
+        {
+          "name": "UMSEL0",
+          "description": "USART Mode Select",
+          "msb": 7,
+          "lsb": 6,
+          "type": "enum",
+          "enumEntries": [
+            { "value": 0, "name": "ASYNC_USART" },
+            { "value": 1, "name": "SYNC_USART" },
+            { "value": 2, "name": "RESERVED" },
+            { "value": 3, "name": "MASTER_SPI" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "UBRR0L",
+      "description": "USART Baud Rate Register Low",
+      "width": 8,
+      "offset": 196,
+      "fields": [
+        { "name": "UBRR0L", "description": "USART baud rate bits 7:0", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+      ]
+    },
+    {
+      "name": "UBRR0H",
+      "description": "USART Baud Rate Register High",
+      "width": 8,
+      "offset": 197,
+      "fields": [
+        { "name": "UBRR0[11:8]", "description": "USART baud rate bits 11:8", "msb": 3, "lsb": 0, "type": "integer", "signed": false }
+      ]
+    },
+    {
+      "name": "UDR0",
+      "description": "USART I/O Data Register 0",
+      "width": 8,
+      "offset": 198,
+      "fields": [
+        { "name": "UDR0", "description": "USART data value", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+      ]
+    }
+  ],
+  "registerValues": {
+    "PINB": "0x00",
+    "DDRB": "0x00",
+    "PORTB": "0x00",
+    "PINC": "0x00",
+    "DDRC": "0x00",
+    "PORTC": "0x00",
+    "PIND": "0x00",
+    "DDRD": "0x00",
+    "PORTD": "0x00",
+    "TIFR0": "0x00",
+    "TIFR1": "0x00",
+    "TIFR2": "0x00",
+    "PCIFR": "0x00",
+    "EIFR": "0x00",
+    "EIMSK": "0x00",
+    "GPIOR0": "0x00",
+    "EECR": "0x00",
+    "EEDR": "0x00",
+    "EEARL": "0x00",
+    "EEARH": "0x00",
+    "GTCCR": "0x00",
+    "TCCR0A": "0x00",
+    "TCCR0B": "0x00",
+    "TCNT0": "0x00",
+    "OCR0A": "0x00",
+    "OCR0B": "0x00",
+    "GPIOR1": "0x00",
+    "GPIOR2": "0x00",
+    "SPCR": "0x00",
+    "SPSR": "0x00",
+    "SPDR": "0x00",
+    "ACSR": "0x00",
+    "SMCR": "0x00",
+    "MCUSR": "0x00",
+    "MCUCR": "0x00",
+    "SPMCSR": "0x00",
+    "SPL": "0x00",
+    "SPH": "0x00",
+    "SREG": "0x00",
+    "WDTCSR": "0x00",
+    "CLKPR": "0x00",
+    "PRR": "0x00",
+    "OSCCAL": "0x00",
+    "PCICR": "0x00",
+    "EICRA": "0x00",
+    "PCMSK0": "0x00",
+    "PCMSK1": "0x00",
+    "PCMSK2": "0x00",
+    "TIMSK0": "0x00",
+    "TIMSK1": "0x00",
+    "TIMSK2": "0x00",
+    "ADCL": "0x00",
+    "ADCH": "0x00",
+    "ADCSRA": "0x00",
+    "ADCSRB": "0x00",
+    "ADMUX": "0x00",
+    "DIDR0": "0x00",
+    "DIDR1": "0x00",
+    "TCCR1A": "0x00",
+    "TCCR1B": "0x00",
+    "TCCR1C": "0x00",
+    "TCNT1L": "0x00",
+    "TCNT1H": "0x00",
+    "ICR1L": "0x00",
+    "ICR1H": "0x00",
+    "OCR1AL": "0x00",
+    "OCR1AH": "0x00",
+    "OCR1BL": "0x00",
+    "OCR1BH": "0x00",
+    "TCCR2A": "0x00",
+    "TCCR2B": "0x00",
+    "TCNT2": "0x00",
+    "OCR2A": "0x00",
+    "OCR2B": "0x00",
+    "ASSR": "0x00",
+    "TWBR": "0x00",
+    "TWSR": "0x00",
+    "TWAR": "0x00",
+    "TWDR": "0x00",
+    "TWCR": "0x00",
+    "TWAMR": "0x00",
+    "UCSR0A": "0x00",
+    "UCSR0B": "0x00",
+    "UCSR0C": "0x00",
+    "UBRR0L": "0x00",
+    "UBRR0H": "0x00",
+    "UDR0": "0x00"
+  }
+}
