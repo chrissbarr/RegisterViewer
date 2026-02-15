@@ -5,6 +5,7 @@ import {
   bitToGridColumn,
   gridTemplateColumns,
   fieldsForRow,
+  unassignedRangesForRow,
 } from './bit-grid-layout';
 import type { Field } from '../types/register';
 
@@ -254,5 +255,99 @@ describe('fieldsForRow', () => {
     // LOW spans cols 6-13 (after the gap)
     expect(result[1].startCol).toBe(6);
     expect(result[1].endCol).toBe(14);
+  });
+});
+
+describe('unassignedRangesForRow', () => {
+  const makeField = (name: string, msb: number, lsb: number): Field => ({
+    id: name,
+    name,
+    msb,
+    lsb,
+    type: 'integer',
+  });
+
+  it('returns empty array when all bits are assigned', () => {
+    const row = { bits: [7, 6, 5, 4, 3, 2, 1, 0], startBit: 7, endBit: 0 };
+    const fields = [makeField('A', 7, 4), makeField('B', 3, 0)];
+    expect(unassignedRangesForRow(row, fields)).toHaveLength(0);
+  });
+
+  it('returns single range when entire row is unassigned', () => {
+    const row = { bits: [7, 6, 5, 4, 3, 2, 1, 0], startBit: 7, endBit: 0 };
+    const result = unassignedRangesForRow(row, []);
+    expect(result).toHaveLength(1);
+    expect(result[0].startBit).toBe(7);
+    expect(result[0].endBit).toBe(0);
+  });
+
+  it('finds gap between two fields', () => {
+    const row = { bits: [7, 6, 5, 4, 3, 2, 1, 0], startBit: 7, endBit: 0 };
+    const fields = [makeField('A', 7, 6), makeField('B', 3, 0)];
+    const result = unassignedRangesForRow(row, fields);
+    expect(result).toHaveLength(1);
+    expect(result[0].startBit).toBe(5);
+    expect(result[0].endBit).toBe(4);
+  });
+
+  it('finds multiple gaps', () => {
+    const row = { bits: [7, 6, 5, 4, 3, 2, 1, 0], startBit: 7, endBit: 0 };
+    const fields = [makeField('A', 7, 7), makeField('B', 5, 4), makeField('C', 1, 0)];
+    // Gaps at bit 6 and bits 3-2
+    const result = unassignedRangesForRow(row, fields);
+    expect(result).toHaveLength(2);
+    expect(result[0].startBit).toBe(6);
+    expect(result[0].endBit).toBe(6);
+    expect(result[1].startBit).toBe(3);
+    expect(result[1].endBit).toBe(2);
+  });
+
+  it('finds single-bit gap', () => {
+    const row = { bits: [7, 6, 5, 4, 3, 2, 1, 0], startBit: 7, endBit: 0 };
+    const fields = [makeField('A', 7, 5), makeField('B', 3, 0)];
+    // Gap at bit 4
+    const result = unassignedRangesForRow(row, fields);
+    expect(result).toHaveLength(1);
+    expect(result[0].startBit).toBe(4);
+    expect(result[0].endBit).toBe(4);
+  });
+
+  it('finds trailing unassigned bits (MSB end)', () => {
+    const row = { bits: [7, 6, 5, 4, 3, 2, 1, 0], startBit: 7, endBit: 0 };
+    const fields = [makeField('A', 3, 0)];
+    const result = unassignedRangesForRow(row, fields);
+    expect(result).toHaveLength(1);
+    expect(result[0].startBit).toBe(7);
+    expect(result[0].endBit).toBe(4);
+  });
+
+  it('finds leading unassigned bits (LSB end)', () => {
+    const row = { bits: [7, 6, 5, 4, 3, 2, 1, 0], startBit: 7, endBit: 0 };
+    const fields = [makeField('A', 7, 4)];
+    const result = unassignedRangesForRow(row, fields);
+    expect(result).toHaveLength(1);
+    expect(result[0].startBit).toBe(3);
+    expect(result[0].endBit).toBe(0);
+  });
+
+  it('computes correct grid columns for ranges', () => {
+    const row = { bits: [7, 6, 5, 4, 3, 2, 1, 0], startBit: 7, endBit: 0 };
+    const fields = [makeField('A', 7, 6), makeField('B', 1, 0)];
+    // Gap at bits 5-2
+    const result = unassignedRangesForRow(row, fields);
+    expect(result).toHaveLength(1);
+    expect(result[0].startCol).toBe(bitToGridColumn(5, 7, 8));
+    expect(result[0].endCol).toBe(bitToGridColumn(2, 7, 8) + 1);
+  });
+
+  it('handles fields that span beyond the row', () => {
+    // Row covers bits 15..8, field covers 11..4 (extends into next row)
+    const row = { bits: [15, 14, 13, 12, 11, 10, 9, 8], startBit: 15, endBit: 8 };
+    const fields = [makeField('B', 11, 4)];
+    // Unassigned: bits 15-12
+    const result = unassignedRangesForRow(row, fields);
+    expect(result).toHaveLength(1);
+    expect(result[0].startBit).toBe(15);
+    expect(result[0].endBit).toBe(12);
   });
 });

@@ -105,6 +105,63 @@ export function gridTemplateColumns(bitsInRow: number): string {
   return parts.join(' ');
 }
 
+export interface UnassignedRange {
+  startBit: number;   // MSB of range (highest bit)
+  endBit: number;     // LSB of range (lowest bit)
+  startCol: number;   // CSS grid column start
+  endCol: number;     // CSS grid column end (exclusive)
+}
+
+/**
+ * Find contiguous unassigned bit ranges in a row and compute their grid column spans.
+ * Walks bits MSB→LSB (matching row.bits order) and groups contiguous unassigned bits.
+ */
+export function unassignedRangesForRow(row: BitRow, fields: Field[]): UnassignedRange[] {
+  // Build set of assigned bit indices within this row
+  const assigned = new Set<number>();
+  for (const field of fields) {
+    if (field.lsb > row.startBit || field.msb < row.endBit) continue;
+    const clampedMsb = Math.min(field.msb, row.startBit);
+    const clampedLsb = Math.max(field.lsb, row.endBit);
+    for (let b = clampedLsb; b <= clampedMsb; b++) assigned.add(b);
+  }
+
+  // Walk bits MSB→LSB and group contiguous unassigned
+  const ranges: UnassignedRange[] = [];
+  let rangeMsb: number | null = null;
+
+  for (const bitIdx of row.bits) {
+    if (!assigned.has(bitIdx)) {
+      if (rangeMsb === null) rangeMsb = bitIdx;
+    } else {
+      if (rangeMsb !== null) {
+        // The previous bit (bitIdx + 1) was the LSB of the unassigned range
+        const rangeLsb = bitIdx + 1;
+        ranges.push({
+          startBit: rangeMsb,
+          endBit: rangeLsb,
+          startCol: bitToGridColumn(rangeMsb, row.startBit, row.bits.length),
+          endCol: bitToGridColumn(rangeLsb, row.startBit, row.bits.length) + 1,
+        });
+        rangeMsb = null;
+      }
+    }
+  }
+
+  // Flush trailing range
+  if (rangeMsb !== null) {
+    const rangeLsb = row.endBit;
+    ranges.push({
+      startBit: rangeMsb,
+      endBit: rangeLsb,
+      startCol: bitToGridColumn(rangeMsb, row.startBit, row.bits.length),
+      endCol: bitToGridColumn(rangeLsb, row.startBit, row.bits.length) + 1,
+    });
+  }
+
+  return ranges;
+}
+
 /**
  * Find all fields overlapping a row and compute their CSS grid column spans.
  * Fields are clamped to the row's range. `isPartial` is true when a field

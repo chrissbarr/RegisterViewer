@@ -8,6 +8,7 @@ import {
   bitToGridColumn,
   gridTemplateColumns,
   fieldsForRow,
+  unassignedRangesForRow,
 } from '../../utils/bit-grid-layout';
 
 /** Color palette for fields — inline styles since TW v4 custom colors need dynamic application. */
@@ -65,6 +66,8 @@ export function BitGrid({ register }: Props) {
       <div className="flex flex-col gap-1">
         {rows.map((row, rowIdx) => {
           const rowFields = fieldsForRow(row, register.fields);
+          const rowUnassigned = unassignedRangesForRow(row, register.fields);
+          const hasLabels = rowFields.length > 0 || rowUnassigned.length > 0;
           const gtc = gridTemplateColumns(row.bits.length);
 
           return (
@@ -73,12 +76,13 @@ export function BitGrid({ register }: Props) {
               style={{
                 display: 'grid',
                 gridTemplateColumns: gtc,
-                gridTemplateRows: rowFields.length > 0 ? 'auto auto' : 'auto',
+                gridTemplateRows: hasLabels ? 'auto auto' : 'auto',
               }}
             >
               {/* Bit cells */}
               {row.bits.map((bitIdx) => {
                 const match = getFieldForBit(bitIdx, register.fields);
+                const isUnassigned = !match;
                 const bgColor = match ? FIELD_COLORS[match.index % FIELD_COLORS.length] : undefined;
                 const borderColor = match ? FIELD_BORDER_COLORS[match.index % FIELD_BORDER_COLORS.length] : undefined;
                 const col = bitToGridColumn(bitIdx, row.startBit, row.bits.length);
@@ -87,19 +91,31 @@ export function BitGrid({ register }: Props) {
                   <div
                     key={bitIdx}
                     onClick={() => dispatch({ type: 'TOGGLE_BIT', registerId: register.id, bit: bitIdx })}
-                    title={match ? `Bit ${bitIdx} (${match.field.name})` : `Bit ${bitIdx}`}
-                    className="flex flex-col items-center justify-center h-12 border border-gray-300 dark:border-gray-600 text-xs cursor-pointer hover:brightness-125 transition-all select-none"
+                    title={match ? `Bit ${bitIdx} (${match.field.name})` : `Bit ${bitIdx} (reserved)`}
+                    className={`flex flex-col items-center justify-center h-12 border text-xs cursor-pointer hover:brightness-125 transition-all select-none ${
+                      isUnassigned
+                        ? 'bit-unassigned border-gray-300/60 dark:border-gray-600/60'
+                        : 'border-gray-300 dark:border-gray-600'
+                    }`}
                     style={{
                       gridRow: 1,
                       gridColumn: col,
-                      backgroundColor: bgColor,
-                      borderColor: borderColor,
+                      ...(match && {
+                        backgroundColor: bgColor,
+                        borderColor: borderColor,
+                      }),
                     }}
                   >
-                    <span className="text-[10px] text-gray-500 dark:text-gray-400 leading-none">
+                    <span className={`text-[10px] leading-none ${
+                      isUnassigned
+                        ? 'text-gray-400 dark:text-gray-500'
+                        : 'text-gray-500 dark:text-gray-400'
+                    }`}>
                       {bitIdx}
                     </span>
-                    <span className="font-bold text-sm leading-none mt-0.5">
+                    <span className={`font-bold text-sm leading-none mt-0.5 ${
+                      isUnassigned ? 'opacity-50' : ''
+                    }`}>
                       {getBit(value, bitIdx)}
                     </span>
                   </div>
@@ -130,6 +146,20 @@ export function BitGrid({ register }: Props) {
                   </div>
                 );
               })}
+
+              {/* Unassigned range labels */}
+              {rowUnassigned.map((range) => (
+                <div
+                  key={`rsvd-${range.startBit}-${range.endBit}`}
+                  className="bit-unassigned-label text-[10px] truncate px-1 py-0.5 text-center italic border-b border-x border-gray-300/40 dark:border-gray-600/40"
+                  style={{
+                    gridRow: 2,
+                    gridColumn: `${range.startCol} / ${range.endCol}`,
+                  }}
+                >
+                  Rsvd
+                </div>
+              ))}
             </div>
           );
         })}
