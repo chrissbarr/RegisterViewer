@@ -127,7 +127,7 @@ export function RegisterEditor({
       )}
 
       {/* Register metadata */}
-      <div className="grid grid-cols-4 gap-3 mb-4">
+      <div className="grid grid-cols-3 gap-3 mb-2">
         <label className="flex flex-col gap-1">
           <span className="text-xs text-gray-500 dark:text-gray-400">Name</span>
           <input
@@ -173,16 +173,16 @@ export function RegisterEditor({
             className={inputClass}
           />
         </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-xs text-gray-500 dark:text-gray-400">Description</span>
-          <input
-            type="text"
-            value={draft.description ?? ''}
-            onChange={(e) => updateMeta({ description: e.target.value || undefined })}
-            className={inputClass}
-          />
-        </label>
       </div>
+      <label className="flex flex-col gap-1 mb-4">
+        <span className="text-xs text-gray-500 dark:text-gray-400">Description</span>
+        <input
+          type="text"
+          value={draft.description ?? ''}
+          onChange={(e) => updateMeta({ description: e.target.value || undefined })}
+          className={inputClass}
+        />
+      </label>
 
       {/* Tab switch */}
       <div className="flex gap-1 mb-3 border-b border-gray-300 dark:border-gray-700">
