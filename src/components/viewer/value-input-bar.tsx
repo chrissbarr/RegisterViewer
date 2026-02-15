@@ -31,7 +31,8 @@ export function ValueInputBar({ register }: Props) {
       setDecInput(value.toString(10));
   }, [value, register.width]);
 
-  // Restore BIN cursor position only after a programmatic value change
+  // Restore BIN cursor position only after a programmatic value change.
+  // No deps: must run after every render because the trigger is a ref, not state.
   useLayoutEffect(() => {
     if (!binCursorPending.current) return;
     binCursorPending.current = false;
@@ -228,14 +229,7 @@ export function ValueInputBar({ register }: Props) {
                   register.width,
                 ));
                 const newFormatted = formatBinary(capped.padStart(register.width, '0'));
-                let newCursor = 0;
-                let count = 0;
-                for (let i = 0; i < newFormatted.length; i++) {
-                  if (count >= targetDigit) break;
-                  if (newFormatted[i] !== ' ') count++;
-                  newCursor = i + 1;
-                }
-                binCursorRef.current = newCursor;
+                binCursorRef.current = digitToFormattedPos(targetDigit, newFormatted);
                 binCursorPending.current = true;
 
                 setBinInput(capped);

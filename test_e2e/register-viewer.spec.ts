@@ -33,7 +33,7 @@ test.describe('Register Viewer - Value Sync', () => {
     await hexInput(page).blur();
 
     await expect(decInput(page)).toHaveValue('255');
-    await expect(binInput(page)).toHaveValue('00000000000000000000000011111111');
+    await expect(binInput(page)).toHaveValue('0000 0000 0000 0000 0000 0000 1111 1111');
   });
 
   test('changing decimal input updates hex input', async ({ page }) => {
