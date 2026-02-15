@@ -141,6 +141,52 @@ describe('DropdownMenu', () => {
     });
   });
 
+  describe('link items', () => {
+    it('renders as an anchor tag with correct href and target', () => {
+      const items: MenuItem[] = [
+        { kind: 'link', label: 'GitHub', href: 'https://github.com/example' },
+      ];
+      renderMenu(items);
+      openMenu();
+      const link = screen.getByRole('link', { name: 'GitHub' });
+      expect(link).toHaveAttribute('href', 'https://github.com/example');
+      expect(link).toHaveAttribute('target', '_blank');
+      expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    });
+
+    it('closes menu on click', () => {
+      const items: MenuItem[] = [
+        { kind: 'link', label: 'GitHub', href: 'https://github.com/example' },
+      ];
+      renderMenu(items);
+      openMenu();
+      fireEvent.click(screen.getByRole('menuitem', { name: 'GitHub' }));
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    });
+
+    it('renders icon when provided', () => {
+      const items: MenuItem[] = [
+        { kind: 'link', label: 'GitHub', href: 'https://github.com/example', icon: <span data-testid="icon">*</span> },
+      ];
+      renderMenu(items);
+      openMenu();
+      expect(screen.getByTestId('icon')).toBeInTheDocument();
+    });
+
+    it('participates in keyboard navigation', () => {
+      const items: MenuItem[] = [
+        { kind: 'action', label: 'Import', onAction: vi.fn() },
+        { kind: 'link', label: 'GitHub', href: 'https://github.com/example' },
+      ];
+      renderMenu(items);
+      openMenu();
+      const menu = screen.getByRole('menu');
+      fireEvent.keyDown(menu, { key: 'ArrowDown' }); // Import
+      fireEvent.keyDown(menu, { key: 'ArrowDown' }); // GitHub
+      expect(screen.getByRole('menuitem', { name: 'GitHub' })).toHaveFocus();
+    });
+  });
+
   describe('separators', () => {
     it('renders separator with role=separator', () => {
       renderMenu();

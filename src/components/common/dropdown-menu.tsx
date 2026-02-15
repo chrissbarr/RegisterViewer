@@ -6,6 +6,7 @@ import { useClickOutside } from '../../hooks/use-click-outside';
 export type MenuItem =
   | { kind: 'action'; label: string; onAction: () => void }
   | { kind: 'toggle'; label: string; checked: boolean; onToggle: () => void }
+  | { kind: 'link'; label: string; href: string; icon?: React.ReactNode }
   | { kind: 'separator' };
 
 // ── Props ────────────────────────────────────────────────────────
@@ -91,6 +92,7 @@ export function DropdownMenu({ items, triggerLabel, triggerContent }: DropdownMe
       item.onToggle();
       // Keep menu open for toggles
     }
+    // link items are native <a> tags — no JS activation needed
   }
 
   function handleTriggerKeyDown(e: React.KeyboardEvent) {
@@ -215,6 +217,36 @@ export function DropdownMenu({ items, triggerLabel, triggerContent }: DropdownMe
                       ✓
                     </span>
                   )}
+                </li>
+              );
+            }
+
+            if (item.kind === 'link') {
+              const itemClass = `flex items-center gap-2 w-full px-3 py-2 text-left text-sm cursor-pointer select-none
+                text-gray-700 dark:text-gray-200 no-underline
+                focus:outline-none
+                ${isActive
+                  ? 'bg-gray-100 dark:bg-gray-700'
+                  : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`;
+              return (
+                <li
+                  key={i}
+                  ref={(el) => { itemRefs.current[i] = el; }}
+                  role="menuitem"
+                  tabIndex={isActive ? 0 : -1}
+                  onClick={() => close(false)}
+                >
+                  <a
+                    href={item.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={itemClass}
+                    tabIndex={-1}
+                  >
+                    {item.icon}
+                    {item.label}
+                  </a>
                 </li>
               );
             }
