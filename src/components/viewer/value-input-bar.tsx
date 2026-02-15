@@ -64,44 +64,32 @@ export function ValueInputBar({ register }: Props) {
   }
 
   const inputBase =
-    'flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-lg font-mono shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
+    'flex-1 min-w-0 px-4 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 font-mono shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 
-  const inputStandalone = `${inputBase} rounded-lg`;
+  const inputPrimary = `${inputBase} rounded-r-lg text-xl py-2.5`;
 
-  const inputWithAddon = `${inputBase} rounded-r-lg`;
+  const inputSecondary = `${inputBase} text-sm py-1.5`;
 
-  const addonClass =
-    'inline-flex items-center px-3 rounded-l-lg border border-r-0 border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 text-lg font-mono select-none';
+  const inputSecondaryStandalone = `${inputSecondary} rounded-lg`;
+
+  const inputSecondaryWithAddon = `${inputSecondary} rounded-r-lg`;
+
+  const addonPrimary =
+    'inline-flex items-center px-3 rounded-l-lg border border-r-0 border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 text-xl font-mono font-semibold select-none';
+
+  const addonSecondary =
+    'inline-flex items-center px-2 rounded-l-lg border border-r-0 border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 text-sm font-mono select-none';
 
   const labelClass =
     'text-sm font-semibold text-gray-500 dark:text-gray-400 w-10 shrink-0';
 
   return (
-    <div className="flex flex-col gap-3 mb-4 max-w-2xl">
-      {/* DEC — no prefix addon */}
-      <label className="flex items-center gap-2">
-        <span className={labelClass}>DEC</span>
-        <input
-          type="text"
-          value={decInput}
-          onFocus={() => (focusedField.current = 'dec')}
-          onChange={(e) => {
-            const filtered = e.target.value.replace(/[^0-9]/g, '');
-            setDecInput(filtered);
-            try { commitValue(BigInt(filtered || '0')); } catch { /* partial input */ }
-          }}
-          onBlur={() => { focusedField.current = null; handleDecBlur(); }}
-          onKeyDown={(e) => handleKeyDown(e, handleDecBlur)}
-          className={inputStandalone}
-          spellCheck={false}
-        />
-      </label>
-
-      {/* HEX — 0x prefix addon */}
+    <div className="flex flex-col gap-3">
+      {/* PRIMARY: HEX input — larger text, bolder presence */}
       <label className="flex items-center gap-2">
         <span className={labelClass}>HEX</span>
-        <div className="flex flex-1">
-          <span className={addonClass}>0x</span>
+        <div className="flex flex-1 min-w-0">
+          <span className={addonPrimary}>0x</span>
           <input
             type="text"
             value={hexInput}
@@ -113,33 +101,52 @@ export function ValueInputBar({ register }: Props) {
             }}
             onBlur={() => { focusedField.current = null; handleHexBlur(); }}
             onKeyDown={(e) => handleKeyDown(e, handleHexBlur)}
-            className={inputWithAddon}
+            className={inputPrimary}
             spellCheck={false}
           />
         </div>
       </label>
 
-      {/* BIN — 0b prefix addon */}
-      <label className="flex items-center gap-2">
-        <span className={labelClass}>BIN</span>
-        <div className="flex flex-1">
-          <span className={addonClass}>0b</span>
+      {/* SECONDARY: DEC + BIN side by side — smaller text */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <label className="flex items-center gap-2 min-w-0">
+          <span className={labelClass}>DEC</span>
           <input
             type="text"
-            value={binInput}
-            onFocus={() => (focusedField.current = 'bin')}
+            value={decInput}
+            onFocus={() => (focusedField.current = 'dec')}
             onChange={(e) => {
-              const filtered = e.target.value.replace(/[^01]/g, '');
-              setBinInput(filtered);
-              try { commitValue(BigInt('0b' + (filtered || '0'))); } catch { /* partial input */ }
+              const filtered = e.target.value.replace(/[^0-9]/g, '');
+              setDecInput(filtered);
+              try { commitValue(BigInt(filtered || '0')); } catch { /* partial input */ }
             }}
-            onBlur={() => { focusedField.current = null; handleBinBlur(); }}
-            onKeyDown={(e) => handleKeyDown(e, handleBinBlur)}
-            className={inputWithAddon}
+            onBlur={() => { focusedField.current = null; handleDecBlur(); }}
+            onKeyDown={(e) => handleKeyDown(e, handleDecBlur)}
+            className={inputSecondaryStandalone}
             spellCheck={false}
           />
-        </div>
-      </label>
+        </label>
+        <label className="flex items-center gap-2 min-w-0">
+          <span className={labelClass}>BIN</span>
+          <div className="flex flex-1 min-w-0">
+            <span className={addonSecondary}>0b</span>
+            <input
+              type="text"
+              value={binInput}
+              onFocus={() => (focusedField.current = 'bin')}
+              onChange={(e) => {
+                const filtered = e.target.value.replace(/[^01]/g, '');
+                setBinInput(filtered);
+                try { commitValue(BigInt('0b' + (filtered || '0'))); } catch { /* partial input */ }
+              }}
+              onBlur={() => { focusedField.current = null; handleBinBlur(); }}
+              onKeyDown={(e) => handleKeyDown(e, handleBinBlur)}
+              className={inputSecondaryWithAddon}
+              spellCheck={false}
+            />
+          </div>
+        </label>
+      </div>
     </div>
   );
 }

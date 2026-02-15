@@ -64,7 +64,7 @@ export function BitGrid({ register, hoveredFieldIndex, onFieldHover }: Props) {
   const rows = buildRowBits(register.width, bitsPerRow);
 
   return (
-    <div className="mb-4" ref={containerRef}>
+    <div ref={containerRef}>
       <div className="flex flex-col gap-1">
         {rows.map((row, rowIdx) => {
           const rowFields = fieldsForRow(row, register.fields);

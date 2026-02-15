@@ -84,26 +84,28 @@ export function MainPanel() {
 
   return (
     <main className="flex-1 overflow-y-auto p-4">
-      <div className="flex items-start justify-between mb-4">
-        <div>
-          <h2 className="text-xl font-bold">{activeRegister.name}</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            {activeRegister.offset != null && `${formatOffset(activeRegister.offset)} · `}
-            {activeRegister.width}-bit register
-            {activeRegister.description && ` — ${activeRegister.description}`}
-          </p>
+      <div className="bg-white dark:bg-gray-900/50 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-4 space-y-3">
+        <div className="flex items-start justify-between">
+          <div>
+            <h2 className="text-xl font-bold">{activeRegister.name}</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              {activeRegister.offset != null && `${formatOffset(activeRegister.offset)} · `}
+              {activeRegister.width}-bit register
+              {activeRegister.description && ` — ${activeRegister.description}`}
+            </p>
+          </div>
+          <button
+            onClick={() => enterEditMode(activeRegister)}
+            className="px-3 py-1.5 rounded-md text-sm font-medium
+              bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300
+              hover:bg-blue-200 dark:hover:bg-blue-800/40 transition-colors"
+          >
+            Edit
+          </button>
         </div>
-        <button
-          onClick={() => enterEditMode(activeRegister)}
-          className="px-3 py-1.5 rounded-md text-sm font-medium
-            bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300
-            hover:bg-blue-200 dark:hover:bg-blue-800/40 transition-colors"
-        >
-          Edit
-        </button>
+        <ValueInputBar register={activeRegister} />
+        <BitGrid register={activeRegister} hoveredFieldIndex={hoveredFieldIndex} onFieldHover={setHoveredFieldIndex} />
       </div>
-      <ValueInputBar register={activeRegister} />
-      <BitGrid register={activeRegister} hoveredFieldIndex={hoveredFieldIndex} onFieldHover={setHoveredFieldIndex} />
       <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-2 mt-6">
         Field Breakdown
       </h3>
