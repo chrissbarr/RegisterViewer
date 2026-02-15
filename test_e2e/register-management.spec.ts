@@ -22,7 +22,7 @@ test.describe('Register Management', () => {
     await expect(page.getByRole('heading', { name: 'REG_1' })).toBeVisible();
 
     const hexInput = page.locator('label').filter({ hasText: 'HEX' }).locator('input');
-    await expect(hexInput).toHaveValue('0x00000000');
+    await expect(hexInput).toHaveValue('00000000');
   });
 
   test('selecting a register in sidebar switches the viewer', async ({ page }) => {

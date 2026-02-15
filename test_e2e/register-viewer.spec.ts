@@ -25,22 +25,22 @@ test.describe('Register Viewer - Value Sync', () => {
   test('page loads with seed register and default value', async ({ page }) => {
     await expect(page.getByRole('heading', { name: 'STATUS_REG' })).toBeVisible();
     await expect(page.getByText('32-bit register')).toBeVisible();
-    await expect(hexInput(page)).toHaveValue('0xDEADBEEF');
+    await expect(hexInput(page)).toHaveValue('DEADBEEF');
   });
 
   test('changing hex input updates binary and decimal inputs', async ({ page }) => {
-    await hexInput(page).fill('0xFF');
+    await hexInput(page).fill('FF');
     await hexInput(page).blur();
 
     await expect(decInput(page)).toHaveValue('255');
-    await expect(binInput(page)).toHaveValue('0b00000000000000000000000011111111');
+    await expect(binInput(page)).toHaveValue('00000000000000000000000011111111');
   });
 
   test('changing decimal input updates hex input', async ({ page }) => {
     await decInput(page).fill('256');
     await decInput(page).blur();
 
-    await expect(hexInput(page)).toHaveValue('0x00000100');
+    await expect(hexInput(page)).toHaveValue('00000100');
   });
 
   test('field table shows decoded field values for seed data', async ({ page }) => {
@@ -79,6 +79,6 @@ test.describe('Register Viewer - Field Editing', () => {
     await enableRow.getByRole('button', { name: 'set' }).click();
 
     // Bit 0 cleared: 0xDEADBEEF -> 0xDEADBEEE
-    await expect(hexInput(page)).toHaveValue('0xDEADBEEE');
+    await expect(hexInput(page)).toHaveValue('DEADBEEE');
   });
 });
