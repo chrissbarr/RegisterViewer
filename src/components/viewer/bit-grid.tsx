@@ -9,36 +9,9 @@ import {
   gridTemplateColumns,
   fieldsForRow,
   unassignedRangesForRow,
+  nibblesForRow,
 } from '../../utils/bit-grid-layout';
-
-/** Color palette for fields — inline styles since TW v4 custom colors need dynamic application. */
-const FIELD_COLORS = [
-  'rgba(59,130,246,0.25)',   // blue
-  'rgba(34,197,94,0.25)',    // green
-  'rgba(245,158,11,0.25)',   // amber
-  'rgba(244,63,94,0.25)',    // rose
-  'rgba(168,85,247,0.25)',   // purple
-  'rgba(6,182,212,0.25)',    // cyan
-  'rgba(249,115,22,0.25)',   // orange
-  'rgba(20,184,166,0.25)',   // teal
-  'rgba(236,72,153,0.25)',   // pink
-  'rgba(99,102,241,0.25)',   // indigo
-];
-
-const FIELD_BORDER_COLORS = [
-  'rgb(59,130,246)',   // blue
-  'rgb(34,197,94)',    // green
-  'rgb(245,158,11)',   // amber
-  'rgb(244,63,94)',    // rose
-  'rgb(168,85,247)',   // purple
-  'rgb(6,182,212)',    // cyan
-  'rgb(249,115,22)',   // orange
-  'rgb(20,184,166)',   // teal
-  'rgb(236,72,153)',   // pink
-  'rgb(99,102,241)',   // indigo
-];
-
-export { FIELD_COLORS, FIELD_BORDER_COLORS };
+import { fieldColor, fieldBorderColor } from '../../utils/field-colors';
 
 function getFieldForBit(bit: number, fields: Field[]): { field: Field; index: number } | null {
   for (let i = 0; i < fields.length; i++) {
@@ -69,6 +42,7 @@ export function BitGrid({ register, hoveredFieldIndex, onFieldHover }: Props) {
         {rows.map((row, rowIdx) => {
           const rowFields = fieldsForRow(row, register.fields);
           const rowUnassigned = unassignedRangesForRow(row, register.fields);
+          const rowNibbles = nibblesForRow(row, register.width, value, register.fields);
           const hasLabels = rowFields.length > 0 || rowUnassigned.length > 0;
           const gtc = gridTemplateColumns(row.bits.length);
 
@@ -78,16 +52,40 @@ export function BitGrid({ register, hoveredFieldIndex, onFieldHover }: Props) {
               style={{
                 display: 'grid',
                 gridTemplateColumns: gtc,
-                gridTemplateRows: hasLabels ? 'auto auto' : 'auto',
+                gridTemplateRows: hasLabels ? 'auto auto auto' : 'auto auto',
               }}
             >
+              {/* Hex digit row */}
+              {rowNibbles.map((nibble) => {
+                const bgColor = nibble.fieldIndex !== null
+                  ? fieldColor(nibble.fieldIndex, 0.15)
+                  : 'rgba(128,128,128,0.1)';
+
+                return (
+                  <div
+                    key={`hex-${nibble.nibbleIndex}`}
+                    className={`flex items-center justify-center h-7 text-xs font-mono font-bold
+                      select-none rounded-t
+                      ${nibble.isPartial ? 'opacity-60' : ''}
+                      ${nibble.fieldIndex === null ? 'text-gray-500 dark:text-gray-400' : ''}`}
+                    style={{
+                      gridRow: 1,
+                      gridColumn: `${nibble.startCol} / ${nibble.endCol}`,
+                      backgroundColor: bgColor,
+                    }}
+                  >
+                    {nibble.hexDigit}
+                  </div>
+                );
+              })}
+
               {/* Bit cells */}
               {row.bits.map((bitIdx) => {
                 const match = getFieldForBit(bitIdx, register.fields);
                 const isUnassigned = !match;
-                const bgColor = match ? FIELD_COLORS[match.index % FIELD_COLORS.length] : undefined;
-                const highlightBgColor = match ? FIELD_COLORS[match.index % FIELD_COLORS.length].replace(/[\d.]+\)$/, '0.45)') : undefined;
-                const borderColor = match ? FIELD_BORDER_COLORS[match.index % FIELD_BORDER_COLORS.length] : undefined;
+                const bgColor = match ? fieldColor(match.index, 0.25) : undefined;
+                const highlightBgColor = match ? fieldColor(match.index, 0.45) : undefined;
+                const borderColor = match ? fieldBorderColor(match.index) : undefined;
                 const isHighlighted = match !== null && hoveredFieldIndex === match.index;
                 const col = bitToGridColumn(bitIdx, row.startBit, row.bits.length);
 
@@ -104,7 +102,7 @@ export function BitGrid({ register, hoveredFieldIndex, onFieldHover }: Props) {
                         : 'border-gray-300 dark:border-gray-600'
                     }`}
                     style={{
-                      gridRow: 1,
+                      gridRow: 2,
                       gridColumn: col,
                       ...(match && {
                         backgroundColor: isHighlighted ? highlightBgColor : bgColor,
@@ -130,9 +128,9 @@ export function BitGrid({ register, hoveredFieldIndex, onFieldHover }: Props) {
 
               {/* Field labels */}
               {rowFields.map((fi) => {
-                const bgColor = FIELD_COLORS[fi.fieldIndex % FIELD_COLORS.length];
-                const highlightBgColor = FIELD_COLORS[fi.fieldIndex % FIELD_COLORS.length].replace(/[\d.]+\)$/, '0.45)');
-                const borderColor = FIELD_BORDER_COLORS[fi.fieldIndex % FIELD_BORDER_COLORS.length];
+                const bgColor = fieldColor(fi.fieldIndex, 0.25);
+                const highlightBgColor = fieldColor(fi.fieldIndex, 0.45);
+                const borderColor = fieldBorderColor(fi.fieldIndex);
                 const isHighlighted = hoveredFieldIndex === fi.fieldIndex;
                 const label = fi.isPartial ? `${fi.field.name} (cont.)` : fi.field.name;
 
@@ -144,7 +142,7 @@ export function BitGrid({ register, hoveredFieldIndex, onFieldHover }: Props) {
                     onMouseLeave={() => onFieldHover(null)}
                     className="text-[10px] truncate px-1 py-0.5 text-center transition-colors duration-150 motion-reduce:transition-none"
                     style={{
-                      gridRow: 2,
+                      gridRow: 3,
                       gridColumn: `${fi.startCol} / ${fi.endCol}`,
                       backgroundColor: isHighlighted ? highlightBgColor : bgColor,
                       borderLeft: `2px solid ${borderColor}`,
@@ -163,7 +161,7 @@ export function BitGrid({ register, hoveredFieldIndex, onFieldHover }: Props) {
                   key={`rsvd-${range.startBit}-${range.endBit}`}
                   className="bit-unassigned-label text-[10px] truncate px-1 py-0.5 text-center italic border-b border-x border-gray-300/40 dark:border-gray-600/40"
                   style={{
-                    gridRow: 2,
+                    gridRow: 3,
                     gridColumn: `${range.startCol} / ${range.endCol}`,
                   }}
                 >

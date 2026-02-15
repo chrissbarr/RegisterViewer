@@ -1,4 +1,5 @@
 import type { Field } from '../types/register';
+import { extractBits } from './bitwise';
 
 export interface BitRow {
   bits: number[];
@@ -103,6 +104,124 @@ export function gridTemplateColumns(bitsInRow: number): string {
   }
 
   return parts.join(' ');
+}
+
+export interface NibbleInRow {
+  nibbleIndex: number;    // Absolute nibble index (bit 0-3 = nibble 0, bit 4-7 = nibble 1, etc.)
+  hexDigit: string;       // '0'-'F' — the hex digit for this nibble's current value
+  startCol: number;       // CSS grid column start (1-based)
+  endCol: number;         // CSS grid column end (exclusive, for grid-column shorthand)
+  isPartial: boolean;     // True if this nibble has fewer than 4 bits in this row (MSB edge)
+  fieldIndex: number | null; // Index into fields[] if ALL bits in the nibble belong to the same field, null otherwise
+}
+
+/**
+ * Compute hex digit cells for a row of the bit grid.
+ * Groups the row's bits into nibbles (4-bit groups) and extracts the hex digit
+ * for each nibble from the register value.
+ *
+ * Nibble boundaries are absolute: bits 0-3 = nibble 0, bits 4-7 = nibble 1, etc.
+ * A nibble is "partial" when the register width isn't a multiple of 4 (the MSB
+ * nibble has fewer than 4 bits).
+ */
+export function nibblesForRow(
+  row: BitRow,
+  registerWidth: number,
+  value: bigint,
+  fields: Field[] = [],
+): NibbleInRow[] {
+  if (row.bits.length === 0) return [];
+
+  const result: NibbleInRow[] = [];
+
+  // Walk the row's bits (MSB→LSB order) and group by nibble boundary
+  let currentNibbleIdx = Math.floor(row.bits[0] / 4);
+  let bitsInCurrentGroup: number[] = [];
+
+  for (const bitIdx of row.bits) {
+    const nibbleIdx = Math.floor(bitIdx / 4);
+
+    if (nibbleIdx !== currentNibbleIdx) {
+      // Flush previous nibble group
+      if (bitsInCurrentGroup.length > 0) {
+        result.push(buildNibble(bitsInCurrentGroup, currentNibbleIdx, row, registerWidth, value, fields));
+      }
+      currentNibbleIdx = nibbleIdx;
+      bitsInCurrentGroup = [];
+    }
+
+    bitsInCurrentGroup.push(bitIdx);
+  }
+
+  // Flush last group
+  if (bitsInCurrentGroup.length > 0) {
+    result.push(buildNibble(bitsInCurrentGroup, currentNibbleIdx, row, registerWidth, value, fields));
+  }
+
+  return result;
+}
+
+function buildNibble(
+  bitsInGroup: number[],
+  nibbleIdx: number,
+  row: BitRow,
+  registerWidth: number,
+  value: bigint,
+  fields: Field[],
+): NibbleInRow {
+  const fullNibbleMsb = Math.min(nibbleIdx * 4 + 3, registerWidth - 1);
+  const fullNibbleLsb = nibbleIdx * 4;
+  const fullNibbleWidth = fullNibbleMsb - fullNibbleLsb + 1;
+
+  // Extract the full nibble value (even if only part of it is in this row)
+  const nibbleValue = extractBits(value, fullNibbleMsb, fullNibbleLsb);
+  const hexDigit = nibbleValue.toString(16).toUpperCase();
+
+  // Grid column span: from the MSB bit in this group to the LSB bit in this group
+  const groupMsb = bitsInGroup[0];
+  const groupLsb = bitsInGroup[bitsInGroup.length - 1];
+  const startCol = bitToGridColumn(groupMsb, row.startBit, row.bits.length);
+  const endCol = bitToGridColumn(groupLsb, row.startBit, row.bits.length) + 1;
+
+  // Partial if the full nibble is narrower than 4 bits (MSB edge of register)
+  // OR if this row only contains some of the nibble's bits
+  const isPartial = fullNibbleWidth < 4 || bitsInGroup.length < fullNibbleWidth;
+
+  // Check if ALL bits in the full nibble belong to the same field
+  const fieldIndex = computeNibbleFieldIndex(fullNibbleLsb, fullNibbleMsb, fields);
+
+  return {
+    nibbleIndex: nibbleIdx,
+    hexDigit,
+    startCol,
+    endCol,
+    isPartial,
+    fieldIndex,
+  };
+}
+
+/**
+ * If every bit in [lsb..msb] belongs to the same field, return that field's
+ * index in the fields array. Otherwise return null.
+ */
+function computeNibbleFieldIndex(lsb: number, msb: number, fields: Field[]): number | null {
+  let matchIndex: number | null = null;
+  for (let b = lsb; b <= msb; b++) {
+    let found = false;
+    for (let i = 0; i < fields.length; i++) {
+      if (b >= fields[i].lsb && b <= fields[i].msb) {
+        if (matchIndex === null) {
+          matchIndex = i;
+        } else if (matchIndex !== i) {
+          return null; // mixed fields
+        }
+        found = true;
+        break;
+      }
+    }
+    if (!found) return null; // unassigned bit
+  }
+  return matchIndex;
 }
 
 export interface UnassignedRange {

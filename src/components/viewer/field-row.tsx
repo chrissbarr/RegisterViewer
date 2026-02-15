@@ -3,7 +3,7 @@ import type { DecodedValue } from '../../types/register';
 import { extractBits } from '../../utils/bitwise';
 import { encodeField } from '../../utils/encode';
 import { useAppDispatch } from '../../context/app-context';
-import { FIELD_BORDER_COLORS } from './bit-grid';
+import { fieldColor, fieldBorderColor } from '../../utils/field-colors';
 
 interface Props {
   field: Field;
@@ -25,9 +25,9 @@ export function FieldRow({ field, fieldIndex, registerId, registerValue, registe
   const bitsLabel = field.msb === field.lsb ? `[${field.msb}]` : `[${field.msb}:${field.lsb}]`;
   const mask = ((1n << BigInt(bitWidth)) - 1n) << BigInt(field.lsb);
   const maskStr = '0x' + mask.toString(16).toUpperCase().padStart(Math.ceil(registerWidth / 4), '0');
-  const borderColor = FIELD_BORDER_COLORS[fieldIndex % FIELD_BORDER_COLORS.length];
-  const tintBg = borderColor.replace('rgb(', 'rgba(').replace(')', ',0.06)');
-  const highlightBg = borderColor.replace('rgb(', 'rgba(').replace(')', ',0.15)');
+  const borderColor = fieldBorderColor(fieldIndex);
+  const tintBg = fieldColor(fieldIndex, 0.06);
+  const highlightBg = fieldColor(fieldIndex, 0.15);
 
   function handleFieldEdit(input: string | number | boolean) {
     try {

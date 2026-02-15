@@ -6,7 +6,9 @@ import {
   gridTemplateColumns,
   fieldsForRow,
   unassignedRangesForRow,
+  nibblesForRow,
 } from './bit-grid-layout';
+import type { BitRow } from './bit-grid-layout';
 import type { Field } from '../types/register';
 
 describe('computeBitsPerRow', () => {
@@ -349,5 +351,156 @@ describe('unassignedRangesForRow', () => {
     expect(result).toHaveLength(1);
     expect(result[0].startBit).toBe(15);
     expect(result[0].endBit).toBe(12);
+  });
+});
+
+describe('nibblesForRow', () => {
+  const makeField = (name: string, msb: number, lsb: number): Field => ({
+    id: name,
+    name,
+    msb,
+    lsb,
+    type: 'integer',
+  });
+
+  function makeRow(startBit: number, endBit: number): BitRow {
+    const bits: number[] = [];
+    for (let i = startBit; i >= endBit; i--) bits.push(i);
+    return { bits, startBit, endBit };
+  }
+
+  it('returns 2 nibbles for an 8-bit row with value 0xAB', () => {
+    const row = makeRow(7, 0);
+    const result = nibblesForRow(row, 8, 0xABn);
+    expect(result).toHaveLength(2);
+    expect(result[0].hexDigit).toBe('A');
+    expect(result[0].nibbleIndex).toBe(1);
+    expect(result[0].isPartial).toBe(false);
+    expect(result[1].hexDigit).toBe('B');
+    expect(result[1].nibbleIndex).toBe(0);
+    expect(result[1].isPartial).toBe(false);
+  });
+
+  it('returns 4 nibbles for a 16-bit single row', () => {
+    const row = makeRow(15, 0);
+    const result = nibblesForRow(row, 16, 0xDEADn);
+    expect(result).toHaveLength(4);
+    expect(result.map(n => n.hexDigit).join('')).toBe('DEAD');
+  });
+
+  it('handles non-nibble-aligned width (6-bit register)', () => {
+    const row = makeRow(5, 0);
+    const result = nibblesForRow(row, 6, 0x2Bn);
+    expect(result).toHaveLength(2);
+    // MSB nibble is partial (2 bits: bits 5-4)
+    expect(result[0].nibbleIndex).toBe(1);
+    expect(result[0].hexDigit).toBe('2');
+    expect(result[0].isPartial).toBe(true);
+    // LSB nibble is full (4 bits: bits 3-0)
+    expect(result[1].nibbleIndex).toBe(0);
+    expect(result[1].hexDigit).toBe('B');
+    expect(result[1].isPartial).toBe(false);
+  });
+
+  it('handles nibble split across rows (16-bit register, 8-bit rows)', () => {
+    const row0 = makeRow(15, 8);
+    const result0 = nibblesForRow(row0, 16, 0xABCDn);
+    expect(result0).toHaveLength(2);
+    expect(result0[0].hexDigit).toBe('A');
+    expect(result0[1].hexDigit).toBe('B');
+
+    const row1 = makeRow(7, 0);
+    const result1 = nibblesForRow(row1, 16, 0xABCDn);
+    expect(result1).toHaveLength(2);
+    expect(result1[0].hexDigit).toBe('C');
+    expect(result1[1].hexDigit).toBe('D');
+  });
+
+  it('handles 1-bit register', () => {
+    const row = makeRow(0, 0);
+    const result = nibblesForRow(row, 1, 1n);
+    expect(result).toHaveLength(1);
+    expect(result[0].hexDigit).toBe('1');
+    expect(result[0].isPartial).toBe(true);
+  });
+
+  it('returns empty array for empty row', () => {
+    const row = { bits: [] as number[], startBit: 0, endBit: 0 };
+    const result = nibblesForRow(row, 8, 0n);
+    expect(result).toHaveLength(0);
+  });
+
+  it('handles 32-bit value (8 nibbles in one row)', () => {
+    const row = makeRow(31, 0);
+    const result = nibblesForRow(row, 32, 0xDEADBEEFn);
+    expect(result).toHaveLength(8);
+    expect(result.map(n => n.hexDigit).join('')).toBe('DEADBEEF');
+  });
+
+  it('grid columns span correctly and do not overlap', () => {
+    const row = makeRow(15, 0);
+    const nibbles = nibblesForRow(row, 16, 0xABCDn);
+    for (const nibble of nibbles) {
+      expect(nibble.startCol).toBeGreaterThan(0);
+      expect(nibble.endCol).toBeGreaterThan(nibble.startCol);
+    }
+    // Verify no overlap between adjacent nibbles
+    for (let i = 1; i < nibbles.length; i++) {
+      expect(nibbles[i].startCol).toBeGreaterThanOrEqual(nibbles[i - 1].endCol);
+    }
+  });
+
+  it('handles nibble split at non-byte boundary (12-bit register, 8-bit rows)', () => {
+    const row0 = makeRow(11, 4);
+    const result0 = nibblesForRow(row0, 12, 0xABCn);
+    expect(result0).toHaveLength(2);
+    expect(result0[0].hexDigit).toBe('A');
+    expect(result0[1].hexDigit).toBe('B');
+
+    const row1 = makeRow(3, 0);
+    const result1 = nibblesForRow(row1, 12, 0xABCn);
+    expect(result1).toHaveLength(1);
+    expect(result1[0].hexDigit).toBe('C');
+  });
+
+  it('fieldIndex is set when all nibble bits belong to the same field', () => {
+    const row = makeRow(7, 0);
+    // Field A covers bits 7-4 (nibble 1), Field B covers bits 3-0 (nibble 0)
+    const fields = [makeField('A', 7, 4), makeField('B', 3, 0)];
+    const result = nibblesForRow(row, 8, 0xABn, fields);
+    expect(result[0].fieldIndex).toBe(0); // nibble 1 → field A (index 0)
+    expect(result[1].fieldIndex).toBe(1); // nibble 0 → field B (index 1)
+  });
+
+  it('fieldIndex is null when nibble bits belong to different fields', () => {
+    const row = makeRow(7, 0);
+    // Field A covers bits 7-5, Field B covers bits 4-0 — nibble 1 (bits 7-4) is split
+    const fields = [makeField('A', 7, 5), makeField('B', 4, 0)];
+    const result = nibblesForRow(row, 8, 0xABn, fields);
+    expect(result[0].fieldIndex).toBe(null); // nibble 1 has mixed fields
+    expect(result[1].fieldIndex).toBe(1);    // nibble 0 fully in field B
+  });
+
+  it('fieldIndex is null when nibble has unassigned bits (even if others match)', () => {
+    const row = makeRow(7, 0);
+    // Field A covers only bits 6-4 — bit 7 is unassigned
+    const fields = [makeField('A', 6, 4), makeField('B', 3, 0)];
+    const result = nibblesForRow(row, 8, 0x00n, fields);
+    expect(result[0].fieldIndex).toBe(null); // nibble 1 has unassigned bit 7
+    expect(result[1].fieldIndex).toBe(1);    // nibble 0 fully in field B
+  });
+
+  it('fieldIndex is null when no fields are provided', () => {
+    const row = makeRow(7, 0);
+    const result = nibblesForRow(row, 8, 0xABn, []);
+    expect(result[0].fieldIndex).toBe(null);
+    expect(result[1].fieldIndex).toBe(null);
+  });
+
+  it('fieldIndex defaults to null when fields parameter is omitted', () => {
+    const row = makeRow(7, 0);
+    const result = nibblesForRow(row, 8, 0xABn);
+    expect(result[0].fieldIndex).toBe(null);
+    expect(result[1].fieldIndex).toBe(null);
   });
 });
