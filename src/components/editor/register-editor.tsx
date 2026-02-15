@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import type { RegisterDef, Field, FieldType } from '../../types/register';
 import { FieldDefinitionForm } from './field-definition-form';
 import { JsonConfigEditor } from './json-config-editor';
@@ -31,10 +31,12 @@ export function RegisterEditor({
   const [offsetText, setOffsetText] = useState(
     draft.offset != null ? formatOffset(draft.offset) : ''
   );
-
-  useEffect(() => {
+  const [prevDraftKey, setPrevDraftKey] = useState(`${draft.id}:${draft.offset}`);
+  const draftKey = `${draft.id}:${draft.offset}`;
+  if (draftKey !== prevDraftKey) {
+    setPrevDraftKey(draftKey);
     setOffsetText(draft.offset != null ? formatOffset(draft.offset) : '');
-  }, [draft.id, draft.offset]);
+  }
 
   function updateMeta(partial: Partial<Pick<RegisterDef, 'name' | 'description' | 'width' | 'offset'>>) {
     onDraftChange({ ...draft, ...partial });

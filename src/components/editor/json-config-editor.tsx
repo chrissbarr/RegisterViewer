@@ -1,9 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import type { RegisterDef } from '../../types/register';
 
 function stripIdsFromRegister(register: RegisterDef) {
   const { id: _regId, fields, ...rest } = register;
-  const cleanFields = fields.map(({ id: _fieldId, ...fieldRest }) => fieldRest);
+  void _regId;
+  const cleanFields = fields.map(({ id: _fieldId, ...fieldRest }) => {
+    void _fieldId;
+    return fieldRest;
+  });
   return { ...rest, fields: cleanFields };
 }
 
@@ -15,11 +19,12 @@ interface Props {
 export function JsonConfigEditor({ register, onUpdate }: Props) {
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
+  const [prevRegister, setPrevRegister] = useState(register);
+  if (register !== prevRegister) {
+    setPrevRegister(register);
     setText(JSON.stringify(stripIdsFromRegister(register), null, 2));
     setError(null);
-  }, [register]);
+  }
 
   function handleApply() {
     try {

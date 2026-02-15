@@ -53,7 +53,6 @@ export function DropdownMenu({ items, triggerLabel, triggerContent }: DropdownMe
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const itemRefs = useRef<(HTMLLIElement | null)[]>([]);
-  itemRefs.current.length = items.length;
 
   // Close on click outside
   useClickOutside(containerRef, () => setIsOpen(false), isOpen);

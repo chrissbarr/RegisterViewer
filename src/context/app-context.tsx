@@ -21,6 +21,7 @@ export type Action =
 
 // --- Reducer ---
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function appReducer(state: AppState, action: Action): AppState {
   switch (action.type) {
     case 'SET_REGISTER_VALUE': {
@@ -139,12 +140,14 @@ export function AppProvider({ children, savedState }: { children: ReactNode; sav
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAppState() {
   const ctx = useContext(AppStateContext);
   if (!ctx) throw new Error('useAppState must be used within AppProvider');
   return ctx;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAppDispatch() {
   const ctx = useContext(AppDispatchContext);
   if (!ctx) throw new Error('useAppDispatch must be used within AppProvider');

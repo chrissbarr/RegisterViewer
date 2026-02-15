@@ -134,6 +134,7 @@ export function EditProvider({ children }: { children: ReactNode }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useEditContext() {
   const ctx = useContext(EditContext);
   if (!ctx) throw new Error('useEditContext must be used within EditProvider');
