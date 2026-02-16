@@ -183,6 +183,7 @@ describe('importFromJson', () => {
     expect(result).not.toBeNull();
     expect(result!.registers).toHaveLength(1);
     expect(result!.registers[0].name).toBe('STATUS');
+    expect(result!.warnings).toEqual([]);
     // The value should be resolved by name to the generated register ID
     const regId = result!.registers[0].id;
     expect(result!.values[regId]).toBe(0xFFn);
@@ -195,6 +196,7 @@ describe('importFromJson', () => {
     });
     const result = importFromJson(json);
     expect(result).not.toBeNull();
+    expect(result!.warnings).toEqual([]);
     expect(typeof result!.registers[0].id).toBe('string');
     expect(result!.registers[0].id.length).toBeGreaterThan(0);
   });
@@ -210,6 +212,7 @@ describe('importFromJson', () => {
     });
     const result = importFromJson(json);
     expect(result).not.toBeNull();
+    expect(result!.warnings).toEqual([]);
     expect(typeof result!.registers[0].fields[0].id).toBe('string');
     expect(result!.registers[0].fields[0].id.length).toBeGreaterThan(0);
   });
@@ -232,6 +235,7 @@ describe('importFromJson', () => {
     });
     const result = importFromJson(json);
     expect(result).not.toBeNull();
+    expect(result!.warnings).toEqual([]);
     expect(result!.values[uuid]).toBe(0xBEEFn);
   });
 
@@ -242,6 +246,7 @@ describe('importFromJson', () => {
     });
     const result = importFromJson(json);
     expect(result).not.toBeNull();
+    expect(result!.warnings).toEqual([]);
     expect(result!.registers[0].fields).toEqual([]);
   });
 
@@ -253,6 +258,7 @@ describe('importFromJson', () => {
     });
     const result = importFromJson(json);
     expect(result).not.toBeNull();
+    expect(result!.warnings).toEqual([]);
     expect(Object.keys(result!.values)).toHaveLength(0);
   });
 
@@ -264,7 +270,136 @@ describe('importFromJson', () => {
     });
     const result = importFromJson(json);
     expect(result).not.toBeNull();
+    expect(result!.warnings).toEqual([]);
     const regId = result!.registers[0].id;
     expect(result!.values[regId]).toBe(0n);
+  });
+
+  it('rejects register with width 0', () => {
+    const json = JSON.stringify({
+      version: 1,
+      registers: [{ name: 'INVALID', width: 0, fields: [] }],
+    });
+    const result = importFromJson(json);
+    expect(result).not.toBeNull();
+    expect(result!.registers).toHaveLength(0);
+    expect(result!.warnings).toHaveLength(1);
+    expect(result!.warnings[0].registerName).toBe('INVALID');
+    expect(result!.warnings[0].errors[0].message).toContain('width must be between 1 and 256');
+  });
+
+  it('rejects register with width > 256', () => {
+    const json = JSON.stringify({
+      version: 1,
+      registers: [{ name: 'TOO_WIDE', width: 1000, fields: [] }],
+    });
+    const result = importFromJson(json);
+    expect(result).not.toBeNull();
+    expect(result!.registers).toHaveLength(0);
+    expect(result!.warnings).toHaveLength(1);
+    expect(result!.warnings[0].registerName).toBe('TOO_WIDE');
+    expect(result!.warnings[0].errors[0].message).toContain('width must be between 1 and 256');
+  });
+
+  it('skips invalid register but keeps valid ones', () => {
+    const json = JSON.stringify({
+      version: 1,
+      registers: [
+        { name: 'VALID1', width: 8, fields: [] },
+        { name: 'INVALID', width: 0, fields: [] },
+        { name: 'VALID2', width: 16, fields: [] },
+      ],
+    });
+    const result = importFromJson(json);
+    expect(result).not.toBeNull();
+    expect(result!.registers).toHaveLength(2);
+    expect(result!.registers[0].name).toBe('VALID1');
+    expect(result!.registers[1].name).toBe('VALID2');
+    expect(result!.warnings).toHaveLength(1);
+    expect(result!.warnings[0].registerName).toBe('INVALID');
+  });
+
+  it('strips unknown properties from imported registers', () => {
+    const json = JSON.stringify({
+      version: 1,
+      registers: [{
+        name: 'STATUS',
+        width: 8,
+        fields: [],
+        evilProperty: 'payload',
+        hacked: 'another bad prop',
+      }],
+    });
+    const result = importFromJson(json);
+    expect(result).not.toBeNull();
+    expect(result!.warnings).toEqual([]);
+    expect(result!.registers).toHaveLength(1);
+    expect('evilProperty' in result!.registers[0]).toBe(false);
+    expect('hacked' in result!.registers[0]).toBe(false);
+    // Verify only expected properties are present
+    const reg = result!.registers[0];
+    const keys = Object.keys(reg);
+    expect(keys.sort()).toEqual(['fields', 'id', 'name', 'width'].sort());
+  });
+
+  it('rejects register with overlapping fields', () => {
+    const json = JSON.stringify({
+      version: 1,
+      registers: [{
+        name: 'STATUS',
+        width: 8,
+        fields: [
+          { name: 'F1', msb: 7, lsb: 4, type: 'integer' },
+          { name: 'F2', msb: 5, lsb: 0, type: 'integer' },
+        ],
+      }],
+    });
+    const result = importFromJson(json);
+    expect(result).not.toBeNull();
+    expect(result!.registers).toHaveLength(0);
+    expect(result!.warnings).toHaveLength(1);
+    expect(result!.warnings[0].errors.some((e) => e.message.includes('overlap'))).toBe(true);
+  });
+
+  it('returns warnings with register name and errors', () => {
+    const json = JSON.stringify({
+      version: 1,
+      registers: [
+        { name: 'BAD_REG', width: 999, fields: [] },
+      ],
+    });
+    const result = importFromJson(json);
+    expect(result).not.toBeNull();
+    expect(result!.warnings).toHaveLength(1);
+    expect(result!.warnings[0]).toMatchObject({
+      registerIndex: 0,
+      registerName: 'BAD_REG',
+    });
+    expect(result!.warnings[0].errors).toBeDefined();
+    expect(result!.warnings[0].errors.length).toBeGreaterThan(0);
+  });
+
+  it('rejects register with NaN width', () => {
+    const json = JSON.stringify({
+      version: 1,
+      registers: [{ name: 'BAD', width: NaN, fields: [] }],
+    });
+    const result = importFromJson(json);
+    expect(result).not.toBeNull();
+    expect(result!.registers).toHaveLength(0);
+    expect(result!.warnings).toHaveLength(1);
+    expect(result!.warnings[0].errors[0].message).toContain('width must be between 1 and 256');
+  });
+
+  it('rejects register with fractional width', () => {
+    const json = JSON.stringify({
+      version: 1,
+      registers: [{ name: 'BAD', width: 8.5, fields: [] }],
+    });
+    const result = importFromJson(json);
+    expect(result).not.toBeNull();
+    expect(result!.registers).toHaveLength(0);
+    expect(result!.warnings).toHaveLength(1);
+    expect(result!.warnings[0].errors[0].message).toContain('width must be between 1 and 256');
   });
 });

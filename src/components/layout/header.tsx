@@ -29,10 +29,28 @@ export function Header() {
   const { exitEditMode } = useEditContext();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [examplesOpen, setExamplesOpen] = useState(false);
+  const [importWarning, setImportWarning] = useState<string | null>(null);
 
   function applyImportedData(json: string) {
     const result = importFromJson(json);
-    if (result) {
+    if (!result) {
+      setImportWarning('Failed to import: invalid JSON or missing registers array.');
+      return;
+    }
+
+    if (result.warnings.length > 0) {
+      const skipped = result.warnings
+        .map((w) => `"${w.registerName}": ${w.errors.map((e) => e.message).join('; ')}`)
+        .join('\n');
+      setImportWarning(
+        `Imported ${result.registers.length} register(s). ` +
+        `${result.warnings.length} skipped due to validation errors:\n${skipped}`
+      );
+    } else {
+      setImportWarning(null);
+    }
+
+    if (result.registers.length > 0) {
       exitEditMode();
       dispatch({ type: 'IMPORT_REGISTERS', registers: result.registers });
       for (const [id, value] of Object.entries(result.values)) {
@@ -84,29 +102,42 @@ export function Header() {
   ];
 
   return (
-    <header className="flex items-center justify-between px-4 py-2 border-b border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900">
-      <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">
-        Register Viewer
-      </h1>
-      <div className="flex items-center gap-2">
-        <DropdownMenu
-          items={menuItems}
-          triggerLabel="Application menu"
-          triggerContent={<MenuIcon />}
-        />
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".json"
-          onChange={handleFileChange}
-          className="hidden"
-        />
-        <ExamplesDialog
-          open={examplesOpen}
-          onClose={() => setExamplesOpen(false)}
-          onLoad={applyImportedData}
-        />
-      </div>
-    </header>
+    <>
+      <header className="flex items-center justify-between px-4 py-2 border-b border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900">
+        <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">
+          Register Viewer
+        </h1>
+        <div className="flex items-center gap-2">
+          <DropdownMenu
+            items={menuItems}
+            triggerLabel="Application menu"
+            triggerContent={<MenuIcon />}
+          />
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json"
+            onChange={handleFileChange}
+            className="hidden"
+          />
+          <ExamplesDialog
+            open={examplesOpen}
+            onClose={() => setExamplesOpen(false)}
+            onLoad={applyImportedData}
+          />
+        </div>
+      </header>
+      {importWarning && (
+        <div className="px-4 py-2 bg-amber-50 dark:bg-amber-900/30 border-b border-amber-200 dark:border-amber-800 text-sm text-amber-800 dark:text-amber-200 flex items-start gap-2">
+          <div className="whitespace-pre-wrap flex-1">{importWarning}</div>
+          <button
+            onClick={() => setImportWarning(null)}
+            className="shrink-0 text-amber-600 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-200"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+    </>
   );
 }

@@ -1,4 +1,6 @@
-import type { AppState, Field, RegisterDef, SerializedAppState } from '../types/register';
+import type { AppState, RegisterDef, SerializedAppState } from '../types/register';
+import { sanitizeRegisterDef } from './sanitize';
+import { validateRegisterDef, type ValidationError } from './validation';
 
 const STORAGE_KEY = 'register-viewer-state';
 
@@ -52,7 +54,7 @@ export function loadFromLocalStorage(): AppState | null {
   }
 }
 
-type ExportField = Omit<Field, 'id'>;
+type ExportField = Omit<RegisterDef['fields'][number], 'id'>;
 type ExportRegister = Omit<RegisterDef, 'id' | 'fields'> & { fields: ExportField[] };
 
 function stripIds(register: RegisterDef): ExportRegister {
@@ -84,24 +86,48 @@ export function exportToJson(state: AppState): string {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export function importFromJson(json: string): { registers: AppState['registers']; values: Record<string, bigint> } | null {
+export interface ImportWarning {
+  registerIndex: number;
+  registerName: string;
+  errors: ValidationError[];
+}
+
+export interface ImportResult {
+  registers: RegisterDef[];
+  values: Record<string, bigint>;
+  warnings: ImportWarning[];
+}
+
+export function importFromJson(json: string): ImportResult | null {
   try {
     const data = JSON.parse(json);
     if (!data.registers || !Array.isArray(data.registers)) return null;
 
-    // Auto-generate IDs for registers and fields that lack them
-    const registers: RegisterDef[] = data.registers.map((reg: Partial<RegisterDef>) => ({
-      ...reg,
-      id: reg.id || crypto.randomUUID(),
-      fields: (reg.fields ?? []).map((f: Partial<Field>) => ({
-        ...f,
-        id: f.id || crypto.randomUUID(),
-      })),
-    }));
+    const warnings: ImportWarning[] = [];
+    const validRegisters: RegisterDef[] = [];
+
+    for (let i = 0; i < data.registers.length; i++) {
+      const raw = data.registers[i];
+      if (typeof raw !== 'object' || raw === null) continue;
+
+      const reg = sanitizeRegisterDef(raw as Record<string, unknown>);
+      const errors = validateRegisterDef(reg);
+
+      if (errors.length > 0) {
+        warnings.push({
+          registerIndex: i,
+          registerName: reg.name || `(index ${i})`,
+          errors,
+        });
+        continue;
+      }
+
+      validRegisters.push(reg);
+    }
 
     // Build a name-to-id lookup for resolving name-based registerValues keys
     const nameToId = new Map<string, string>();
-    for (const reg of registers) {
+    for (const reg of validRegisters) {
       nameToId.set(reg.name, reg.id);
     }
 
@@ -111,7 +137,7 @@ export function importFromJson(json: string): { registers: AppState['registers']
         // Resolve key: if it's a UUID matching a register id, use as-is;
         // otherwise treat it as a register name and map to the generated id
         let resolvedId: string | undefined;
-        if (UUID_RE.test(key) && registers.some((r: RegisterDef) => r.id === key)) {
+        if (UUID_RE.test(key) && validRegisters.some((r) => r.id === key)) {
           resolvedId = key;
         } else {
           resolvedId = nameToId.get(key);
@@ -125,7 +151,7 @@ export function importFromJson(json: string): { registers: AppState['registers']
         }
       }
     }
-    return { registers, values };
+    return { registers: validRegisters, values, warnings };
   } catch {
     return null;
   }
