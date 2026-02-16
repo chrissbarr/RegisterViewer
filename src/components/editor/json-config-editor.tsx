@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import type { RegisterDef } from '../../types/register';
+import { sanitizeRegisterDef } from '../../utils/sanitize';
+import { validateRegisterDef } from '../../utils/validation';
 
 function stripIdsFromRegister(register: RegisterDef) {
   const { id: _regId, fields, ...rest } = register;
@@ -28,18 +30,25 @@ export function JsonConfigEditor({ register, onUpdate }: Props) {
 
   function handleApply() {
     try {
-      const parsed = JSON.parse(text) as RegisterDef;
-      if (!parsed.name || !parsed.width || !Array.isArray(parsed.fields)) {
-        setError('Invalid register definition: must have name, width, and fields array');
+      const raw = JSON.parse(text);
+      if (typeof raw !== 'object' || raw === null) {
+        setError('JSON must be an object');
         return;
       }
-      // Ensure all fields have IDs
-      for (const field of parsed.fields) {
-        if (!field.id) field.id = crypto.randomUUID();
+
+      const sanitized = sanitizeRegisterDef(raw as Record<string, unknown>);
+
+      // Preserve the register's existing id
+      sanitized.id = register.id;
+
+      const errors = validateRegisterDef(sanitized);
+      if (errors.length > 0) {
+        setError(errors.map((e) => e.message).join('\n'));
+        return;
       }
-      if (!parsed.id) parsed.id = register.id;
+
       setError(null);
-      onUpdate(parsed);
+      onUpdate(sanitized);
     } catch (e) {
       setError(`Invalid JSON: ${(e as Error).message}`);
     }
@@ -55,7 +64,11 @@ export function JsonConfigEditor({ register, onUpdate }: Props) {
         className="w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-blue-500 resize-y"
       />
       {error && (
-        <p className="text-sm text-red-500 dark:text-red-400">{error}</p>
+        <div className="text-sm text-red-500 dark:text-red-400 space-y-1">
+          {error.split('\n').map((line, i) => (
+            <p key={i}>{line}</p>
+          ))}
+        </div>
       )}
       <button
         onClick={handleApply}
