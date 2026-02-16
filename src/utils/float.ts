@@ -62,7 +62,7 @@ export function float16ToBits(value: number): bigint {
   if (Number.isNaN(value)) return 0x7E00n; // NaN
   if (!Number.isFinite(value)) return value > 0 ? 0x7C00n : 0xFC00n; // +/- Infinity
 
-  const sign = value < 0 ? 1 : 0;
+  const sign = Object.is(value, -0) || value < 0 ? 1 : 0;
   value = Math.abs(value);
 
   if (value === 0) return sign ? 0x8000n : 0n;
