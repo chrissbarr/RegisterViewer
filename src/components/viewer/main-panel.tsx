@@ -89,8 +89,8 @@ export function MainPanel() {
           <div>
             <h2 className="text-xl font-bold">{activeRegister.name}</h2>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              {activeRegister.offset != null && `${formatOffset(activeRegister.offset)} · `}
-              {activeRegister.width}-bit register
+              {activeRegister.offset != null && <><span className="font-mono">{formatOffset(activeRegister.offset)}</span>{' · '}</>}
+              <span className="font-mono">{activeRegister.width}</span>-bit register
               {activeRegister.description && ` — ${activeRegister.description}`}
             </p>
           </div>

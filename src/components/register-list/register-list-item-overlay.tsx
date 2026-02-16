@@ -30,7 +30,7 @@ export function RegisterListItemOverlay({ register, isActive, hasPendingEdit }: 
           </span>
         )}
         <span className="truncate font-medium">{register.name}</span>
-        <span className="text-xs text-gray-500 dark:text-gray-500 shrink-0">
+        <span className="text-xs font-mono text-gray-500 dark:text-gray-500 shrink-0">
           {register.width}b
         </span>
       </div>

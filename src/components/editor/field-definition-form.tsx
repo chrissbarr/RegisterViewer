@@ -55,10 +55,11 @@ export function FieldDefinitionForm({ field, regWidth, onUpdate, onDelete, onDon
     update({ enumEntries: entries });
   }
 
-  const inputClass =
-    'px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-blue-500';
-  const selectClass =
+  const inputBase =
     'px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500';
+  const inputClass = `${inputBase} font-mono`;
+  const inputClassSans = inputBase;
+  const selectClass = inputBase;
 
   return (
     <div className="p-3 rounded border-2 border-blue-400 dark:border-blue-600 bg-gray-50 dark:bg-gray-800/50 space-y-3">
@@ -120,7 +121,7 @@ export function FieldDefinitionForm({ field, regWidth, onUpdate, onDelete, onDon
           type="text"
           value={draft.description ?? ''}
           onChange={(e) => update({ description: e.target.value || undefined })}
-          className={inputClass}
+          className={inputClassSans}
         />
       </label>
 
@@ -133,7 +134,7 @@ export function FieldDefinitionForm({ field, regWidth, onUpdate, onDelete, onDon
               type="text"
               value={draft.flagLabels?.clear ?? 'clear'}
               onChange={(e) => update({ flagLabels: { clear: e.target.value, set: draft.flagLabels?.set ?? 'set' } })}
-              className={inputClass + ' w-32'}
+              className={inputClassSans + ' w-32'}
             />
           </label>
           <label className="flex flex-col gap-1">
@@ -142,7 +143,7 @@ export function FieldDefinitionForm({ field, regWidth, onUpdate, onDelete, onDon
               type="text"
               value={draft.flagLabels?.set ?? 'set'}
               onChange={(e) => update({ flagLabels: { clear: draft.flagLabels?.clear ?? 'clear', set: e.target.value } })}
-              className={inputClass + ' w-32'}
+              className={inputClassSans + ' w-32'}
             />
           </label>
         </div>
