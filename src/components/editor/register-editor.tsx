@@ -77,8 +77,10 @@ export function RegisterEditor({
     onDraftChange(updated);
   }
 
-  const inputClass =
-    'px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-blue-500';
+  const inputBase =
+    'px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500';
+  const inputClass = `${inputBase} font-mono`;
+  const inputClassSans = inputBase;
 
   return (
     <div>
@@ -182,7 +184,7 @@ export function RegisterEditor({
           type="text"
           value={draft.description ?? ''}
           onChange={(e) => updateMeta({ description: e.target.value || undefined })}
-          className={inputClass}
+          className={inputClassSans}
         />
       </label>
 

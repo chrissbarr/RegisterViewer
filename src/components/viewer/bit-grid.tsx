@@ -115,14 +115,14 @@ export function BitGrid({ register, hoveredFieldIndex, onFieldHover }: Props) {
                       }),
                     }}
                   >
-                    <span className={`text-[10px] leading-none ${
+                    <span className={`text-[10px] leading-none font-mono ${
                       isUnassigned
                         ? 'text-gray-400 dark:text-gray-500'
                         : 'text-gray-500 dark:text-gray-400'
                     }`}>
                       {bitIdx}
                     </span>
-                    <span className={`font-bold text-sm leading-none mt-0.5 ${
+                    <span className={`font-mono font-bold text-sm leading-none mt-0.5 ${
                       isUnassigned ? 'opacity-50' : ''
                     }`}>
                       {getBit(value, bitIdx)}
