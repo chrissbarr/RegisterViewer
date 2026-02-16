@@ -213,10 +213,8 @@ describe('float16ToBits', () => {
     expect(float16ToBits(-Infinity)).toBe(0xFC00n);
   });
 
-  it('encodes -0 (implementation treats as +0 since -0 < 0 is false)', () => {
-    // Note: the implementation uses `value < 0` for sign detection,
-    // and -0 < 0 is false in JS, so -0 encodes the same as +0
-    expect(float16ToBits(-0)).toBe(0n);
+  it('encodes negative zero to 0x8000', () => {
+    expect(float16ToBits(-0)).toBe(0x8000n);
   });
 
   it('encodes 0.5 to 0x3800', () => {
@@ -273,5 +271,12 @@ describe('float16 round-trips', () => {
     const reEncoded = float16ToBits(decoded);
     const reDecoded = bitsToFloat16(reEncoded);
     expect(reDecoded).toBeCloseTo(decoded, 12);
+  });
+
+  it('round-trips negative zero (0x8000)', () => {
+    const bits = float16ToBits(-0);
+    expect(bits).toBe(0x8000n);
+    const decoded = bitsToFloat16(bits);
+    expect(Object.is(decoded, -0)).toBe(true);
   });
 });
