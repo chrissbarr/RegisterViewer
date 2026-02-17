@@ -1,5 +1,5 @@
 import { sanitizeField, sanitizeRegisterDef } from './sanitize';
-import type { Field, RegisterDef } from '../types/register';
+import type { EnumField, Field, FixedPointField, FlagField, FloatField, IntegerField, RegisterDef } from '../types/register';
 
 describe('sanitizeField', () => {
   it('picks only known properties, strips unknown ones', () => {
@@ -88,7 +88,7 @@ describe('sanitizeField', () => {
       lsb: 0,
       type: 'integer',
       signed: true,
-    });
+    }) as IntegerField;
     expect(field.signed).toBe(true);
   });
 
@@ -113,7 +113,7 @@ describe('sanitizeField', () => {
         { value: 0, name: 'OFF' },
         { value: 1, name: 'ON' },
       ],
-    });
+    }) as EnumField;
     expect(field.enumEntries).toEqual([
       { value: 0, name: 'OFF' },
       { value: 1, name: 'ON' },
@@ -134,22 +134,22 @@ describe('sanitizeField', () => {
         null,
         { value: 3, name: 'VALID' },
       ],
-    });
+    }) as EnumField;
     expect(field.enumEntries).toEqual([
       { value: 0, name: 'OFF' },
       { value: 3, name: 'VALID' },
     ]);
   });
 
-  it('omits enumEntries when not an array', () => {
+  it('defaults enumEntries to empty array when not an array', () => {
     const field = sanitizeField({
       name: 'MODE',
       msb: 1,
       lsb: 0,
       type: 'enum',
       enumEntries: { value: 0, name: 'OFF' },
-    });
-    expect('enumEntries' in field).toBe(false);
+    }) as EnumField;
+    expect(field.enumEntries).toEqual([]);
   });
 
   it('preserves floatType when valid', () => {
@@ -161,20 +161,20 @@ describe('sanitizeField', () => {
         lsb: 0,
         type: 'float',
         floatType,
-      });
+      }) as FloatField;
       expect(field.floatType).toBe(floatType);
     }
   });
 
-  it('omits floatType when invalid', () => {
+  it('defaults floatType to single when invalid', () => {
     const field = sanitizeField({
       name: 'F',
       msb: 31,
       lsb: 0,
       type: 'float',
       floatType: 'quadruple',
-    });
-    expect('floatType' in field).toBe(false);
+    }) as FloatField;
+    expect(field.floatType).toBe('single');
   });
 
   it('preserves qFormat when valid', () => {
@@ -184,30 +184,30 @@ describe('sanitizeField', () => {
       lsb: 0,
       type: 'fixed-point',
       qFormat: { m: 8, n: 8 },
-    });
+    }) as FixedPointField;
     expect(field.qFormat).toEqual({ m: 8, n: 8 });
   });
 
-  it('omits qFormat when not an object', () => {
+  it('defaults qFormat when not an object', () => {
     const field = sanitizeField({
       name: 'F',
       msb: 15,
       lsb: 0,
       type: 'fixed-point',
       qFormat: 'Q8.8',
-    });
-    expect('qFormat' in field).toBe(false);
+    }) as FixedPointField;
+    expect(field.qFormat).toEqual({ m: 0, n: 0 });
   });
 
-  it('omits qFormat when m or n are missing', () => {
+  it('defaults qFormat when m or n are missing', () => {
     const field1 = sanitizeField({
       name: 'F',
       msb: 15,
       lsb: 0,
       type: 'fixed-point',
       qFormat: { m: 8 },
-    });
-    expect('qFormat' in field1).toBe(false);
+    }) as FixedPointField;
+    expect(field1.qFormat).toEqual({ m: 0, n: 0 });
 
     const field2 = sanitizeField({
       name: 'F',
@@ -215,19 +215,19 @@ describe('sanitizeField', () => {
       lsb: 0,
       type: 'fixed-point',
       qFormat: { n: 8 },
-    });
-    expect('qFormat' in field2).toBe(false);
+    }) as FixedPointField;
+    expect(field2.qFormat).toEqual({ m: 0, n: 0 });
   });
 
-  it('omits qFormat when m or n are not numbers', () => {
+  it('defaults qFormat when m or n are not numbers', () => {
     const field = sanitizeField({
       name: 'F',
       msb: 15,
       lsb: 0,
       type: 'fixed-point',
       qFormat: { m: '8', n: '8' },
-    });
-    expect('qFormat' in field).toBe(false);
+    }) as FixedPointField;
+    expect(field.qFormat).toEqual({ m: 0, n: 0 });
   });
 
   it('preserves flagLabels when valid', () => {
@@ -237,7 +237,7 @@ describe('sanitizeField', () => {
       lsb: 0,
       type: 'flag',
       flagLabels: { clear: 'Disabled', set: 'Enabled' },
-    });
+    }) as FlagField;
     expect(field.flagLabels).toEqual({ clear: 'Disabled', set: 'Enabled' });
   });
 
@@ -292,15 +292,15 @@ describe('sanitizeField', () => {
     }
   });
 
-  it('omits qFormat when m or n are not integers', () => {
+  it('defaults qFormat when m or n are not integers', () => {
     const field = sanitizeField({
       name: 'F',
       msb: 15,
       lsb: 0,
       type: 'fixed-point',
       qFormat: { m: 8.5, n: 7.5 },
-    });
-    expect('qFormat' in field).toBe(false);
+    }) as FixedPointField;
+    expect(field.qFormat).toEqual({ m: 0, n: 0 });
   });
 });
 
@@ -511,11 +511,11 @@ describe('sanitizeRegisterDef', () => {
     expect(reg.width).toBe(16);
     expect(reg.offset).toBe(0x10);
     expect(reg.fields).toHaveLength(3);
-    expect(reg.fields[0].flagLabels).toEqual({ clear: 'Disabled', set: 'Enabled' });
-    expect(reg.fields[1].enumEntries).toEqual([
+    expect((reg.fields[0] as FlagField).flagLabels).toEqual({ clear: 'Disabled', set: 'Enabled' });
+    expect((reg.fields[1] as EnumField).enumEntries).toEqual([
       { value: 0, name: 'MODE_A' },
       { value: 1, name: 'MODE_B' },
     ]);
-    expect(reg.fields[2].signed).toBe(true);
+    expect((reg.fields[2] as IntegerField).signed).toBe(true);
   });
 });

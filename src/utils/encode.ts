@@ -32,25 +32,19 @@ export function encodeField(input: string | number | boolean, field: Field): big
 
     case 'float': {
       const numVal = typeof input === 'string' ? parseFloat(input) : Number(input);
+      let bits: bigint;
       switch (field.floatType) {
-        case 'half':
-          return float16ToBits(numVal);
-        case 'double':
-          return float64ToBits(numVal);
-        case 'single':
-        default:
-          return float32ToBits(numVal);
+        case 'half':   bits = float16ToBits(numVal); break;
+        case 'double': bits = float64ToBits(numVal); break;
+        case 'single': bits = float32ToBits(numVal); break;
       }
+      return bits;
     }
 
     case 'fixed-point': {
-      if (!field.qFormat) return 0n;
       const numVal = typeof input === 'string' ? parseFloat(input) : Number(input);
       return encodeFixedPoint(numVal, field.qFormat);
     }
-
-    default:
-      return 0n;
   }
 }
 

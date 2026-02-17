@@ -64,11 +64,11 @@ function validateField(field: Field, regWidth: number): ValidationError[] {
   if (field.type === 'float') {
     const expectedWidth = field.floatType === 'half' ? 16 : field.floatType === 'double' ? 64 : 32;
     if (bitWidth !== expectedWidth) {
-      errors.push({ fieldId: id, message: `${field.floatType ?? 'single'} float requires ${expectedWidth} bits (got ${bitWidth})` });
+      errors.push({ fieldId: id, message: `${field.floatType} float requires ${expectedWidth} bits (got ${bitWidth})` });
     }
   }
 
-  if (field.type === 'fixed-point' && field.qFormat) {
+  if (field.type === 'fixed-point') {
     const expectedWidth = field.qFormat.m + field.qFormat.n;
     if (bitWidth !== expectedWidth) {
       errors.push({ fieldId: id, message: `Q${field.qFormat.m}.${field.qFormat.n} requires ${expectedWidth} bits (got ${bitWidth})` });

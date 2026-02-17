@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { RegisterDef, Field, FieldType } from '../../types/register';
+import type { RegisterDef, Field, FlagField } from '../../types/register';
 import { useEditContext } from '../../context/edit-context';
 import { FieldDefinitionForm } from './field-definition-form';
 import { JsonConfigEditor } from './json-config-editor';
@@ -48,12 +48,12 @@ export function RegisterEditor({
     const nextLsb = draft.fields.length > 0
       ? Math.max(...draft.fields.map((f) => f.msb)) + 1
       : 0;
-    const newField: Field = {
+    const newField: FlagField = {
       id,
       name: `FIELD_${draft.fields.length}`,
       msb: Math.min(nextLsb, draft.width - 1),
       lsb: Math.min(nextLsb, draft.width - 1),
-      type: 'flag' as FieldType,
+      type: 'flag',
     };
     onDraftChange({ ...draft, fields: [...draft.fields, newField] });
     setEditingFieldId(id);
