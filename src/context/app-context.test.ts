@@ -192,38 +192,68 @@ describe('TOGGLE_THEME', () => {
   });
 });
 
-describe('IMPORT_REGISTERS', () => {
+describe('IMPORT_STATE', () => {
   it('replaces all registers', () => {
     const r1 = makeRegister({ id: 'reg-old' });
     const r2 = makeRegister({ id: 'reg-new', name: 'NEW' });
     const state = makeState({ registers: [r1], registerValues: { 'reg-old': 5n } });
-    const next = appReducer(state, { type: 'IMPORT_REGISTERS', registers: [r2] });
+    const next = appReducer(state, { type: 'IMPORT_STATE', registers: [r2], values: {} });
     expect(next.registers).toHaveLength(1);
     expect(next.registers[0].id).toBe('reg-new');
   });
 
-  it('preserves existing values for registers with the same ID', () => {
-    const reg = makeRegister({ id: 'reg-1' });
-    const state = makeState({
-      registers: [reg],
-      registerValues: { 'reg-1': 0xABCDn },
+  it('atomically sets registers and values in a single dispatch', () => {
+    const r1 = makeRegister({ id: 'reg-a' });
+    const r2 = makeRegister({ id: 'reg-b' });
+    const state = makeState();
+    const next = appReducer(state, {
+      type: 'IMPORT_STATE',
+      registers: [r1, r2],
+      values: { 'reg-a': 0xAAn, 'reg-b': 0xBBn },
     });
-    const next = appReducer(state, { type: 'IMPORT_REGISTERS', registers: [reg] });
-    expect(next.registerValues['reg-1']).toBe(0xABCDn);
+    expect(next.registers).toHaveLength(2);
+    expect(next.registerValues['reg-a']).toBe(0xAAn);
+    expect(next.registerValues['reg-b']).toBe(0xBBn);
+  });
+
+  it('defaults to 0n for registers without a provided value', () => {
+    const reg = makeRegister({ id: 'reg-1' });
+    const state = makeState();
+    const next = appReducer(state, { type: 'IMPORT_STATE', registers: [reg], values: {} });
+    expect(next.registerValues['reg-1']).toBe(0n);
+  });
+
+  it('ignores values for registers not in the imported list', () => {
+    const reg = makeRegister({ id: 'reg-1' });
+    const state = makeState();
+    const next = appReducer(state, {
+      type: 'IMPORT_STATE',
+      registers: [reg],
+      values: { 'reg-1': 0xAAn, 'reg-orphan': 0xFFn },
+    });
+    expect(next.registerValues['reg-1']).toBe(0xAAn);
+    expect(next.registerValues['reg-orphan']).toBeUndefined();
   });
 
   it('sets activeRegisterId to first imported register', () => {
     const r1 = makeRegister({ id: 'reg-a' });
     const r2 = makeRegister({ id: 'reg-b' });
     const state = makeState();
-    const next = appReducer(state, { type: 'IMPORT_REGISTERS', registers: [r1, r2] });
+    const next = appReducer(state, { type: 'IMPORT_STATE', registers: [r1, r2], values: {} });
     expect(next.activeRegisterId).toBe('reg-a');
   });
 
   it('sets activeRegisterId to null when importing empty array', () => {
     const state = makeState({ activeRegisterId: 'reg-1' });
-    const next = appReducer(state, { type: 'IMPORT_REGISTERS', registers: [] });
+    const next = appReducer(state, { type: 'IMPORT_STATE', registers: [], values: {} });
     expect(next.activeRegisterId).toBeNull();
+  });
+
+  it('preserves theme from existing state', () => {
+    const reg = makeRegister({ id: 'reg-1' });
+    const state = makeState({ theme: 'light' });
+    const next = appReducer(state, { type: 'IMPORT_STATE', registers: [reg], values: {} });
+    expect(next.theme).toBe('light');
   });
 });
 

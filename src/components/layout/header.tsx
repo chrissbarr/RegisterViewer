@@ -52,10 +52,7 @@ export function Header() {
 
     if (result.registers.length > 0) {
       exitEditMode();
-      dispatch({ type: 'IMPORT_REGISTERS', registers: result.registers });
-      for (const [id, value] of Object.entries(result.values)) {
-        dispatch({ type: 'SET_REGISTER_VALUE', registerId: id, value });
-      }
+      dispatch({ type: 'IMPORT_STATE', registers: result.registers, values: result.values });
     }
   }
 

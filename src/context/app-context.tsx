@@ -14,7 +14,7 @@ export type Action =
   | { type: 'DELETE_REGISTER'; registerId: string }
   | { type: 'SET_ACTIVE_REGISTER'; registerId: string }
   | { type: 'TOGGLE_THEME' }
-  | { type: 'IMPORT_REGISTERS'; registers: RegisterDef[] }
+  | { type: 'IMPORT_STATE'; registers: RegisterDef[]; values: Record<string, bigint> }
   | { type: 'LOAD_STATE'; state: AppState }
   | { type: 'REORDER_REGISTERS'; oldIndex: number; newIndex: number }
   | { type: 'SORT_REGISTERS_BY_OFFSET' };
@@ -85,10 +85,10 @@ export function appReducer(state: AppState, action: Action): AppState {
       const next = state.theme === 'dark' ? 'light' : 'dark';
       return { ...state, theme: next };
     }
-    case 'IMPORT_REGISTERS': {
+    case 'IMPORT_STATE': {
       const newValues: Record<string, bigint> = {};
       for (const r of action.registers) {
-        newValues[r.id] = state.registerValues[r.id] ?? 0n;
+        newValues[r.id] = action.values[r.id] ?? 0n;
       }
       return {
         ...state,
