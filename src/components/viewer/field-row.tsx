@@ -126,7 +126,7 @@ export function FieldRow({ field, fieldIndex, registerId, registerValue, registe
             onChange={(e) => handleFieldEdit(e.target.value)}
             className="max-w-full px-1.5 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"
           >
-            {field.enumEntries?.map((entry) => (
+            {field.enumEntries.map((entry) => (
               <option key={entry.value} value={entry.value}>
                 {entry.name} ({entry.value})
               </option>

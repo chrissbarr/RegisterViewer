@@ -1,4 +1,4 @@
-import { makeField } from '../test/helpers';
+import { makeField, makeFlagField, makeEnumField, makeFloatField, makeFixedPointField } from '../test/helpers';
 import { encodeField } from './encode';
 import { decodeField, formatDecodedValue } from './decode';
 
@@ -6,7 +6,7 @@ import { decodeField, formatDecodedValue } from './decode';
 // encodeField — flag
 // ---------------------------------------------------------------------------
 describe('encodeField — flag', () => {
-  const field = makeField({ type: 'flag', msb: 0, lsb: 0 });
+  const field = makeFlagField({ msb: 0, lsb: 0 });
 
   it('encodes true as 1n', () => {
     expect(encodeField(true, field)).toBe(1n);
@@ -34,7 +34,7 @@ describe('encodeField — enum', () => {
     { value: 1, name: 'ON' },
     { value: 2, name: 'STANDBY' },
   ];
-  const field = makeField({ type: 'enum', msb: 1, lsb: 0, enumEntries: entries });
+  const field = makeEnumField({ msb: 1, lsb: 0, enumEntries: entries });
 
   it('encodes string "3" as 3n', () => {
     expect(encodeField('3', field)).toBe(3n);
@@ -58,7 +58,7 @@ describe('encodeField — enum', () => {
 // encodeField — integer unsigned
 // ---------------------------------------------------------------------------
 describe('encodeField — integer unsigned', () => {
-  const field = makeField({ type: 'integer', msb: 7, lsb: 0 });
+  const field = makeField({ msb: 7, lsb: 0 });
 
   it('encodes "42" as 42n', () => {
     expect(encodeField('42', field)).toBe(42n);
@@ -86,7 +86,7 @@ describe('encodeField — integer unsigned', () => {
 // encodeField — integer signed
 // ---------------------------------------------------------------------------
 describe('encodeField — integer signed', () => {
-  const field = makeField({ type: 'integer', msb: 7, lsb: 0, signed: true });
+  const field = makeField({ msb: 7, lsb: 0, signed: true });
 
   it('encodes "-1" as 255n (two\'s complement 8-bit)', () => {
     expect(encodeField('-1', field)).toBe(255n);
@@ -107,24 +107,19 @@ describe('encodeField — integer signed', () => {
 // ---------------------------------------------------------------------------
 describe('encodeField — float', () => {
   it('encodes "1.5" as single-precision bits', () => {
-    const field = makeField({ type: 'float', msb: 31, lsb: 0, floatType: 'single' });
+    const field = makeFloatField({ msb: 31, lsb: 0, floatType: 'single' });
     // IEEE 754 single: 1.5 = 0x3FC00000
     expect(encodeField('1.5', field)).toBe(0x3FC00000n);
   });
 
   it('encodes "NaN" as half-precision NaN bits', () => {
-    const field = makeField({ type: 'float', msb: 15, lsb: 0, floatType: 'half' });
+    const field = makeFloatField({ msb: 15, lsb: 0, floatType: 'half' });
     expect(encodeField('NaN', field)).toBe(0x7E00n);
   });
 
   it('encodes Infinity as double-precision bits', () => {
-    const field = makeField({ type: 'float', msb: 63, lsb: 0, floatType: 'double' });
+    const field = makeFloatField({ msb: 63, lsb: 0, floatType: 'double' });
     expect(encodeField(Infinity, field)).toBe(0x7FF0000000000000n);
-  });
-
-  it('defaults to single precision when floatType is undefined', () => {
-    const field = makeField({ type: 'float', msb: 31, lsb: 0 });
-    expect(encodeField('1.5', field)).toBe(0x3FC00000n);
   });
 });
 
@@ -133,29 +128,13 @@ describe('encodeField — float', () => {
 // ---------------------------------------------------------------------------
 describe('encodeField — fixed-point', () => {
   it('encodes "1.5" as Q4.4 raw bits', () => {
-    const field = makeField({
-      type: 'fixed-point',
+    const field = makeFixedPointField({
       msb: 7,
       lsb: 0,
       qFormat: { m: 4, n: 4 },
     });
     // 1.5 * 2^4 = 24 = 0x18
     expect(encodeField('1.5', field)).toBe(0x18n);
-  });
-
-  it('returns 0n when qFormat is missing', () => {
-    const field = makeField({ type: 'fixed-point', msb: 7, lsb: 0 });
-    expect(encodeField('1.5', field)).toBe(0n);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// encodeField — unknown type (default case)
-// ---------------------------------------------------------------------------
-describe('encodeField — unknown type', () => {
-  it('returns 0n for an unrecognized field type', () => {
-    const field = makeField({ type: 'unknown-type' as never, msb: 7, lsb: 0 });
-    expect(encodeField('42', field)).toBe(0n);
   });
 });
 
@@ -164,7 +143,7 @@ describe('encodeField — unknown type', () => {
 // ---------------------------------------------------------------------------
 describe('round-trip — decode then encode', () => {
   it('round-trips a flag field', () => {
-    const field = makeField({ type: 'flag', msb: 0, lsb: 0 });
+    const field = makeFlagField({ msb: 0, lsb: 0 });
     const regVal = 1n;
     const decoded = decodeField(regVal, field);
     expect(decoded.type).toBe('flag');
@@ -174,7 +153,7 @@ describe('round-trip — decode then encode', () => {
 
   it('round-trips an enum field', () => {
     const entries = [{ value: 2, name: 'STANDBY' }];
-    const field = makeField({ type: 'enum', msb: 1, lsb: 0, enumEntries: entries });
+    const field = makeEnumField({ msb: 1, lsb: 0, enumEntries: entries });
     const regVal = 2n;
     const decoded = decodeField(regVal, field);
     expect(decoded.type).toBe('enum');
@@ -183,7 +162,7 @@ describe('round-trip — decode then encode', () => {
   });
 
   it('round-trips an unsigned integer field', () => {
-    const field = makeField({ type: 'integer', msb: 7, lsb: 0 });
+    const field = makeField({ msb: 7, lsb: 0 });
     const regVal = 200n;
     const decoded = decodeField(regVal, field);
     expect(decoded.type).toBe('integer');
@@ -192,7 +171,7 @@ describe('round-trip — decode then encode', () => {
   });
 
   it('round-trips a signed integer field', () => {
-    const field = makeField({ type: 'integer', msb: 7, lsb: 0, signed: true });
+    const field = makeField({ msb: 7, lsb: 0, signed: true });
     const regVal = 0x80n; // -128 in signed 8-bit
     const decoded = decodeField(regVal, field);
     expect(decoded.type).toBe('integer');
@@ -202,7 +181,7 @@ describe('round-trip — decode then encode', () => {
   });
 
   it('round-trips a single-precision float field', () => {
-    const field = makeField({ type: 'float', msb: 31, lsb: 0, floatType: 'single' });
+    const field = makeFloatField({ msb: 31, lsb: 0, floatType: 'single' });
     const regVal = 0x3FC00000n; // 1.5
     const decoded = decodeField(regVal, field);
     expect(decoded.type).toBe('float');
@@ -211,8 +190,7 @@ describe('round-trip — decode then encode', () => {
   });
 
   it('round-trips a Q4.4 fixed-point field', () => {
-    const field = makeField({
-      type: 'fixed-point',
+    const field = makeFixedPointField({
       msb: 7,
       lsb: 0,
       qFormat: { m: 4, n: 4 },
@@ -225,7 +203,7 @@ describe('round-trip — decode then encode', () => {
   });
 
   it('round-trips formatDecodedValue for a normal float', () => {
-    const field = makeField({ type: 'float', msb: 31, lsb: 0, floatType: 'single' });
+    const field = makeFloatField({ msb: 31, lsb: 0, floatType: 'single' });
     const regVal = 0x3FC00000n; // 1.5
     const decoded = decodeField(regVal, field);
     const formatted = formatDecodedValue(decoded);

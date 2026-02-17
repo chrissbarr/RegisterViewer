@@ -1,5 +1,5 @@
 import { validateRegisterDef, validateFieldInput } from './validation';
-import { makeRegister, makeField } from '../test/helpers';
+import { makeRegister, makeField, makeFlagField, makeFloatField, makeFixedPointField } from '../test/helpers';
 
 describe('register-level validation', () => {
   it('returns empty errors for a valid register', () => {
@@ -78,7 +78,7 @@ describe('field-level validation', () => {
 
   it('returns error for flag with bitWidth != 1', () => {
     const reg = makeRegister({
-      fields: [makeField({ type: 'flag', msb: 3, lsb: 0 })],
+      fields: [makeFlagField({ msb: 3, lsb: 0 })],
     });
     const errors = validateRegisterDef(reg);
     expect(errors.some((e) => e.message.includes('Flag') && e.message.includes('1 bit'))).toBe(true);
@@ -86,7 +86,7 @@ describe('field-level validation', () => {
 
   it('no error for flag with bitWidth == 1', () => {
     const reg = makeRegister({
-      fields: [makeField({ type: 'flag', msb: 5, lsb: 5 })],
+      fields: [makeFlagField({ msb: 5, lsb: 5 })],
     });
     const errors = validateRegisterDef(reg);
     expect(errors.some((e) => e.message.includes('Flag'))).toBe(false);
@@ -95,7 +95,7 @@ describe('field-level validation', () => {
   it('returns error for half float with width != 16', () => {
     const reg = makeRegister({
       width: 32,
-      fields: [makeField({ type: 'float', floatType: 'half', msb: 7, lsb: 0 })],
+      fields: [makeFloatField({ floatType: 'half', msb: 7, lsb: 0 })],
     });
     const errors = validateRegisterDef(reg);
     expect(errors.some((e) => e.message.includes('half') && e.message.includes('16'))).toBe(true);
@@ -104,7 +104,7 @@ describe('field-level validation', () => {
   it('returns error for single float with width != 32', () => {
     const reg = makeRegister({
       width: 64,
-      fields: [makeField({ type: 'float', floatType: 'single', msb: 15, lsb: 0 })],
+      fields: [makeFloatField({ floatType: 'single', msb: 15, lsb: 0 })],
     });
     const errors = validateRegisterDef(reg);
     expect(errors.some((e) => e.message.includes('single') && e.message.includes('32'))).toBe(true);
@@ -113,7 +113,7 @@ describe('field-level validation', () => {
   it('returns error for double float with width != 64', () => {
     const reg = makeRegister({
       width: 64,
-      fields: [makeField({ type: 'float', floatType: 'double', msb: 31, lsb: 0 })],
+      fields: [makeFloatField({ floatType: 'double', msb: 31, lsb: 0 })],
     });
     const errors = validateRegisterDef(reg);
     expect(errors.some((e) => e.message.includes('double') && e.message.includes('64'))).toBe(true);
@@ -122,8 +122,7 @@ describe('field-level validation', () => {
   it('returns error for fixed-point with m+n mismatch', () => {
     const reg = makeRegister({
       width: 32,
-      fields: [makeField({
-        type: 'fixed-point',
+      fields: [makeFixedPointField({
         msb: 7,
         lsb: 0,
         qFormat: { m: 4, n: 2 }, // expects 6 bits but field is 8 bits
@@ -133,21 +132,10 @@ describe('field-level validation', () => {
     expect(errors.some((e) => e.message.includes('Q4.2') && e.message.includes('6'))).toBe(true);
   });
 
-  it('returns error for float with undefined floatType and wrong width', () => {
-    const reg = makeRegister({
-      width: 64,
-      fields: [makeField({ type: 'float', msb: 15, lsb: 0 })],
-      // floatType is undefined, defaults to 'single' (32-bit), but field is 16-bit
-    });
-    const errors = validateRegisterDef(reg);
-    expect(errors.some((e) => e.message.includes('single') && e.message.includes('32'))).toBe(true);
-  });
-
   it('no error for fixed-point with matching m+n', () => {
     const reg = makeRegister({
       width: 32,
-      fields: [makeField({
-        type: 'fixed-point',
+      fields: [makeFixedPointField({
         msb: 7,
         lsb: 0,
         qFormat: { m: 4, n: 4 }, // expects 8 bits = field width

@@ -1,5 +1,5 @@
-import type { AppState, RegisterDef, SerializedAppState } from '../types/register';
-import { sanitizeRegisterDef } from './sanitize';
+import type { AppState, Field, RegisterDef, SerializedAppState } from '../types/register';
+import { sanitizeField, sanitizeRegisterDef } from './sanitize';
 import { validateRegisterDef, MAX_REGISTER_WIDTH, type ValidationError } from './validation';
 
 const STORAGE_KEY = 'register-viewer-state';
@@ -18,12 +18,13 @@ export function serializeState(state: AppState): SerializedAppState {
 }
 
 export function deserializeState(data: SerializedAppState): AppState {
-  // Clamp any register widths that exceed the maximum
+  // Clamp register widths and re-sanitize fields to ensure discriminated union invariants
   const registers = data.registers.map((reg) => {
-    if (reg.width > MAX_REGISTER_WIDTH) {
-      return { ...reg, width: MAX_REGISTER_WIDTH };
-    }
-    return reg;
+    const width = reg.width > MAX_REGISTER_WIDTH ? MAX_REGISTER_WIDTH : reg.width;
+    const fields = Array.isArray(reg.fields)
+      ? reg.fields.map((f) => sanitizeField(f as unknown as Record<string, unknown>))
+      : [];
+    return { ...reg, width, fields };
   });
 
   const values: Record<string, bigint> = {};
@@ -69,13 +70,14 @@ export function loadFromLocalStorage(): AppState | null {
   }
 }
 
-type ExportField = Omit<RegisterDef['fields'][number], 'id'>;
+type DistributiveOmit<T, K extends string> = T extends unknown ? Omit<T, K> : never;
+type ExportField = DistributiveOmit<Field, 'id'>;
 type ExportRegister = Omit<RegisterDef, 'id' | 'fields'> & { fields: ExportField[] };
 
 function stripIds(register: RegisterDef): ExportRegister {
   const { id: _regId, fields, ...rest } = register;
   void _regId;
-  const cleanFields: ExportField[] = fields.map(({ id: _fieldId, ...fieldRest }) => {
+  const cleanFields = fields.map(({ id: _fieldId, ...fieldRest }) => {
     void _fieldId;
     return fieldRest;
   });

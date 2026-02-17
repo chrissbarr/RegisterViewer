@@ -14,7 +14,7 @@ export function decodeField(registerValue: bigint, field: Field): DecodedValue {
 
     case 'enum': {
       const numVal = Number(rawBits);
-      const entry = field.enumEntries?.find((e) => e.value === numVal);
+      const entry = field.enumEntries.find((e) => e.value === numVal);
       return { type: 'enum', value: numVal, name: entry?.name ?? null };
     }
 
@@ -33,22 +33,14 @@ export function decodeField(registerValue: bigint, field: Field): DecodedValue {
           value = bitsToFloat64(rawBits);
           break;
         case 'single':
-        default:
           value = bitsToFloat32(rawBits);
           break;
       }
       return { type: 'float', value };
     }
 
-    case 'fixed-point': {
-      if (!field.qFormat) {
-        return { type: 'fixed-point', value: Number(rawBits) };
-      }
+    case 'fixed-point':
       return { type: 'fixed-point', value: decodeFixedPoint(rawBits, field.qFormat) };
-    }
-
-    default:
-      return { type: 'integer', value: rawBits };
   }
 }
 

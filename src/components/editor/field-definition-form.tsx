@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import type { Field, FieldType, EnumEntry, QFormat } from '../../types/register';
+import type { Field, FieldDraft, FieldType, EnumEntry, QFormat } from '../../types/register';
+import { toField, toFieldDraft } from '../../types/register';
 
 interface Props {
   field: Field;
@@ -10,30 +11,41 @@ interface Props {
 }
 
 export function FieldDefinitionForm({ field, regWidth, onUpdate, onDelete, onDone }: Props) {
-  const [draft, setDraft] = useState<Field>({ ...field });
+  const [draft, setDraft] = useState<FieldDraft>(() => toFieldDraft(field));
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
-  function update(partial: Partial<Field>) {
+  function update(partial: Partial<FieldDraft>) {
     const updated = { ...draft, ...partial };
     setDraft(updated);
-    onUpdate(updated);
+    onUpdate(toField(updated));
   }
 
   function handleTypeChange(type: FieldType) {
-    const partial: Partial<Field> = { type };
-    // Set sensible defaults when changing type
+    // Start with base properties, stripping all type-specific props
+    const clean: FieldDraft = {
+      id: draft.id,
+      name: draft.name,
+      description: draft.description,
+      msb: draft.msb,
+      lsb: draft.lsb,
+      type,
+    };
+    // Set sensible defaults for the new type
     if (type === 'flag') {
-      partial.msb = draft.lsb; // force 1-bit
-      if (!draft.flagLabels) partial.flagLabels = { clear: 'clear', set: 'set' };
-    } else if (type === 'enum' && !draft.enumEntries?.length) {
-      partial.enumEntries = [{ value: 0, name: 'VALUE_0' }];
+      clean.msb = draft.lsb; // force 1-bit
+      clean.flagLabels = draft.flagLabels ?? { clear: 'clear', set: 'set' };
+    } else if (type === 'enum') {
+      clean.enumEntries = draft.enumEntries?.length ? draft.enumEntries : [{ value: 0, name: 'VALUE_0' }];
+    } else if (type === 'integer') {
+      clean.signed = draft.signed;
     } else if (type === 'float') {
-      partial.floatType = 'single';
-    } else if (type === 'fixed-point' && !draft.qFormat) {
+      clean.floatType = draft.floatType ?? 'single';
+    } else if (type === 'fixed-point') {
       const bitWidth = draft.msb - draft.lsb + 1;
-      partial.qFormat = { m: Math.ceil(bitWidth / 2), n: Math.floor(bitWidth / 2) };
+      clean.qFormat = draft.qFormat ?? { m: Math.ceil(bitWidth / 2), n: Math.floor(bitWidth / 2) };
     }
-    update(partial);
+    setDraft(clean);
+    onUpdate(toField(clean));
   }
 
   function addEnumEntry() {

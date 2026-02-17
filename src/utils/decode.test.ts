@@ -1,4 +1,4 @@
-import { makeField } from '../test/helpers';
+import { makeField, makeFlagField, makeEnumField, makeFloatField, makeFixedPointField } from '../test/helpers';
 import { decodeField, formatDecodedValue } from './decode';
 
 // ---------------------------------------------------------------------------
@@ -6,20 +6,20 @@ import { decodeField, formatDecodedValue } from './decode';
 // ---------------------------------------------------------------------------
 describe('decodeField — flag', () => {
   it('returns true when the bit is set', () => {
-    const field = makeField({ type: 'flag', msb: 0, lsb: 0 });
+    const field = makeFlagField({ msb: 0, lsb: 0 });
     const result = decodeField(0b1n, field);
     expect(result).toEqual({ type: 'flag', value: true });
   });
 
   it('returns false when the bit is clear', () => {
-    const field = makeField({ type: 'flag', msb: 0, lsb: 0 });
+    const field = makeFlagField({ msb: 0, lsb: 0 });
     const result = decodeField(0b0n, field);
     expect(result).toEqual({ type: 'flag', value: false });
   });
 
   it('returns true for a multi-bit flag with any non-zero value', () => {
     // field occupies bits 3..0 — value 0b0010 in those bits is non-zero
-    const field = makeField({ type: 'flag', msb: 3, lsb: 0 });
+    const field = makeFlagField({ msb: 3, lsb: 0 });
     const result = decodeField(0b0010n, field);
     expect(result).toEqual({ type: 'flag', value: true });
   });
@@ -36,25 +36,25 @@ describe('decodeField — enum', () => {
   ];
 
   it('returns the matching enum name', () => {
-    const field = makeField({ type: 'enum', msb: 1, lsb: 0, enumEntries: entries });
+    const field = makeEnumField({ msb: 1, lsb: 0, enumEntries: entries });
     const result = decodeField(0b01n, field);
     expect(result).toEqual({ type: 'enum', value: 1, name: 'ON' });
   });
 
   it('returns null name when no entry matches', () => {
-    const field = makeField({ type: 'enum', msb: 1, lsb: 0, enumEntries: entries });
+    const field = makeEnumField({ msb: 1, lsb: 0, enumEntries: entries });
     const result = decodeField(0b11n, field); // value 3, not in entries
     expect(result).toEqual({ type: 'enum', value: 3, name: null });
   });
 
-  it('returns null name when enumEntries is undefined', () => {
-    const field = makeField({ type: 'enum', msb: 1, lsb: 0 });
+  it('returns null name when enumEntries is empty', () => {
+    const field = makeEnumField({ msb: 1, lsb: 0, enumEntries: [] });
     const result = decodeField(0b10n, field);
     expect(result).toEqual({ type: 'enum', value: 2, name: null });
   });
 
   it('correctly decodes value 0', () => {
-    const field = makeField({ type: 'enum', msb: 1, lsb: 0, enumEntries: entries });
+    const field = makeEnumField({ msb: 1, lsb: 0, enumEntries: entries });
     const result = decodeField(0n, field);
     expect(result).toEqual({ type: 'enum', value: 0, name: 'OFF' });
   });
@@ -65,25 +65,25 @@ describe('decodeField — enum', () => {
 // ---------------------------------------------------------------------------
 describe('decodeField — integer', () => {
   it('decodes unsigned 8-bit 0xFF as 255n', () => {
-    const field = makeField({ type: 'integer', msb: 7, lsb: 0 });
+    const field = makeField({ msb: 7, lsb: 0 });
     const result = decodeField(0xFFn, field);
     expect(result).toEqual({ type: 'integer', value: 255n });
   });
 
   it('decodes signed positive 0x7F as 127n', () => {
-    const field = makeField({ type: 'integer', msb: 7, lsb: 0, signed: true });
+    const field = makeField({ msb: 7, lsb: 0, signed: true });
     const result = decodeField(0x7Fn, field);
     expect(result).toEqual({ type: 'integer', value: 127n });
   });
 
   it('decodes signed negative 0x80 as -128n', () => {
-    const field = makeField({ type: 'integer', msb: 7, lsb: 0, signed: true });
+    const field = makeField({ msb: 7, lsb: 0, signed: true });
     const result = decodeField(0x80n, field);
     expect(result).toEqual({ type: 'integer', value: -128n });
   });
 
   it('decodes signed all-ones as -1n', () => {
-    const field = makeField({ type: 'integer', msb: 7, lsb: 0, signed: true });
+    const field = makeField({ msb: 7, lsb: 0, signed: true });
     const result = decodeField(0xFFn, field);
     expect(result).toEqual({ type: 'integer', value: -1n });
   });
@@ -95,7 +95,7 @@ describe('decodeField — integer', () => {
 describe('decodeField — float', () => {
   it('decodes single-precision float (1.0)', () => {
     // IEEE 754 single: 1.0 = 0x3F800000
-    const field = makeField({ type: 'float', msb: 31, lsb: 0, floatType: 'single' });
+    const field = makeFloatField({ msb: 31, lsb: 0, floatType: 'single' });
     const result = decodeField(0x3F800000n, field);
     expect(result.type).toBe('float');
     expect((result as { value: number }).value).toBeCloseTo(1.0);
@@ -103,7 +103,7 @@ describe('decodeField — float', () => {
 
   it('decodes half-precision float (1.5)', () => {
     // IEEE 754 half: 1.5 = 0x3E00
-    const field = makeField({ type: 'float', msb: 15, lsb: 0, floatType: 'half' });
+    const field = makeFloatField({ msb: 15, lsb: 0, floatType: 'half' });
     const result = decodeField(0x3E00n, field);
     expect(result.type).toBe('float');
     expect((result as { value: number }).value).toBeCloseTo(1.5);
@@ -111,15 +111,8 @@ describe('decodeField — float', () => {
 
   it('decodes double-precision float (1.0)', () => {
     // IEEE 754 double: 1.0 = 0x3FF0000000000000
-    const field = makeField({ type: 'float', msb: 63, lsb: 0, floatType: 'double' });
+    const field = makeFloatField({ msb: 63, lsb: 0, floatType: 'double' });
     const result = decodeField(0x3FF0000000000000n, field);
-    expect(result.type).toBe('float');
-    expect((result as { value: number }).value).toBeCloseTo(1.0);
-  });
-
-  it('defaults to single precision when floatType is undefined', () => {
-    const field = makeField({ type: 'float', msb: 31, lsb: 0 });
-    const result = decodeField(0x3F800000n, field);
     expect(result.type).toBe('float');
     expect((result as { value: number }).value).toBeCloseTo(1.0);
   });
@@ -131,8 +124,7 @@ describe('decodeField — float', () => {
 describe('decodeField — fixed-point', () => {
   it('decodes Q4.4 value 0x18 as 1.5', () => {
     // Q4.4: 0x18 = 0b00011000 = 24 in unsigned; signed = 24; 24 / 2^4 = 1.5
-    const field = makeField({
-      type: 'fixed-point',
+    const field = makeFixedPointField({
       msb: 7,
       lsb: 0,
       qFormat: { m: 4, n: 4 },
@@ -140,23 +132,6 @@ describe('decodeField — fixed-point', () => {
     const result = decodeField(0x18n, field);
     expect(result.type).toBe('fixed-point');
     expect((result as { value: number }).value).toBeCloseTo(1.5);
-  });
-
-  it('falls back to Number(rawBits) when qFormat is missing', () => {
-    const field = makeField({ type: 'fixed-point', msb: 7, lsb: 0 });
-    const result = decodeField(0x18n, field);
-    expect(result).toEqual({ type: 'fixed-point', value: 24 });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// decodeField — unknown type (default case)
-// ---------------------------------------------------------------------------
-describe('decodeField — unknown type', () => {
-  it('falls back to integer for an unrecognized field type', () => {
-    const field = makeField({ type: 'unknown-type' as never, msb: 7, lsb: 0 });
-    const result = decodeField(0xABn, field);
-    expect(result).toEqual({ type: 'integer', value: 0xABn });
   });
 });
 
