@@ -113,16 +113,16 @@ export function FieldRow({ field, fieldIndex, registerId, registerValue, registe
       <td className="px-3 py-2 text-sm font-medium truncate" title={field.name} style={{ borderLeft: `4px solid ${borderColor}` }}>
         {field.name}
       </td>
-      <td className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400 font-mono">
+      <td className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400 font-mono truncate" title={bitsLabel}>
         {bitsLabel}
       </td>
-      <td className="px-3 py-2 text-sm font-mono text-gray-500 dark:text-gray-400">
+      <td className="px-3 py-2 text-sm font-mono text-gray-500 dark:text-gray-400 truncate" title={maskStr}>
         {maskStr}
       </td>
-      <td className="px-3 py-2 text-sm font-mono text-gray-600 dark:text-gray-300">
+      <td className="px-3 py-2 text-sm font-mono text-gray-600 dark:text-gray-300 truncate" title={binaryStr}>
         {binaryStr}
       </td>
-      <td className="px-3 py-2 text-sm">
+      <td className="px-3 py-2 text-sm overflow-hidden">
         {renderValueControl()}
       </td>
       <td className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400 truncate hidden lg:table-cell" title={field.description ?? ''}>
