@@ -1,9 +1,6 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 import type { RegisterDef } from '../types/register';
-
-function registersEqual(a: RegisterDef, b: RegisterDef): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
-}
+import { registersEqual } from '../utils/register-equality';
 
 interface EditContextValue {
   drafts: Record<string, RegisterDef>;
