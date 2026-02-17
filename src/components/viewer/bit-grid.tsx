@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useAppState, useAppDispatch } from '../../context/app-context';
 import type { RegisterDef, Field } from '../../types/register';
 import { getBit } from '../../utils/bitwise';
@@ -13,12 +14,46 @@ import {
 } from '../../utils/bit-grid-layout';
 import { fieldColor, fieldBorderColor } from '../../utils/field-colors';
 
-function getFieldForBit(bit: number, fields: Field[]): { field: Field; index: number } | null {
+/** Pre-computed colors for a field, keyed by field index. */
+interface FieldColors {
+  nibbleBgColor: string;
+  bgColor: string;
+  highlightBgColor: string;
+  borderColor: string;
+}
+
+/** O(1) bit-to-field lookup via pre-built map. */
+interface FieldMatch extends FieldColors {
+  field: Field;
+  index: number;
+}
+
+interface FieldLookupResult {
+  /** Bit index → field match (first-writer wins for overlapping fields). */
+  bitMap: Map<number, FieldMatch>;
+  /** Field index → pre-computed colors (for nibble/label rows). */
+  colorsByIndex: FieldColors[];
+}
+
+function buildFieldLookup(fields: Field[]): FieldLookupResult {
+  const bitMap = new Map<number, FieldMatch>();
+  const colorsByIndex: FieldColors[] = [];
   for (let i = 0; i < fields.length; i++) {
+    const colors: FieldColors = {
+      nibbleBgColor: fieldColor(i, 0.15),
+      bgColor: fieldColor(i, 0.25),
+      highlightBgColor: fieldColor(i, 0.45),
+      borderColor: fieldBorderColor(i),
+    };
+    colorsByIndex.push(colors);
     const f = fields[i];
-    if (bit >= f.lsb && bit <= f.msb) return { field: f, index: i };
+    const entry: FieldMatch = { ...colors, field: f, index: i };
+    for (let bit = f.lsb; bit <= f.msb; bit++) {
+      // First-writer wins, matching the old linear-scan first-match semantic
+      if (!bitMap.has(bit)) bitMap.set(bit, entry);
+    }
   }
-  return null;
+  return { bitMap, colorsByIndex };
 }
 
 interface Props {
@@ -33,18 +68,41 @@ export function BitGrid({ register, hoveredFieldIndex, onFieldHover }: Props) {
   const value = state.registerValues[register.id] ?? 0n;
   const [containerRef, containerWidth] = useContainerWidth<HTMLDivElement>();
 
-  const bitsPerRow = computeBitsPerRow(containerWidth, register.width);
-  const rows = buildRowBits(register.width, bitsPerRow);
+  // Layout: depends only on container width and register width
+  const rows = useMemo(() => {
+    const bitsPerRow = computeBitsPerRow(containerWidth, register.width);
+    return buildRowBits(register.width, bitsPerRow);
+  }, [containerWidth, register.width]);
+
+  // O(1) bit-to-field lookup map + per-field-index color array
+  const { bitMap: fieldLookup, colorsByIndex: fieldColors } = useMemo(
+    () => buildFieldLookup(register.fields),
+    [register.fields],
+  );
+
+  // Per-row layout data: depends on rows and fields, NOT on value or hover
+  const rowLayoutData = useMemo(
+    () => rows.map((row) => ({
+      rowFields: fieldsForRow(row, register.fields),
+      rowUnassigned: unassignedRangesForRow(row, register.fields),
+      gtc: gridTemplateColumns(row.bits.length),
+    })),
+    [rows, register.fields],
+  );
+
+  // Per-row nibbles: depends on value (hex digits change) but NOT on hover
+  const rowNibblesData = useMemo(
+    () => rows.map((row) => nibblesForRow(row, register.width, value, register.fields)),
+    [rows, register.width, value, register.fields],
+  );
 
   return (
     <div ref={containerRef}>
       <div className="flex flex-col gap-1">
         {rows.map((row, rowIdx) => {
-          const rowFields = fieldsForRow(row, register.fields);
-          const rowUnassigned = unassignedRangesForRow(row, register.fields);
-          const rowNibbles = nibblesForRow(row, register.width, value, register.fields);
+          const { rowFields, rowUnassigned, gtc } = rowLayoutData[rowIdx];
+          const rowNibbles = rowNibblesData[rowIdx];
           const hasLabels = rowFields.length > 0 || rowUnassigned.length > 0;
-          const gtc = gridTemplateColumns(row.bits.length);
 
           return (
             <div
@@ -58,7 +116,7 @@ export function BitGrid({ register, hoveredFieldIndex, onFieldHover }: Props) {
               {/* Hex digit row */}
               {rowNibbles.map((nibble, nibbleIdx) => {
                 const bgColor = nibble.fieldIndex !== null
-                  ? fieldColor(nibble.fieldIndex, 0.15)
+                  ? fieldColors[nibble.fieldIndex].nibbleBgColor
                   : 'rgba(128,128,128,0.1)';
                 // Low nibble (even index) within a byte — add left border as nibble separator
                 const isNibbleSep = nibble.nibbleIndex % 2 === 0 && nibbleIdx > 0;
@@ -86,12 +144,9 @@ export function BitGrid({ register, hoveredFieldIndex, onFieldHover }: Props) {
 
               {/* Bit cells */}
               {row.bits.map((bitIdx) => {
-                const match = getFieldForBit(bitIdx, register.fields);
+                const match = fieldLookup.get(bitIdx);
                 const isUnassigned = !match;
-                const bgColor = match ? fieldColor(match.index, 0.25) : undefined;
-                const highlightBgColor = match ? fieldColor(match.index, 0.45) : undefined;
-                const borderColor = match ? fieldBorderColor(match.index) : undefined;
-                const isHighlighted = match !== null && hoveredFieldIndex === match.index;
+                const isHighlighted = match !== undefined && hoveredFieldIndex === match.index;
                 const col = bitToGridColumn(bitIdx, row.startBit, row.bits.length);
 
                 return (
@@ -110,8 +165,8 @@ export function BitGrid({ register, hoveredFieldIndex, onFieldHover }: Props) {
                       gridRow: 2,
                       gridColumn: col,
                       ...(match && {
-                        backgroundColor: isHighlighted ? highlightBgColor : bgColor,
-                        borderColor: borderColor,
+                        backgroundColor: isHighlighted ? match.highlightBgColor : match.bgColor,
+                        borderColor: match.borderColor,
                       }),
                     }}
                   >
@@ -133,9 +188,7 @@ export function BitGrid({ register, hoveredFieldIndex, onFieldHover }: Props) {
 
               {/* Field labels */}
               {rowFields.map((fi) => {
-                const bgColor = fieldColor(fi.fieldIndex, 0.25);
-                const highlightBgColor = fieldColor(fi.fieldIndex, 0.45);
-                const borderColor = fieldBorderColor(fi.fieldIndex);
+                const colors = fieldColors[fi.fieldIndex];
                 const isHighlighted = hoveredFieldIndex === fi.fieldIndex;
                 const label = fi.isPartial ? `${fi.field.name} (cont.)` : fi.field.name;
 
@@ -149,10 +202,10 @@ export function BitGrid({ register, hoveredFieldIndex, onFieldHover }: Props) {
                     style={{
                       gridRow: 3,
                       gridColumn: `${fi.startCol} / ${fi.endCol}`,
-                      backgroundColor: isHighlighted ? highlightBgColor : bgColor,
-                      borderLeft: `2px solid ${borderColor}`,
-                      borderRight: `2px solid ${borderColor}`,
-                      borderBottom: `2px solid ${borderColor}`,
+                      backgroundColor: isHighlighted ? colors.highlightBgColor : colors.bgColor,
+                      borderLeft: `2px solid ${colors.borderColor}`,
+                      borderRight: `2px solid ${colors.borderColor}`,
+                      borderBottom: `2px solid ${colors.borderColor}`,
                     }}
                   >
                     {label}
