@@ -1,6 +1,6 @@
 import type { AppState, RegisterDef, SerializedAppState } from '../types/register';
 import { sanitizeRegisterDef } from './sanitize';
-import { validateRegisterDef, type ValidationError } from './validation';
+import { validateRegisterDef, MAX_REGISTER_WIDTH, type ValidationError } from './validation';
 
 const STORAGE_KEY = 'register-viewer-state';
 
@@ -18,16 +18,31 @@ export function serializeState(state: AppState): SerializedAppState {
 }
 
 export function deserializeState(data: SerializedAppState): AppState {
+  // Clamp any register widths that exceed the maximum
+  const registers = data.registers.map((reg) => {
+    if (reg.width > MAX_REGISTER_WIDTH) {
+      return { ...reg, width: MAX_REGISTER_WIDTH };
+    }
+    return reg;
+  });
+
   const values: Record<string, bigint> = {};
+  const widthById = new Map(registers.map((r) => [r.id, r.width]));
   for (const [id, hex] of Object.entries(data.registerValues)) {
     try {
-      values[id] = BigInt(hex);
+      let val = BigInt(hex);
+      const width = widthById.get(id);
+      if (width !== undefined) {
+        const mask = (1n << BigInt(width)) - 1n;
+        val = val & mask;
+      }
+      values[id] = val;
     } catch {
       values[id] = 0n;
     }
   }
   return {
-    registers: data.registers,
+    registers,
     activeRegisterId: data.activeRegisterId,
     registerValues: values,
     theme: data.theme,

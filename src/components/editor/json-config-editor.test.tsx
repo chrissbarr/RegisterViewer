@@ -110,7 +110,7 @@ describe('JsonConfigEditor', () => {
     const reg = makeRegister();
     render(<JsonConfigEditor register={reg} onUpdate={vi.fn()} />);
 
-    // Set width to 0 which fails validation (must be 1-256)
+    // Set width to 0 which fails validation (must be 1-128)
     const invalid = { ...JSON.parse(getTextarea().value), width: 0 };
     fireEvent.change(getTextarea(), { target: { value: JSON.stringify(invalid) } });
     fireEvent.click(screen.getByRole('button', { name: 'Apply JSON' }));

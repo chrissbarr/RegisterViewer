@@ -1,5 +1,8 @@
 import type { Field, FieldType, RegisterDef } from '../types/register';
 
+/** Maximum supported register width in bits. */
+export const MAX_REGISTER_WIDTH = 128;
+
 export interface ValidationError {
   fieldId?: string;
   message: string;
@@ -9,8 +12,8 @@ export interface ValidationError {
 export function validateRegisterDef(reg: RegisterDef): ValidationError[] {
   const errors: ValidationError[] = [];
 
-  if (reg.width < 1 || reg.width > 256) {
-    errors.push({ message: `Register width must be between 1 and 256 (got ${reg.width})` });
+  if (reg.width < 1 || reg.width > MAX_REGISTER_WIDTH) {
+    errors.push({ message: `Register width must be between 1 and ${MAX_REGISTER_WIDTH} (got ${reg.width})` });
   }
 
   if (!reg.name.trim()) {

@@ -13,8 +13,8 @@ describe('register-level validation', () => {
     expect(errors.some((e) => e.message.includes('width'))).toBe(true);
   });
 
-  it('returns error for width 257', () => {
-    const reg = makeRegister({ width: 257 });
+  it('returns error for width 129', () => {
+    const reg = makeRegister({ width: 129 });
     const errors = validateRegisterDef(reg);
     expect(errors.some((e) => e.message.includes('width'))).toBe(true);
   });
@@ -24,8 +24,8 @@ describe('register-level validation', () => {
     expect(validateRegisterDef(reg)).toEqual([]);
   });
 
-  it('accepts width 256 as valid', () => {
-    const reg = makeRegister({ width: 256, fields: [] });
+  it('accepts width 128 as valid', () => {
+    const reg = makeRegister({ width: 128, fields: [] });
     expect(validateRegisterDef(reg)).toEqual([]);
   });
 
