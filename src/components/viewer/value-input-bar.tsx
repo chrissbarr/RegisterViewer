@@ -160,10 +160,10 @@ export function ValueInputBar({ register }: Props) {
   const inputSecondaryWithAddon = `${inputSecondary} rounded-r-lg`;
 
   const addonPrimary =
-    'inline-flex items-center px-3 rounded-l-lg border border-r-0 border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 text-xl font-mono font-semibold select-none';
+    'inline-flex items-center px-3 rounded-l-lg border border-r-0 border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 text-xl font-mono font-semibold select-none shadow-sm';
 
   const addonSecondary =
-    'inline-flex items-center px-2 rounded-l-lg border border-r-0 border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 text-sm font-mono select-none';
+    'inline-flex items-center px-2 rounded-l-lg border border-r-0 border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 text-sm font-mono select-none shadow-sm';
 
   const labelClass =
     'text-sm font-semibold text-gray-500 dark:text-gray-400 w-10 shrink-0';
