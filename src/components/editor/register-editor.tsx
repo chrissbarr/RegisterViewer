@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { RegisterDef, Field, FieldType } from '../../types/register';
+import { useEditContext } from '../../context/edit-context';
 import { FieldDefinitionForm } from './field-definition-form';
 import { JsonConfigEditor } from './json-config-editor';
 import { formatOffset } from '../../utils/format';
@@ -9,9 +10,6 @@ interface Props {
   onDraftChange: (draft: RegisterDef) => void;
   onSave: () => void;
   onCancel: () => void;
-  onSaveAll?: () => void;
-  onCancelAll?: () => void;
-  dirtyCount: number;
 }
 
 type EditorTab = 'gui' | 'json';
@@ -21,10 +19,8 @@ export function RegisterEditor({
   onDraftChange,
   onSave,
   onCancel,
-  onSaveAll,
-  onCancelAll,
-  dirtyCount,
 }: Props) {
+  const { dirtyCount } = useEditContext();
   const [tab, setTab] = useState<EditorTab>('gui');
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
   const [confirmingDeleteFieldId, setConfirmingDeleteFieldId] = useState<string | null>(null);
@@ -87,16 +83,6 @@ export function RegisterEditor({
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-xl font-bold">Edit Register</h2>
         <div className="flex gap-2">
-          {onCancelAll && (
-            <button
-              onClick={onCancelAll}
-              className="px-3 py-1.5 rounded-md text-sm font-medium
-                bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200
-                hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
-            >
-              Cancel All ({dirtyCount})
-            </button>
-          )}
           <button
             onClick={onCancel}
             className="px-3 py-1.5 rounded-md text-sm font-medium
@@ -105,15 +91,6 @@ export function RegisterEditor({
           >
             Cancel
           </button>
-          {onSaveAll && (
-            <button
-              onClick={onSaveAll}
-              className="px-3 py-1.5 rounded-md text-sm font-medium
-                bg-green-600 text-white hover:bg-green-700 transition-colors"
-            >
-              Save All ({dirtyCount})
-            </button>
-          )}
           <button
             onClick={onSave}
             className="px-3 py-1.5 rounded-md text-sm font-medium
