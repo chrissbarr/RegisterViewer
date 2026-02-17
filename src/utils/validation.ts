@@ -1,4 +1,4 @@
-import type { Field, RegisterDef } from '../types/register';
+import type { Field, FieldType, RegisterDef } from '../types/register';
 
 export interface ValidationError {
   fieldId?: string;
@@ -89,4 +89,40 @@ function findOverlaps(fields: Field[]): [Field, Field][] {
     }
   }
   return overlaps;
+}
+
+/**
+ * Validate a user's text input for a field value.
+ * Returns null if valid, or a human-readable error message if invalid.
+ */
+export function validateFieldInput(text: string, fieldType: FieldType): string | null {
+  // Flag and enum use toggle/select controls — no free-text validation needed
+  if (fieldType === 'flag' || fieldType === 'enum') return null;
+
+  const trimmed = text.trim();
+  if (trimmed === '') return 'Value required';
+
+  if (fieldType === 'integer') {
+    const pattern = /^-?(0[xX][0-9a-fA-F]+|0[bB][01]+|0[oO][0-7]+|[0-9]+)$/;
+    if (!pattern.test(trimmed)) {
+      return 'Invalid integer — use decimal, 0x, 0b, or 0o';
+    }
+    try {
+      // BigInt() doesn't natively support negative prefixed literals like -0xFF,
+      // so strip the sign and negate manually (same approach as parseBigInt in encode.ts)
+      const abs = trimmed.startsWith('-') ? trimmed.slice(1) : trimmed;
+      BigInt(abs);
+    } catch {
+      return 'Invalid integer';
+    }
+    return null;
+  }
+
+  // float and fixed-point: must be a finite number
+  // Use Number() instead of parseFloat() — Number("3.14abc") returns NaN,
+  // whereas parseFloat("3.14abc") silently returns 3.14.
+  const num = Number(trimmed);
+  if (Number.isNaN(num)) return 'Not a valid number';
+  if (!Number.isFinite(num)) return 'Infinity is not accepted';
+  return null;
 }

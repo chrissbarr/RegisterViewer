@@ -1,4 +1,4 @@
-import { validateRegisterDef } from './validation';
+import { validateRegisterDef, validateFieldInput } from './validation';
 import { makeRegister, makeField } from '../test/helpers';
 
 describe('register-level validation', () => {
@@ -214,5 +214,137 @@ describe('overlap detection', () => {
     const errors = validateRegisterDef(reg);
     const overlapErrors = errors.filter((e) => e.message.includes('overlap'));
     expect(overlapErrors).toHaveLength(2);
+  });
+});
+
+describe('validateFieldInput — integer', () => {
+  it('rejects empty string', () => {
+    expect(validateFieldInput('', 'integer')).not.toBeNull();
+  });
+
+  it('rejects whitespace-only', () => {
+    expect(validateFieldInput('   ', 'integer')).not.toBeNull();
+  });
+
+  it('accepts plain decimal', () => {
+    expect(validateFieldInput('42', 'integer')).toBeNull();
+  });
+
+  it('accepts negative decimal', () => {
+    expect(validateFieldInput('-42', 'integer')).toBeNull();
+  });
+
+  it('accepts 0x hex', () => {
+    expect(validateFieldInput('0xFF', 'integer')).toBeNull();
+  });
+
+  it('accepts 0b binary', () => {
+    expect(validateFieldInput('0b1010', 'integer')).toBeNull();
+  });
+
+  it('accepts 0o octal', () => {
+    expect(validateFieldInput('0o17', 'integer')).toBeNull();
+  });
+
+  it('rejects non-numeric text', () => {
+    expect(validateFieldInput('abc', 'integer')).not.toBeNull();
+  });
+
+  it('rejects bare prefix 0x', () => {
+    expect(validateFieldInput('0x', 'integer')).not.toBeNull();
+  });
+
+  it('rejects bare prefix 0b', () => {
+    expect(validateFieldInput('0b', 'integer')).not.toBeNull();
+  });
+
+  it('rejects mixed junk like 12abc', () => {
+    expect(validateFieldInput('12abc', 'integer')).not.toBeNull();
+  });
+
+  it('accepts zero', () => {
+    expect(validateFieldInput('0', 'integer')).toBeNull();
+  });
+
+  it('accepts negative hex', () => {
+    expect(validateFieldInput('-0xFF', 'integer')).toBeNull();
+  });
+});
+
+describe('validateFieldInput — float', () => {
+  it('rejects empty string', () => {
+    expect(validateFieldInput('', 'float')).not.toBeNull();
+  });
+
+  it('accepts integer literal', () => {
+    expect(validateFieldInput('3', 'float')).toBeNull();
+  });
+
+  it('accepts decimal', () => {
+    expect(validateFieldInput('3.14', 'float')).toBeNull();
+  });
+
+  it('accepts negative decimal', () => {
+    expect(validateFieldInput('-1.5', 'float')).toBeNull();
+  });
+
+  it('accepts scientific notation', () => {
+    expect(validateFieldInput('1e-3', 'float')).toBeNull();
+  });
+
+  it('rejects non-numeric text', () => {
+    expect(validateFieldInput('abc', 'float')).not.toBeNull();
+  });
+
+  it('rejects NaN', () => {
+    expect(validateFieldInput('NaN', 'float')).not.toBeNull();
+  });
+
+  it('rejects Infinity', () => {
+    expect(validateFieldInput('Infinity', 'float')).not.toBeNull();
+  });
+
+  it('rejects -Infinity', () => {
+    expect(validateFieldInput('-Infinity', 'float')).not.toBeNull();
+  });
+
+  it('rejects trailing non-numeric characters', () => {
+    expect(validateFieldInput('3.14abc', 'float')).not.toBeNull();
+  });
+});
+
+describe('validateFieldInput — fixed-point', () => {
+  it('rejects empty string', () => {
+    expect(validateFieldInput('', 'fixed-point')).not.toBeNull();
+  });
+
+  it('accepts decimal', () => {
+    expect(validateFieldInput('1.25', 'fixed-point')).toBeNull();
+  });
+
+  it('accepts negative', () => {
+    expect(validateFieldInput('-1.5', 'fixed-point')).toBeNull();
+  });
+
+  it('rejects non-numeric', () => {
+    expect(validateFieldInput('abc', 'fixed-point')).not.toBeNull();
+  });
+
+  it('rejects NaN', () => {
+    expect(validateFieldInput('NaN', 'fixed-point')).not.toBeNull();
+  });
+
+  it('rejects Infinity', () => {
+    expect(validateFieldInput('Infinity', 'fixed-point')).not.toBeNull();
+  });
+});
+
+describe('validateFieldInput — flag/enum passthrough', () => {
+  it('returns null for flag regardless of input', () => {
+    expect(validateFieldInput('anything', 'flag')).toBeNull();
+  });
+
+  it('returns null for enum regardless of input', () => {
+    expect(validateFieldInput('anything', 'enum')).toBeNull();
   });
 });
