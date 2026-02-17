@@ -63,6 +63,11 @@ body {
   color: rgb(156 163 175);
 }
 
+/* Dark-mode scrollbar styling */
+.dark {
+  scrollbar-color: rgb(75 85 99) rgb(31 41 55);
+}
+
 .dark .bit-unassigned-label {
   background:
     repeating-linear-gradient(
