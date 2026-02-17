@@ -9,6 +9,32 @@ interface Props {
   register: RegisterDef;
 }
 
+const HEX_CHAR = /[0-9A-Fa-f]/;
+const DEC_CHAR = /[0-9]/;
+
+interface CursorState {
+  ref: React.RefObject<HTMLInputElement | null>;
+  posRef: React.RefObject<number>;
+  pendingRef: React.RefObject<boolean>;
+}
+
+function useCursorRestore(field: string, focusedField: React.RefObject<string | null>): CursorState {
+  const ref = useRef<HTMLInputElement>(null);
+  const posRef = useRef<number>(0);
+  const pendingRef = useRef(false);
+
+  useLayoutEffect(() => {
+    if (!pendingRef.current) return;
+    pendingRef.current = false;
+    const el = ref.current;
+    if (el && focusedField.current === field) {
+      el.setSelectionRange(posRef.current, posRef.current);
+    }
+  });
+
+  return { ref, posRef, pendingRef };
+}
+
 export function ValueInputBar({ register }: Props) {
   const state = useAppState();
   const dispatch = useAppDispatch();
@@ -18,9 +44,9 @@ export function ValueInputBar({ register }: Props) {
   const [binInput, setBinInput] = useState('');
   const [decInput, setDecInput] = useState('');
   const focusedField = useRef<'hex' | 'bin' | 'dec' | null>(null);
-  const binRef = useRef<HTMLInputElement>(null);
-  const binCursorRef = useRef<number>(0);
-  const binCursorPending = useRef(false);
+  const hex = useCursorRestore('hex', focusedField);
+  const dec = useCursorRestore('dec', focusedField);
+  const bin = useCursorRestore('bin', focusedField);
 
   // Sync display strings from current value, skipping the focused field
   useEffect(() => {
@@ -31,17 +57,6 @@ export function ValueInputBar({ register }: Props) {
     if (focusedField.current !== 'dec')
       setDecInput(value.toString(10));
   }, [value, register.width]);
-
-  // Restore BIN cursor position only after a programmatic value change.
-  // No deps: must run after every render because the trigger is a ref, not state.
-  useLayoutEffect(() => {
-    if (!binCursorPending.current) return;
-    binCursorPending.current = false;
-    const el = binRef.current;
-    if (el && focusedField.current === 'bin') {
-      el.setSelectionRange(binCursorRef.current, binCursorRef.current);
-    }
-  });
 
   function commitValue(raw: bigint) {
     const clamped = clampToWidth(raw, register.width);
@@ -127,8 +142,8 @@ export function ValueInputBar({ register }: Props) {
 
     // Advance cursor past the overwritten digit
     const newFormatted = formatBinary(updated);
-    binCursorRef.current = digitToFormattedPos(digitIndex + 1, newFormatted);
-    binCursorPending.current = true;
+    bin.posRef.current = digitToFormattedPos(digitIndex + 1, newFormatted);
+    bin.pendingRef.current = true;
 
     e.preventDefault();
   }
@@ -162,11 +177,20 @@ export function ValueInputBar({ register }: Props) {
           <div className="flex flex-1 min-w-0">
             <span className={addonPrimary}>0x</span>
             <input
+              ref={hex.ref}
               type="text"
               value={hexInput}
               onFocus={() => (focusedField.current = 'hex')}
               onChange={(e) => {
-                const filtered = e.target.value.replace(/[^0-9A-Fa-f]/g, '');
+                const raw = e.target.value;
+                const cursorPos = e.target.selectionStart ?? 0;
+                const filtered = raw.replace(/[^0-9A-Fa-f]/g, '');
+                let validBeforeCursor = 0;
+                for (let i = 0; i < cursorPos && i < raw.length; i++) {
+                  if (HEX_CHAR.test(raw[i])) validBeforeCursor++;
+                }
+                hex.posRef.current = validBeforeCursor;
+                hex.pendingRef.current = true;
                 setHexInput(filtered);
                 try { commitValue(BigInt('0x' + (filtered || '0'))); } catch { /* partial input */ }
               }}
@@ -186,11 +210,20 @@ export function ValueInputBar({ register }: Props) {
           <span className={labelClass}>DEC</span>
           <div className="flex flex-1 min-w-0 items-center gap-1">
             <input
+              ref={dec.ref}
               type="text"
               value={decInput}
               onFocus={() => (focusedField.current = 'dec')}
               onChange={(e) => {
-                const filtered = e.target.value.replace(/[^0-9]/g, '');
+                const raw = e.target.value;
+                const cursorPos = e.target.selectionStart ?? 0;
+                const filtered = raw.replace(/[^0-9]/g, '');
+                let validBeforeCursor = 0;
+                for (let i = 0; i < cursorPos && i < raw.length; i++) {
+                  if (DEC_CHAR.test(raw[i])) validBeforeCursor++;
+                }
+                dec.posRef.current = validBeforeCursor;
+                dec.pendingRef.current = true;
                 setDecInput(filtered);
                 try { commitValue(BigInt(filtered || '0')); } catch { /* partial input */ }
               }}
@@ -208,7 +241,7 @@ export function ValueInputBar({ register }: Props) {
             <div className="flex flex-1 min-w-0">
               <span className={addonSecondary}>0b</span>
               <input
-                ref={binRef}
+                ref={bin.ref}
                 type="text"
                 value={formatBinary(binInput.padStart(register.width, '0'))}
                 onFocus={() => (focusedField.current = 'bin')}
@@ -237,8 +270,8 @@ export function ValueInputBar({ register }: Props) {
                     register.width,
                   ));
                   const newFormatted = formatBinary(capped.padStart(register.width, '0'));
-                  binCursorRef.current = digitToFormattedPos(targetDigit, newFormatted);
-                  binCursorPending.current = true;
+                  bin.posRef.current = digitToFormattedPos(targetDigit, newFormatted);
+                  bin.pendingRef.current = true;
 
                   setBinInput(capped);
                   try { commitValue(BigInt('0b' + (capped || '0'))); } catch { /* partial input */ }

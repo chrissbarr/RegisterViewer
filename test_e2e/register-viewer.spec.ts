@@ -98,6 +98,40 @@ test.describe('Register Viewer - Copy Buttons', () => {
   });
 });
 
+test.describe('Register Viewer - Cursor Preservation', () => {
+  test.beforeEach(async ({ page }) => {
+    await resetApp(page);
+  });
+
+  test('typing invalid char in hex field keeps cursor in place', async ({ page }) => {
+    const input = hexInput(page);
+    // Seed value is DEADBEEF. Click to focus, then position cursor after "DEAD".
+    await input.click();
+    await input.evaluate((el: HTMLInputElement) => el.setSelectionRange(4, 4));
+
+    // Type an invalid character
+    await page.keyboard.press('Q');
+
+    // Value unchanged, cursor still at position 4
+    await expect(input).toHaveValue('DEADBEEF');
+    const cursor = await input.evaluate((el: HTMLInputElement) => el.selectionStart);
+    expect(cursor).toBe(4);
+  });
+
+  test('typing invalid char in dec field keeps cursor in place', async ({ page }) => {
+    const input = decInput(page);
+    // Seed value is 3735928559. Position cursor after "3735".
+    await input.click();
+    await input.evaluate((el: HTMLInputElement) => el.setSelectionRange(4, 4));
+
+    await page.keyboard.press('x');
+
+    await expect(input).toHaveValue('3735928559');
+    const cursor = await input.evaluate((el: HTMLInputElement) => el.selectionStart);
+    expect(cursor).toBe(4);
+  });
+});
+
 test.describe('Register Viewer - Field Editing', () => {
   test.beforeEach(async ({ page }) => {
     await resetApp(page);
