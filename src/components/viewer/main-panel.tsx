@@ -13,15 +13,13 @@ export function MainPanel() {
   const dispatch = useAppDispatch();
   const [hoveredFieldIndex, setHoveredFieldIndex] = useState<number | null>(null);
   const {
-    dirtyCount,
+    dirtyDraftIds,
     isEditing,
     enterEditMode,
+    exitEditMode,
     getDraft,
     setDraft,
-    saveDraft,
-    discardDraft,
     saveAllDrafts,
-    discardAllDrafts,
   } = useEditContext();
 
   const activeRegister = registers.find((r) => r.id === activeRegisterId);
@@ -32,27 +30,16 @@ export function MainPanel() {
   }
 
   function handleSave() {
-    if (!activeRegisterId) return;
-    const draft = saveDraft(activeRegisterId);
-    if (draft) {
-      dispatch({ type: 'UPDATE_REGISTER', register: draft });
+    const allDrafts = saveAllDrafts();
+    for (const draft of allDrafts) {
+      if (dirtyDraftIds.has(draft.id)) {
+        dispatch({ type: 'UPDATE_REGISTER', register: draft });
+      }
     }
   }
 
   function handleCancel() {
-    if (!activeRegisterId) return;
-    discardDraft(activeRegisterId);
-  }
-
-  function handleSaveAll() {
-    const allDrafts = saveAllDrafts();
-    for (const draft of allDrafts) {
-      dispatch({ type: 'UPDATE_REGISTER', register: draft });
-    }
-  }
-
-  function handleCancelAll() {
-    discardAllDrafts();
+    exitEditMode();
   }
 
   if (!activeRegister) {
@@ -74,9 +61,6 @@ export function MainPanel() {
           onDraftChange={handleDraftChange}
           onSave={handleSave}
           onCancel={handleCancel}
-          onSaveAll={dirtyCount > 1 ? handleSaveAll : undefined}
-          onCancelAll={dirtyCount > 1 ? handleCancelAll : undefined}
-          dirtyCount={dirtyCount}
         />
       </main>
     );

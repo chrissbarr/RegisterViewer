@@ -14,10 +14,7 @@ interface EditContextValue {
   exitEditMode: () => void;
   getDraft: (id: string) => RegisterDef | undefined;
   setDraft: (id: string, draft: RegisterDef) => void;
-  saveDraft: (id: string) => RegisterDef | undefined;
-  discardDraft: (id: string) => void;
   saveAllDrafts: () => RegisterDef[];
-  discardAllDrafts: () => void;
 }
 
 const EditContext = createContext<EditContextValue | null>(null);
@@ -66,38 +63,6 @@ export function EditProvider({ children }: { children: ReactNode }) {
     setDrafts((prev) => ({ ...prev, [id]: draft }));
   }, []);
 
-  const saveDraft = useCallback((id: string): RegisterDef | undefined => {
-    const draft = drafts[id];
-    if (draft) {
-      setDrafts((prev) => {
-        const { [id]: _, ...rest } = prev;
-        void _;
-        if (Object.keys(rest).length === 0) setIsEditing(false);
-        return rest;
-      });
-      setOriginals((prev) => {
-        const { [id]: _, ...rest } = prev;
-        void _;
-        return rest;
-      });
-    }
-    return draft;
-  }, [drafts]);
-
-  const discardDraft = useCallback((id: string) => {
-    setDrafts((prev) => {
-      const { [id]: _, ...rest } = prev;
-      void _;
-      if (Object.keys(rest).length === 0) setIsEditing(false);
-      return rest;
-    });
-    setOriginals((prev) => {
-      const { [id]: _, ...rest } = prev;
-      void _;
-      return rest;
-    });
-  }, []);
-
   const saveAllDrafts = useCallback((): RegisterDef[] => {
     const all = Object.values(drafts);
     setDrafts({});
@@ -105,12 +70,6 @@ export function EditProvider({ children }: { children: ReactNode }) {
     setIsEditing(false);
     return all;
   }, [drafts]);
-
-  const discardAllDrafts = useCallback(() => {
-    setDrafts({});
-    setOriginals({});
-    setIsEditing(false);
-  }, []);
 
   return (
     <EditContext.Provider
@@ -123,10 +82,7 @@ export function EditProvider({ children }: { children: ReactNode }) {
         exitEditMode,
         getDraft,
         setDraft,
-        saveDraft,
-        discardDraft,
         saveAllDrafts,
-        discardAllDrafts,
       }}
     >
       {children}
