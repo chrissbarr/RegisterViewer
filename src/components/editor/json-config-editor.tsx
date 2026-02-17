@@ -19,7 +19,7 @@ interface Props {
 }
 
 export function JsonConfigEditor({ register, onUpdate }: Props) {
-  const [text, setText] = useState('');
+  const [text, setText] = useState(() => JSON.stringify(stripIdsFromRegister(register), null, 2));
   const [error, setError] = useState<string | null>(null);
   const [prevRegister, setPrevRegister] = useState(register);
   if (register !== prevRegister) {
