@@ -50,6 +50,32 @@ describe('deserializeState', () => {
     const state = deserializeState(serialized);
     expect(state.registerValues['reg-1']).toBe(0n);
   });
+
+  it('clamps register width to 128 when exceeding maximum', () => {
+    const serialized = {
+      registers: [{ id: 'reg-1', name: 'WIDE', width: 256, fields: [] }],
+      activeRegisterId: 'reg-1',
+      registerValues: { 'reg-1': '0xFFFF' },
+      theme: 'dark' as const,
+    };
+    const state = deserializeState(serialized);
+    expect(state.registers[0].width).toBe(128);
+  });
+
+  it('masks register value to clamped width', () => {
+    const serialized = {
+      registers: [{ id: 'reg-1', name: 'WIDE', width: 256, fields: [] }],
+      activeRegisterId: 'reg-1',
+      // Value with more than 128 bits set
+      registerValues: { 'reg-1': '0x' + 'FF'.repeat(32) },
+      theme: 'dark' as const,
+    };
+    const state = deserializeState(serialized);
+    expect(state.registers[0].width).toBe(128);
+    // Value should be masked to 128 bits
+    const maxVal = (1n << 128n) - 1n;
+    expect(state.registerValues['reg-1']).toBe(maxVal);
+  });
 });
 
 describe('save/loadFromLocalStorage', () => {
@@ -285,10 +311,10 @@ describe('importFromJson', () => {
     expect(result!.registers).toHaveLength(0);
     expect(result!.warnings).toHaveLength(1);
     expect(result!.warnings[0].registerName).toBe('INVALID');
-    expect(result!.warnings[0].errors[0].message).toContain('width must be between 1 and 256');
+    expect(result!.warnings[0].errors[0].message).toContain('width must be between 1 and 128');
   });
 
-  it('rejects register with width > 256', () => {
+  it('rejects register with width > 128', () => {
     const json = JSON.stringify({
       version: 1,
       registers: [{ name: 'TOO_WIDE', width: 1000, fields: [] }],
@@ -298,7 +324,7 @@ describe('importFromJson', () => {
     expect(result!.registers).toHaveLength(0);
     expect(result!.warnings).toHaveLength(1);
     expect(result!.warnings[0].registerName).toBe('TOO_WIDE');
-    expect(result!.warnings[0].errors[0].message).toContain('width must be between 1 and 256');
+    expect(result!.warnings[0].errors[0].message).toContain('width must be between 1 and 128');
   });
 
   it('skips invalid register but keeps valid ones', () => {
@@ -388,7 +414,7 @@ describe('importFromJson', () => {
     expect(result).not.toBeNull();
     expect(result!.registers).toHaveLength(0);
     expect(result!.warnings).toHaveLength(1);
-    expect(result!.warnings[0].errors[0].message).toContain('width must be between 1 and 256');
+    expect(result!.warnings[0].errors[0].message).toContain('width must be between 1 and 128');
   });
 
   it('rejects register with fractional width', () => {
@@ -400,6 +426,6 @@ describe('importFromJson', () => {
     expect(result).not.toBeNull();
     expect(result!.registers).toHaveLength(0);
     expect(result!.warnings).toHaveLength(1);
-    expect(result!.warnings[0].errors[0].message).toContain('width must be between 1 and 256');
+    expect(result!.warnings[0].errors[0].message).toContain('width must be between 1 and 128');
   });
 });

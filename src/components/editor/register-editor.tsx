@@ -4,12 +4,14 @@ import { useEditContext } from '../../context/edit-context';
 import { FieldDefinitionForm } from './field-definition-form';
 import { JsonConfigEditor } from './json-config-editor';
 import { formatOffset } from '../../utils/format';
+import { MAX_REGISTER_WIDTH } from '../../utils/validation';
 
 interface Props {
   draft: RegisterDef;
   onDraftChange: (draft: RegisterDef) => void;
   onSave: () => void;
   onCancel: () => void;
+  saveErrors?: string[] | null;
 }
 
 type EditorTab = 'gui' | 'json';
@@ -19,18 +21,21 @@ export function RegisterEditor({
   onDraftChange,
   onSave,
   onCancel,
+  saveErrors,
 }: Props) {
   const { dirtyCount } = useEditContext();
   const [tab, setTab] = useState<EditorTab>('gui');
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
   const [confirmingDeleteFieldId, setConfirmingDeleteFieldId] = useState<string | null>(null);
+  const [widthText, setWidthText] = useState(String(draft.width));
   const [offsetText, setOffsetText] = useState(
     draft.offset != null ? formatOffset(draft.offset) : ''
   );
-  const [prevDraftKey, setPrevDraftKey] = useState(`${draft.id}:${draft.offset}`);
-  const draftKey = `${draft.id}:${draft.offset}`;
+  const [prevDraftKey, setPrevDraftKey] = useState(`${draft.id}:${draft.width}:${draft.offset}`);
+  const draftKey = `${draft.id}:${draft.width}:${draft.offset}`;
   if (draftKey !== prevDraftKey) {
     setPrevDraftKey(draftKey);
+    setWidthText(String(draft.width));
     setOffsetText(draft.offset != null ? formatOffset(draft.offset) : '');
   }
 
@@ -73,6 +78,9 @@ export function RegisterEditor({
     onDraftChange(updated);
   }
 
+  const widthParsed = parseInt(widthText, 10);
+  const widthHasError = widthText.trim() !== '' && (!Number.isInteger(widthParsed) || widthParsed < 1 || widthParsed > MAX_REGISTER_WIDTH);
+
   const inputBase =
     'px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500';
   const inputClass = `${inputBase} font-mono`;
@@ -107,6 +115,14 @@ export function RegisterEditor({
         </div>
       )}
 
+      {saveErrors && saveErrors.length > 0 && (
+        <div className="mb-3 px-3 py-2 rounded-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-sm text-red-700 dark:text-red-300 space-y-1">
+          {saveErrors.map((err, i) => (
+            <p key={i}>{err}</p>
+          ))}
+        </div>
+      )}
+
       {/* Register metadata */}
       <div className="grid grid-cols-3 gap-3 mb-2">
         <label className="flex flex-col gap-1">
@@ -120,14 +136,37 @@ export function RegisterEditor({
         </label>
         <label className="flex flex-col gap-1">
           <span className="text-xs text-gray-500 dark:text-gray-400">Width (bits)</span>
-          <input
-            type="number"
-            value={draft.width}
-            min={1}
-            max={256}
-            onChange={(e) => updateMeta({ width: parseInt(e.target.value) || 32 })}
-            className={inputClass}
-          />
+          <div className="relative group/width-input">
+            <input
+              type="text"
+              inputMode="numeric"
+              value={widthText}
+              onChange={(e) => setWidthText(e.target.value)}
+              onBlur={() => {
+                const val = parseInt(widthText, 10);
+                if (Number.isInteger(val) && val >= 1 && val <= MAX_REGISTER_WIDTH) {
+                  updateMeta({ width: val });
+                  setWidthText(String(val));
+                } else {
+                  setWidthText(String(draft.width));
+                }
+              }}
+              className={`${inputClass} w-full ${
+                widthHasError
+                  ? 'border-red-500 dark:border-red-400 focus:ring-red-500'
+                  : ''
+              }`}
+              aria-invalid={widthHasError}
+            />
+            {widthHasError && (
+              <div
+                role="tooltip"
+                className="absolute bottom-full left-0 mb-1 z-50 hidden group-focus-within/width-input:block px-2 py-1 text-xs rounded bg-red-600 text-white whitespace-nowrap shadow-md pointer-events-none"
+              >
+                Must be 1–{MAX_REGISTER_WIDTH}
+              </div>
+            )}
+          </div>
         </label>
         <label className="flex flex-col gap-1">
           <span className="text-xs text-gray-500 dark:text-gray-400">Offset</span>

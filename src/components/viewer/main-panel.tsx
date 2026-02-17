@@ -7,6 +7,7 @@ import { FieldTable } from './field-table';
 import { RegisterEditor } from '../editor/register-editor';
 import type { RegisterDef } from '../../types/register';
 import { formatOffset } from '../../utils/format';
+import { validateRegisterDef } from '../../utils/validation';
 
 export function MainPanel() {
   const { registers, activeRegisterId } = useAppState();
@@ -22,14 +23,32 @@ export function MainPanel() {
     saveAllDrafts,
   } = useEditContext();
 
+  const [saveErrors, setSaveErrors] = useState<string[] | null>(null);
+
   const activeRegister = registers.find((r) => r.id === activeRegisterId);
   const activeDraft = activeRegisterId ? getDraft(activeRegisterId) : undefined;
 
   function handleDraftChange(updated: RegisterDef) {
     setDraft(updated.id, updated);
+    setSaveErrors(null);
   }
 
   function handleSave() {
+    // Validate all dirty drafts before committing (saveAllDrafts destroys edit state)
+    const errors: string[] = [];
+    for (const id of dirtyDraftIds) {
+      const draft = getDraft(id);
+      if (!draft) continue;
+      for (const e of validateRegisterDef(draft)) {
+        errors.push(`${draft.name}: ${e.message}`);
+      }
+    }
+    if (errors.length > 0) {
+      setSaveErrors(errors);
+      return;
+    }
+
+    setSaveErrors(null);
     const allDrafts = saveAllDrafts();
     for (const draft of allDrafts) {
       if (dirtyDraftIds.has(draft.id)) {
@@ -39,6 +58,7 @@ export function MainPanel() {
   }
 
   function handleCancel() {
+    setSaveErrors(null);
     exitEditMode();
   }
 
@@ -61,6 +81,7 @@ export function MainPanel() {
           onDraftChange={handleDraftChange}
           onSave={handleSave}
           onCancel={handleCancel}
+          saveErrors={saveErrors}
         />
       </main>
     );
