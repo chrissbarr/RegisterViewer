@@ -44,7 +44,7 @@ test.describe('Import / Export', () => {
     await page.getByRole('menuitem', { name: 'Export' }).click();
     const download = await downloadPromise;
 
-    expect(download.suggestedFilename()).toBe('register-definitions.json');
+    expect(download.suggestedFilename()).toBe('example-project.json');
 
     // Verify the content
     const content = await (await download.createReadStream())

@@ -1,4 +1,4 @@
-import type { AppState, Field, RegisterDef, SerializedAppState } from '../types/register';
+import type { AppState, Field, ProjectMetadata, RegisterDef, SerializedAppState } from '../types/register';
 import { sanitizeField, sanitizeRegisterDef } from './sanitize';
 import { validateRegisterDef, MAX_REGISTER_WIDTH, type ValidationError } from './validation';
 
@@ -14,6 +14,7 @@ export function serializeState(state: AppState): SerializedAppState {
     activeRegisterId: state.activeRegisterId,
     registerValues: serializedValues,
     theme: state.theme,
+    project: state.project,
   };
 }
 
@@ -47,6 +48,7 @@ export function deserializeState(data: SerializedAppState): AppState {
     activeRegisterId: data.activeRegisterId,
     registerValues: values,
     theme: data.theme,
+    project: sanitizeProjectMetadata(data.project),
   };
 }
 
@@ -84,6 +86,18 @@ function stripIds(register: RegisterDef): ExportRegister {
   return { ...rest, fields: cleanFields };
 }
 
+export function sanitizeProjectMetadata(raw: unknown): ProjectMetadata | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined;
+  const obj = raw as Record<string, unknown>;
+  const result: ProjectMetadata = {};
+  if (typeof obj.title === 'string' && obj.title.trim()) result.title = obj.title.trim();
+  if (typeof obj.description === 'string' && obj.description.trim()) result.description = obj.description.trim();
+  if (typeof obj.date === 'string' && obj.date.trim()) result.date = obj.date.trim();
+  if (typeof obj.authorEmail === 'string' && obj.authorEmail.trim()) result.authorEmail = obj.authorEmail.trim();
+  if (typeof obj.link === 'string' && obj.link.trim()) result.link = obj.link.trim();
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
 export function exportToJson(state: AppState): string {
   const cleanRegisters = state.registers.map(stripIds);
   const registerValues: Record<string, string> = {};
@@ -93,11 +107,14 @@ export function exportToJson(state: AppState): string {
       registerValues[reg.name] = '0x' + value.toString(16);
     }
   }
-  const data = {
+  const data: Record<string, unknown> = {
     version: 1,
     registers: cleanRegisters,
     registerValues,
   };
+  if (state.project) {
+    data.project = state.project;
+  }
   return JSON.stringify(data, null, 2);
 }
 
@@ -113,6 +130,7 @@ export interface ImportResult {
   registers: RegisterDef[];
   values: Record<string, bigint>;
   warnings: ImportWarning[];
+  project?: ProjectMetadata;
 }
 
 export function importFromJson(json: string): ImportResult | null {
@@ -168,7 +186,8 @@ export function importFromJson(json: string): ImportResult | null {
         }
       }
     }
-    return { registers: validRegisters, values, warnings };
+    const project = sanitizeProjectMetadata(data.project);
+    return { registers: validRegisters, values, warnings, project };
   } catch {
     return null;
   }

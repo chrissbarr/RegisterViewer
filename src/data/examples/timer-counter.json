@@ -1,5 +1,10 @@
 {
   "version": 1,
+  "project": {
+    "title": "Timer/Counter (ATmega328P)",
+    "description": "Timer/Counter0 and Timer/Counter1 registers from the ATmega328P microcontroller.",
+    "link": "https://ww1.microchip.com/downloads/en/DeviceDoc/Atmel-7810-Automotive-Microcontrollers-ATmega328P_Datasheet.pdf"
+  },
   "registers": [
     {
       "name": "TCCR0A",

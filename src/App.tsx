@@ -19,6 +19,10 @@ function getInitialState(): AppState | undefined {
     activeRegisterId: seedRegisters[0]?.id ?? null,
     registerValues: seedValues,
     theme: 'dark',
+    project: {
+      title: 'Example Project',
+      description: 'Demonstrates register field types. Open Project Settings from the menu to customize.',
+    },
   };
 }
 

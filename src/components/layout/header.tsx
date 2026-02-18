@@ -3,6 +3,7 @@ import { DropdownMenu, type MenuItem } from '../common/dropdown-menu';
 import { AboutDialog } from '../common/about-dialog';
 import { ConfirmClearDialog } from '../common/confirm-clear-dialog';
 import { ExamplesDialog } from '../common/examples-dialog';
+import { ProjectSettingsDialog } from '../common/project-settings-dialog';
 import { GitHubIcon } from '../common/github-icon';
 import { GITHUB_URL } from '../../constants';
 import { useAppState, useAppDispatch } from '../../context/app-context';
@@ -27,6 +28,7 @@ export function Header() {
   const [examplesOpen, setExamplesOpen] = useState(false);
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   const [importWarning, setImportWarning] = useState<string | null>(null);
 
   function applyImportedData(json: string) {
@@ -50,7 +52,7 @@ export function Header() {
 
     if (result.registers.length > 0) {
       exitEditMode();
-      dispatch({ type: 'IMPORT_STATE', registers: result.registers, values: result.values });
+      dispatch({ type: 'IMPORT_STATE', registers: result.registers, values: result.values, project: result.project });
     }
   }
 
@@ -60,7 +62,11 @@ export function Header() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'register-definitions.json';
+    const slug = state.project?.title
+      ?.toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '');
+    a.download = slug ? `${slug}.json` : 'register-definitions.json';
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -82,6 +88,8 @@ export function Header() {
   }
 
   const menuItems: MenuItem[] = [
+    { kind: 'action', label: 'Project settings', onAction: () => setProjectSettingsOpen(true) },
+    { kind: 'separator' },
     { kind: 'action', label: 'Import', onAction: handleImport },
     { kind: 'action', label: 'Export', onAction: handleExport },
     { kind: 'action', label: 'Examples', onAction: () => setExamplesOpen(true) },
@@ -103,6 +111,11 @@ export function Header() {
       <header className="flex items-center justify-between px-4 py-2 border-b border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900">
         <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">
           Register Viewer
+          {state.project?.title && (
+            <span className="font-normal text-gray-500 dark:text-gray-400">
+              {' \u2014 '}{state.project.title}
+            </span>
+          )}
         </h1>
         <div className="flex items-center gap-2">
           <DropdownMenu
@@ -116,6 +129,10 @@ export function Header() {
             accept=".json"
             onChange={handleFileChange}
             className="hidden"
+          />
+          <ProjectSettingsDialog
+            open={projectSettingsOpen}
+            onClose={() => setProjectSettingsOpen(false)}
           />
           <ExamplesDialog
             open={examplesOpen}
