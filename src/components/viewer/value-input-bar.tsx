@@ -132,12 +132,8 @@ export function ValueInputBar({ register }: Props) {
   }
 
   function handleBinBlur() {
-    try {
-      const v = BigInt('0b' + (binInput || '0'));
-      commitValue(v);
-    } catch {
-      setBinInput(value.toString(2).padStart(register.width, '0'));
-    }
+    // Normalize display to canonical zero-padded format from canonical value
+    setBinInput(value.toString(2).padStart(register.width, '0'));
   }
 
   function handleDecBlur() {
@@ -165,46 +161,73 @@ export function ValueInputBar({ register }: Props) {
     return pos;
   }
 
+  /** Map a cursor position in the formatted string to a 0-based digit index. */
+  function formattedPosToDigit(pos: number, formatted: string): number {
+    let count = 0;
+    for (let i = 0; i < pos && i < formatted.length; i++) {
+      if (formatted[i] !== ' ') count++;
+    }
+    return count;
+  }
+
+  /** Replace a range of digits in the binary string, commit, and set cursor position. */
+  function binOverwrite(full: string, from: number, to: number, replacement: string, cursorDigit: number) {
+    const updated = full.slice(0, from) + replacement + full.slice(to);
+    setBinInput(updated);
+    commitValue(BigInt('0b' + updated));
+    const newFormatted = formatBinary(updated);
+    bin.posRef.current = digitToFormattedPos(cursorDigit, newFormatted);
+    bin.pendingRef.current = true;
+  }
+
   /** Overwrite-mode keydown handler for the BIN input. */
   function handleBinKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'Enter') { handleBinBlur(); return; }
-    if (e.key !== '0' && e.key !== '1') return;
 
     const el = e.currentTarget;
-    const start = el.selectionStart ?? 0;
-    const end = el.selectionEnd ?? 0;
-
-    // If there's a selection, let onChange handle it (replacement / select-all)
-    if (start !== end) return;
-
     const formatted = el.value;
+    const rawStart = el.selectionStart ?? 0;
+    const rawEnd = el.selectionEnd ?? 0;
+    const start = formattedPosToDigit(rawStart, formatted);
+    const end = formattedPosToDigit(rawEnd, formatted);
+    const full = binInput.padStart(register.width, '0');
 
-    // Find the digit at or after cursor (skip spaces)
-    let pos = start;
-    while (pos < formatted.length && formatted[pos] === ' ') pos++;
-
-    // If cursor is at the end, let onChange handle it (append mode)
-    if (pos >= formatted.length) return;
-
-    // Map formatted position to digit index
-    let digitIndex = 0;
-    for (let i = 0; i < pos; i++) {
-      if (formatted[i] !== ' ') digitIndex++;
+    // Backspace: replace digit before cursor with '0', move cursor left
+    if (e.key === 'Backspace') {
+      if (start !== end) {
+        binOverwrite(full, start, end, '0'.repeat(end - start), start);
+      } else if (start > 0) {
+        binOverwrite(full, start - 1, start, '0', start - 1);
+      }
+      e.preventDefault();
+      return;
     }
 
-    // Overwrite digit in the full-width binary string
-    const full = binInput.padStart(register.width, '0');
-    const updated = full.slice(0, digitIndex) + e.key + full.slice(digitIndex + 1);
+    // Delete: replace digit at cursor with '0', cursor stays
+    if (e.key === 'Delete') {
+      if (start !== end) {
+        binOverwrite(full, start, end, '0'.repeat(end - start), start);
+      } else if (start < register.width) {
+        binOverwrite(full, start, start + 1, '0', start);
+      }
+      e.preventDefault();
+      return;
+    }
 
-    setBinInput(updated);
-    commitValue(BigInt('0b' + updated));
+    // Binary digit: overwrite at cursor position, advance cursor
+    if ((e.key === '0' || e.key === '1') && e.key.length === 1) {
+      // If there's a selection, let onChange handle it (select-all + type)
+      if (start !== end) return;
 
-    // Advance cursor past the overwritten digit
-    const newFormatted = formatBinary(updated);
-    bin.posRef.current = digitToFormattedPos(digitIndex + 1, newFormatted);
-    bin.pendingRef.current = true;
+      // If cursor is at the end, nothing to overwrite
+      if (start >= register.width) {
+        e.preventDefault();
+        return;
+      }
 
-    e.preventDefault();
+      binOverwrite(full, start, start + 1, e.key, start + 1);
+      e.preventDefault();
+    }
   }
 
   const inputBase =
@@ -312,35 +335,29 @@ export function ValueInputBar({ register }: Props) {
                 value={formatBinary(binInput.padStart(register.width, '0'))}
                 onFocus={() => (focusedField.current = 'bin')}
                 onChange={(e) => {
-                  const rawCursor = e.target.selectionStart ?? 0;
-                  const rawValue = e.target.value;
-
-                  // Count binary digits AFTER cursor in the raw input.
-                  // Using right-anchored counting because padStart shifts digits
-                  // left and slice(-width) drops the MSB — the distance from the
-                  // right edge is invariant to both operations.
-                  let digitsAfterCursor = 0;
-                  for (let i = rawCursor; i < rawValue.length; i++) {
-                    if (rawValue[i] !== ' ') digitsAfterCursor++;
+                  const raw = e.target.value;
+                  const cursorPos = e.target.selectionStart ?? 0;
+                  // Strip 0b/0B prefix at start only (handles paste of "0b1010" style values)
+                  const stripped = raw.replace(/^0[bB]/, '');
+                  const prefixLen = raw.length - stripped.length;
+                  const adjustedCursor = Math.max(0, cursorPos - prefixLen);
+                  // Remove spaces then filter to binary digits only
+                  const noSpaces = stripped.replace(/\s/g, '');
+                  const filtered = noSpaces.replace(/[^01]/g, '');
+                  // Left-align: pad right with zeros, truncate to exact width
+                  const padded = filtered.padEnd(register.width, '0').slice(0, register.width);
+                  // Count valid binary chars before adjusted cursor in the stripped string
+                  let validBeforeCursor = 0;
+                  for (let i = 0; i < adjustedCursor && i < stripped.length; i++) {
+                    if (stripped[i] === '0' || stripped[i] === '1') validBeforeCursor++;
                   }
-
-                  const stripped = rawValue.replace(/\s/g, '');
-                  const filtered = stripped.replace(/[^01]/g, '');
-                  const capped = filtered.length > register.width
-                    ? filtered.slice(-register.width)
-                    : filtered;
-
-                  // Map from right: target digit position from left = width - digitsAfter
-                  const targetDigit = Math.max(0, Math.min(
-                    register.width - digitsAfterCursor,
-                    register.width,
-                  ));
-                  const newFormatted = formatBinary(capped.padStart(register.width, '0'));
+                  const targetDigit = Math.min(validBeforeCursor, register.width);
+                  const newFormatted = formatBinary(padded);
                   bin.posRef.current = digitToFormattedPos(targetDigit, newFormatted);
                   bin.pendingRef.current = true;
 
-                  setBinInput(capped);
-                  try { commitValue(BigInt('0b' + (capped || '0'))); } catch { /* partial input */ }
+                  setBinInput(padded);
+                  commitValue(BigInt('0b' + padded));
                 }}
                 onBlur={() => { focusedField.current = null; handleBinBlur(); }}
                 onKeyDown={handleBinKeyDown}
