@@ -89,6 +89,14 @@ export function toFieldDraft(field: Field): FieldDraft {
   }
 }
 
+export interface ProjectMetadata {
+  title?: string;
+  description?: string;
+  date?: string;
+  authorEmail?: string;
+  link?: string;
+}
+
 export interface RegisterDef {
   id: string;
   name: string;
@@ -103,6 +111,7 @@ export interface AppState {
   activeRegisterId: string | null;
   registerValues: Record<string, bigint>; // defId -> current value
   theme: 'light' | 'dark';
+  project?: ProjectMetadata;
 }
 
 /** Serializable version of AppState for localStorage / JSON export */
@@ -111,6 +120,7 @@ export interface SerializedAppState {
   activeRegisterId: string | null;
   registerValues: Record<string, string>; // defId -> hex string
   theme: 'light' | 'dark';
+  project?: ProjectMetadata;
 }
 
 export type DecodedValue =

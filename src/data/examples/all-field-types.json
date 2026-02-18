@@ -1,5 +1,9 @@
 {
   "version": 1,
+  "project": {
+    "title": "All Field Types",
+    "description": "Showcases all 5 field types: flag, enum, integer, float, and fixed-point across 7 registers."
+  },
   "registers": [
     {
       "name": "STATUS_CTRL",

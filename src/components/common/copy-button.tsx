@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 
 interface CopyButtonProps {
   value: string;
@@ -8,12 +8,24 @@ interface CopyButtonProps {
 
 export function CopyButton({ value, label, className = '' }: CopyButtonProps) {
   const [copied, setCopied] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current !== null) {
+        clearTimeout(timerRef.current);
+      }
+    };
+  }, []);
 
   const handleCopy = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(value);
       setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      if (timerRef.current !== null) {
+        clearTimeout(timerRef.current);
+      }
+      timerRef.current = setTimeout(() => setCopied(false), 1500);
     } catch {
       // Clipboard API may fail in non-secure contexts; fail silently
     }

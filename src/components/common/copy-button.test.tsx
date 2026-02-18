@@ -62,6 +62,55 @@ describe('CopyButton', () => {
     expect(container.querySelector('polyline')).not.toBeInTheDocument();
   });
 
+  it('cleans up timer on unmount', async () => {
+    const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
+    const { unmount } = render(<CopyButton value="0xAB" label="Copy" />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
+    });
+
+    clearTimeoutSpy.mockClear();
+    unmount();
+
+    expect(clearTimeoutSpy).toHaveBeenCalled();
+    clearTimeoutSpy.mockRestore();
+  });
+
+  it('resets timer on rapid clicks', async () => {
+    const { container } = render(<CopyButton value="0xCD" label="Copy" />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
+    });
+
+    // Advance partway
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+
+    // Click again — should reset the timer
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
+    });
+
+    // Advance past original timeout but not the new one
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+
+    // Should still show checkmark (new timer hasn't expired)
+    expect(container.querySelector('polyline')).toBeInTheDocument();
+
+    // Advance past the new timer
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+
+    // Now should revert
+    expect(container.querySelector('rect')).toBeInTheDocument();
+  });
+
   it('does not throw when clipboard API fails', async () => {
     Object.assign(navigator, {
       clipboard: { writeText: vi.fn().mockRejectedValue(new Error('denied')) },

@@ -1,17 +1,14 @@
 import { useRef, useState } from 'react';
 import { DropdownMenu, type MenuItem } from '../common/dropdown-menu';
+import { AboutDialog } from '../common/about-dialog';
+import { ConfirmClearDialog } from '../common/confirm-clear-dialog';
 import { ExamplesDialog } from '../common/examples-dialog';
+import { ProjectSettingsDialog } from '../common/project-settings-dialog';
+import { GitHubIcon } from '../common/github-icon';
+import { GITHUB_URL } from '../../constants';
 import { useAppState, useAppDispatch } from '../../context/app-context';
 import { useEditContext } from '../../context/edit-context';
 import { exportToJson, importFromJson } from '../../utils/storage';
-
-function GitHubIcon() {
-  return (
-    <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
-      <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.42 7.42 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z" />
-    </svg>
-  );
-}
 
 function MenuIcon() {
   return (
@@ -29,6 +26,9 @@ export function Header() {
   const { exitEditMode } = useEditContext();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [examplesOpen, setExamplesOpen] = useState(false);
+  const [clearDialogOpen, setClearDialogOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   const [importWarning, setImportWarning] = useState<string | null>(null);
 
   function applyImportedData(json: string) {
@@ -52,7 +52,7 @@ export function Header() {
 
     if (result.registers.length > 0) {
       exitEditMode();
-      dispatch({ type: 'IMPORT_STATE', registers: result.registers, values: result.values });
+      dispatch({ type: 'IMPORT_STATE', registers: result.registers, values: result.values, project: result.project });
     }
   }
 
@@ -62,7 +62,11 @@ export function Header() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'register-definitions.json';
+    const slug = state.project?.title
+      ?.toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '');
+    a.download = slug ? `${slug}.json` : 'register-definitions.json';
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -84,9 +88,12 @@ export function Header() {
   }
 
   const menuItems: MenuItem[] = [
+    { kind: 'action', label: 'Project settings', onAction: () => setProjectSettingsOpen(true) },
+    { kind: 'separator' },
     { kind: 'action', label: 'Import', onAction: handleImport },
     { kind: 'action', label: 'Export', onAction: handleExport },
     { kind: 'action', label: 'Examples', onAction: () => setExamplesOpen(true) },
+    { kind: 'action', label: 'Clear workspace', onAction: () => setClearDialogOpen(true) },
     { kind: 'separator' },
     {
       kind: 'toggle',
@@ -95,7 +102,8 @@ export function Header() {
       onToggle: () => dispatch({ type: 'TOGGLE_THEME' }),
     },
     { kind: 'separator' },
-    { kind: 'link', label: 'GitHub', href: 'https://github.com/chrissbarr/RegisterViewer', icon: <GitHubIcon /> },
+    { kind: 'action', label: 'About', onAction: () => setAboutOpen(true) },
+    { kind: 'link', label: 'GitHub', href: GITHUB_URL, icon: <GitHubIcon /> },
   ];
 
   return (
@@ -103,6 +111,11 @@ export function Header() {
       <header className="flex items-center justify-between px-4 py-2 border-b border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900">
         <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100">
           Register Viewer
+          {state.project?.title && (
+            <span className="font-normal text-gray-500 dark:text-gray-400">
+              {' \u2014 '}{state.project.title}
+            </span>
+          )}
         </h1>
         <div className="flex items-center gap-2">
           <DropdownMenu
@@ -117,10 +130,26 @@ export function Header() {
             onChange={handleFileChange}
             className="hidden"
           />
+          <ProjectSettingsDialog
+            open={projectSettingsOpen}
+            onClose={() => setProjectSettingsOpen(false)}
+          />
           <ExamplesDialog
             open={examplesOpen}
             onClose={() => setExamplesOpen(false)}
             onLoad={applyImportedData}
+          />
+          <AboutDialog
+            open={aboutOpen}
+            onClose={() => setAboutOpen(false)}
+          />
+          <ConfirmClearDialog
+            open={clearDialogOpen}
+            onClose={() => setClearDialogOpen(false)}
+            onConfirm={() => {
+              exitEditMode();
+              dispatch({ type: 'CLEAR_WORKSPACE' });
+            }}
           />
         </div>
       </header>

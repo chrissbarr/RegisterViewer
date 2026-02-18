@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import type { RegisterDef } from '../../types/register';
 import { useAppState } from '../../context/app-context';
 import { decodeField } from '../../utils/decode';
@@ -5,13 +6,19 @@ import { FieldRow } from './field-row';
 
 interface Props {
   register: RegisterDef;
-  hoveredFieldIndex: number | null;
-  onFieldHover: (index: number | null) => void;
+  hoveredFieldIndices: ReadonlySet<number> | null;
+  onFieldHover: (indices: ReadonlySet<number> | null) => void;
 }
 
-export function FieldTable({ register, hoveredFieldIndex, onFieldHover }: Props) {
+export function FieldTable({ register, hoveredFieldIndices, onFieldHover }: Props) {
   const state = useAppState();
   const value = state.registerValues[register.id] ?? 0n;
+
+  // Pre-compute singleton hover sets (one per field index) to avoid allocations on mouse events
+  const hoverSets = useMemo(
+    () => register.fields.map((_, i) => new Set([i]) as ReadonlySet<number>),
+    [register.fields],
+  );
 
   if (register.fields.length === 0) {
     return (
@@ -47,8 +54,8 @@ export function FieldTable({ register, hoveredFieldIndex, onFieldHover }: Props)
               registerValue={value}
               registerWidth={register.width}
               decoded={decodeField(value, field)}
-              isHighlighted={hoveredFieldIndex === originalIndex}
-              onMouseEnter={() => onFieldHover(originalIndex)}
+              isHighlighted={hoveredFieldIndices !== null && hoveredFieldIndices.has(originalIndex)}
+              onMouseEnter={() => onFieldHover(hoverSets[originalIndex])}
               onMouseLeave={() => onFieldHover(null)}
             />
           ))}

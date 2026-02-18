@@ -6,7 +6,7 @@ import type { AppState } from './types/register';
 
 function getInitialState(): AppState | undefined {
   const saved = loadFromLocalStorage();
-  if (saved && saved.registers.length > 0) return saved;
+  if (saved) return saved;
 
   // First launch: seed with example register
   const seedRegisters = createSeedRegisters();
@@ -19,6 +19,10 @@ function getInitialState(): AppState | undefined {
     activeRegisterId: seedRegisters[0]?.id ?? null,
     registerValues: seedValues,
     theme: 'dark',
+    project: {
+      title: 'Example Project',
+      description: 'Demonstrates register field types. Open Project Settings from the menu to customize.',
+    },
   };
 }
 

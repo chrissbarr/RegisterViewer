@@ -502,4 +502,45 @@ describe('nibblesForRow', () => {
     expect(result[0].fieldIndex).toBe(null);
     expect(result[1].fieldIndex).toBe(null);
   });
+
+  // fieldIndicesSet tests
+  it('fieldIndicesSet lists the single field when nibble is fully owned', () => {
+    const row = makeRow(7, 0);
+    const fields = [makeField('A', 7, 4), makeField('B', 3, 0)];
+    const result = nibblesForRow(row, 8, 0xABn, fields);
+    expect(result[0].fieldIndicesSet).toEqual(new Set([0])); // nibble 1 → field A only
+    expect(result[1].fieldIndicesSet).toEqual(new Set([1])); // nibble 0 → field B only
+  });
+
+  it('fieldIndicesSet lists all overlapping fields for a split nibble', () => {
+    const row = makeRow(7, 0);
+    // Field A covers bits 7-5, Field B covers bits 4-0 — nibble 1 (bits 7-4) spans both
+    const fields = [makeField('A', 7, 5), makeField('B', 4, 0)];
+    const result = nibblesForRow(row, 8, 0xABn, fields);
+    expect(result[0].fieldIndicesSet).toEqual(new Set([0, 1])); // nibble 1 has both fields
+    expect(result[1].fieldIndicesSet).toEqual(new Set([1]));     // nibble 0 fully in field B
+  });
+
+  it('fieldIndicesSet includes field even when nibble has unassigned bits', () => {
+    const row = makeRow(7, 0);
+    // Field A covers only bits 6-4 — bit 7 is unassigned
+    const fields = [makeField('A', 6, 4), makeField('B', 3, 0)];
+    const result = nibblesForRow(row, 8, 0x00n, fields);
+    expect(result[0].fieldIndicesSet).toEqual(new Set([0])); // nibble 1 still includes field A
+    expect(result[1].fieldIndicesSet).toEqual(new Set([1])); // nibble 0 fully in field B
+  });
+
+  it('fieldIndicesSet is empty when no fields are provided', () => {
+    const row = makeRow(7, 0);
+    const result = nibblesForRow(row, 8, 0xABn, []);
+    expect(result[0].fieldIndicesSet).toEqual(new Set());
+    expect(result[1].fieldIndicesSet).toEqual(new Set());
+  });
+
+  it('fieldIndicesSet is empty when fields parameter is omitted', () => {
+    const row = makeRow(7, 0);
+    const result = nibblesForRow(row, 8, 0xABn);
+    expect(result[0].fieldIndicesSet).toEqual(new Set());
+    expect(result[1].fieldIndicesSet).toEqual(new Set());
+  });
 });

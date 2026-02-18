@@ -113,6 +113,7 @@ export interface NibbleInRow {
   endCol: number;         // CSS grid column end (exclusive, for grid-column shorthand)
   isPartial: boolean;     // True if this nibble has fewer than 4 bits in this row (MSB edge)
   fieldIndex: number | null; // Index into fields[] if ALL bits in the nibble belong to the same field, null otherwise
+  fieldIndicesSet: ReadonlySet<number>; // All field indices that have at least one bit in this nibble (for multi-field hover)
 }
 
 /**
@@ -197,6 +198,7 @@ function buildNibble(
     endCol,
     isPartial,
     fieldIndex,
+    fieldIndicesSet: new Set(computeNibbleFieldIndices(groupLsb, groupMsb, fields)),
   };
 }
 
@@ -222,6 +224,21 @@ function computeNibbleFieldIndex(lsb: number, msb: number, fields: Field[]): num
     if (!found) return null; // unassigned bit
   }
   return matchIndex;
+}
+
+/**
+ * Collect all distinct field indices that have at least one bit in [lsb..msb].
+ * Used for multi-field hover highlighting on hex digit cells.
+ */
+function computeNibbleFieldIndices(lsb: number, msb: number, fields: Field[]): number[] {
+  const indices: number[] = [];
+  for (let i = 0; i < fields.length; i++) {
+    // Field overlaps nibble if field.msb >= lsb AND field.lsb <= msb
+    if (fields[i].msb >= lsb && fields[i].lsb <= msb) {
+      indices.push(i);
+    }
+  }
+  return indices;
 }
 
 export interface UnassignedRange {

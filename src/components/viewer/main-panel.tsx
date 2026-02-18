@@ -12,7 +12,7 @@ import { validateRegisterDef } from '../../utils/validation';
 export function MainPanel() {
   const { registers, activeRegisterId } = useAppState();
   const dispatch = useAppDispatch();
-  const [hoveredFieldIndex, setHoveredFieldIndex] = useState<number | null>(null);
+  const [hoveredFieldIndices, setHoveredFieldIndices] = useState<ReadonlySet<number> | null>(null);
   const {
     dirtyDraftIds,
     isEditing,
@@ -109,12 +109,12 @@ export function MainPanel() {
           </button>
         </div>
         <ValueInputBar register={activeRegister} />
-        <BitGrid register={activeRegister} hoveredFieldIndex={hoveredFieldIndex} onFieldHover={setHoveredFieldIndex} />
+        <BitGrid register={activeRegister} hoveredFieldIndices={hoveredFieldIndices} onFieldHover={setHoveredFieldIndices} />
       </div>
       <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-2 mt-6">
         Field Breakdown
       </h3>
-      <FieldTable register={activeRegister} hoveredFieldIndex={hoveredFieldIndex} onFieldHover={setHoveredFieldIndex} />
+      <FieldTable register={activeRegister} hoveredFieldIndices={hoveredFieldIndices} onFieldHover={setHoveredFieldIndices} />
     </main>
   );
 }

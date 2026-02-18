@@ -1,6 +1,6 @@
 import { createContext, useContext, useReducer, type ReactNode, type Dispatch } from 'react';
 import { arrayMove } from '@dnd-kit/sortable';
-import type { AppState, RegisterDef, Field } from '../types/register';
+import type { AppState, RegisterDef, Field, ProjectMetadata } from '../types/register';
 import { replaceBits, toggleBit } from '../utils/bitwise';
 
 // --- Actions ---
@@ -14,10 +14,12 @@ export type Action =
   | { type: 'DELETE_REGISTER'; registerId: string }
   | { type: 'SET_ACTIVE_REGISTER'; registerId: string }
   | { type: 'TOGGLE_THEME' }
-  | { type: 'IMPORT_STATE'; registers: RegisterDef[]; values: Record<string, bigint> }
+  | { type: 'IMPORT_STATE'; registers: RegisterDef[]; values: Record<string, bigint>; project?: ProjectMetadata }
   | { type: 'LOAD_STATE'; state: AppState }
   | { type: 'REORDER_REGISTERS'; oldIndex: number; newIndex: number }
-  | { type: 'SORT_REGISTERS_BY_OFFSET' };
+  | { type: 'SORT_REGISTERS_BY_OFFSET' }
+  | { type: 'CLEAR_WORKSPACE' }
+  | { type: 'SET_PROJECT_METADATA'; project: ProjectMetadata | undefined };
 
 // --- Reducer ---
 
@@ -95,6 +97,7 @@ export function appReducer(state: AppState, action: Action): AppState {
         registers: action.registers,
         registerValues: newValues,
         activeRegisterId: action.registers[0]?.id ?? null,
+        project: action.project,
       };
     }
     case 'LOAD_STATE': {
@@ -111,6 +114,18 @@ export function appReducer(state: AppState, action: Action): AppState {
         return a.offset - b.offset;
       });
       return { ...state, registers: sorted };
+    }
+    case 'CLEAR_WORKSPACE': {
+      return {
+        ...state,
+        registers: [],
+        registerValues: {},
+        activeRegisterId: null,
+        project: undefined,
+      };
+    }
+    case 'SET_PROJECT_METADATA': {
+      return { ...state, project: action.project };
     }
     default:
       return state;
