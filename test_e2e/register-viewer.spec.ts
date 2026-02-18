@@ -29,7 +29,7 @@ test.describe('Register Viewer - Value Sync', () => {
   });
 
   test('changing hex input updates binary and decimal inputs', async ({ page }) => {
-    await hexInput(page).fill('FF');
+    await hexInput(page).fill('000000FF');
     await hexInput(page).blur();
 
     await expect(decInput(page)).toHaveValue('255');
@@ -129,6 +129,106 @@ test.describe('Register Viewer - Cursor Preservation', () => {
     await expect(input).toHaveValue('3735928559');
     const cursor = await input.evaluate((el: HTMLInputElement) => el.selectionStart);
     expect(cursor).toBe(4);
+  });
+});
+
+test.describe('Register Viewer - Hex Overwrite Mode', () => {
+  test.beforeEach(async ({ page }) => {
+    await resetApp(page);
+  });
+
+  test('hex input is always full-width zero-padded', async ({ page }) => {
+    await expect(hexInput(page)).toHaveValue('DEADBEEF');
+    // 8 hex digits for 32-bit register
+    const len = await hexInput(page).evaluate((el: HTMLInputElement) => el.value.length);
+    expect(len).toBe(8);
+  });
+
+  test('typing overwrites digit at cursor and advances cursor', async ({ page }) => {
+    const input = hexInput(page);
+    // Set to all zeros first
+    await input.fill('00000000');
+    await input.blur();
+    await input.click();
+    // Place cursor at position 2
+    await input.evaluate((el: HTMLInputElement) => el.setSelectionRange(2, 2));
+    await page.keyboard.press('A');
+    await page.keyboard.press('B');
+    await expect(input).toHaveValue('00AB0000');
+    const cursor = await input.evaluate((el: HTMLInputElement) => el.selectionStart);
+    expect(cursor).toBe(4);
+  });
+
+  test('backspace replaces digit with zero and moves cursor left', async ({ page }) => {
+    const input = hexInput(page);
+    await input.click();
+    // Place cursor at position 4 (after DEAD)
+    await input.evaluate((el: HTMLInputElement) => el.setSelectionRange(4, 4));
+    await page.keyboard.press('Backspace');
+    await expect(input).toHaveValue('DEA0BEEF');
+    const cursor = await input.evaluate((el: HTMLInputElement) => el.selectionStart);
+    expect(cursor).toBe(3);
+  });
+
+  test('backspace at position 0 is a no-op', async ({ page }) => {
+    const input = hexInput(page);
+    await input.click();
+    await input.evaluate((el: HTMLInputElement) => el.setSelectionRange(0, 0));
+    await page.keyboard.press('Backspace');
+    await expect(input).toHaveValue('DEADBEEF');
+    const cursor = await input.evaluate((el: HTMLInputElement) => el.selectionStart);
+    expect(cursor).toBe(0);
+  });
+
+  test('delete replaces digit with zero and cursor stays', async ({ page }) => {
+    const input = hexInput(page);
+    await input.click();
+    await input.evaluate((el: HTMLInputElement) => el.setSelectionRange(4, 4));
+    await page.keyboard.press('Delete');
+    await expect(input).toHaveValue('DEAD0EEF');
+    const cursor = await input.evaluate((el: HTMLInputElement) => el.selectionStart);
+    expect(cursor).toBe(4);
+  });
+
+  test('delete at last position is a no-op', async ({ page }) => {
+    const input = hexInput(page);
+    await input.click();
+    await input.evaluate((el: HTMLInputElement) => el.setSelectionRange(8, 8));
+    await page.keyboard.press('Delete');
+    await expect(input).toHaveValue('DEADBEEF');
+  });
+
+  test('select-all and type replaces with left-aligned value', async ({ page }) => {
+    const input = hexInput(page);
+    await input.click();
+    // Select all text, then type a replacement — uses insertText to reliably
+    // trigger onChange with the replaced content (bypasses keydown)
+    await input.evaluate((el: HTMLInputElement) => el.select());
+    await page.keyboard.insertText('A');
+    await expect(input).toHaveValue('A0000000');
+  });
+
+  test('backspace with selection zeros the selected range', async ({ page }) => {
+    const input = hexInput(page);
+    await input.click();
+    // Select positions 2-6 (ADBE)
+    await input.evaluate((el: HTMLInputElement) => el.setSelectionRange(2, 6));
+    await page.keyboard.press('Backspace');
+    await expect(input).toHaveValue('DE0000EF');
+    const cursor = await input.evaluate((el: HTMLInputElement) => el.selectionStart);
+    expect(cursor).toBe(2);
+  });
+
+  test('pasting 0x-prefixed value strips prefix and left-aligns', async ({ page }) => {
+    const input = hexInput(page);
+    await input.click();
+    // Select all then insert text with 0x prefix — uses insertText to simulate
+    // paste through the onChange path (bypasses keydown, triggers input event)
+    await input.evaluate((el: HTMLInputElement) => el.select());
+    await page.keyboard.insertText('0xFF');
+    await input.blur();
+    await expect(input).toHaveValue('FF000000');
+    await expect(decInput(page)).toHaveValue('4278190080');
   });
 });
 

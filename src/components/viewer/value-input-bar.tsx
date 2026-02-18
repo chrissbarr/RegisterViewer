@@ -63,12 +63,71 @@ export function ValueInputBar({ register }: Props) {
     dispatch({ type: 'SET_REGISTER_VALUE', registerId: register.id, value: clamped });
   }
 
+  const hexWidth = Math.ceil(register.width / 4);
+
+  function hexCommit(digits: string) {
+    const padded = digits.toUpperCase().padEnd(hexWidth, '0').slice(0, hexWidth);
+    setHexInput(padded);
+    commitValue(BigInt('0x' + padded));
+  }
+
   function handleHexBlur() {
-    try {
-      const v = BigInt('0x' + (hexInput || '0'));
-      commitValue(v);
-    } catch {
-      setHexInput(value.toString(16).toUpperCase().padStart(Math.ceil(register.width / 4), '0'));
+    // Normalize display to canonical zero-padded format from canonical value
+    setHexInput(value.toString(16).toUpperCase().padStart(hexWidth, '0'));
+  }
+
+  /** Replace a range of digits with a replacement string, commit, and set cursor position. */
+  function hexOverwrite(full: string, from: number, to: number, replacement: string, cursorPos: number) {
+    const updated = full.slice(0, from) + replacement + full.slice(to);
+    hexCommit(updated);
+    hex.posRef.current = cursorPos;
+    hex.pendingRef.current = true;
+  }
+
+  /** Overwrite-mode keydown handler for the HEX input. */
+  function handleHexKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Enter') { handleHexBlur(); return; }
+
+    const el = e.currentTarget;
+    const start = el.selectionStart ?? 0;
+    const end = el.selectionEnd ?? 0;
+    const full = hexInput.padEnd(hexWidth, '0').slice(0, hexWidth);
+
+    // Backspace: replace digit before cursor with '0', move cursor left
+    if (e.key === 'Backspace') {
+      if (start !== end) {
+        hexOverwrite(full, start, end, '0'.repeat(end - start), start);
+      } else if (start > 0) {
+        hexOverwrite(full, start - 1, start, '0', start - 1);
+      }
+      e.preventDefault();
+      return;
+    }
+
+    // Delete: replace digit at cursor with '0', cursor stays
+    if (e.key === 'Delete') {
+      if (start !== end) {
+        hexOverwrite(full, start, end, '0'.repeat(end - start), start);
+      } else if (start < hexWidth) {
+        hexOverwrite(full, start, start + 1, '0', start);
+      }
+      e.preventDefault();
+      return;
+    }
+
+    // Hex digit: overwrite at cursor position, advance cursor
+    if (HEX_CHAR.test(e.key) && e.key.length === 1) {
+      // If there's a selection, let onChange handle it (select-all + type)
+      if (start !== end) return;
+
+      // If cursor is at the end, nothing to overwrite
+      if (start >= hexWidth) {
+        e.preventDefault();
+        return;
+      }
+
+      hexOverwrite(full, start, start + 1, e.key.toUpperCase(), start + 1);
+      e.preventDefault();
     }
   }
 
@@ -184,18 +243,25 @@ export function ValueInputBar({ register }: Props) {
               onChange={(e) => {
                 const raw = e.target.value;
                 const cursorPos = e.target.selectionStart ?? 0;
-                const filtered = raw.replace(/[^0-9A-Fa-f]/g, '');
+                // Strip 0x/0X prefix at start only (handles paste of "0xFF" style values)
+                const stripped = raw.replace(/^0[xX]/, '');
+                const prefixLen = raw.length - stripped.length;
+                const adjustedCursor = Math.max(0, cursorPos - prefixLen);
+                const filtered = stripped.replace(/[^0-9A-Fa-f]/g, '');
+                // Left-align: pad right with zeros, truncate to exact width
+                const padded = filtered.toUpperCase().padEnd(hexWidth, '0').slice(0, hexWidth);
+                // Count valid hex chars before adjusted cursor in the stripped string
                 let validBeforeCursor = 0;
-                for (let i = 0; i < cursorPos && i < raw.length; i++) {
-                  if (HEX_CHAR.test(raw[i])) validBeforeCursor++;
+                for (let i = 0; i < adjustedCursor && i < stripped.length; i++) {
+                  if (HEX_CHAR.test(stripped[i])) validBeforeCursor++;
                 }
-                hex.posRef.current = validBeforeCursor;
+                hex.posRef.current = Math.min(validBeforeCursor, hexWidth);
                 hex.pendingRef.current = true;
-                setHexInput(filtered);
-                try { commitValue(BigInt('0x' + (filtered || '0'))); } catch { /* partial input */ }
+                setHexInput(padded);
+                commitValue(BigInt('0x' + padded));
               }}
               onBlur={() => { focusedField.current = null; handleHexBlur(); }}
-              onKeyDown={(e) => handleKeyDown(e, handleHexBlur)}
+              onKeyDown={handleHexKeyDown}
               className={inputPrimary}
               spellCheck={false}
             />
