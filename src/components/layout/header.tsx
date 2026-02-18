@@ -4,11 +4,13 @@ import { AboutDialog } from '../common/about-dialog';
 import { ConfirmClearDialog } from '../common/confirm-clear-dialog';
 import { ExamplesDialog } from '../common/examples-dialog';
 import { ProjectSettingsDialog } from '../common/project-settings-dialog';
+import { ImportResultDialog } from '../common/import-result-dialog';
+import { Toast } from '../common/toast';
 import { GitHubIcon } from '../common/github-icon';
 import { GITHUB_URL } from '../../constants';
 import { useAppState, useAppDispatch } from '../../context/app-context';
 import { useEditContext } from '../../context/edit-context';
-import { exportToJson, importFromJson } from '../../utils/storage';
+import { exportToJson, importFromJson, type ImportWarning } from '../../utils/storage';
 
 function MenuIcon() {
   return (
@@ -20,6 +22,11 @@ function MenuIcon() {
   );
 }
 
+type ImportFeedback =
+  | { kind: 'success'; message: string }
+  | { kind: 'warning'; importedCount: number; skippedCount: number; warnings: ImportWarning[] }
+  | { kind: 'error'; message: string };
+
 export function Header() {
   const state = useAppState();
   const dispatch = useAppDispatch();
@@ -29,31 +36,39 @@ export function Header() {
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
-  const [importWarning, setImportWarning] = useState<string | null>(null);
+  const [importFeedback, setImportFeedback] = useState<ImportFeedback | null>(null);
 
-  function applyImportedData(json: string) {
+  function applyImportedData(json: string, showSuccessToast = true) {
     const result = importFromJson(json);
     if (!result) {
-      setImportWarning('Failed to import: invalid JSON or missing registers array.');
+      setImportFeedback({ kind: 'error', message: 'Failed to import: invalid JSON or missing registers array.' });
       return;
     }
 
     if (result.warnings.length > 0) {
-      const skipped = result.warnings
-        .map((w) => `"${w.registerName}": ${w.errors.map((e) => e.message).join('; ')}`)
-        .join('\n');
-      setImportWarning(
-        `Imported ${result.registers.length} register(s). ` +
-        `${result.warnings.length} skipped due to validation errors:\n${skipped}`
-      );
+      setImportFeedback({
+        kind: 'warning',
+        importedCount: result.registers.length,
+        skippedCount: result.warnings.length,
+        warnings: result.warnings,
+      });
+    } else if (showSuccessToast && result.registers.length > 0) {
+      setImportFeedback({
+        kind: 'success',
+        message: `Imported ${result.registers.length} register${result.registers.length !== 1 ? 's' : ''} successfully.`,
+      });
     } else {
-      setImportWarning(null);
+      setImportFeedback(null);
     }
 
     if (result.registers.length > 0) {
       exitEditMode();
       dispatch({ type: 'IMPORT_STATE', registers: result.registers, values: result.values, project: result.project });
     }
+  }
+
+  function handleExampleLoad(json: string) {
+    applyImportedData(json, false);
   }
 
   function handleExport() {
@@ -85,6 +100,10 @@ export function Header() {
     reader.readAsText(file);
     // Reset so the same file can be imported again
     e.target.value = '';
+  }
+
+  function clearFeedback() {
+    setImportFeedback(null);
   }
 
   const menuItems: MenuItem[] = [
@@ -137,7 +156,7 @@ export function Header() {
           <ExamplesDialog
             open={examplesOpen}
             onClose={() => setExamplesOpen(false)}
-            onLoad={applyImportedData}
+            onLoad={handleExampleLoad}
           />
           <AboutDialog
             open={aboutOpen}
@@ -153,17 +172,25 @@ export function Header() {
           />
         </div>
       </header>
-      {importWarning && (
-        <div className="px-4 py-2 bg-amber-50 dark:bg-amber-900/30 border-b border-amber-200 dark:border-amber-800 text-sm text-amber-800 dark:text-amber-200 flex items-start gap-2">
-          <div className="whitespace-pre-wrap flex-1">{importWarning}</div>
-          <button
-            onClick={() => setImportWarning(null)}
-            className="shrink-0 text-amber-600 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-200"
-          >
-            Dismiss
-          </button>
-        </div>
+
+      {importFeedback?.kind === 'success' && (
+        <Toast
+          message={importFeedback.message}
+          variant="success"
+          duration={3000}
+          onDismiss={clearFeedback}
+        />
       )}
+
+      <ImportResultDialog
+        open={importFeedback?.kind === 'error' || importFeedback?.kind === 'warning'}
+        onClose={clearFeedback}
+        variant={importFeedback?.kind === 'error' ? 'error' : 'warning'}
+        importedCount={importFeedback?.kind === 'warning' ? importFeedback.importedCount : 0}
+        skippedCount={importFeedback?.kind === 'warning' ? importFeedback.skippedCount : 0}
+        warnings={importFeedback?.kind === 'warning' ? importFeedback.warnings : []}
+        errorMessage={importFeedback?.kind === 'error' ? importFeedback.message : undefined}
+      />
     </>
   );
 }
