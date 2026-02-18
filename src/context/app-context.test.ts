@@ -309,6 +309,38 @@ describe('SORT_REGISTERS_BY_OFFSET', () => {
   });
 });
 
+describe('CLEAR_WORKSPACE', () => {
+  it('removes all registers and values', () => {
+    const state = makeState({
+      registers: [makeRegister({ id: 'reg-1' }), makeRegister({ id: 'reg-2' })],
+      registerValues: { 'reg-1': 0xAAn, 'reg-2': 0xBBn },
+      activeRegisterId: 'reg-1',
+    });
+    const next = appReducer(state, { type: 'CLEAR_WORKSPACE' });
+    expect(next.registers).toHaveLength(0);
+    expect(next.registerValues).toEqual({});
+    expect(next.activeRegisterId).toBeNull();
+  });
+
+  it('preserves theme', () => {
+    const state = makeState({
+      registers: [makeRegister({ id: 'reg-1' })],
+      registerValues: { 'reg-1': 0xAAn },
+      theme: 'light',
+    });
+    const next = appReducer(state, { type: 'CLEAR_WORKSPACE' });
+    expect(next.theme).toBe('light');
+  });
+
+  it('is a no-op on an already empty workspace', () => {
+    const state = makeState();
+    const next = appReducer(state, { type: 'CLEAR_WORKSPACE' });
+    expect(next.registers).toHaveLength(0);
+    expect(next.registerValues).toEqual({});
+    expect(next.activeRegisterId).toBeNull();
+  });
+});
+
 describe('default case', () => {
   it('returns state unchanged for an unknown action type', () => {
     const state = makeState({ theme: 'dark' });

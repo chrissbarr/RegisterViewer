@@ -17,7 +17,8 @@ export type Action =
   | { type: 'IMPORT_STATE'; registers: RegisterDef[]; values: Record<string, bigint> }
   | { type: 'LOAD_STATE'; state: AppState }
   | { type: 'REORDER_REGISTERS'; oldIndex: number; newIndex: number }
-  | { type: 'SORT_REGISTERS_BY_OFFSET' };
+  | { type: 'SORT_REGISTERS_BY_OFFSET' }
+  | { type: 'CLEAR_WORKSPACE' };
 
 // --- Reducer ---
 
@@ -111,6 +112,14 @@ export function appReducer(state: AppState, action: Action): AppState {
         return a.offset - b.offset;
       });
       return { ...state, registers: sorted };
+    }
+    case 'CLEAR_WORKSPACE': {
+      return {
+        ...state,
+        registers: [],
+        registerValues: {},
+        activeRegisterId: null,
+      };
     }
     default:
       return state;

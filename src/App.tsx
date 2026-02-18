@@ -6,7 +6,7 @@ import type { AppState } from './types/register';
 
 function getInitialState(): AppState | undefined {
   const saved = loadFromLocalStorage();
-  if (saved && saved.registers.length > 0) return saved;
+  if (saved) return saved;
 
   // First launch: seed with example register
   const seedRegisters = createSeedRegisters();

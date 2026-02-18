@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { DropdownMenu, type MenuItem } from '../common/dropdown-menu';
+import { ConfirmClearDialog } from '../common/confirm-clear-dialog';
 import { ExamplesDialog } from '../common/examples-dialog';
 import { useAppState, useAppDispatch } from '../../context/app-context';
 import { useEditContext } from '../../context/edit-context';
@@ -29,6 +30,7 @@ export function Header() {
   const { exitEditMode } = useEditContext();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [examplesOpen, setExamplesOpen] = useState(false);
+  const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const [importWarning, setImportWarning] = useState<string | null>(null);
 
   function applyImportedData(json: string) {
@@ -87,6 +89,7 @@ export function Header() {
     { kind: 'action', label: 'Import', onAction: handleImport },
     { kind: 'action', label: 'Export', onAction: handleExport },
     { kind: 'action', label: 'Examples', onAction: () => setExamplesOpen(true) },
+    { kind: 'action', label: 'Clear workspace', onAction: () => setClearDialogOpen(true) },
     { kind: 'separator' },
     {
       kind: 'toggle',
@@ -121,6 +124,14 @@ export function Header() {
             open={examplesOpen}
             onClose={() => setExamplesOpen(false)}
             onLoad={applyImportedData}
+          />
+          <ConfirmClearDialog
+            open={clearDialogOpen}
+            onClose={() => setClearDialogOpen(false)}
+            onConfirm={() => {
+              exitEditMode();
+              dispatch({ type: 'CLEAR_WORKSPACE' });
+            }}
           />
         </div>
       </header>
