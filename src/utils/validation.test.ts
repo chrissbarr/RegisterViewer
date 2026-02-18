@@ -1,4 +1,4 @@
-import { validateRegisterDef, validateFieldInput } from './validation';
+import { validateRegisterDef, validateFieldInput, getFieldWarnings } from './validation';
 import { makeRegister, makeField, makeFlagField, makeFloatField, makeFixedPointField } from '../test/helpers';
 
 describe('register-level validation', () => {
@@ -59,13 +59,13 @@ describe('field-level validation', () => {
     expect(errors.some((e) => e.message.includes('MSB'))).toBe(true);
   });
 
-  it('returns error when MSB >= register width', () => {
+  it('does not return error when MSB >= register width (now a warning)', () => {
     const reg = makeRegister({
       width: 8,
       fields: [makeField({ msb: 8, lsb: 0 })],
     });
     const errors = validateRegisterDef(reg);
-    expect(errors.some((e) => e.message.includes('MSB') && e.message.includes('exceeds'))).toBe(true);
+    expect(errors.some((e) => e.message.includes('MSB') && e.message.includes('exceeds'))).toBe(false);
   });
 
   it('returns error when LSB < 0', () => {
@@ -146,38 +146,37 @@ describe('field-level validation', () => {
   });
 });
 
-describe('overlap detection', () => {
-  it('no overlapping fields produces no overlap error', () => {
+describe('getFieldWarnings — overlap detection', () => {
+  it('no overlapping fields produces no warnings', () => {
     const reg = makeRegister({
       fields: [
         makeField({ id: 'f1', name: 'A', msb: 7, lsb: 4 }),
         makeField({ id: 'f2', name: 'B', msb: 3, lsb: 0 }),
       ],
     });
-    const errors = validateRegisterDef(reg);
-    expect(errors.some((e) => e.message.includes('overlap'))).toBe(false);
+    expect(getFieldWarnings(reg).some((w) => w.message.includes('overlap'))).toBe(false);
   });
 
-  it('identical ranges produce an overlap error', () => {
+  it('identical ranges produce an overlap warning', () => {
     const reg = makeRegister({
       fields: [
         makeField({ id: 'f1', name: 'A', msb: 7, lsb: 4 }),
         makeField({ id: 'f2', name: 'B', msb: 7, lsb: 4 }),
       ],
     });
-    const errors = validateRegisterDef(reg);
-    expect(errors.some((e) => e.message.includes('overlap'))).toBe(true);
+    const warnings = getFieldWarnings(reg);
+    expect(warnings.some((w) => w.message.includes('overlap'))).toBe(true);
+    expect(warnings.find((w) => w.message.includes('overlap'))!.fieldIds).toEqual(['f1', 'f2']);
   });
 
-  it('partial overlap [7:4] + [5:2] produces an overlap error', () => {
+  it('partial overlap [7:4] + [5:2] produces an overlap warning', () => {
     const reg = makeRegister({
       fields: [
         makeField({ id: 'f1', name: 'A', msb: 7, lsb: 4 }),
         makeField({ id: 'f2', name: 'B', msb: 5, lsb: 2 }),
       ],
     });
-    const errors = validateRegisterDef(reg);
-    expect(errors.some((e) => e.message.includes('overlap'))).toBe(true);
+    expect(getFieldWarnings(reg).some((w) => w.message.includes('overlap'))).toBe(true);
   });
 
   it('adjacent fields [7:4] + [3:0] do not overlap', () => {
@@ -187,11 +186,10 @@ describe('overlap detection', () => {
         makeField({ id: 'f2', name: 'B', msb: 3, lsb: 0 }),
       ],
     });
-    const errors = validateRegisterDef(reg);
-    expect(errors.some((e) => e.message.includes('overlap'))).toBe(false);
+    expect(getFieldWarnings(reg).some((w) => w.message.includes('overlap'))).toBe(false);
   });
 
-  it('three fields where A overlaps B and B overlaps C produces two overlap errors', () => {
+  it('three fields where A overlaps B and B overlaps C produces two overlap warnings', () => {
     const reg = makeRegister({
       fields: [
         makeField({ id: 'f1', name: 'A', msb: 7, lsb: 4 }),
@@ -199,9 +197,40 @@ describe('overlap detection', () => {
         makeField({ id: 'f3', name: 'C', msb: 3, lsb: 0 }),
       ],
     });
-    const errors = validateRegisterDef(reg);
-    const overlapErrors = errors.filter((e) => e.message.includes('overlap'));
-    expect(overlapErrors).toHaveLength(2);
+    const overlapWarnings = getFieldWarnings(reg).filter((w) => w.message.includes('overlap'));
+    expect(overlapWarnings).toHaveLength(2);
+  });
+});
+
+describe('getFieldWarnings — boundary exceeded', () => {
+  it('field within register width produces no warning', () => {
+    const reg = makeRegister({
+      width: 8,
+      fields: [makeField({ id: 'f1', name: 'A', msb: 7, lsb: 0 })],
+    });
+    expect(getFieldWarnings(reg).some((w) => w.message.includes('exceeds'))).toBe(false);
+  });
+
+  it('field MSB >= register width produces a warning', () => {
+    const reg = makeRegister({
+      width: 8,
+      fields: [makeField({ id: 'f1', name: 'A', msb: 8, lsb: 0 })],
+    });
+    const warnings = getFieldWarnings(reg);
+    expect(warnings.some((w) => w.message.includes('exceeds'))).toBe(true);
+    expect(warnings.find((w) => w.message.includes('exceeds'))!.fieldIds).toEqual(['f1']);
+  });
+
+  it('multiple fields exceeding boundary produce separate warnings', () => {
+    const reg = makeRegister({
+      width: 8,
+      fields: [
+        makeField({ id: 'f1', name: 'A', msb: 9, lsb: 8 }),
+        makeField({ id: 'f2', name: 'B', msb: 10, lsb: 9 }),
+      ],
+    });
+    const boundaryWarnings = getFieldWarnings(reg).filter((w) => w.message.includes('exceeds'));
+    expect(boundaryWarnings).toHaveLength(2);
   });
 });
 

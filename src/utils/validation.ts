@@ -8,6 +8,11 @@ export interface ValidationError {
   message: string;
 }
 
+export interface FieldWarning {
+  fieldIds: string[];
+  message: string;
+}
+
 /** Validate a register definition. Returns an array of errors (empty = valid). */
 export function validateRegisterDef(reg: RegisterDef): ValidationError[] {
   const errors: ValidationError[] = [];
@@ -21,21 +26,13 @@ export function validateRegisterDef(reg: RegisterDef): ValidationError[] {
   }
 
   for (const field of reg.fields) {
-    errors.push(...validateField(field, reg.width));
-  }
-
-  // Check for overlapping bit ranges
-  const overlaps = findOverlaps(reg.fields);
-  for (const [a, b] of overlaps) {
-    errors.push({
-      message: `Fields "${a.name}" [${a.msb}:${a.lsb}] and "${b.name}" [${b.msb}:${b.lsb}] overlap`,
-    });
+    errors.push(...validateField(field));
   }
 
   return errors;
 }
 
-function validateField(field: Field, regWidth: number): ValidationError[] {
+function validateField(field: Field): ValidationError[] {
   const errors: ValidationError[] = [];
   const id = field.id;
 
@@ -45,10 +42,6 @@ function validateField(field: Field, regWidth: number): ValidationError[] {
 
   if (field.msb < field.lsb) {
     errors.push({ fieldId: id, message: `MSB (${field.msb}) must be >= LSB (${field.lsb})` });
-  }
-
-  if (field.msb >= regWidth) {
-    errors.push({ fieldId: id, message: `MSB (${field.msb}) exceeds register width (${regWidth})` });
   }
 
   if (field.lsb < 0) {
@@ -78,20 +71,35 @@ function validateField(field: Field, regWidth: number): ValidationError[] {
   return errors;
 }
 
-function findOverlaps(fields: Field[]): [Field, Field][] {
-  const overlaps: [Field, Field][] = [];
-  for (let i = 0; i < fields.length; i++) {
-    for (let j = i + 1; j < fields.length; j++) {
-      const a = fields[i];
-      const b = fields[j];
-      // Two ranges [a.lsb, a.msb] and [b.lsb, b.msb] overlap if
-      // a.lsb <= b.msb AND b.lsb <= a.msb
+/** Non-blocking warnings for field overlap and boundary issues. */
+export function getFieldWarnings(reg: RegisterDef): FieldWarning[] {
+  const warnings: FieldWarning[] = [];
+
+  // Check fields exceeding register boundaries
+  for (const field of reg.fields) {
+    if (field.msb >= reg.width) {
+      warnings.push({
+        fieldIds: [field.id],
+        message: `"${field.name}" MSB (${field.msb}) exceeds register width (${reg.width})`,
+      });
+    }
+  }
+
+  // Check for overlapping bit ranges
+  for (let i = 0; i < reg.fields.length; i++) {
+    for (let j = i + 1; j < reg.fields.length; j++) {
+      const a = reg.fields[i];
+      const b = reg.fields[j];
       if (a.lsb <= b.msb && b.lsb <= a.msb) {
-        overlaps.push([a, b]);
+        warnings.push({
+          fieldIds: [a.id, b.id],
+          message: `"${a.name}" [${a.msb}:${a.lsb}] and "${b.name}" [${b.msb}:${b.lsb}] overlap`,
+        });
       }
     }
   }
-  return overlaps;
+
+  return warnings;
 }
 
 /**

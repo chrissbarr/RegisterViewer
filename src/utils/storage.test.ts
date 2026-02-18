@@ -368,7 +368,7 @@ describe('importFromJson', () => {
     expect(keys.sort()).toEqual(['fields', 'id', 'name', 'width'].sort());
   });
 
-  it('rejects register with overlapping fields', () => {
+  it('imports register with overlapping fields (overlap is a warning, not an error)', () => {
     const json = JSON.stringify({
       version: 1,
       registers: [{
@@ -382,9 +382,8 @@ describe('importFromJson', () => {
     });
     const result = importFromJson(json);
     expect(result).not.toBeNull();
-    expect(result!.registers).toHaveLength(0);
-    expect(result!.warnings).toHaveLength(1);
-    expect(result!.warnings[0].errors.some((e) => e.message.includes('overlap'))).toBe(true);
+    expect(result!.registers).toHaveLength(1);
+    expect(result!.warnings).toHaveLength(0);
   });
 
   it('returns warnings with register name and errors', () => {
