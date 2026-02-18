@@ -5,6 +5,7 @@ import { FieldDefinitionForm } from './field-definition-form';
 import { JsonConfigEditor } from './json-config-editor';
 import { formatOffset } from '../../utils/format';
 import { MAX_REGISTER_WIDTH } from '../../utils/validation';
+import { inputClass, inputClassSans } from './editor-styles';
 
 interface Props {
   draft: RegisterDef;
@@ -74,17 +75,8 @@ export function RegisterEditor({
     if (editingFieldId === fieldId) setEditingFieldId(null);
   }
 
-  function handleJsonUpdate(updated: RegisterDef) {
-    onDraftChange(updated);
-  }
-
   const widthParsed = parseInt(widthText, 10);
   const widthHasError = widthText.trim() !== '' && (!Number.isInteger(widthParsed) || widthParsed < 1 || widthParsed > MAX_REGISTER_WIDTH);
-
-  const inputBase =
-    'px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500';
-  const inputClass = `${inputBase} font-mono`;
-  const inputClassSans = inputBase;
 
   return (
     <div>
@@ -297,7 +289,7 @@ export function RegisterEditor({
           </button>
         </div>
       ) : (
-        <JsonConfigEditor register={draft} onUpdate={handleJsonUpdate} />
+        <JsonConfigEditor register={draft} onUpdate={onDraftChange} />
       )}
     </div>
   );

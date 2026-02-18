@@ -76,7 +76,7 @@ type DistributiveOmit<T, K extends string> = T extends unknown ? Omit<T, K> : ne
 type ExportField = DistributiveOmit<Field, 'id'>;
 type ExportRegister = Omit<RegisterDef, 'id' | 'fields'> & { fields: ExportField[] };
 
-function stripIds(register: RegisterDef): ExportRegister {
+export function stripIds(register: RegisterDef): ExportRegister {
   const { id: _regId, fields, ...rest } = register;
   void _regId;
   const cleanFields = fields.map(({ id: _fieldId, ...fieldRest }) => {

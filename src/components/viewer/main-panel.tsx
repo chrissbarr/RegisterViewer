@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useAppState, useAppDispatch } from '../../context/app-context';
 import { useEditContext } from '../../context/edit-context';
 import { ValueInputBar } from './value-input-bar';
@@ -26,6 +26,12 @@ export function MainPanel() {
   const [saveErrors, setSaveErrors] = useState<string[] | null>(null);
 
   const activeRegister = registers.find((r) => r.id === activeRegisterId);
+
+  // Pre-compute singleton hover sets once per field list, shared by BitGrid and FieldTable
+  const fieldHoverSets = useMemo(
+    () => activeRegister?.fields.map((_, i) => new Set([i]) as ReadonlySet<number>) ?? [],
+    [activeRegister?.fields],
+  );
   const activeDraft = activeRegisterId ? getDraft(activeRegisterId) : undefined;
 
   function handleDraftChange(updated: RegisterDef) {
@@ -109,12 +115,12 @@ export function MainPanel() {
           </button>
         </div>
         <ValueInputBar register={activeRegister} />
-        <BitGrid register={activeRegister} hoveredFieldIndices={hoveredFieldIndices} onFieldHover={setHoveredFieldIndices} />
+        <BitGrid register={activeRegister} hoveredFieldIndices={hoveredFieldIndices} onFieldHover={setHoveredFieldIndices} fieldHoverSets={fieldHoverSets} />
       </div>
       <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-2 mt-6">
         Field Breakdown
       </h3>
-      <FieldTable register={activeRegister} hoveredFieldIndices={hoveredFieldIndices} onFieldHover={setHoveredFieldIndices} />
+      <FieldTable register={activeRegister} hoveredFieldIndices={hoveredFieldIndices} onFieldHover={setHoveredFieldIndices} fieldHoverSets={fieldHoverSets} />
     </main>
   );
 }
