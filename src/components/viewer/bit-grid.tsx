@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useAppState, useAppDispatch } from '../../context/app-context';
 import type { RegisterDef, Field } from '../../types/register';
 import { getBit } from '../../utils/bitwise';
@@ -26,6 +26,7 @@ interface FieldColors {
 interface FieldMatch extends FieldColors {
   field: Field;
   index: number;
+  hoverSet: ReadonlySet<number>;
 }
 
 interface FieldLookupResult {
@@ -33,11 +34,14 @@ interface FieldLookupResult {
   bitMap: Map<number, FieldMatch>;
   /** Field index → pre-computed colors (for nibble/label rows). */
   colorsByIndex: FieldColors[];
+  /** Field index → singleton hover set (for zero-alloc onMouseEnter). */
+  hoverSets: ReadonlySet<number>[];
 }
 
 function buildFieldLookup(fields: Field[]): FieldLookupResult {
   const bitMap = new Map<number, FieldMatch>();
   const colorsByIndex: FieldColors[] = [];
+  const hoverSets: ReadonlySet<number>[] = [];
   for (let i = 0; i < fields.length; i++) {
     const colors: FieldColors = {
       nibbleBgColor: fieldColor(i, 0.15),
@@ -46,27 +50,37 @@ function buildFieldLookup(fields: Field[]): FieldLookupResult {
       borderColor: fieldBorderColor(i),
     };
     colorsByIndex.push(colors);
+    const hoverSet: ReadonlySet<number> = new Set([i]);
+    hoverSets.push(hoverSet);
     const f = fields[i];
-    const entry: FieldMatch = { ...colors, field: f, index: i };
+    const entry: FieldMatch = { ...colors, field: f, index: i, hoverSet };
     for (let bit = f.lsb; bit <= f.msb; bit++) {
       // First-writer wins, matching the old linear-scan first-match semantic
       if (!bitMap.has(bit)) bitMap.set(bit, entry);
     }
   }
-  return { bitMap, colorsByIndex };
+  return { bitMap, colorsByIndex, hoverSets };
+}
+
+function setsOverlap(a: ReadonlySet<number>, b: ReadonlySet<number>): boolean {
+  for (const v of a) {
+    if (b.has(v)) return true;
+  }
+  return false;
 }
 
 interface Props {
   register: RegisterDef;
-  hoveredFieldIndex: number | null;
-  onFieldHover: (index: number | null) => void;
+  hoveredFieldIndices: ReadonlySet<number> | null;
+  onFieldHover: (indices: ReadonlySet<number> | null) => void;
 }
 
-export function BitGrid({ register, hoveredFieldIndex, onFieldHover }: Props) {
+export function BitGrid({ register, hoveredFieldIndices, onFieldHover }: Props) {
   const state = useAppState();
   const dispatch = useAppDispatch();
   const value = state.registerValues[register.id] ?? 0n;
   const [containerRef, containerWidth] = useContainerWidth<HTMLDivElement>();
+  const [hoveredNibbleIndex, setHoveredNibbleIndex] = useState<number | null>(null);
 
   // Layout: depends only on container width and register width
   const rows = useMemo(() => {
@@ -75,7 +89,7 @@ export function BitGrid({ register, hoveredFieldIndex, onFieldHover }: Props) {
   }, [containerWidth, register.width]);
 
   // O(1) bit-to-field lookup map + per-field-index color array
-  const { bitMap: fieldLookup, colorsByIndex: fieldColors } = useMemo(
+  const { bitMap: fieldLookup, colorsByIndex: fieldColors, hoverSets: fieldHoverSets } = useMemo(
     () => buildFieldLookup(register.fields),
     [register.fields],
   );
@@ -115,17 +129,33 @@ export function BitGrid({ register, hoveredFieldIndex, onFieldHover }: Props) {
             >
               {/* Hex digit row */}
               {rowNibbles.map((nibble, nibbleIdx) => {
+                const isHighlighted = hoveredNibbleIndex !== null
+                  ? hoveredNibbleIndex === nibble.nibbleIndex
+                  : nibble.fieldIndicesSet.size > 0 &&
+                    hoveredFieldIndices !== null &&
+                    setsOverlap(nibble.fieldIndicesSet, hoveredFieldIndices);
                 const bgColor = nibble.fieldIndex !== null
-                  ? fieldColors[nibble.fieldIndex].nibbleBgColor
-                  : 'rgba(128,128,128,0.1)';
+                  ? (isHighlighted ? fieldColors[nibble.fieldIndex].highlightBgColor : fieldColors[nibble.fieldIndex].nibbleBgColor)
+                  : (isHighlighted ? 'rgba(128,128,128,0.25)' : 'rgba(128,128,128,0.1)');
                 // Low nibble (even index) within a byte — add left border as nibble separator
                 const isNibbleSep = nibble.nibbleIndex % 2 === 0 && nibbleIdx > 0;
 
                 return (
                   <div
                     key={`hex-${nibble.nibbleIndex}`}
+                    onMouseEnter={() => {
+                      setHoveredNibbleIndex(nibble.nibbleIndex);
+                      if (nibble.fieldIndicesSet.size > 0) {
+                        onFieldHover(nibble.fieldIndicesSet);
+                      }
+                    }}
+                    onMouseLeave={() => {
+                      setHoveredNibbleIndex(null);
+                      onFieldHover(null);
+                    }}
                     className={`flex items-center justify-center h-7 text-xs font-mono font-bold
-                      select-none rounded-t
+                      select-none rounded-t transition-colors duration-150 motion-reduce:transition-none
+                      hover:brightness-110
                       ${nibble.isPartial ? 'opacity-60' : ''}
                       ${nibble.fieldIndex === null ? 'text-gray-500 dark:text-gray-400' : ''}`}
                     style={{
@@ -146,14 +176,14 @@ export function BitGrid({ register, hoveredFieldIndex, onFieldHover }: Props) {
               {row.bits.map((bitIdx) => {
                 const match = fieldLookup.get(bitIdx);
                 const isUnassigned = !match;
-                const isHighlighted = match !== undefined && hoveredFieldIndex === match.index;
+                const isHighlighted = match !== undefined && hoveredFieldIndices !== null && hoveredFieldIndices.has(match.index);
                 const col = bitToGridColumn(bitIdx, row.startBit, row.bits.length);
 
                 return (
                   <div
                     key={bitIdx}
                     onClick={() => dispatch({ type: 'TOGGLE_BIT', registerId: register.id, bit: bitIdx })}
-                    onMouseEnter={() => match && onFieldHover(match.index)}
+                    onMouseEnter={() => match && onFieldHover(match.hoverSet)}
                     onMouseLeave={() => onFieldHover(null)}
                     title={match ? `Bit ${bitIdx} (${match.field.name})` : `Bit ${bitIdx} (reserved)`}
                     className={`flex flex-col items-center justify-center h-12 border text-xs cursor-pointer hover:brightness-125 transition-all duration-150 motion-reduce:transition-none select-none ${
@@ -189,14 +219,14 @@ export function BitGrid({ register, hoveredFieldIndex, onFieldHover }: Props) {
               {/* Field labels */}
               {rowFields.map((fi) => {
                 const colors = fieldColors[fi.fieldIndex];
-                const isHighlighted = hoveredFieldIndex === fi.fieldIndex;
+                const isHighlighted = hoveredFieldIndices !== null && hoveredFieldIndices.has(fi.fieldIndex);
                 const label = fi.isPartial ? `${fi.field.name} (cont.)` : fi.field.name;
 
                 return (
                   <div
                     key={fi.field.id}
                     title={fi.field.name}
-                    onMouseEnter={() => onFieldHover(fi.fieldIndex)}
+                    onMouseEnter={() => onFieldHover(fieldHoverSets[fi.fieldIndex])}
                     onMouseLeave={() => onFieldHover(null)}
                     className="text-[10px] truncate px-1 py-0.5 text-center transition-colors duration-150 motion-reduce:transition-none"
                     style={{
