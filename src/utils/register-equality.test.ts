@@ -195,20 +195,20 @@ describe('registersEqual — enum fields', () => {
 // Field-level: integer
 // ---------------------------------------------------------------------------
 describe('registersEqual — integer fields', () => {
-  it('equal with same signed flag', () => {
-    const a = makeReg({ fields: [{ id: 'f1', name: 'V', type: 'integer', msb: 7, lsb: 0, signed: true }] });
-    const b = makeReg({ fields: [{ id: 'f1', name: 'V', type: 'integer', msb: 7, lsb: 0, signed: true }] });
+  it('equal with same signedness', () => {
+    const a = makeReg({ fields: [{ id: 'f1', name: 'V', type: 'integer', msb: 7, lsb: 0, signedness: 'twos-complement' }] });
+    const b = makeReg({ fields: [{ id: 'f1', name: 'V', type: 'integer', msb: 7, lsb: 0, signedness: 'twos-complement' }] });
     expect(registersEqual(a, b)).toBe(true);
   });
 
-  it('detects different signed flag', () => {
-    const a = makeReg({ fields: [{ id: 'f1', name: 'V', type: 'integer', msb: 7, lsb: 0, signed: true }] });
-    const b = makeReg({ fields: [{ id: 'f1', name: 'V', type: 'integer', msb: 7, lsb: 0, signed: false }] });
+  it('detects different signedness', () => {
+    const a = makeReg({ fields: [{ id: 'f1', name: 'V', type: 'integer', msb: 7, lsb: 0, signedness: 'twos-complement' }] });
+    const b = makeReg({ fields: [{ id: 'f1', name: 'V', type: 'integer', msb: 7, lsb: 0, signedness: 'sign-magnitude' }] });
     expect(registersEqual(a, b)).toBe(false);
   });
 
-  it('detects signed present vs absent', () => {
-    const a = makeReg({ fields: [{ id: 'f1', name: 'V', type: 'integer', msb: 7, lsb: 0, signed: true }] });
+  it('detects signedness present vs absent', () => {
+    const a = makeReg({ fields: [{ id: 'f1', name: 'V', type: 'integer', msb: 7, lsb: 0, signedness: 'twos-complement' }] });
     const b = makeReg({ fields: [{ id: 'f1', name: 'V', type: 'integer', msb: 7, lsb: 0 }] });
     expect(registersEqual(a, b)).toBe(false);
   });
@@ -269,11 +269,11 @@ describe('registersEqual — field order', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Edge cases: signed false vs undefined
+// Edge cases: signedness explicit vs undefined
 // ---------------------------------------------------------------------------
-describe('registersEqual — signed edge cases', () => {
-  it('detects signed:false vs signed:undefined as different', () => {
-    const a = makeReg({ fields: [{ id: 'f1', name: 'V', type: 'integer', msb: 7, lsb: 0, signed: false }] });
+describe('registersEqual — signedness edge cases', () => {
+  it('detects unsigned vs undefined as different', () => {
+    const a = makeReg({ fields: [{ id: 'f1', name: 'V', type: 'integer', msb: 7, lsb: 0, signedness: 'unsigned' }] });
     const b = makeReg({ fields: [{ id: 'f1', name: 'V', type: 'integer', msb: 7, lsb: 0 }] });
     expect(registersEqual(a, b)).toBe(false);
   });
@@ -287,7 +287,7 @@ describe('registersEqual — complex registers', () => {
     const fields: Field[] = [
       { id: 'f1', name: 'EN', type: 'flag', msb: 0, lsb: 0, flagLabels: { clear: 'Off', set: 'On' } },
       { id: 'f2', name: 'MODE', type: 'enum', msb: 2, lsb: 1, enumEntries: [{ value: 0, name: 'A' }] },
-      { id: 'f3', name: 'VAL', type: 'integer', msb: 10, lsb: 3, signed: true },
+      { id: 'f3', name: 'VAL', type: 'integer', msb: 10, lsb: 3, signedness: 'twos-complement' },
       { id: 'f4', name: 'FLT', type: 'float', msb: 26, lsb: 11, floatType: 'half' },
       { id: 'f5', name: 'FIX', type: 'fixed-point', msb: 31, lsb: 27, qFormat: { m: 3, n: 2 } },
     ];

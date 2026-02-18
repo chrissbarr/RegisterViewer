@@ -218,7 +218,7 @@
       "width": 8,
       "offset": 62,
       "fields": [
-        { "name": "GPIOR0", "description": "General purpose I/O register 0 value", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+        { "name": "GPIOR0", "description": "General purpose I/O register 0 value", "msb": 7, "lsb": 0, "type": "integer", "signedness": "unsigned" }
       ]
     },
     {
@@ -252,7 +252,7 @@
       "width": 8,
       "offset": 64,
       "fields": [
-        { "name": "EEDR", "description": "EEPROM data value", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+        { "name": "EEDR", "description": "EEPROM data value", "msb": 7, "lsb": 0, "type": "integer", "signedness": "unsigned" }
       ]
     },
     {
@@ -261,7 +261,7 @@
       "width": 8,
       "offset": 65,
       "fields": [
-        { "name": "EEARL", "description": "EEPROM address bits 7:0", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+        { "name": "EEARL", "description": "EEPROM address bits 7:0", "msb": 7, "lsb": 0, "type": "integer", "signedness": "unsigned" }
       ]
     },
     {
@@ -296,7 +296,7 @@
           "msb": 1,
           "lsb": 0,
           "type": "integer",
-          "signed": false
+          "signedness": "unsigned"
         },
         {
           "name": "COM0B",
@@ -360,7 +360,7 @@
       "width": 8,
       "offset": 70,
       "fields": [
-        { "name": "TCNT0", "description": "Timer/Counter0 value", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+        { "name": "TCNT0", "description": "Timer/Counter0 value", "msb": 7, "lsb": 0, "type": "integer", "signedness": "unsigned" }
       ]
     },
     {
@@ -369,7 +369,7 @@
       "width": 8,
       "offset": 71,
       "fields": [
-        { "name": "OCR0A", "description": "Output Compare value for channel A", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+        { "name": "OCR0A", "description": "Output Compare value for channel A", "msb": 7, "lsb": 0, "type": "integer", "signedness": "unsigned" }
       ]
     },
     {
@@ -378,7 +378,7 @@
       "width": 8,
       "offset": 72,
       "fields": [
-        { "name": "OCR0B", "description": "Output Compare value for channel B", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+        { "name": "OCR0B", "description": "Output Compare value for channel B", "msb": 7, "lsb": 0, "type": "integer", "signedness": "unsigned" }
       ]
     },
     {
@@ -387,7 +387,7 @@
       "width": 8,
       "offset": 74,
       "fields": [
-        { "name": "GPIOR1", "description": "General purpose I/O register 1 value", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+        { "name": "GPIOR1", "description": "General purpose I/O register 1 value", "msb": 7, "lsb": 0, "type": "integer", "signedness": "unsigned" }
       ]
     },
     {
@@ -396,7 +396,7 @@
       "width": 8,
       "offset": 75,
       "fields": [
-        { "name": "GPIOR2", "description": "General purpose I/O register 2 value", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+        { "name": "GPIOR2", "description": "General purpose I/O register 2 value", "msb": 7, "lsb": 0, "type": "integer", "signedness": "unsigned" }
       ]
     },
     {
@@ -443,7 +443,7 @@
       "width": 8,
       "offset": 78,
       "fields": [
-        { "name": "SPDR", "description": "SPI data value", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+        { "name": "SPDR", "description": "SPI data value", "msb": 7, "lsb": 0, "type": "integer", "signedness": "unsigned" }
       ]
     },
     {
@@ -545,7 +545,7 @@
       "width": 8,
       "offset": 93,
       "fields": [
-        { "name": "SPL", "description": "Stack Pointer bits 7:0", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+        { "name": "SPL", "description": "Stack Pointer bits 7:0", "msb": 7, "lsb": 0, "type": "integer", "signedness": "unsigned" }
       ]
     },
     {
@@ -554,7 +554,7 @@
       "width": 8,
       "offset": 94,
       "fields": [
-        { "name": "SP[10:8]", "description": "Stack Pointer bits 10:8", "msb": 2, "lsb": 0, "type": "integer", "signed": false }
+        { "name": "SP[10:8]", "description": "Stack Pointer bits 10:8", "msb": 2, "lsb": 0, "type": "integer", "signedness": "unsigned" }
       ]
     },
     {
@@ -585,7 +585,7 @@
           "msb": 2,
           "lsb": 0,
           "type": "integer",
-          "signed": false
+          "signedness": "unsigned"
         },
         { "name": "WDE", "description": "Watchdog System Reset Enable", "msb": 3, "lsb": 3, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
         { "name": "WDCE", "description": "Watchdog Change Enable", "msb": 4, "lsb": 4, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
@@ -642,7 +642,7 @@
       "width": 8,
       "offset": 102,
       "fields": [
-        { "name": "CAL", "description": "Oscillator calibration value", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+        { "name": "CAL", "description": "Oscillator calibration value", "msb": 7, "lsb": 0, "type": "integer", "signedness": "unsigned" }
       ]
     },
     {
@@ -777,7 +777,7 @@
       "width": 8,
       "offset": 120,
       "fields": [
-        { "name": "ADCL", "description": "ADC result bits 7:0", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+        { "name": "ADCL", "description": "ADC result bits 7:0", "msb": 7, "lsb": 0, "type": "integer", "signedness": "unsigned" }
       ]
     },
     {
@@ -786,7 +786,7 @@
       "width": 8,
       "offset": 121,
       "fields": [
-        { "name": "ADCH", "description": "ADC result bits 9:8 (right adjusted) or 9:2 (left adjusted)", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+        { "name": "ADCH", "description": "ADC result bits 9:8 (right adjusted) or 9:2 (left adjusted)", "msb": 7, "lsb": 0, "type": "integer", "signedness": "unsigned" }
       ]
     },
     {
@@ -923,7 +923,7 @@
           "msb": 1,
           "lsb": 0,
           "type": "integer",
-          "signed": false
+          "signedness": "unsigned"
         },
         {
           "name": "COM1B",
@@ -982,7 +982,7 @@
           "msb": 4,
           "lsb": 3,
           "type": "integer",
-          "signed": false
+          "signedness": "unsigned"
         },
         { "name": "ICES1", "description": "Input Capture Edge Select", "msb": 6, "lsb": 6, "type": "flag", "flagLabels": { "clear": "Falling Edge", "set": "Rising Edge" } },
         { "name": "ICNC1", "description": "Input Capture Noise Canceler", "msb": 7, "lsb": 7, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } }
@@ -1004,7 +1004,7 @@
       "width": 8,
       "offset": 132,
       "fields": [
-        { "name": "TCNT1L", "description": "Timer/Counter1 value bits 7:0", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+        { "name": "TCNT1L", "description": "Timer/Counter1 value bits 7:0", "msb": 7, "lsb": 0, "type": "integer", "signedness": "unsigned" }
       ]
     },
     {
@@ -1013,7 +1013,7 @@
       "width": 8,
       "offset": 133,
       "fields": [
-        { "name": "TCNT1H", "description": "Timer/Counter1 value bits 15:8", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+        { "name": "TCNT1H", "description": "Timer/Counter1 value bits 15:8", "msb": 7, "lsb": 0, "type": "integer", "signedness": "unsigned" }
       ]
     },
     {
@@ -1022,7 +1022,7 @@
       "width": 8,
       "offset": 134,
       "fields": [
-        { "name": "ICR1L", "description": "Input Capture value bits 7:0", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+        { "name": "ICR1L", "description": "Input Capture value bits 7:0", "msb": 7, "lsb": 0, "type": "integer", "signedness": "unsigned" }
       ]
     },
     {
@@ -1031,7 +1031,7 @@
       "width": 8,
       "offset": 135,
       "fields": [
-        { "name": "ICR1H", "description": "Input Capture value bits 15:8", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+        { "name": "ICR1H", "description": "Input Capture value bits 15:8", "msb": 7, "lsb": 0, "type": "integer", "signedness": "unsigned" }
       ]
     },
     {
@@ -1040,7 +1040,7 @@
       "width": 8,
       "offset": 136,
       "fields": [
-        { "name": "OCR1AL", "description": "Output Compare 1A value bits 7:0", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+        { "name": "OCR1AL", "description": "Output Compare 1A value bits 7:0", "msb": 7, "lsb": 0, "type": "integer", "signedness": "unsigned" }
       ]
     },
     {
@@ -1049,7 +1049,7 @@
       "width": 8,
       "offset": 137,
       "fields": [
-        { "name": "OCR1AH", "description": "Output Compare 1A value bits 15:8", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+        { "name": "OCR1AH", "description": "Output Compare 1A value bits 15:8", "msb": 7, "lsb": 0, "type": "integer", "signedness": "unsigned" }
       ]
     },
     {
@@ -1058,7 +1058,7 @@
       "width": 8,
       "offset": 138,
       "fields": [
-        { "name": "OCR1BL", "description": "Output Compare 1B value bits 7:0", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+        { "name": "OCR1BL", "description": "Output Compare 1B value bits 7:0", "msb": 7, "lsb": 0, "type": "integer", "signedness": "unsigned" }
       ]
     },
     {
@@ -1067,7 +1067,7 @@
       "width": 8,
       "offset": 139,
       "fields": [
-        { "name": "OCR1BH", "description": "Output Compare 1B value bits 15:8", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+        { "name": "OCR1BH", "description": "Output Compare 1B value bits 15:8", "msb": 7, "lsb": 0, "type": "integer", "signedness": "unsigned" }
       ]
     },
     {
@@ -1082,7 +1082,7 @@
           "msb": 1,
           "lsb": 0,
           "type": "integer",
-          "signed": false
+          "signedness": "unsigned"
         },
         {
           "name": "COM2B",
@@ -1146,7 +1146,7 @@
       "width": 8,
       "offset": 178,
       "fields": [
-        { "name": "TCNT2", "description": "Timer/Counter2 value", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+        { "name": "TCNT2", "description": "Timer/Counter2 value", "msb": 7, "lsb": 0, "type": "integer", "signedness": "unsigned" }
       ]
     },
     {
@@ -1155,7 +1155,7 @@
       "width": 8,
       "offset": 179,
       "fields": [
-        { "name": "OCR2A", "description": "Output Compare value for channel A", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+        { "name": "OCR2A", "description": "Output Compare value for channel A", "msb": 7, "lsb": 0, "type": "integer", "signedness": "unsigned" }
       ]
     },
     {
@@ -1164,7 +1164,7 @@
       "width": 8,
       "offset": 180,
       "fields": [
-        { "name": "OCR2B", "description": "Output Compare value for channel B", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+        { "name": "OCR2B", "description": "Output Compare value for channel B", "msb": 7, "lsb": 0, "type": "integer", "signedness": "unsigned" }
       ]
     },
     {
@@ -1188,7 +1188,7 @@
       "width": 8,
       "offset": 184,
       "fields": [
-        { "name": "TWBR", "description": "TWI bit rate value", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+        { "name": "TWBR", "description": "TWI bit rate value", "msb": 7, "lsb": 0, "type": "integer", "signedness": "unsigned" }
       ]
     },
     {
@@ -1210,7 +1210,7 @@
             { "value": 3, "name": "PRESCALER_64" }
           ]
         },
-        { "name": "TWS", "description": "TWI Status", "msb": 7, "lsb": 3, "type": "integer", "signed": false }
+        { "name": "TWS", "description": "TWI Status", "msb": 7, "lsb": 3, "type": "integer", "signedness": "unsigned" }
       ]
     },
     {
@@ -1220,7 +1220,7 @@
       "offset": 186,
       "fields": [
         { "name": "TWGCE", "description": "TWI General Call Recognition Enable", "msb": 0, "lsb": 0, "type": "flag", "flagLabels": { "clear": "Disabled", "set": "Enabled" } },
-        { "name": "TWA", "description": "TWI Slave Address", "msb": 7, "lsb": 1, "type": "integer", "signed": false }
+        { "name": "TWA", "description": "TWI Slave Address", "msb": 7, "lsb": 1, "type": "integer", "signedness": "unsigned" }
       ]
     },
     {
@@ -1229,7 +1229,7 @@
       "width": 8,
       "offset": 187,
       "fields": [
-        { "name": "TWDR", "description": "TWI data value", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+        { "name": "TWDR", "description": "TWI data value", "msb": 7, "lsb": 0, "type": "integer", "signedness": "unsigned" }
       ]
     },
     {
@@ -1253,7 +1253,7 @@
       "width": 8,
       "offset": 189,
       "fields": [
-        { "name": "TWAM", "description": "TWI Address Mask", "msb": 7, "lsb": 1, "type": "integer", "signed": false }
+        { "name": "TWAM", "description": "TWI Address Mask", "msb": 7, "lsb": 1, "type": "integer", "signedness": "unsigned" }
       ]
     },
     {
@@ -1343,7 +1343,7 @@
       "width": 8,
       "offset": 196,
       "fields": [
-        { "name": "UBRR0L", "description": "USART baud rate bits 7:0", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+        { "name": "UBRR0L", "description": "USART baud rate bits 7:0", "msb": 7, "lsb": 0, "type": "integer", "signedness": "unsigned" }
       ]
     },
     {
@@ -1352,7 +1352,7 @@
       "width": 8,
       "offset": 197,
       "fields": [
-        { "name": "UBRR0[11:8]", "description": "USART baud rate bits 11:8", "msb": 3, "lsb": 0, "type": "integer", "signed": false }
+        { "name": "UBRR0[11:8]", "description": "USART baud rate bits 11:8", "msb": 3, "lsb": 0, "type": "integer", "signedness": "unsigned" }
       ]
     },
     {
@@ -1361,7 +1361,7 @@
       "width": 8,
       "offset": 198,
       "fields": [
-        { "name": "UDR0", "description": "USART data value", "msb": 7, "lsb": 0, "type": "integer", "signed": false }
+        { "name": "UDR0", "description": "USART data value", "msb": 7, "lsb": 0, "type": "integer", "signedness": "unsigned" }
       ]
     }
   ],

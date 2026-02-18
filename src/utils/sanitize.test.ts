@@ -81,7 +81,20 @@ describe('sanitizeField', () => {
     expect('description' in field).toBe(false);
   });
 
-  it('preserves signed when present', () => {
+  it('preserves signedness when valid', () => {
+    for (const signedness of ['unsigned', 'twos-complement', 'sign-magnitude'] as const) {
+      const field = sanitizeField({
+        name: 'F',
+        msb: 7,
+        lsb: 0,
+        type: 'integer',
+        signedness,
+      }) as IntegerField;
+      expect(field.signedness).toBe(signedness);
+    }
+  });
+
+  it('migrates old signed: true to twos-complement', () => {
     const field = sanitizeField({
       name: 'F',
       msb: 7,
@@ -89,18 +102,29 @@ describe('sanitizeField', () => {
       type: 'integer',
       signed: true,
     }) as IntegerField;
-    expect(field.signed).toBe(true);
+    expect(field.signedness).toBe('twos-complement');
   });
 
-  it('omits signed when not a boolean', () => {
+  it('omits signedness when not a valid string', () => {
     const field = sanitizeField({
       name: 'F',
       msb: 7,
       lsb: 0,
       type: 'integer',
-      signed: 'yes',
+      signedness: 'invalid',
     });
-    expect('signed' in field).toBe(false);
+    expect('signedness' in field).toBe(false);
+  });
+
+  it('omits signedness for old signed: false', () => {
+    const field = sanitizeField({
+      name: 'F',
+      msb: 7,
+      lsb: 0,
+      type: 'integer',
+      signed: false,
+    });
+    expect('signedness' in field).toBe(false);
   });
 
   it('preserves enumEntries when valid', () => {
@@ -516,6 +540,6 @@ describe('sanitizeRegisterDef', () => {
       { value: 0, name: 'MODE_A' },
       { value: 1, name: 'MODE_B' },
     ]);
-    expect((reg.fields[2] as IntegerField).signed).toBe(true);
+    expect((reg.fields[2] as IntegerField).signedness).toBe('twos-complement');
   });
 });

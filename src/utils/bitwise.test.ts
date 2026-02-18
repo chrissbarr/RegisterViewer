@@ -5,6 +5,8 @@ import {
   getBit,
   toSigned,
   toUnsigned,
+  fromSignMagnitudeBits,
+  toSignMagnitudeBits,
   clampToWidth,
 } from "./bitwise";
 
@@ -235,5 +237,98 @@ describe("clampToWidth", () => {
     // Value exceeding 64 bits is masked
     expect(clampToWidth(max64 + 1n, 64)).toBe(0n);
     expect(clampToWidth(max64 + 2n, 64)).toBe(1n);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// fromSignMagnitudeBits
+// ---------------------------------------------------------------------------
+describe("fromSignMagnitudeBits", () => {
+  it("decodes positive value (MSB clear) — 8-bit 3", () => {
+    // 0b00000011 = +3
+    expect(fromSignMagnitudeBits(3n, 8)).toBe(3n);
+  });
+
+  it("decodes negative value (MSB set) — 8-bit 0x83 = -3", () => {
+    // 0b10000011: sign=1, magnitude=3 → -3
+    expect(fromSignMagnitudeBits(0x83n, 8)).toBe(-3n);
+  });
+
+  it("decodes zero as 0n", () => {
+    expect(fromSignMagnitudeBits(0n, 8)).toBe(0n);
+  });
+
+  it("decodes negative zero (sign bit set, magnitude zero) as '-0'", () => {
+    // 0b10000000: sign=1, magnitude=0 → -0
+    expect(fromSignMagnitudeBits(0x80n, 8)).toBe('-0');
+  });
+
+  it("decodes max positive 8-bit value (127)", () => {
+    expect(fromSignMagnitudeBits(0x7Fn, 8)).toBe(127n);
+  });
+
+  it("decodes max negative 8-bit value (-127)", () => {
+    // 0b11111111: sign=1, magnitude=127 → -127
+    expect(fromSignMagnitudeBits(0xFFn, 8)).toBe(-127n);
+  });
+
+  it("handles 1-bit width: 1n becomes '-0' (sign bit only)", () => {
+    expect(fromSignMagnitudeBits(1n, 1)).toBe('-0');
+  });
+
+  it("handles 1-bit width: 0n stays 0n", () => {
+    expect(fromSignMagnitudeBits(0n, 1)).toBe(0n);
+  });
+
+  it("handles 16-bit value", () => {
+    // 0x8001: sign=1, magnitude=1 → -1
+    expect(fromSignMagnitudeBits(0x8001n, 16)).toBe(-1n);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// toSignMagnitudeBits
+// ---------------------------------------------------------------------------
+describe("toSignMagnitudeBits", () => {
+  it("encodes positive value — 3 in 8 bits", () => {
+    expect(toSignMagnitudeBits(3n, 8)).toBe(3n);
+  });
+
+  it("encodes negative value — -3 in 8 bits", () => {
+    // sign bit + magnitude 3 → 0b10000011 = 0x83
+    expect(toSignMagnitudeBits(-3n, 8)).toBe(0x83n);
+  });
+
+  it("encodes zero as 0n", () => {
+    expect(toSignMagnitudeBits(0n, 8)).toBe(0n);
+  });
+
+  it("encodes '-0' as sign bit only", () => {
+    expect(toSignMagnitudeBits('-0', 8)).toBe(0x80n);
+  });
+
+  it("encodes max positive 8-bit (127)", () => {
+    expect(toSignMagnitudeBits(127n, 8)).toBe(0x7Fn);
+  });
+
+  it("encodes max negative 8-bit (-127)", () => {
+    expect(toSignMagnitudeBits(-127n, 8)).toBe(0xFFn);
+  });
+
+  it("returns 0n for bitWidth < 1", () => {
+    expect(toSignMagnitudeBits(42n, 0)).toBe(0n);
+    expect(toSignMagnitudeBits('-0', 0)).toBe(0n);
+  });
+
+  it("masks magnitude to field width", () => {
+    // 4-bit field: sign + 3 magnitude bits. Value 15 → magnitude masked to 7
+    expect(toSignMagnitudeBits(15n, 4)).toBe(7n);
+  });
+
+  it("round-trips: toSignMagnitudeBits(fromSignMagnitudeBits(raw, w), w) === raw for all 8-bit values", () => {
+    for (let raw = 0n; raw < 256n; raw++) {
+      const decoded = fromSignMagnitudeBits(raw, 8);
+      expect(toSignMagnitudeBits(decoded, 8)).toBe(raw);
+    }
   });
 });

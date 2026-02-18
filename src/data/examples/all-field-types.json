@@ -2,7 +2,7 @@
   "version": 1,
   "project": {
     "title": "All Field Types",
-    "description": "Showcases all 5 field types: flag, enum, integer, float, and fixed-point across 7 registers."
+    "description": "Showcases all 5 field types: flag, enum, integer (unsigned, two's complement, and sign-magnitude), float, and fixed-point across 7 registers."
   },
   "registers": [
     {
@@ -56,7 +56,7 @@
           "msb": 8,
           "lsb": 6,
           "type": "integer",
-          "signed": false
+          "signedness": "unsigned"
         },
         {
           "name": "TRIM",
@@ -64,7 +64,15 @@
           "msb": 12,
           "lsb": 9,
           "type": "integer",
-          "signed": true
+          "signedness": "twos-complement"
+        },
+        {
+          "name": "BALANCE",
+          "description": "Signed balance offset using sign-magnitude encoding (range -3..+3)",
+          "msb": 15,
+          "lsb": 13,
+          "type": "integer",
+          "signedness": "sign-magnitude"
         }
       ]
     },
@@ -148,8 +156,7 @@
           "msb": 31,
           "lsb": 24,
           "type": "fixed-point",
-          "qFormat": { "m": 1, "n": 7 },
-          "signed": true
+          "qFormat": { "m": 1, "n": 7 }
         }
       ]
     },
@@ -182,7 +189,7 @@
           "msb": 4,
           "lsb": 3,
           "type": "integer",
-          "signed": false
+          "signedness": "unsigned"
         },
         {
           "name": "SLEW",
@@ -217,7 +224,7 @@
           "msb": 31,
           "lsb": 0,
           "type": "integer",
-          "signed": false
+          "signedness": "unsigned"
         },
         {
           "name": "CHANNEL",
@@ -242,7 +249,7 @@
           "msb": 55,
           "lsb": 40,
           "type": "integer",
-          "signed": true
+          "signedness": "twos-complement"
         },
         {
           "name": "VALID",
@@ -256,7 +263,7 @@
     }
   ],
   "registerValues": {
-    "STATUS_CTRL": "0x1a0b",
+    "STATUS_CTRL": "0xda0b",
     "FLOAT_REGS": "0x3f8000003c00",
     "SINGLE_FLOAT": "0x40490fdb",
     "DOUBLE_FLOAT": "0x400921fb54442d18",

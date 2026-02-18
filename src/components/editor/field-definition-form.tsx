@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Field, FieldDraft, FieldType, EnumEntry, QFormat } from '../../types/register';
+import type { Field, FieldDraft, FieldType, EnumEntry, QFormat, Signedness } from '../../types/register';
 import { toField, toFieldDraft } from '../../types/register';
 import { inputClass, inputClassSans, selectClass } from './editor-styles';
 
@@ -38,7 +38,7 @@ export function FieldDefinitionForm({ field, regWidth, onUpdate, onDelete, onDon
     } else if (type === 'enum') {
       clean.enumEntries = draft.enumEntries?.length ? draft.enumEntries : [{ value: 0, name: 'VALUE_0' }];
     } else if (type === 'integer') {
-      clean.signed = draft.signed;
+      clean.signedness = draft.signedness;
     } else if (type === 'float') {
       clean.floatType = draft.floatType ?? 'single';
     } else if (type === 'fixed-point') {
@@ -157,14 +157,20 @@ export function FieldDefinitionForm({ field, regWidth, onUpdate, onDelete, onDon
       )}
 
       {draft.type === 'integer' && (
-        <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={draft.signed ?? false}
-            onChange={(e) => update({ signed: e.target.checked })}
-            className="w-4 h-4 accent-blue-500"
-          />
-          <span className="text-sm">Signed (two's complement)</span>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs text-gray-500 dark:text-gray-400">Signedness</span>
+          <select
+            value={draft.signedness ?? 'unsigned'}
+            onChange={(e) => {
+              const val = e.target.value as Signedness;
+              update({ signedness: val === 'unsigned' ? undefined : val });
+            }}
+            className={selectClass + ' w-48'}
+          >
+            <option value="unsigned">Unsigned</option>
+            <option value="twos-complement">Two's Complement</option>
+            <option value="sign-magnitude">Sign-Magnitude</option>
+          </select>
         </label>
       )}
 

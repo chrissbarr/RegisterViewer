@@ -47,6 +47,38 @@ export function toUnsigned(signed: bigint, bitWidth: number): bigint {
   return signed & ((1n << BigInt(bitWidth)) - 1n);
 }
 
+/**
+ * Interpret raw unsigned bits as a signed value using sign-magnitude encoding.
+ * MSB is the sign bit; remaining bits are the magnitude.
+ * Returns the string '-0' when the sign bit is set but magnitude is zero.
+ */
+export function fromSignMagnitudeBits(raw: bigint, bitWidth: number): bigint | '-0' {
+  if (bitWidth < 1) return 0n;
+  const signBit = 1n << BigInt(bitWidth - 1);
+  const magnitudeMask = signBit - 1n;
+  const magnitude = raw & magnitudeMask;
+  const isNegative = (raw & signBit) !== 0n;
+  if (isNegative) {
+    return magnitude === 0n ? '-0' : -magnitude;
+  }
+  return magnitude;
+}
+
+/**
+ * Encode a signed value into sign-magnitude bits.
+ * Accepts the string '-0' to encode negative zero (sign bit set, magnitude zero).
+ */
+export function toSignMagnitudeBits(value: bigint | '-0', bitWidth: number): bigint {
+  if (bitWidth < 1) return 0n;
+  const signBit = 1n << BigInt(bitWidth - 1);
+  const magnitudeMask = signBit - 1n;
+  if (value === '-0') return signBit;
+  if (value < 0n) {
+    return signBit | ((-value) & magnitudeMask);
+  }
+  return value & magnitudeMask;
+}
+
 /** Clamp a bigint value to the range representable by a given bit width (unsigned). */
 export function clampToWidth(value: bigint, width: number): bigint {
   const mask = (1n << BigInt(width)) - 1n;

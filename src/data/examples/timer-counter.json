@@ -17,7 +17,7 @@
           "msb": 1,
           "lsb": 0,
           "type": "integer",
-          "signed": false
+          "signedness": "unsigned"
         },
         {
           "name": "COM0B",
@@ -106,7 +106,7 @@
           "msb": 7,
           "lsb": 0,
           "type": "integer",
-          "signed": false
+          "signedness": "unsigned"
         }
       ]
     },
@@ -121,7 +121,7 @@
           "msb": 7,
           "lsb": 0,
           "type": "integer",
-          "signed": false
+          "signedness": "unsigned"
         }
       ]
     },
@@ -136,7 +136,7 @@
           "msb": 7,
           "lsb": 0,
           "type": "integer",
-          "signed": false
+          "signedness": "unsigned"
         }
       ]
     },

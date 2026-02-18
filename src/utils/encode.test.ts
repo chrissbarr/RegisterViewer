@@ -86,7 +86,7 @@ describe('encodeField — integer unsigned', () => {
 // encodeField — integer signed
 // ---------------------------------------------------------------------------
 describe('encodeField — integer signed', () => {
-  const field = makeField({ msb: 7, lsb: 0, signed: true });
+  const field = makeField({ msb: 7, lsb: 0, signedness: 'twos-complement' });
 
   it('encodes "-1" as 255n (two\'s complement 8-bit)', () => {
     expect(encodeField('-1', field)).toBe(255n);
@@ -99,6 +99,34 @@ describe('encodeField — integer signed', () => {
   it('encodes number -5 as correct unsigned representation', () => {
     // -5 in 8-bit two's complement → 256 - 5 = 251
     expect(encodeField(-5, field)).toBe(251n);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// encodeField — integer sign-magnitude
+// ---------------------------------------------------------------------------
+describe('encodeField — integer sign-magnitude', () => {
+  const field = makeField({ msb: 7, lsb: 0, signedness: 'sign-magnitude' });
+
+  it('encodes "3" as 3n', () => {
+    expect(encodeField('3', field)).toBe(3n);
+  });
+
+  it('encodes "-3" as 0x83n (sign bit + magnitude 3)', () => {
+    expect(encodeField('-3', field)).toBe(0x83n);
+  });
+
+  it('encodes "-0" as 0x80n (negative zero)', () => {
+    expect(encodeField('-0', field)).toBe(0x80n);
+  });
+
+  it('encodes "0" as 0n', () => {
+    expect(encodeField('0', field)).toBe(0n);
+  });
+
+  it('encodes number -5 as sign-magnitude bits', () => {
+    // sign bit + magnitude 5 → 0b10000101 = 0x85
+    expect(encodeField(-5, field)).toBe(0x85n);
   });
 });
 
@@ -170,13 +198,34 @@ describe('round-trip — decode then encode', () => {
     expect(encoded).toBe(200n);
   });
 
-  it('round-trips a signed integer field', () => {
-    const field = makeField({ msb: 7, lsb: 0, signed: true });
+  it('round-trips a signed integer field (twos-complement)', () => {
+    const field = makeField({ msb: 7, lsb: 0, signedness: 'twos-complement' });
     const regVal = 0x80n; // -128 in signed 8-bit
     const decoded = decodeField(regVal, field);
     expect(decoded.type).toBe('integer');
     expect(decoded.value).toBe(-128n);
     const encoded = encodeField(Number(decoded.value), field);
+    expect(encoded).toBe(0x80n);
+  });
+
+  it('round-trips a sign-magnitude integer field', () => {
+    const field = makeField({ msb: 7, lsb: 0, signedness: 'sign-magnitude' });
+    const regVal = 0x83n; // -3 in sign-magnitude
+    const decoded = decodeField(regVal, field);
+    expect(decoded.type).toBe('integer');
+    expect(decoded.value).toBe(-3n);
+    const encoded = encodeField(Number(decoded.value), field);
+    expect(encoded).toBe(0x83n);
+  });
+
+  it('round-trips sign-magnitude negative zero via formatDecodedValue', () => {
+    const field = makeField({ msb: 7, lsb: 0, signedness: 'sign-magnitude' });
+    const regVal = 0x80n; // -0 in sign-magnitude
+    const decoded = decodeField(regVal, field);
+    expect(decoded.value).toBe('-0');
+    const formatted = formatDecodedValue(decoded);
+    expect(formatted).toBe('-0');
+    const encoded = encodeField(formatted, field);
     expect(encoded).toBe(0x80n);
   });
 
