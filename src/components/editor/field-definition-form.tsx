@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import type { Field, FieldDraft, FieldType, EnumEntry, QFormat } from '../../types/register';
+import type { Field, FieldDraft, FieldType, EnumEntry, QFormat, Signedness } from '../../types/register';
 import { toField, toFieldDraft } from '../../types/register';
+import { inputClass, inputClassSans, selectClass } from './editor-styles';
 
 interface Props {
   field: Field;
@@ -37,7 +38,7 @@ export function FieldDefinitionForm({ field, regWidth, onUpdate, onDelete, onDon
     } else if (type === 'enum') {
       clean.enumEntries = draft.enumEntries?.length ? draft.enumEntries : [{ value: 0, name: 'VALUE_0' }];
     } else if (type === 'integer') {
-      clean.signed = draft.signed;
+      clean.signedness = draft.signedness;
     } else if (type === 'float') {
       clean.floatType = draft.floatType ?? 'single';
     } else if (type === 'fixed-point') {
@@ -66,12 +67,6 @@ export function FieldDefinitionForm({ field, regWidth, onUpdate, onDelete, onDon
     entries.splice(index, 1);
     update({ enumEntries: entries });
   }
-
-  const inputBase =
-    'px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500';
-  const inputClass = `${inputBase} font-mono`;
-  const inputClassSans = inputBase;
-  const selectClass = inputBase;
 
   return (
     <div className="p-3 rounded border-2 border-blue-400 dark:border-blue-600 bg-gray-50 dark:bg-gray-800/50 space-y-3">
@@ -162,14 +157,20 @@ export function FieldDefinitionForm({ field, regWidth, onUpdate, onDelete, onDon
       )}
 
       {draft.type === 'integer' && (
-        <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={draft.signed ?? false}
-            onChange={(e) => update({ signed: e.target.checked })}
-            className="w-4 h-4 accent-blue-500"
-          />
-          <span className="text-sm">Signed (two's complement)</span>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs text-gray-500 dark:text-gray-400">Signedness</span>
+          <select
+            value={draft.signedness ?? 'unsigned'}
+            onChange={(e) => {
+              const val = e.target.value as Signedness;
+              update({ signedness: val === 'unsigned' ? undefined : val });
+            }}
+            className={selectClass + ' w-48'}
+          >
+            <option value="unsigned">Unsigned</option>
+            <option value="twos-complement">Two's Complement</option>
+            <option value="sign-magnitude">Sign-Magnitude</option>
+          </select>
         </label>
       )}
 

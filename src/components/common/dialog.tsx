@@ -27,10 +27,6 @@ export function Dialog({ open, onClose, title, children }: DialogProps) {
     }
   }, [open]);
 
-  function handleClose() {
-    onClose();
-  }
-
   function handleClick(e: React.MouseEvent<HTMLDialogElement>) {
     // Clicks on the <dialog> itself (backdrop area) close it
     if (e.target === dialogRef.current) {
@@ -41,7 +37,7 @@ export function Dialog({ open, onClose, title, children }: DialogProps) {
   return (
     <dialog
       ref={dialogRef}
-      onClose={handleClose}
+      onClose={onClose}
       onClick={handleClick}
       aria-labelledby={titleId}
       className="backdrop:bg-black/50 dark:backdrop:bg-black/70

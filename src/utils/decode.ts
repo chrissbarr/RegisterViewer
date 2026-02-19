@@ -1,5 +1,5 @@
 import type { Field, DecodedValue } from '../types/register';
-import { extractBits, toSigned } from './bitwise';
+import { extractBits, toSigned, fromSignMagnitudeBits } from './bitwise';
 import { bitsToFloat16, bitsToFloat32, bitsToFloat64 } from './float';
 import { decodeFixedPoint } from './fixed-point';
 
@@ -19,7 +19,17 @@ export function decodeField(registerValue: bigint, field: Field): DecodedValue {
     }
 
     case 'integer': {
-      const value = field.signed ? toSigned(rawBits, bitWidth) : rawBits;
+      let value: bigint | '-0';
+      switch (field.signedness) {
+        case 'twos-complement':
+          value = toSigned(rawBits, bitWidth);
+          break;
+        case 'sign-magnitude':
+          value = fromSignMagnitudeBits(rawBits, bitWidth);
+          break;
+        default:
+          value = rawBits;
+      }
       return { type: 'integer', value };
     }
 
@@ -52,7 +62,7 @@ export function formatDecodedValue(decoded: DecodedValue): string {
     case 'enum':
       return decoded.name ? `${decoded.name} (${decoded.value})` : `${decoded.value}`;
     case 'integer':
-      return decoded.value.toString();
+      return decoded.value === '-0' ? '-0' : decoded.value.toString();
     case 'float':
       if (Number.isNaN(decoded.value)) return 'NaN';
       if (!Number.isFinite(decoded.value)) return decoded.value > 0 ? '+Inf' : '-Inf';

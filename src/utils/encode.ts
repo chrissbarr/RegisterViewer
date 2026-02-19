@@ -1,5 +1,5 @@
 import type { Field } from '../types/register';
-import { toUnsigned } from './bitwise';
+import { toUnsigned, toSignMagnitudeBits } from './bitwise';
 import { float16ToBits, float32ToBits, float64ToBits } from './float';
 import { encodeFixedPoint } from './fixed-point';
 
@@ -22,12 +22,19 @@ export function encodeField(input: string | number | boolean, field: Field): big
     }
 
     case 'integer': {
+      const strInput = typeof input === 'string' ? input.trim() : '';
       const numVal = typeof input === 'string' ? parseBigInt(input) : BigInt(Math.round(Number(input)));
-      if (field.signed) {
-        return toUnsigned(numVal, bitWidth);
+      switch (field.signedness) {
+        case 'twos-complement':
+          return toUnsigned(numVal, bitWidth);
+        case 'sign-magnitude':
+          if (strInput === '-0') return toSignMagnitudeBits('-0', bitWidth);
+          return toSignMagnitudeBits(numVal, bitWidth);
+        default: {
+          const mask = (1n << BigInt(bitWidth)) - 1n;
+          return numVal & mask;
+        }
       }
-      const mask = (1n << BigInt(bitWidth)) - 1n;
-      return numVal & mask;
     }
 
     case 'float': {

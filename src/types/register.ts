@@ -28,9 +28,11 @@ export interface EnumField extends BaseField {
   enumEntries: EnumEntry[];
 }
 
+export type Signedness = 'unsigned' | 'twos-complement' | 'sign-magnitude';
+
 export interface IntegerField extends BaseField {
   type: 'integer';
-  signed?: boolean;
+  signedness?: Signedness;
 }
 
 export interface FloatField extends BaseField {
@@ -53,7 +55,7 @@ export interface FieldDraft {
   msb: number;
   lsb: number;
   type: FieldType;
-  signed?: boolean;
+  signedness?: Signedness;
   enumEntries?: EnumEntry[];
   floatType?: 'half' | 'single' | 'double';
   qFormat?: QFormat;
@@ -69,7 +71,7 @@ export function toField(draft: FieldDraft): Field {
     case 'enum':
       return { ...base, type: 'enum', enumEntries: draft.enumEntries ?? [] };
     case 'integer':
-      return { ...base, type: 'integer', signed: draft.signed };
+      return { ...base, type: 'integer', signedness: draft.signedness };
     case 'float':
       return { ...base, type: 'float', floatType: draft.floatType ?? 'single' };
     case 'fixed-point':
@@ -83,7 +85,7 @@ export function toFieldDraft(field: Field): FieldDraft {
   switch (field.type) {
     case 'flag':        return { ...base, flagLabels: field.flagLabels };
     case 'enum':        return { ...base, enumEntries: field.enumEntries };
-    case 'integer':     return { ...base, signed: field.signed };
+    case 'integer':     return { ...base, signedness: field.signedness };
     case 'float':       return { ...base, floatType: field.floatType };
     case 'fixed-point': return { ...base, qFormat: field.qFormat };
   }
@@ -126,6 +128,6 @@ export interface SerializedAppState {
 export type DecodedValue =
   | { type: 'flag'; value: boolean }
   | { type: 'enum'; value: number; name: string | null }
-  | { type: 'integer'; value: number | bigint }
+  | { type: 'integer'; value: number | bigint | '-0' }
   | { type: 'float'; value: number }
   | { type: 'fixed-point'; value: number };

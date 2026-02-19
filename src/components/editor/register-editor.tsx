@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { RegisterDef, Field, FlagField } from '../../types/register';
 import { useEditContext } from '../../context/edit-context';
 import { FieldDefinitionForm } from './field-definition-form';
 import { JsonConfigEditor } from './json-config-editor';
 import { formatOffset } from '../../utils/format';
-import { MAX_REGISTER_WIDTH } from '../../utils/validation';
+import { MAX_REGISTER_WIDTH, getFieldWarnings } from '../../utils/validation';
+import { inputClass, inputClassSans } from './editor-styles';
 
 interface Props {
   draft: RegisterDef;
@@ -74,17 +75,21 @@ export function RegisterEditor({
     if (editingFieldId === fieldId) setEditingFieldId(null);
   }
 
-  function handleJsonUpdate(updated: RegisterDef) {
-    onDraftChange(updated);
-  }
-
   const widthParsed = parseInt(widthText, 10);
   const widthHasError = widthText.trim() !== '' && (!Number.isInteger(widthParsed) || widthParsed < 1 || widthParsed > MAX_REGISTER_WIDTH);
 
-  const inputBase =
-    'px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500';
-  const inputClass = `${inputBase} font-mono`;
-  const inputClassSans = inputBase;
+  const fieldWarnings = useMemo(() => getFieldWarnings(draft), [draft]);
+  const warningsByFieldId = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const w of fieldWarnings) {
+      for (const id of w.fieldIds) {
+        const existing = map.get(id);
+        if (existing) existing.push(w.message);
+        else map.set(id, [w.message]);
+      }
+    }
+    return map;
+  }, [fieldWarnings]);
 
   return (
     <div>
@@ -230,6 +235,11 @@ export function RegisterEditor({
 
       {tab === 'gui' ? (
         <div>
+          {fieldWarnings.length > 0 && (
+            <div className="mb-3 px-3 py-2 rounded-md bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-sm text-amber-700 dark:text-amber-300 space-y-1">
+              {fieldWarnings.map((w, i) => <p key={i}>⚠ {w.message}</p>)}
+            </div>
+          )}
           {/* Field list */}
           <div className="space-y-2 mb-3">
             {[...draft.fields].sort((a, b) => b.msb - a.msb).map((field) => (
@@ -263,9 +273,13 @@ export function RegisterEditor({
                 ) : (
                   <div
                     onClick={() => setEditingFieldId(field.id)}
-                    className="flex items-center justify-between px-3 py-2 rounded border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer"
+                    className={`flex items-center justify-between px-3 py-2 rounded border hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer ${
+                      warningsByFieldId.has(field.id)
+                        ? 'border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-900/10'
+                        : 'border-gray-200 dark:border-gray-700'
+                    }`}
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
                       <span className="font-medium text-sm">{field.name}</span>
                       <span className="text-xs text-gray-500 dark:text-gray-400 font-mono">
                         [{field.msb === field.lsb ? field.msb : `${field.msb}:${field.lsb}`}]
@@ -273,6 +287,14 @@ export function RegisterEditor({
                       <span className="text-xs px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
                         {field.type}
                       </span>
+                      {warningsByFieldId.has(field.id) && (() => {
+                        const msgs = warningsByFieldId.get(field.id)!;
+                        return (
+                          <span className="text-xs text-amber-600 dark:text-amber-400 truncate" title={msgs.join('; ')}>
+                            ⚠ {msgs[0]}{msgs.length > 1 ? ` (+${msgs.length - 1} more)` : ''}
+                          </span>
+                        );
+                      })()}
                     </div>
                     <button
                       onClick={(e) => { e.stopPropagation(); setConfirmingDeleteFieldId(field.id); }}
@@ -297,7 +319,7 @@ export function RegisterEditor({
           </button>
         </div>
       ) : (
-        <JsonConfigEditor register={draft} onUpdate={handleJsonUpdate} />
+        <JsonConfigEditor register={draft} onUpdate={onDraftChange} />
       )}
     </div>
   );

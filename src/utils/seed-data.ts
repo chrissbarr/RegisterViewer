@@ -48,7 +48,7 @@ export function createSeedRegisters(): RegisterDef[] {
           msb: 11,
           lsb: 8,
           type: 'integer',
-          signed: false,
+          signedness: 'unsigned',
         },
         {
           id: crypto.randomUUID(),
@@ -57,7 +57,7 @@ export function createSeedRegisters(): RegisterDef[] {
           msb: 23,
           lsb: 16,
           type: 'integer',
-          signed: true,
+          signedness: 'twos-complement',
         },
         {
           id: crypto.randomUUID(),

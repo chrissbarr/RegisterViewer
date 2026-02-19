@@ -71,21 +71,56 @@ describe('decodeField — integer', () => {
   });
 
   it('decodes signed positive 0x7F as 127n', () => {
-    const field = makeField({ msb: 7, lsb: 0, signed: true });
+    const field = makeField({ msb: 7, lsb: 0, signedness: 'twos-complement' });
     const result = decodeField(0x7Fn, field);
     expect(result).toEqual({ type: 'integer', value: 127n });
   });
 
   it('decodes signed negative 0x80 as -128n', () => {
-    const field = makeField({ msb: 7, lsb: 0, signed: true });
+    const field = makeField({ msb: 7, lsb: 0, signedness: 'twos-complement' });
     const result = decodeField(0x80n, field);
     expect(result).toEqual({ type: 'integer', value: -128n });
   });
 
   it('decodes signed all-ones as -1n', () => {
-    const field = makeField({ msb: 7, lsb: 0, signed: true });
+    const field = makeField({ msb: 7, lsb: 0, signedness: 'twos-complement' });
     const result = decodeField(0xFFn, field);
     expect(result).toEqual({ type: 'integer', value: -1n });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// decodeField — integer (sign-magnitude)
+// ---------------------------------------------------------------------------
+describe('decodeField — integer (sign-magnitude)', () => {
+  it('decodes positive value 3', () => {
+    const field = makeField({ msb: 7, lsb: 0, signedness: 'sign-magnitude' });
+    const result = decodeField(0x03n, field);
+    expect(result).toEqual({ type: 'integer', value: 3n });
+  });
+
+  it('decodes negative value -3 (0x83)', () => {
+    const field = makeField({ msb: 7, lsb: 0, signedness: 'sign-magnitude' });
+    const result = decodeField(0x83n, field);
+    expect(result).toEqual({ type: 'integer', value: -3n });
+  });
+
+  it('decodes negative zero (0x80) as -0', () => {
+    const field = makeField({ msb: 7, lsb: 0, signedness: 'sign-magnitude' });
+    const result = decodeField(0x80n, field);
+    expect(result).toEqual({ type: 'integer', value: '-0' });
+  });
+
+  it('decodes max positive 8-bit (0x7F) as 127', () => {
+    const field = makeField({ msb: 7, lsb: 0, signedness: 'sign-magnitude' });
+    const result = decodeField(0x7Fn, field);
+    expect(result).toEqual({ type: 'integer', value: 127n });
+  });
+
+  it('decodes max negative 8-bit (0xFF) as -127', () => {
+    const field = makeField({ msb: 7, lsb: 0, signedness: 'sign-magnitude' });
+    const result = decodeField(0xFFn, field);
+    expect(result).toEqual({ type: 'integer', value: -127n });
   });
 });
 
@@ -161,6 +196,10 @@ describe('formatDecodedValue', () => {
 
   it('formats integer (number) via toString', () => {
     expect(formatDecodedValue({ type: 'integer', value: 42 })).toBe('42');
+  });
+
+  it('formats integer -0 as "-0"', () => {
+    expect(formatDecodedValue({ type: 'integer', value: '-0' })).toBe('-0');
   });
 
   it('formats float NaN as "NaN"', () => {

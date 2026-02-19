@@ -29,7 +29,7 @@ function fieldsEqual(a: Field, b: Field): boolean {
       return true;
     }
     case 'integer':
-      return a.signed === (b as typeof a).signed;
+      return a.signedness === (b as typeof a).signedness;
     case 'float':
       return a.floatType === (b as typeof a).floatType;
     case 'fixed-point': {

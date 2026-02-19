@@ -1,10 +1,11 @@
-import type { EnumEntry, Field, FlagField, IntegerField, FieldType, QFormat, RegisterDef } from '../types/register';
+import type { EnumEntry, Field, FlagField, IntegerField, FieldType, QFormat, RegisterDef, Signedness } from '../types/register';
 
 const VALID_FIELD_TYPES: ReadonlySet<string> = new Set<FieldType>([
   'flag', 'enum', 'integer', 'float', 'fixed-point',
 ]);
 
 const VALID_FLOAT_TYPES: ReadonlySet<string> = new Set(['half', 'single', 'double']);
+const VALID_SIGNEDNESS: ReadonlySet<string> = new Set<Signedness>(['unsigned', 'twos-complement', 'sign-magnitude']);
 
 /**
  * Construct a Field from a raw parsed object, picking only known properties.
@@ -50,8 +51,11 @@ export function sanitizeField(raw: Record<string, unknown>): Field {
     }
     case 'integer': {
       const result: IntegerField = { ...base, type: 'integer' };
-      if (typeof raw.signed === 'boolean') {
-        result.signed = raw.signed;
+      if (typeof raw.signedness === 'string' && VALID_SIGNEDNESS.has(raw.signedness)) {
+        result.signedness = raw.signedness as Signedness;
+      } else if (raw.signed === true) {
+        // Backward compat: migrate old `signed: true` to `twos-complement`
+        result.signedness = 'twos-complement';
       }
       return result;
     }
