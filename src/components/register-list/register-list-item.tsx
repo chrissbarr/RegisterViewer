@@ -8,6 +8,8 @@ interface Props {
   register: RegisterDef;
   isActive: boolean;
   hasPendingEdit: boolean;
+  hasOverlapWarning?: boolean;
+  offsetDigits?: number;
   onSelect: () => void;
   onDelete: () => void;
 }
@@ -31,7 +33,7 @@ export function GripIcon({ className }: { className?: string }) {
   );
 }
 
-export function RegisterListItem({ register, isActive, hasPendingEdit, onSelect, onDelete }: Props) {
+export function RegisterListItem({ register, isActive, hasPendingEdit, hasOverlapWarning = false, offsetDigits, onSelect, onDelete }: Props) {
   const [confirming, setConfirming] = useState(false);
   const {
     setNodeRef,
@@ -91,41 +93,68 @@ export function RegisterListItem({ register, isActive, hasPendingEdit, onSelect,
       ref={setNodeRef}
       style={style}
       onClick={onSelect}
-      className={`flex items-center justify-between px-3 py-2 rounded-md cursor-pointer text-sm transition-colors ${
+      className={`group relative flex items-stretch gap-2 px-3 py-2 rounded-md cursor-pointer text-sm transition-colors ${
         isActive
           ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200'
           : 'hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300'
       }`}
     >
-      <div className="flex items-center gap-2 min-w-0">
-        <button
-          {...attributes}
-          {...listeners}
-          onClick={(e) => e.stopPropagation()}
-          className="cursor-grab touch-none text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 shrink-0"
-          title="Drag to reorder"
-        >
-          <GripIcon />
-        </button>
-        {hasPendingEdit && (
-          <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" title="Unsaved changes" />
-        )}
-        {register.offset != null && (
+      {/* Grip handle — spans full item height */}
+      <button
+        {...attributes}
+        {...listeners}
+        onClick={(e) => e.stopPropagation()}
+        className="cursor-grab touch-none self-stretch flex items-center text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 shrink-0"
+        title="Drag to reorder"
+        tabIndex={-1}
+      >
+        <GripIcon />
+      </button>
+
+      {/* Content column */}
+      <div className="flex-1 min-w-0">
+        {/* Line 1: name */}
+        <div className="truncate font-medium pr-6">{register.name}</div>
+
+        {/* Line 2: offset + indicators | width badge */}
+        <div className="flex items-center justify-between mt-0.5 pr-6">
+          <div className="flex items-center gap-1.5">
+            {register.offset != null && (
+              <span className="text-xs font-mono text-gray-500 dark:text-gray-500">
+                {formatOffset(register.offset, offsetDigits)}
+              </span>
+            )}
+            {hasPendingEdit && (
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" title="Unsaved changes" />
+            )}
+            {hasOverlapWarning && (
+              <svg
+                viewBox="0 0 16 16"
+                width="12"
+                height="12"
+                fill="currentColor"
+                className="text-amber-500 shrink-0"
+                role="img"
+                aria-label="Overlap warning"
+              >
+                <path d="M8.94 1.5a1.09 1.09 0 0 0-1.88 0L1.18 13.04A1.09 1.09 0 0 0 2.12 14.5h11.76a1.09 1.09 0 0 0 .94-1.46L8.94 1.5zM7.25 6h1.5v3.5h-1.5V6zm0 4.5h1.5V12h-1.5v-1.5z" />
+              </svg>
+            )}
+          </div>
           <span className="text-xs font-mono text-gray-500 dark:text-gray-500 shrink-0">
-            {formatOffset(register.offset)}
+            {register.width}b
           </span>
-        )}
-        <span className="truncate font-medium">{register.name}</span>
-        <span className="text-xs font-mono text-gray-500 dark:text-gray-500 shrink-0">
-          {register.width}b
-        </span>
+        </div>
       </div>
+
+      {/* Delete button — visible on hover or keyboard focus */}
       <button
         onClick={(e) => {
           e.stopPropagation();
           setConfirming(true);
         }}
-        className="text-gray-400 hover:text-red-500 dark:hover:text-red-400 ml-2 shrink-0"
+        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100
+          text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-opacity"
         title="Delete register"
       >
         &times;

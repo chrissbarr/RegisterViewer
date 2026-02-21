@@ -1,4 +1,5 @@
 import type { Field, FieldType, RegisterDef } from '../types/register';
+import { formatOffset } from './format';
 
 /** Maximum supported register width in bits. */
 export const MAX_REGISTER_WIDTH = 128;
@@ -136,4 +137,40 @@ export function validateFieldInput(text: string, fieldType: FieldType): string |
   if (Number.isNaN(num)) return 'Not a valid number';
   if (!Number.isFinite(num)) return 'Infinity is not accepted';
   return null;
+}
+
+export interface RegisterOverlapWarning {
+  registerIds: string[];
+  message: string;
+}
+
+/** Check if any two registers with offsets overlap in address space. */
+export function getRegisterOverlapWarnings(
+  registers: RegisterDef[],
+  addressUnitBits: number = 8,
+): RegisterOverlapWarning[] {
+  const warnings: RegisterOverlapWarning[] = [];
+  const withOffsets = registers.filter(
+    (r): r is RegisterDef & { offset: number } => r.offset != null,
+  );
+
+  const unitLabel = addressUnitBits === 8 ? 'B' : `×${addressUnitBits}b`;
+
+  for (let i = 0; i < withOffsets.length; i++) {
+    for (let j = i + 1; j < withOffsets.length; j++) {
+      const a = withOffsets[i];
+      const b = withOffsets[j];
+      const aUnits = Math.ceil(a.width / addressUnitBits);
+      const bUnits = Math.ceil(b.width / addressUnitBits);
+      const aEnd = a.offset + aUnits - 1;
+      const bEnd = b.offset + bUnits - 1;
+      if (a.offset <= bEnd && b.offset <= aEnd) {
+        warnings.push({
+          registerIds: [a.id, b.id],
+          message: `"${a.name}" (${formatOffset(a.offset)}, ${aUnits}${unitLabel}) overlaps "${b.name}" (${formatOffset(b.offset)}, ${bUnits}${unitLabel})`,
+        });
+      }
+    }
+  }
+  return warnings;
 }

@@ -1,5 +1,11 @@
-export function formatOffset(offset: number): string {
-  return '0x' + offset.toString(16).toUpperCase().padStart(2, '0');
+export function formatOffset(offset: number, minDigits: number = 2): string {
+  return '0x' + offset.toString(16).toUpperCase().padStart(minDigits, '0');
+}
+
+/** Compute the number of hex digits needed to represent `maxOffset`, minimum 2. */
+export function offsetHexDigits(maxOffset: number): number {
+  if (maxOffset <= 0) return 2;
+  return Math.max(2, maxOffset.toString(16).length);
 }
 
 /**

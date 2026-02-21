@@ -2,7 +2,7 @@ import { AppProvider } from './context/app-context';
 import { AppShell } from './components/layout/app-shell';
 import { loadFromLocalStorage } from './utils/storage';
 import { createSeedRegisters } from './utils/seed-data';
-import type { AppState } from './types/register';
+import { SIDEBAR_WIDTH_DEFAULT, ADDRESS_UNIT_BITS_DEFAULT, type AppState } from './types/register';
 
 function getInitialState(): AppState | undefined {
   const saved = loadFromLocalStorage();
@@ -23,6 +23,12 @@ function getInitialState(): AppState | undefined {
       title: 'Example Project',
       description: 'Demonstrates register field types. Open Project Settings from the menu to customize.',
     },
+    sidebarWidth: SIDEBAR_WIDTH_DEFAULT,
+    sidebarCollapsed: false,
+    mapTableWidth: 32,
+    mapShowGaps: true,
+    mapSortDescending: false,
+    addressUnitBits: ADDRESS_UNIT_BITS_DEFAULT,
   };
 }
 

@@ -1,4 +1,4 @@
-import { validateRegisterDef, validateFieldInput, getFieldWarnings } from './validation';
+import { validateRegisterDef, validateFieldInput, getFieldWarnings, getRegisterOverlapWarnings } from './validation';
 import { makeRegister, makeField, makeFlagField, makeFloatField, makeFixedPointField } from '../test/helpers';
 
 describe('register-level validation', () => {
@@ -363,5 +363,127 @@ describe('validateFieldInput — flag/enum passthrough', () => {
 
   it('returns null for enum regardless of input', () => {
     expect(validateFieldInput('anything', 'enum')).toBeNull();
+  });
+});
+
+describe('getRegisterOverlapWarnings', () => {
+  it('returns no warnings when no registers have offsets', () => {
+    const regs = [
+      makeRegister({ name: 'A', width: 32 }),
+      makeRegister({ name: 'B', width: 32 }),
+    ];
+    expect(getRegisterOverlapWarnings(regs)).toEqual([]);
+  });
+
+  it('returns no warnings for non-overlapping registers', () => {
+    const regs = [
+      makeRegister({ name: 'A', width: 32, offset: 0x00 }),
+      makeRegister({ name: 'B', width: 32, offset: 0x04 }),
+    ];
+    expect(getRegisterOverlapWarnings(regs)).toEqual([]);
+  });
+
+  it('returns no warnings for adjacent registers (touching but not overlapping)', () => {
+    const regs = [
+      makeRegister({ name: 'A', width: 16, offset: 0x00 }), // bytes 0-1
+      makeRegister({ name: 'B', width: 16, offset: 0x02 }), // bytes 2-3
+    ];
+    expect(getRegisterOverlapWarnings(regs)).toEqual([]);
+  });
+
+  it('detects overlapping registers', () => {
+    const regs = [
+      makeRegister({ id: 'a', name: 'A', width: 32, offset: 0x00 }), // bytes 0-3
+      makeRegister({ id: 'b', name: 'B', width: 32, offset: 0x02 }), // bytes 2-5
+    ];
+    const warnings = getRegisterOverlapWarnings(regs);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].registerIds).toEqual(['a', 'b']);
+    expect(warnings[0].message).toContain('overlaps');
+  });
+
+  it('detects complete containment as overlap', () => {
+    const regs = [
+      makeRegister({ id: 'a', name: 'A', width: 64, offset: 0x00 }), // bytes 0-7
+      makeRegister({ id: 'b', name: 'B', width: 8, offset: 0x02 }),   // byte 2
+    ];
+    const warnings = getRegisterOverlapWarnings(regs);
+    expect(warnings).toHaveLength(1);
+  });
+
+  it('ignores registers without offsets', () => {
+    const regs = [
+      makeRegister({ name: 'A', width: 32, offset: 0x00 }),
+      makeRegister({ name: 'B', width: 32 }), // no offset
+      makeRegister({ name: 'C', width: 32, offset: 0x02 }),
+    ];
+    const warnings = getRegisterOverlapWarnings(regs);
+    expect(warnings).toHaveLength(1); // only A and C overlap
+  });
+
+  it('handles sub-byte widths correctly (1-bit register = 1 byte)', () => {
+    const regs = [
+      makeRegister({ name: 'A', width: 1, offset: 0x00 }), // ceil(1/8) = 1 byte
+      makeRegister({ name: 'B', width: 8, offset: 0x00 }), // 1 byte at same offset
+    ];
+    const warnings = getRegisterOverlapWarnings(regs);
+    expect(warnings).toHaveLength(1);
+  });
+
+  it('handles sub-byte widths correctly (9-bit register = 2 bytes)', () => {
+    const regs = [
+      makeRegister({ name: 'A', width: 9, offset: 0x00 }),  // ceil(9/8) = 2 bytes: 0-1
+      makeRegister({ name: 'B', width: 8, offset: 0x01 }),  // 1 byte at offset 1
+    ];
+    const warnings = getRegisterOverlapWarnings(regs);
+    expect(warnings).toHaveLength(1);
+  });
+
+  it('returns multiple warnings for multiple overlapping pairs', () => {
+    const regs = [
+      makeRegister({ id: 'a', name: 'A', width: 32, offset: 0x00 }), // 0-3
+      makeRegister({ id: 'b', name: 'B', width: 32, offset: 0x02 }), // 2-5
+      makeRegister({ id: 'c', name: 'C', width: 32, offset: 0x04 }), // 4-7
+    ];
+    const warnings = getRegisterOverlapWarnings(regs);
+    // A overlaps B, B overlaps C
+    expect(warnings).toHaveLength(2);
+  });
+});
+
+describe('getRegisterOverlapWarnings — addressUnitBits', () => {
+  it('16-bit registers at sequential offsets do NOT overlap with addressUnitBits=16', () => {
+    const regs = [
+      makeRegister({ name: 'A', width: 16, offset: 0 }),
+      makeRegister({ name: 'B', width: 16, offset: 1 }),
+      makeRegister({ name: 'C', width: 16, offset: 2 }),
+    ];
+    expect(getRegisterOverlapWarnings(regs, 16)).toEqual([]);
+  });
+
+  it('16-bit registers at sequential offsets DO overlap with addressUnitBits=8 (default)', () => {
+    const regs = [
+      makeRegister({ name: 'A', width: 16, offset: 0 }),
+      makeRegister({ name: 'B', width: 16, offset: 1 }),
+    ];
+    const warnings = getRegisterOverlapWarnings(regs, 8);
+    expect(warnings).toHaveLength(1);
+  });
+
+  it('32-bit register at offset 0 does not overlap 32-bit register at offset 1 with addressUnitBits=32', () => {
+    const regs = [
+      makeRegister({ name: 'A', width: 32, offset: 0 }),
+      makeRegister({ name: 'B', width: 32, offset: 1 }),
+    ];
+    expect(getRegisterOverlapWarnings(regs, 32)).toEqual([]);
+  });
+
+  it('register wider than one address unit correctly spans multiple units', () => {
+    const regs = [
+      makeRegister({ name: 'A', width: 32, offset: 0 }), // 32/16=2 units → offsets 0-1
+      makeRegister({ name: 'B', width: 16, offset: 1 }), // 16/16=1 unit → offset 1
+    ];
+    const warnings = getRegisterOverlapWarnings(regs, 16);
+    expect(warnings).toHaveLength(1);
   });
 });

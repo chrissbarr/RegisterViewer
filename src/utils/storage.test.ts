@@ -35,6 +35,8 @@ describe('deserializeState', () => {
       activeRegisterId: null,
       registerValues: { 'reg-1': '0xabcd' },
       theme: 'dark' as const,
+      sidebarWidth: 224,
+      sidebarCollapsed: false,
     };
     const state = deserializeState(serialized);
     expect(state.registerValues['reg-1']).toBe(0xABCDn);
@@ -46,6 +48,8 @@ describe('deserializeState', () => {
       activeRegisterId: null,
       registerValues: { 'reg-1': 'not-a-hex' },
       theme: 'dark' as const,
+      sidebarWidth: 224,
+      sidebarCollapsed: false,
     };
     const state = deserializeState(serialized);
     expect(state.registerValues['reg-1']).toBe(0n);
@@ -57,6 +61,8 @@ describe('deserializeState', () => {
       activeRegisterId: 'reg-1',
       registerValues: { 'reg-1': '0xFFFF' },
       theme: 'dark' as const,
+      sidebarWidth: 224,
+      sidebarCollapsed: false,
     };
     const state = deserializeState(serialized);
     expect(state.registers[0].width).toBe(128);
@@ -69,12 +75,59 @@ describe('deserializeState', () => {
       // Value with more than 128 bits set
       registerValues: { 'reg-1': '0x' + 'FF'.repeat(32) },
       theme: 'dark' as const,
+      sidebarWidth: 224,
+      sidebarCollapsed: false,
     };
     const state = deserializeState(serialized);
     expect(state.registers[0].width).toBe(128);
     // Value should be masked to 128 bits
     const maxVal = (1n << 128n) - 1n;
     expect(state.registerValues['reg-1']).toBe(maxVal);
+  });
+
+  it('defaults mapTableWidth to 32 and mapShowGaps to true for legacy data', () => {
+    const serialized = {
+      registers: [],
+      activeRegisterId: null,
+      registerValues: {},
+      theme: 'dark' as const,
+      sidebarWidth: 224,
+      sidebarCollapsed: false,
+    };
+    const state = deserializeState(serialized);
+    expect(state.mapTableWidth).toBe(32);
+    expect(state.mapShowGaps).toBe(true);
+  });
+
+  it('falls back to 32 for invalid mapTableWidth', () => {
+    const serialized = {
+      registers: [],
+      activeRegisterId: null,
+      registerValues: {},
+      theme: 'dark' as const,
+      sidebarWidth: 224,
+      sidebarCollapsed: false,
+      mapTableWidth: 99 as never,
+      mapShowGaps: true,
+    };
+    const state = deserializeState(serialized);
+    expect(state.mapTableWidth).toBe(32);
+  });
+
+  it('preserves mapShowGaps false', () => {
+    const serialized = {
+      registers: [],
+      activeRegisterId: null,
+      registerValues: {},
+      theme: 'dark' as const,
+      sidebarWidth: 224,
+      sidebarCollapsed: false,
+      mapTableWidth: 16 as const,
+      mapShowGaps: false,
+    };
+    const state = deserializeState(serialized);
+    expect(state.mapTableWidth).toBe(16);
+    expect(state.mapShowGaps).toBe(false);
   });
 });
 
@@ -97,6 +150,18 @@ describe('save/loadFromLocalStorage', () => {
     expect(loaded!.registerValues['reg-1']).toBe(0x1234n);
     expect(loaded!.theme).toBe('light');
     expect(loaded!.activeRegisterId).toBe('reg-1');
+  });
+
+  it('round-trips map view settings through localStorage', () => {
+    const state = makeState({
+      mapTableWidth: 8,
+      mapShowGaps: false,
+    });
+    saveToLocalStorage(state);
+    const loaded = loadFromLocalStorage();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.mapTableWidth).toBe(8);
+    expect(loaded!.mapShowGaps).toBe(false);
   });
 
   it('returns null when storage is empty', () => {
@@ -426,5 +491,105 @@ describe('importFromJson', () => {
     expect(result!.registers).toHaveLength(0);
     expect(result!.warnings).toHaveLength(1);
     expect(result!.warnings[0].errors[0].message).toContain('width must be between 1 and 128');
+  });
+
+  it('imports addressUnitBits from JSON', () => {
+    const json = JSON.stringify({
+      version: 1,
+      addressUnitBits: 16,
+      registers: [{ name: 'REG', width: 16, fields: [] }],
+    });
+    const result = importFromJson(json);
+    expect(result).not.toBeNull();
+    expect(result!.addressUnitBits).toBe(16);
+  });
+
+  it('returns undefined addressUnitBits when not present in JSON', () => {
+    const json = JSON.stringify({
+      version: 1,
+      registers: [{ name: 'REG', width: 8, fields: [] }],
+    });
+    const result = importFromJson(json);
+    expect(result).not.toBeNull();
+    expect(result!.addressUnitBits).toBeUndefined();
+  });
+
+  it('rejects invalid addressUnitBits in JSON (non-power-of-2)', () => {
+    const json = JSON.stringify({
+      version: 1,
+      addressUnitBits: 7,
+      registers: [{ name: 'REG', width: 8, fields: [] }],
+    });
+    const result = importFromJson(json);
+    expect(result).not.toBeNull();
+    expect(result!.addressUnitBits).toBeUndefined();
+  });
+
+  it('accepts 64-bit and 128-bit addressUnitBits', () => {
+    for (const bits of [64, 128]) {
+      const json = JSON.stringify({
+        version: 1,
+        addressUnitBits: bits,
+        registers: [{ name: 'REG', width: bits, fields: [] }],
+      });
+      const result = importFromJson(json);
+      expect(result).not.toBeNull();
+      expect(result!.addressUnitBits).toBe(bits);
+    }
+  });
+});
+
+describe('addressUnitBits round-trip', () => {
+  it('preserves non-default addressUnitBits through export/import', () => {
+    const state = makeState({ addressUnitBits: 16 });
+    const json = exportToJson(state);
+    const data = JSON.parse(json);
+    expect(data.addressUnitBits).toBe(16);
+    const result = importFromJson(json);
+    expect(result).not.toBeNull();
+    expect(result!.addressUnitBits).toBe(16);
+  });
+
+  it('omits addressUnitBits from export when it is the default (8)', () => {
+    const state = makeState({ addressUnitBits: 8 });
+    const json = exportToJson(state);
+    const data = JSON.parse(json);
+    expect(data.addressUnitBits).toBeUndefined();
+  });
+
+  it('round-trips addressUnitBits through localStorage', () => {
+    localStorage.clear();
+    const state = makeState({ addressUnitBits: 32 });
+    saveToLocalStorage(state);
+    const loaded = loadFromLocalStorage();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.addressUnitBits).toBe(32);
+  });
+
+  it('defaults addressUnitBits to 8 for legacy localStorage data', () => {
+    const serialized = {
+      registers: [],
+      activeRegisterId: null,
+      registerValues: {},
+      theme: 'dark' as const,
+      sidebarWidth: 224,
+      sidebarCollapsed: false,
+    };
+    const state = deserializeState(serialized);
+    expect(state.addressUnitBits).toBe(8);
+  });
+
+  it('defaults addressUnitBits to 8 for invalid value in localStorage', () => {
+    const serialized = {
+      registers: [],
+      activeRegisterId: null,
+      registerValues: {},
+      theme: 'dark' as const,
+      sidebarWidth: 224,
+      sidebarCollapsed: false,
+      addressUnitBits: 7 as never,
+    };
+    const state = deserializeState(serialized);
+    expect(state.addressUnitBits).toBe(8);
   });
 });

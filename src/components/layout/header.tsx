@@ -63,7 +63,7 @@ export function Header() {
 
     if (result.registers.length > 0) {
       exitEditMode();
-      dispatch({ type: 'IMPORT_STATE', registers: result.registers, values: result.values, project: result.project });
+      dispatch({ type: 'IMPORT_STATE', registers: result.registers, values: result.values, project: result.project, addressUnitBits: result.addressUnitBits });
     }
   }
 

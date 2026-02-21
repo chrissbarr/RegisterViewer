@@ -104,9 +104,20 @@ export interface RegisterDef {
   name: string;
   description?: string;
   width: number; // total bits
-  offset?: number; // byte address offset
+  offset?: number; // address offset in address units (unit size is project-level addressUnitBits)
   fields: Field[];
 }
+
+export const SIDEBAR_WIDTH_MIN = 180;
+export const SIDEBAR_WIDTH_MAX = 400;
+export const SIDEBAR_WIDTH_DEFAULT = 224;
+
+export type MapTableWidth = 8 | 16 | 32 | 64 | 128;
+export const MAP_TABLE_WIDTH_VALUES: readonly MapTableWidth[] = [8, 16, 32, 64, 128];
+
+export type AddressUnitBits = 8 | 16 | 32 | 64 | 128;
+export const ADDRESS_UNIT_BITS_VALUES: readonly AddressUnitBits[] = [8, 16, 32, 64, 128];
+export const ADDRESS_UNIT_BITS_DEFAULT: AddressUnitBits = 8;
 
 export interface AppState {
   registers: RegisterDef[];
@@ -114,6 +125,12 @@ export interface AppState {
   registerValues: Record<string, bigint>; // defId -> current value
   theme: 'light' | 'dark';
   project?: ProjectMetadata;
+  sidebarWidth: number;
+  sidebarCollapsed: boolean;
+  mapTableWidth: MapTableWidth;
+  mapShowGaps: boolean;
+  mapSortDescending: boolean;
+  addressUnitBits: AddressUnitBits;
 }
 
 /** Serializable version of AppState for localStorage / JSON export */
@@ -123,6 +140,12 @@ export interface SerializedAppState {
   registerValues: Record<string, string>; // defId -> hex string
   theme: 'light' | 'dark';
   project?: ProjectMetadata;
+  sidebarWidth: number;
+  sidebarCollapsed: boolean;
+  mapTableWidth?: MapTableWidth;
+  mapShowGaps?: boolean;
+  mapSortDescending?: boolean;
+  addressUnitBits?: AddressUnitBits;
 }
 
 export type DecodedValue =
