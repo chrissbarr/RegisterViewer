@@ -11,7 +11,7 @@ import {
 } from '../../utils/map-layout';
 import { getRegisterOverlapWarnings } from '../../utils/validation';
 import { fieldColor, fieldBorderColor } from '../../utils/field-colors';
-import { formatOffset } from '../../utils/format';
+import { formatOffset, offsetHexDigits } from '../../utils/format';
 
 const OVERLAP_COLOR = 'rgb(251,146,60)';
 const OVERLAP_HATCH_BG = `repeating-linear-gradient(135deg, transparent, transparent 3px, rgba(251,146,60,0.08) 3px, rgba(251,146,60,0.08) 6px)`;
@@ -64,6 +64,11 @@ export function RegisterMapView({
   const mapRegisters = useMemo(
     () => buildMapRegisters(registers, overlapWarningIds, addressUnitBits),
     [registers, overlapWarningIds, addressUnitBits],
+  );
+
+  const hexDigits = useMemo(
+    () => offsetHexDigits(mapRegisters.length > 0 ? mapRegisters[mapRegisters.length - 1].endUnit : 0),
+    [mapRegisters],
   );
 
   const rowWidthUnits = tableWidthBits / addressUnitBits;
@@ -179,6 +184,7 @@ export function RegisterMapView({
               <MapRowView
                 row={row}
                 rowWidthUnits={rowWidthUnits}
+                hexDigits={hexDigits}
                 onNavigateToRegister={onNavigateToRegister}
               />
             </div>
@@ -192,17 +198,19 @@ export function RegisterMapView({
 function MapRowView({
   row,
   rowWidthUnits,
+  hexDigits,
   onNavigateToRegister,
 }: {
   row: MapRow;
   rowWidthUnits: number;
+  hexDigits: number;
   onNavigateToRegister: (registerId: string) => void;
 }) {
   if (row.isGapRow) {
     return (
       <div className="flex items-center min-h-[2rem] hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
         <div className="w-20 shrink-0 font-mono text-xs font-medium text-gray-500 dark:text-gray-400 text-right pr-3">
-          {formatOffset(row.bandStart)}
+          {formatOffset(row.bandStart, hexDigits)}
         </div>
         <div className="flex-1 border border-dashed border-gray-300 dark:border-gray-700 rounded h-6 bg-gray-50 dark:bg-gray-900/20" />
       </div>
@@ -212,7 +220,7 @@ function MapRowView({
   return (
     <div className="flex items-stretch min-h-[2.5rem] hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
       <div className="w-20 shrink-0 font-mono text-xs font-medium text-gray-500 dark:text-gray-400 text-right pr-3 flex items-center justify-end">
-        {formatOffset(row.bandStart)}
+        {formatOffset(row.bandStart, hexDigits)}
       </div>
       <div
         className="flex-1"
@@ -226,6 +234,7 @@ function MapRowView({
             <RegisterCell
               key={i}
               cell={cell}
+              hexDigits={hexDigits}
               onNavigateToRegister={onNavigateToRegister}
             />
           ) : (
@@ -239,9 +248,11 @@ function MapRowView({
 
 function RegisterCell({
   cell,
+  hexDigits,
   onNavigateToRegister,
 }: {
   cell: Extract<MapCell, { kind: 'register' }>;
+  hexDigits: number;
   onNavigateToRegister: (registerId: string) => void;
 }) {
   const { mapReg, rowSpanIndex, totalRowSpans, colStart, colEnd, fieldSegments } = cell;
@@ -254,7 +265,7 @@ function RegisterCell({
       style={{ gridColumn: `${colStart} / ${colEnd}` }}
       className="mx-0.5 my-0.5 flex flex-col overflow-hidden rounded-sm cursor-pointer hover:opacity-80 transition-opacity"
       onClick={() => onNavigateToRegister(mapReg.reg.id)}
-      title={`${mapReg.reg.name} @ ${formatOffset(mapReg.startUnit)}, ${mapReg.reg.width}b`}
+      title={`${mapReg.reg.name} @ ${formatOffset(mapReg.startUnit, hexDigits)}, ${mapReg.reg.width}b`}
     >
       {/* Name row */}
       <div

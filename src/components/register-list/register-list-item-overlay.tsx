@@ -6,9 +6,10 @@ interface Props {
   register: RegisterDef;
   isActive: boolean;
   hasPendingEdit: boolean;
+  offsetDigits?: number;
 }
 
-export function RegisterListItemOverlay({ register, isActive, hasPendingEdit }: Props) {
+export function RegisterListItemOverlay({ register, isActive, hasPendingEdit, offsetDigits }: Props) {
   return (
     <li
       className={`relative flex items-stretch gap-2 px-3 py-2 rounded-md text-sm shadow-lg ring-2 ring-blue-500/50 list-none ${
@@ -32,7 +33,7 @@ export function RegisterListItemOverlay({ register, isActive, hasPendingEdit }: 
           <div className="flex items-center gap-1.5">
             {register.offset != null && (
               <span className="text-xs font-mono text-gray-500 dark:text-gray-500">
-                {formatOffset(register.offset)}
+                {formatOffset(register.offset, offsetDigits)}
               </span>
             )}
             {hasPendingEdit && (

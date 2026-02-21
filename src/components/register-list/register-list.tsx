@@ -20,6 +20,7 @@ import { useEditContext } from '../../context/edit-context';
 import { RegisterListItem } from './register-list-item';
 import { RegisterListItemOverlay } from './register-list-item-overlay';
 import { getRegisterOverlapWarnings } from '../../utils/validation';
+import { offsetHexDigits } from '../../utils/format';
 
 export function RegisterList() {
   const { registers, activeRegisterId, addressUnitBits } = useAppState();
@@ -36,6 +37,13 @@ export function RegisterList() {
     () => new Set(overlapWarnings.flatMap((w) => w.registerIds)),
     [overlapWarnings],
   );
+
+  const offsetDigits = useMemo(() => {
+    const maxOffset = registers.reduce(
+      (max, r) => (r.offset != null ? Math.max(max, r.offset) : max), 0,
+    );
+    return offsetHexDigits(maxOffset);
+  }, [registers]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -106,6 +114,7 @@ export function RegisterList() {
                 isActive={reg.id === activeRegisterId}
                 hasPendingEdit={dirtyDraftIds.has(reg.id)}
                 hasOverlapWarning={overlapRegisterIds.has(reg.id)}
+                offsetDigits={offsetDigits}
                 onSelect={() => {
                   dispatch({ type: 'SET_ACTIVE_REGISTER', registerId: reg.id });
                   if (isEditing) enterEditMode(reg);
@@ -121,6 +130,7 @@ export function RegisterList() {
               register={activeRegister}
               isActive={activeRegister.id === activeRegisterId}
               hasPendingEdit={dirtyDraftIds.has(activeRegister.id)}
+              offsetDigits={offsetDigits}
             />
           ) : null}
         </DragOverlay>

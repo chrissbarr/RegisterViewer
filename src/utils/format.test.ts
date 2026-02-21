@@ -1,4 +1,4 @@
-import { formatOffset, formatBinary } from './format';
+import { formatOffset, offsetHexDigits, formatBinary } from './format';
 
 describe('formatOffset', () => {
   it('formats zero as 0x00', () => {
@@ -19,6 +19,36 @@ describe('formatOffset', () => {
 
   it('formats large offsets correctly', () => {
     expect(formatOffset(0xDEAD)).toBe('0xDEAD');
+  });
+
+  it('pads to minDigits when specified', () => {
+    expect(formatOffset(0, 4)).toBe('0x0000');
+    expect(formatOffset(0xFF, 4)).toBe('0x00FF');
+    expect(formatOffset(0x100, 4)).toBe('0x0100');
+  });
+
+  it('does not truncate when value exceeds minDigits', () => {
+    expect(formatOffset(0xABCD, 2)).toBe('0xABCD');
+  });
+});
+
+describe('offsetHexDigits', () => {
+  it('returns 2 for zero', () => {
+    expect(offsetHexDigits(0)).toBe(2);
+  });
+
+  it('returns 2 for small offsets', () => {
+    expect(offsetHexDigits(0xFF)).toBe(2);
+  });
+
+  it('returns 3 for offsets requiring 3 hex digits', () => {
+    expect(offsetHexDigits(0x100)).toBe(3);
+    expect(offsetHexDigits(0xFFF)).toBe(3);
+  });
+
+  it('returns 4 for offsets requiring 4 hex digits', () => {
+    expect(offsetHexDigits(0x1000)).toBe(4);
+    expect(offsetHexDigits(0xFFFF)).toBe(4);
   });
 });
 

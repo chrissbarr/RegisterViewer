@@ -9,6 +9,7 @@ interface Props {
   isActive: boolean;
   hasPendingEdit: boolean;
   hasOverlapWarning?: boolean;
+  offsetDigits?: number;
   onSelect: () => void;
   onDelete: () => void;
 }
@@ -32,7 +33,7 @@ export function GripIcon({ className }: { className?: string }) {
   );
 }
 
-export function RegisterListItem({ register, isActive, hasPendingEdit, hasOverlapWarning = false, onSelect, onDelete }: Props) {
+export function RegisterListItem({ register, isActive, hasPendingEdit, hasOverlapWarning = false, offsetDigits, onSelect, onDelete }: Props) {
   const [confirming, setConfirming] = useState(false);
   const {
     setNodeRef,
@@ -120,7 +121,7 @@ export function RegisterListItem({ register, isActive, hasPendingEdit, hasOverla
           <div className="flex items-center gap-1.5">
             {register.offset != null && (
               <span className="text-xs font-mono text-gray-500 dark:text-gray-500">
-                {formatOffset(register.offset)}
+                {formatOffset(register.offset, offsetDigits)}
               </span>
             )}
             {hasPendingEdit && (
