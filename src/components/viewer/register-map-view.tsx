@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, type RefObject } from 'react';
-import type { MapTableWidth, RegisterDef } from '../../types/register';
+import { MAP_TABLE_WIDTH_VALUES, type MapTableWidth, type RegisterDef } from '../../types/register';
 import { useAppState, useAppDispatch } from '../../context/app-context';
 import {
   buildMapRegisters,
@@ -90,7 +90,7 @@ export function RegisterMapView({
       {/* Controls */}
       <div className="flex items-center gap-4 mb-3">
         <div className="flex rounded-md border border-gray-300 dark:border-gray-600 overflow-hidden text-sm">
-          {([8, 16, 32] as const).filter((bits) => bits >= addressUnitBits).map((bits) => (
+          {MAP_TABLE_WIDTH_VALUES.filter((bits) => bits >= addressUnitBits).map((bits) => (
             <button
               key={bits}
               onClick={() => setTableWidthBits(bits)}

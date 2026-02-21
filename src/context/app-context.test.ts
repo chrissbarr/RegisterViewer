@@ -255,6 +255,34 @@ describe('IMPORT_STATE', () => {
     const next = appReducer(state, { type: 'IMPORT_STATE', registers: [reg], values: {} });
     expect(next.theme).toBe('light');
   });
+
+  it('auto-sets mapTableWidth to fit the widest register', () => {
+    const r1 = makeRegister({ id: 'a', width: 8 });
+    const r2 = makeRegister({ id: 'b', width: 16 });
+    const state = makeState({ mapTableWidth: 8 });
+    const next = appReducer(state, { type: 'IMPORT_STATE', registers: [r1, r2], values: {} });
+    expect(next.mapTableWidth).toBe(16);
+  });
+
+  it('auto-sets mapTableWidth to addressUnitBits when larger than register widths', () => {
+    const reg = makeRegister({ id: 'a', width: 16 });
+    const state = makeState({ mapTableWidth: 8 });
+    const next = appReducer(state, { type: 'IMPORT_STATE', registers: [reg], values: {}, addressUnitBits: 64 });
+    expect(next.mapTableWidth).toBe(64);
+  });
+
+  it('rounds mapTableWidth up to the next valid width', () => {
+    const reg = makeRegister({ id: 'a', width: 24 });
+    const state = makeState({ mapTableWidth: 8 });
+    const next = appReducer(state, { type: 'IMPORT_STATE', registers: [reg], values: {} });
+    expect(next.mapTableWidth).toBe(32);
+  });
+
+  it('defaults mapTableWidth to 8 when importing empty register list', () => {
+    const state = makeState({ mapTableWidth: 32, addressUnitBits: 8 });
+    const next = appReducer(state, { type: 'IMPORT_STATE', registers: [], values: {} });
+    expect(next.mapTableWidth).toBe(8);
+  });
 });
 
 describe('LOAD_STATE', () => {

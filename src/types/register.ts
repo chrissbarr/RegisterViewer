@@ -112,7 +112,8 @@ export const SIDEBAR_WIDTH_MIN = 180;
 export const SIDEBAR_WIDTH_MAX = 400;
 export const SIDEBAR_WIDTH_DEFAULT = 224;
 
-export type MapTableWidth = 8 | 16 | 32;
+export type MapTableWidth = 8 | 16 | 32 | 64 | 128;
+export const MAP_TABLE_WIDTH_VALUES: readonly MapTableWidth[] = [8, 16, 32, 64, 128];
 
 export type AddressUnitBits = 8 | 16 | 32 | 64 | 128;
 export const ADDRESS_UNIT_BITS_VALUES: readonly AddressUnitBits[] = [8, 16, 32, 64, 128];

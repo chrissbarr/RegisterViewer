@@ -1,6 +1,6 @@
 import { createContext, useContext, useReducer, type ReactNode, type Dispatch } from 'react';
 import { arrayMove } from '@dnd-kit/sortable';
-import { SIDEBAR_WIDTH_DEFAULT, ADDRESS_UNIT_BITS_DEFAULT, ADDRESS_UNIT_BITS_VALUES, type AddressUnitBits, type AppState, type MapTableWidth, type RegisterDef, type Field, type ProjectMetadata } from '../types/register';
+import { SIDEBAR_WIDTH_DEFAULT, ADDRESS_UNIT_BITS_DEFAULT, ADDRESS_UNIT_BITS_VALUES, MAP_TABLE_WIDTH_VALUES, type AddressUnitBits, type AppState, type MapTableWidth, type RegisterDef, type Field, type ProjectMetadata } from '../types/register';
 import { replaceBits, toggleBit } from '../utils/bitwise';
 
 function isValidAddressUnitBits(n: number): n is AddressUnitBits {
@@ -32,11 +32,11 @@ export type Action =
 
 // --- Reducer ---
 
-const MAP_TABLE_WIDTHS: MapTableWidth[] = [8, 16, 32];
+const MAP_TABLE_WIDTHS = MAP_TABLE_WIDTH_VALUES;
 
 /** Return the smallest valid MapTableWidth that is >= minBits. */
 function clampMapTableWidth(minBits: number): MapTableWidth {
-  return MAP_TABLE_WIDTHS.find((w) => w >= minBits) ?? 32;
+  return MAP_TABLE_WIDTHS.find((w) => w >= minBits) ?? 128;
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -109,9 +109,9 @@ export function appReducer(state: AppState, action: Action): AppState {
         newValues[r.id] = action.values[r.id] ?? 0n;
       }
       const importedBits = action.addressUnitBits ?? state.addressUnitBits;
-      const importedTableWidth = state.mapTableWidth < importedBits
-        ? clampMapTableWidth(importedBits)
-        : state.mapTableWidth;
+      const maxRegWidth = action.registers.reduce((max, r) => Math.max(max, r.width), 0);
+      const minTableWidth = Math.max(importedBits, maxRegWidth);
+      const importedTableWidth = clampMapTableWidth(minTableWidth);
       return {
         ...state,
         registers: action.registers,

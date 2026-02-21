@@ -107,7 +107,7 @@ describe('deserializeState', () => {
       theme: 'dark' as const,
       sidebarWidth: 224,
       sidebarCollapsed: false,
-      mapTableWidth: 64 as never,
+      mapTableWidth: 99 as never,
       mapShowGaps: true,
     };
     const state = deserializeState(serialized);
