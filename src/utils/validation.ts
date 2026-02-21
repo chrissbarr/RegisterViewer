@@ -144,25 +144,30 @@ export interface RegisterOverlapWarning {
   message: string;
 }
 
-/** Check if any two registers with offsets overlap in byte address space. */
-export function getRegisterOverlapWarnings(registers: RegisterDef[]): RegisterOverlapWarning[] {
+/** Check if any two registers with offsets overlap in address space. */
+export function getRegisterOverlapWarnings(
+  registers: RegisterDef[],
+  addressUnitBits: number = 8,
+): RegisterOverlapWarning[] {
   const warnings: RegisterOverlapWarning[] = [];
   const withOffsets = registers.filter(
     (r): r is RegisterDef & { offset: number } => r.offset != null,
   );
 
+  const unitLabel = addressUnitBits === 8 ? 'B' : `×${addressUnitBits}b`;
+
   for (let i = 0; i < withOffsets.length; i++) {
     for (let j = i + 1; j < withOffsets.length; j++) {
       const a = withOffsets[i];
       const b = withOffsets[j];
-      const aBytes = Math.ceil(a.width / 8);
-      const bBytes = Math.ceil(b.width / 8);
-      const aEnd = a.offset + aBytes - 1;
-      const bEnd = b.offset + bBytes - 1;
+      const aUnits = Math.ceil(a.width / addressUnitBits);
+      const bUnits = Math.ceil(b.width / addressUnitBits);
+      const aEnd = a.offset + aUnits - 1;
+      const bEnd = b.offset + bUnits - 1;
       if (a.offset <= bEnd && b.offset <= aEnd) {
         warnings.push({
           registerIds: [a.id, b.id],
-          message: `"${a.name}" (${formatOffset(a.offset)}, ${aBytes}B) overlaps "${b.name}" (${formatOffset(b.offset)}, ${bBytes}B)`,
+          message: `"${a.name}" (${formatOffset(a.offset)}, ${aUnits}${unitLabel}) overlaps "${b.name}" (${formatOffset(b.offset)}, ${bUnits}${unitLabel})`,
         });
       }
     }

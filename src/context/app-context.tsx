@@ -1,6 +1,10 @@
 import { createContext, useContext, useReducer, type ReactNode, type Dispatch } from 'react';
 import { arrayMove } from '@dnd-kit/sortable';
-import { SIDEBAR_WIDTH_DEFAULT, type AppState, type MapTableWidth, type RegisterDef, type Field, type ProjectMetadata } from '../types/register';
+import { SIDEBAR_WIDTH_DEFAULT, ADDRESS_UNIT_BITS_DEFAULT, ADDRESS_UNIT_BITS_VALUES, type AddressUnitBits, type AppState, type MapTableWidth, type RegisterDef, type Field, type ProjectMetadata } from '../types/register';
+
+function isValidAddressUnitBits(n: number): n is AddressUnitBits {
+  return (ADDRESS_UNIT_BITS_VALUES as readonly number[]).includes(n);
+}
 import { replaceBits, toggleBit } from '../utils/bitwise';
 
 // --- Actions ---
@@ -14,7 +18,7 @@ export type Action =
   | { type: 'DELETE_REGISTER'; registerId: string }
   | { type: 'SET_ACTIVE_REGISTER'; registerId: string }
   | { type: 'TOGGLE_THEME' }
-  | { type: 'IMPORT_STATE'; registers: RegisterDef[]; values: Record<string, bigint>; project?: ProjectMetadata }
+  | { type: 'IMPORT_STATE'; registers: RegisterDef[]; values: Record<string, bigint>; project?: ProjectMetadata; addressUnitBits?: AddressUnitBits }
   | { type: 'LOAD_STATE'; state: AppState }
   | { type: 'REORDER_REGISTERS'; oldIndex: number; newIndex: number }
   | { type: 'SORT_REGISTERS_BY_OFFSET' }
@@ -23,9 +27,17 @@ export type Action =
   | { type: 'SET_SIDEBAR_WIDTH'; width: number }
   | { type: 'SET_SIDEBAR_COLLAPSED'; collapsed: boolean }
   | { type: 'SET_MAP_TABLE_WIDTH'; width: MapTableWidth }
-  | { type: 'SET_MAP_SHOW_GAPS'; showGaps: boolean };
+  | { type: 'SET_MAP_SHOW_GAPS'; showGaps: boolean }
+  | { type: 'SET_ADDRESS_UNIT_BITS'; addressUnitBits: number };
 
 // --- Reducer ---
+
+const MAP_TABLE_WIDTHS: MapTableWidth[] = [8, 16, 32];
+
+/** Return the smallest valid MapTableWidth that is >= minBits. */
+function clampMapTableWidth(minBits: number): MapTableWidth {
+  return MAP_TABLE_WIDTHS.find((w) => w >= minBits) ?? 32;
+}
 
 // eslint-disable-next-line react-refresh/only-export-components
 export function appReducer(state: AppState, action: Action): AppState {
@@ -96,12 +108,18 @@ export function appReducer(state: AppState, action: Action): AppState {
       for (const r of action.registers) {
         newValues[r.id] = action.values[r.id] ?? 0n;
       }
+      const importedBits = action.addressUnitBits ?? state.addressUnitBits;
+      const importedTableWidth = state.mapTableWidth < importedBits
+        ? clampMapTableWidth(importedBits)
+        : state.mapTableWidth;
       return {
         ...state,
         registers: action.registers,
         registerValues: newValues,
         activeRegisterId: action.registers[0]?.id ?? null,
         project: action.project,
+        addressUnitBits: importedBits,
+        mapTableWidth: importedTableWidth,
       };
     }
     case 'LOAD_STATE': {
@@ -143,6 +161,14 @@ export function appReducer(state: AppState, action: Action): AppState {
     case 'SET_MAP_SHOW_GAPS': {
       return { ...state, mapShowGaps: action.showGaps };
     }
+    case 'SET_ADDRESS_UNIT_BITS': {
+      if (!isValidAddressUnitBits(action.addressUnitBits)) return state;
+      const newBits = action.addressUnitBits;
+      const clampedWidth = state.mapTableWidth < newBits
+        ? clampMapTableWidth(newBits)
+        : state.mapTableWidth;
+      return { ...state, addressUnitBits: newBits, mapTableWidth: clampedWidth };
+    }
     default:
       return state;
   }
@@ -159,6 +185,7 @@ const initialState: AppState = {
   sidebarCollapsed: false,
   mapTableWidth: 32,
   mapShowGaps: true,
+  addressUnitBits: ADDRESS_UNIT_BITS_DEFAULT,
 };
 
 const AppStateContext = createContext<AppState | null>(null);

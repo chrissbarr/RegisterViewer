@@ -25,7 +25,7 @@ export function RegisterEditor({
   onCancel,
   saveErrors,
 }: Props) {
-  const { registers } = useAppState();
+  const { registers, addressUnitBits } = useAppState();
   const { dirtyCount } = useEditContext();
   const [tab, setTab] = useState<EditorTab>('gui');
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
@@ -96,9 +96,9 @@ export function RegisterEditor({
   // Check register overlap using the draft's current offset/width against saved registers
   const draftOverlapWarnings = useMemo(() => {
     const registersWithDraft = registers.map((r) => (r.id === draft.id ? draft : r));
-    return getRegisterOverlapWarnings(registersWithDraft)
+    return getRegisterOverlapWarnings(registersWithDraft, addressUnitBits)
       .filter((w) => w.registerIds.includes(draft.id));
-  }, [registers, draft]);
+  }, [registers, draft, addressUnitBits]);
 
   return (
     <div>

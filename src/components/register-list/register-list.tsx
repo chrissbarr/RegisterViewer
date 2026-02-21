@@ -22,14 +22,14 @@ import { RegisterListItemOverlay } from './register-list-item-overlay';
 import { getRegisterOverlapWarnings } from '../../utils/validation';
 
 export function RegisterList() {
-  const { registers, activeRegisterId } = useAppState();
+  const { registers, activeRegisterId, addressUnitBits } = useAppState();
   const dispatch = useAppDispatch();
   const { isEditing, enterEditMode, dirtyDraftIds } = useEditContext();
   const [activeId, setActiveId] = useState<string | null>(null);
 
   const overlapWarnings = useMemo(
-    () => getRegisterOverlapWarnings(registers),
-    [registers],
+    () => getRegisterOverlapWarnings(registers, addressUnitBits),
+    [registers, addressUnitBits],
   );
 
   const overlapRegisterIds = useMemo(

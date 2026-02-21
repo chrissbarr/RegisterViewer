@@ -1,16 +1,16 @@
 import type { Field, RegisterDef } from '../types/register';
 import type { RegisterOverlapWarning } from './validation';
 
-/** A register prepared for map layout with precomputed byte extents. */
+/** A register prepared for map layout with precomputed address-unit extents. */
 export interface MapRegister {
   reg: RegisterDef;
-  startByte: number;
-  endByte: number;
-  byteSize: number;
+  startUnit: number;
+  endUnit: number;
+  unitSize: number;
   hasOverlap: boolean;
 }
 
-/** A field segment within a register cell's byte span. */
+/** A field segment within a register cell's unit span. */
 export interface FieldSegment {
   field: Field;
   fieldIndex: number;
@@ -35,8 +35,8 @@ export type MapCell =
     }
   | {
       kind: 'gap';
-      startByte: number;
-      endByte: number;
+      startUnit: number;
+      endUnit: number;
       colStart: number;
       colEnd: number;
     };
@@ -62,41 +62,43 @@ export function getOverlapWarningIds(
 
 /**
  * Filter registers to those with offsets, sort by offset, and assign
- * color indices and byte extents.
+ * color indices and address-unit extents.
  */
 export function buildMapRegisters(
   registers: RegisterDef[],
   overlapWarningIds: Set<string>,
+  addressUnitBits: number = 8,
 ): MapRegister[] {
   return registers
     .filter((r): r is RegisterDef & { offset: number } => r.offset != null)
     .sort((a, b) => a.offset - b.offset)
     .map((reg) => {
-      const byteSize = Math.ceil(reg.width / 8);
+      const unitSize = Math.ceil(reg.width / addressUnitBits);
       return {
         reg,
-        startByte: reg.offset,
-        endByte: reg.offset + byteSize - 1,
-        byteSize,
+        startUnit: reg.offset,
+        endUnit: reg.offset + unitSize - 1,
+        unitSize,
         hasOverlap: overlapWarningIds.has(reg.id),
       };
     });
 }
 
 /**
- * Compute field segments for a register cell spanning [cellStartByte, cellEndByte].
- * Maps field bit positions to proportional widths within the cell's byte span.
+ * Compute field segments for a register cell spanning [cellStartUnit, cellEndUnit].
+ * Maps field bit positions to proportional widths within the cell's unit span.
  * Returns segments sorted MSB→LSB (left-to-right in the map).
  */
 export function computeFieldSegments(
   reg: RegisterDef,
-  cellStartByte: number,
-  cellEndByte: number,
+  cellStartUnit: number,
+  cellEndUnit: number,
+  addressUnitBits: number = 8,
 ): FieldSegment[] {
   if (reg.fields.length === 0 || reg.offset == null) return [];
 
-  const cellStartBit = (cellStartByte - reg.offset) * 8;
-  const cellEndBit = (cellEndByte - reg.offset + 1) * 8 - 1;
+  const cellStartBit = (cellStartUnit - reg.offset) * addressUnitBits;
+  const cellEndBit = (cellEndUnit - reg.offset + 1) * addressUnitBits - 1;
 
   const segments: FieldSegment[] = [];
 
@@ -122,34 +124,35 @@ export function computeFieldSegments(
 /**
  * Compute the array of rendered map rows from sorted map registers.
  *
- * Each row represents a "band" of `rowWidthBytes` bytes. Registers are
- * placed at their byte positions within bands. Registers wider than one
+ * Each row represents a "band" of `rowWidthUnits` address units. Registers are
+ * placed at their unit positions within bands. Registers wider than one
  * band span multiple rows.
  */
 export function computeMapRows(
   mapRegisters: MapRegister[],
-  rowWidthBytes: number,
+  rowWidthUnits: number,
   showGaps: boolean,
+  addressUnitBits: number = 8,
 ): MapRow[] {
   if (mapRegisters.length === 0) return [];
 
-  const minAddr = mapRegisters[0].startByte;
-  const maxAddr = mapRegisters[mapRegisters.length - 1].endByte;
-  const firstBand = Math.floor(minAddr / rowWidthBytes) * rowWidthBytes;
-  const lastBand = Math.floor(maxAddr / rowWidthBytes) * rowWidthBytes;
+  const minAddr = mapRegisters[0].startUnit;
+  const maxAddr = mapRegisters[mapRegisters.length - 1].endUnit;
+  const firstBand = Math.floor(minAddr / rowWidthUnits) * rowWidthUnits;
+  const lastBand = Math.floor(maxAddr / rowWidthUnits) * rowWidthUnits;
 
   const rows: MapRow[] = [];
 
   for (
     let bandStart = firstBand;
     bandStart <= lastBand;
-    bandStart += rowWidthBytes
+    bandStart += rowWidthUnits
   ) {
-    const bandEnd = bandStart + rowWidthBytes - 1;
+    const bandEnd = bandStart + rowWidthUnits - 1;
 
     // Find registers overlapping this band
     const overlapping = mapRegisters.filter(
-      (mr) => mr.startByte <= bandEnd && mr.endByte >= bandStart,
+      (mr) => mr.startUnit <= bandEnd && mr.endUnit >= bandStart,
     );
 
     if (overlapping.length === 0) {
@@ -166,19 +169,19 @@ export function computeMapRows(
     // Sort overlapping by their clamped start within this band
     const sorted = [...overlapping].sort(
       (a, b) =>
-        Math.max(a.startByte, bandStart) - Math.max(b.startByte, bandStart),
+        Math.max(a.startUnit, bandStart) - Math.max(b.startUnit, bandStart),
     );
 
     for (const mr of sorted) {
-      const clampedStart = Math.max(mr.startByte, bandStart);
-      const clampedEnd = Math.min(mr.endByte, bandEnd);
+      const clampedStart = Math.max(mr.startUnit, bandStart);
+      const clampedEnd = Math.min(mr.endUnit, bandEnd);
 
       // Gap before this register
       if (clampedStart > cursor) {
         cells.push({
           kind: 'gap',
-          startByte: cursor,
-          endByte: clampedStart - 1,
+          startUnit: cursor,
+          endUnit: clampedStart - 1,
           colStart: cursor - bandStart + 1,
           colEnd: clampedStart - bandStart + 1,
         });
@@ -186,18 +189,18 @@ export function computeMapRows(
 
       // Compute row span info
       const regFirstBand =
-        Math.floor(mr.startByte / rowWidthBytes) * rowWidthBytes;
-      const rowSpanIndex = (bandStart - regFirstBand) / rowWidthBytes;
+        Math.floor(mr.startUnit / rowWidthUnits) * rowWidthUnits;
+      const rowSpanIndex = (bandStart - regFirstBand) / rowWidthUnits;
       const totalRowSpans = Math.ceil(
-        (mr.endByte -
-          Math.floor(mr.startByte / rowWidthBytes) * rowWidthBytes +
+        (mr.endUnit -
+          Math.floor(mr.startUnit / rowWidthUnits) * rowWidthUnits +
           1) /
-          rowWidthBytes,
+          rowWidthUnits,
       );
 
       const regOffset = mr.reg.offset!; // safe: buildMapRegisters filters to offset != null
-      const cellStartBit = (clampedStart - regOffset) * 8;
-      const cellEndBit = (clampedEnd - regOffset + 1) * 8 - 1;
+      const cellStartBit = (clampedStart - regOffset) * addressUnitBits;
+      const cellEndBit = (clampedEnd - regOffset + 1) * addressUnitBits - 1;
 
       cells.push({
         kind: 'register',
@@ -206,7 +209,7 @@ export function computeMapRows(
         totalRowSpans,
         colStart: clampedStart - bandStart + 1,
         colEnd: clampedEnd - bandStart + 2,
-        fieldSegments: computeFieldSegments(mr.reg, clampedStart, clampedEnd),
+        fieldSegments: computeFieldSegments(mr.reg, clampedStart, clampedEnd, addressUnitBits),
         cellStartBit,
         cellEndBit,
       });
@@ -218,8 +221,8 @@ export function computeMapRows(
     if (cursor <= bandEnd) {
       cells.push({
         kind: 'gap',
-        startByte: cursor,
-        endByte: bandEnd,
+        startUnit: cursor,
+        endUnit: bandEnd,
         colStart: cursor - bandStart + 1,
         colEnd: bandEnd - bandStart + 2,
       });

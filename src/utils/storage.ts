@@ -1,4 +1,4 @@
-import { SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MAX, SIDEBAR_WIDTH_DEFAULT, type AppState, type Field, type ProjectMetadata, type RegisterDef, type SerializedAppState } from '../types/register';
+import { SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MAX, SIDEBAR_WIDTH_DEFAULT, ADDRESS_UNIT_BITS_DEFAULT, ADDRESS_UNIT_BITS_VALUES, type AddressUnitBits, type AppState, type Field, type ProjectMetadata, type RegisterDef, type SerializedAppState } from '../types/register';
 import { sanitizeField, sanitizeRegisterDef } from './sanitize';
 import { validateRegisterDef, MAX_REGISTER_WIDTH, type ValidationError } from './validation';
 
@@ -19,6 +19,7 @@ export function serializeState(state: AppState): SerializedAppState {
     sidebarCollapsed: state.sidebarCollapsed,
     mapTableWidth: state.mapTableWidth,
     mapShowGaps: state.mapShowGaps,
+    addressUnitBits: state.addressUnitBits,
   };
 }
 
@@ -60,6 +61,8 @@ export function deserializeState(data: SerializedAppState): AppState {
     mapTableWidth: data.mapTableWidth === 8 || data.mapTableWidth === 16 || data.mapTableWidth === 32
       ? data.mapTableWidth : 32,
     mapShowGaps: data.mapShowGaps !== false,
+    addressUnitBits: typeof data.addressUnitBits === 'number' && (ADDRESS_UNIT_BITS_VALUES as readonly number[]).includes(data.addressUnitBits)
+      ? data.addressUnitBits as AddressUnitBits : ADDRESS_UNIT_BITS_DEFAULT,
   };
 }
 
@@ -126,6 +129,9 @@ export function exportToJson(state: AppState): string {
   if (state.project) {
     data.project = state.project;
   }
+  if (state.addressUnitBits !== ADDRESS_UNIT_BITS_DEFAULT) {
+    data.addressUnitBits = state.addressUnitBits;
+  }
   return JSON.stringify(data, null, 2);
 }
 
@@ -142,6 +148,7 @@ export interface ImportResult {
   values: Record<string, bigint>;
   warnings: ImportWarning[];
   project?: ProjectMetadata;
+  addressUnitBits?: AddressUnitBits;
 }
 
 export function importFromJson(json: string): ImportResult | null {
@@ -198,7 +205,9 @@ export function importFromJson(json: string): ImportResult | null {
       }
     }
     const project = sanitizeProjectMetadata(data.project);
-    return { registers: validRegisters, values, warnings, project };
+    const addressUnitBits: AddressUnitBits | undefined = typeof data.addressUnitBits === 'number' && (ADDRESS_UNIT_BITS_VALUES as readonly number[]).includes(data.addressUnitBits)
+      ? data.addressUnitBits as AddressUnitBits : undefined;
+    return { registers: validRegisters, values, warnings, project, addressUnitBits };
   } catch {
     return null;
   }

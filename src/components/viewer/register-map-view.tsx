@@ -29,7 +29,7 @@ export function RegisterMapView({
   scrollTopRef,
   onScrollChange,
 }: RegisterMapViewProps) {
-  const { mapTableWidth: tableWidthBits, mapShowGaps: showGaps } = useAppState();
+  const { mapTableWidth: tableWidthBits, mapShowGaps: showGaps, addressUnitBits } = useAppState();
   const dispatch = useAppDispatch();
   const setTableWidthBits = useCallback(
     (width: MapTableWidth) => dispatch({ type: 'SET_MAP_TABLE_WIDTH', width }),
@@ -50,22 +50,22 @@ export function RegisterMapView({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const overlapWarnings = useMemo(
-    () => getRegisterOverlapWarnings(registers),
-    [registers],
+    () => getRegisterOverlapWarnings(registers, addressUnitBits),
+    [registers, addressUnitBits],
   );
   const overlapWarningIds = useMemo(
     () => getOverlapWarningIds(overlapWarnings),
     [overlapWarnings],
   );
   const mapRegisters = useMemo(
-    () => buildMapRegisters(registers, overlapWarningIds),
-    [registers, overlapWarningIds],
+    () => buildMapRegisters(registers, overlapWarningIds, addressUnitBits),
+    [registers, overlapWarningIds, addressUnitBits],
   );
 
-  const rowWidthBytes = tableWidthBits / 8;
+  const rowWidthUnits = tableWidthBits / addressUnitBits;
   const mapRows = useMemo(
-    () => computeMapRows(mapRegisters, rowWidthBytes, showGaps),
-    [mapRegisters, rowWidthBytes, showGaps],
+    () => computeMapRows(mapRegisters, rowWidthUnits, showGaps, addressUnitBits),
+    [mapRegisters, rowWidthUnits, showGaps, addressUnitBits],
   );
 
   if (mapRegisters.length === 0) {
@@ -90,7 +90,7 @@ export function RegisterMapView({
       {/* Controls */}
       <div className="flex items-center gap-4 mb-3">
         <div className="flex rounded-md border border-gray-300 dark:border-gray-600 overflow-hidden text-sm">
-          {([8, 16, 32] as const).map((bits) => (
+          {([8, 16, 32] as const).filter((bits) => bits >= addressUnitBits).map((bits) => (
             <button
               key={bits}
               onClick={() => setTableWidthBits(bits)}
@@ -122,10 +122,10 @@ export function RegisterMapView({
           className="flex-1"
           style={{
             display: 'grid',
-            gridTemplateColumns: `repeat(${rowWidthBytes}, 1fr)`,
+            gridTemplateColumns: `repeat(${rowWidthUnits}, 1fr)`,
           }}
         >
-          {Array.from({ length: rowWidthBytes }, (_, i) => (
+          {Array.from({ length: rowWidthUnits }, (_, i) => (
             <div
               key={i}
               className="text-[11px] font-mono font-medium text-gray-500 dark:text-gray-400 text-center"
@@ -156,7 +156,7 @@ export function RegisterMapView({
               )}
               <MapRowView
                 row={row}
-                rowWidthBytes={rowWidthBytes}
+                rowWidthUnits={rowWidthUnits}
                 onNavigateToRegister={onNavigateToRegister}
               />
             </div>
@@ -169,11 +169,11 @@ export function RegisterMapView({
 
 function MapRowView({
   row,
-  rowWidthBytes,
+  rowWidthUnits,
   onNavigateToRegister,
 }: {
   row: MapRow;
-  rowWidthBytes: number;
+  rowWidthUnits: number;
   onNavigateToRegister: (registerId: string) => void;
 }) {
   if (row.isGapRow) {
@@ -196,7 +196,7 @@ function MapRowView({
         className="flex-1"
         style={{
           display: 'grid',
-          gridTemplateColumns: `repeat(${rowWidthBytes}, 1fr)`,
+          gridTemplateColumns: `repeat(${rowWidthUnits}, 1fr)`,
         }}
       >
         {row.cells.map((cell, i) =>
@@ -232,7 +232,7 @@ function RegisterCell({
       style={{ gridColumn: `${colStart} / ${colEnd}` }}
       className="mx-0.5 my-0.5 flex flex-col overflow-hidden rounded-sm cursor-pointer hover:opacity-80 transition-opacity"
       onClick={() => onNavigateToRegister(mapReg.reg.id)}
-      title={`${mapReg.reg.name} @ ${formatOffset(mapReg.startByte)}, ${mapReg.reg.width}b`}
+      title={`${mapReg.reg.name} @ ${formatOffset(mapReg.startUnit)}, ${mapReg.reg.width}b`}
     >
       {/* Name row */}
       <div

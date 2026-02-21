@@ -48,16 +48,16 @@ describe('buildMapRegisters', () => {
     expect(result.map((r) => r.reg.id)).toEqual(['a', 'c', 'b']);
   });
 
-  it('computes byte size correctly', () => {
+  it('computes unit size correctly', () => {
     const regs = [
       makeRegister({ id: 'a', offset: 0, width: 32 }),
       makeRegister({ id: 'b', offset: 4, width: 1 }),
     ];
     const result = buildMapRegisters(regs, new Set());
-    expect(result[0].byteSize).toBe(4);
-    expect(result[0].endByte).toBe(3);
-    expect(result[1].byteSize).toBe(1);
-    expect(result[1].endByte).toBe(4);
+    expect(result[0].unitSize).toBe(4);
+    expect(result[0].endUnit).toBe(3);
+    expect(result[1].unitSize).toBe(1);
+    expect(result[1].endUnit).toBe(4);
   });
 
   it('propagates overlap flag from warning IDs', () => {
@@ -184,8 +184,8 @@ describe('computeMapRows', () => {
 
   it('handles non-aligned register spanning two bands', () => {
     // 2-byte register at offset 1 with 2-byte row width
-    // Band [0-1]: occupies byte 1-2... wait, endByte = 1+1-1 = 1
-    // Actually: width=16 → byteSize=2, endByte=2
+    // Band [0-1]: occupies byte 1-2... wait, endUnit = 1+1-1 = 1
+    // Actually: width=16 → unitSize=2, endUnit=2
     const regs = [makeRegister({ id: 'a', offset: 1, width: 16 })];
     const mrs = buildMapRegisters(regs, new Set());
     const rows = computeMapRows(mrs, 2, false);
@@ -398,6 +398,64 @@ describe('computeMapRows cellStartBit/cellEndBit', () => {
       expect(cell0.cellEndBit).toBe(15);
       expect(cell1.cellStartBit).toBe(16);
       expect(cell1.cellEndBit).toBe(31);
+    }
+  });
+});
+
+describe('addressUnitBits support', () => {
+  it('buildMapRegisters: 16-bit register at offset 0 occupies 1 unit with addressUnitBits=16', () => {
+    const regs = [makeRegister({ id: 'a', offset: 0, width: 16 })];
+    const result = buildMapRegisters(regs, new Set(), 16);
+    expect(result[0].unitSize).toBe(1);
+    expect(result[0].startUnit).toBe(0);
+    expect(result[0].endUnit).toBe(0);
+  });
+
+  it('buildMapRegisters: 32-bit register occupies 2 units with addressUnitBits=16', () => {
+    const regs = [makeRegister({ id: 'a', offset: 0, width: 32 })];
+    const result = buildMapRegisters(regs, new Set(), 16);
+    expect(result[0].unitSize).toBe(2);
+    expect(result[0].endUnit).toBe(1);
+  });
+
+  it('computeFieldSegments: 16-bit register fields correct with addressUnitBits=16', () => {
+    const reg = makeRegister({
+      offset: 0,
+      width: 16,
+      fields: [
+        makeField({ id: 'f1', name: 'HIGH', msb: 15, lsb: 8 }),
+        makeField({ id: 'f2', name: 'LOW', msb: 7, lsb: 0 }),
+      ],
+    });
+    // Cell covers 1 address unit (offset 0), which is 16 bits
+    const segs = computeFieldSegments(reg, 0, 0, 16);
+    expect(segs).toHaveLength(2);
+    expect(segs[0]).toMatchObject({ fieldIndex: 0, widthBits: 8, isPartial: false });
+    expect(segs[1]).toMatchObject({ fieldIndex: 1, widthBits: 8, isPartial: false });
+  });
+
+  it('computeMapRows: four 16-bit registers at offsets 0-3 fit in one row with addressUnitBits=16, rowWidth=4', () => {
+    const regs = [
+      makeRegister({ id: 'a', offset: 0, width: 16 }),
+      makeRegister({ id: 'b', offset: 1, width: 16 }),
+      makeRegister({ id: 'c', offset: 2, width: 16 }),
+      makeRegister({ id: 'd', offset: 3, width: 16 }),
+    ];
+    const mrs = buildMapRegisters(regs, new Set(), 16);
+    const rows = computeMapRows(mrs, 4, false, 16);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].cells).toHaveLength(4);
+  });
+
+  it('computeMapRows: cell bit ranges correct with addressUnitBits=16', () => {
+    const reg = makeRegister({ id: 'a', offset: 0, width: 16, fields: [] });
+    const mrs = buildMapRegisters([reg], new Set(), 16);
+    const rows = computeMapRows(mrs, 2, false, 16);
+    expect(rows).toHaveLength(1);
+    const cell = rows[0].cells[0];
+    if (cell.kind === 'register') {
+      expect(cell.cellStartBit).toBe(0);
+      expect(cell.cellEndBit).toBe(15);
     }
   });
 });

@@ -492,4 +492,104 @@ describe('importFromJson', () => {
     expect(result!.warnings).toHaveLength(1);
     expect(result!.warnings[0].errors[0].message).toContain('width must be between 1 and 128');
   });
+
+  it('imports addressUnitBits from JSON', () => {
+    const json = JSON.stringify({
+      version: 1,
+      addressUnitBits: 16,
+      registers: [{ name: 'REG', width: 16, fields: [] }],
+    });
+    const result = importFromJson(json);
+    expect(result).not.toBeNull();
+    expect(result!.addressUnitBits).toBe(16);
+  });
+
+  it('returns undefined addressUnitBits when not present in JSON', () => {
+    const json = JSON.stringify({
+      version: 1,
+      registers: [{ name: 'REG', width: 8, fields: [] }],
+    });
+    const result = importFromJson(json);
+    expect(result).not.toBeNull();
+    expect(result!.addressUnitBits).toBeUndefined();
+  });
+
+  it('rejects invalid addressUnitBits in JSON (non-power-of-2)', () => {
+    const json = JSON.stringify({
+      version: 1,
+      addressUnitBits: 7,
+      registers: [{ name: 'REG', width: 8, fields: [] }],
+    });
+    const result = importFromJson(json);
+    expect(result).not.toBeNull();
+    expect(result!.addressUnitBits).toBeUndefined();
+  });
+
+  it('accepts 64-bit and 128-bit addressUnitBits', () => {
+    for (const bits of [64, 128]) {
+      const json = JSON.stringify({
+        version: 1,
+        addressUnitBits: bits,
+        registers: [{ name: 'REG', width: bits, fields: [] }],
+      });
+      const result = importFromJson(json);
+      expect(result).not.toBeNull();
+      expect(result!.addressUnitBits).toBe(bits);
+    }
+  });
+});
+
+describe('addressUnitBits round-trip', () => {
+  it('preserves non-default addressUnitBits through export/import', () => {
+    const state = makeState({ addressUnitBits: 16 });
+    const json = exportToJson(state);
+    const data = JSON.parse(json);
+    expect(data.addressUnitBits).toBe(16);
+    const result = importFromJson(json);
+    expect(result).not.toBeNull();
+    expect(result!.addressUnitBits).toBe(16);
+  });
+
+  it('omits addressUnitBits from export when it is the default (8)', () => {
+    const state = makeState({ addressUnitBits: 8 });
+    const json = exportToJson(state);
+    const data = JSON.parse(json);
+    expect(data.addressUnitBits).toBeUndefined();
+  });
+
+  it('round-trips addressUnitBits through localStorage', () => {
+    localStorage.clear();
+    const state = makeState({ addressUnitBits: 32 });
+    saveToLocalStorage(state);
+    const loaded = loadFromLocalStorage();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.addressUnitBits).toBe(32);
+  });
+
+  it('defaults addressUnitBits to 8 for legacy localStorage data', () => {
+    const serialized = {
+      registers: [],
+      activeRegisterId: null,
+      registerValues: {},
+      theme: 'dark' as const,
+      sidebarWidth: 224,
+      sidebarCollapsed: false,
+    };
+    const state = deserializeState(serialized);
+    expect(state.addressUnitBits).toBe(8);
+  });
+
+  it('defaults addressUnitBits to 8 for invalid value in localStorage', () => {
+    const serialized = {
+      registers: [],
+      activeRegisterId: null,
+      registerValues: {},
+      theme: 'dark' as const,
+      sidebarWidth: 224,
+      sidebarCollapsed: false,
+      addressUnitBits: 7 as never,
+    };
+    const state = deserializeState(serialized);
+    expect(state.addressUnitBits).toBe(8);
+  });
 });

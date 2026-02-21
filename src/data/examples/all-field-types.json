@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "addressUnitBits": 64,
   "project": {
     "title": "All Field Types",
     "description": "Showcases all 5 field types: flag, enum, integer (unsigned, two's complement, and sign-magnitude), float, and fixed-point across 7 registers."

@@ -450,3 +450,40 @@ describe('getRegisterOverlapWarnings', () => {
     expect(warnings).toHaveLength(2);
   });
 });
+
+describe('getRegisterOverlapWarnings — addressUnitBits', () => {
+  it('16-bit registers at sequential offsets do NOT overlap with addressUnitBits=16', () => {
+    const regs = [
+      makeRegister({ name: 'A', width: 16, offset: 0 }),
+      makeRegister({ name: 'B', width: 16, offset: 1 }),
+      makeRegister({ name: 'C', width: 16, offset: 2 }),
+    ];
+    expect(getRegisterOverlapWarnings(regs, 16)).toEqual([]);
+  });
+
+  it('16-bit registers at sequential offsets DO overlap with addressUnitBits=8 (default)', () => {
+    const regs = [
+      makeRegister({ name: 'A', width: 16, offset: 0 }),
+      makeRegister({ name: 'B', width: 16, offset: 1 }),
+    ];
+    const warnings = getRegisterOverlapWarnings(regs, 8);
+    expect(warnings).toHaveLength(1);
+  });
+
+  it('32-bit register at offset 0 does not overlap 32-bit register at offset 1 with addressUnitBits=32', () => {
+    const regs = [
+      makeRegister({ name: 'A', width: 32, offset: 0 }),
+      makeRegister({ name: 'B', width: 32, offset: 1 }),
+    ];
+    expect(getRegisterOverlapWarnings(regs, 32)).toEqual([]);
+  });
+
+  it('register wider than one address unit correctly spans multiple units', () => {
+    const regs = [
+      makeRegister({ name: 'A', width: 32, offset: 0 }), // 32/16=2 units → offsets 0-1
+      makeRegister({ name: 'B', width: 16, offset: 1 }), // 16/16=1 unit → offset 1
+    ];
+    const warnings = getRegisterOverlapWarnings(regs, 16);
+    expect(warnings).toHaveLength(1);
+  });
+});

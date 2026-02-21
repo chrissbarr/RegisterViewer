@@ -69,6 +69,28 @@ export function ProjectSettingsDialog({ open, onClose }: ProjectSettingsDialogPr
 
         <label className="block">
           <span className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+            Address unit size
+          </span>
+          <select
+            value={state.addressUnitBits}
+            onChange={(e) =>
+              dispatch({ type: 'SET_ADDRESS_UNIT_BITS', addressUnitBits: Number(e.target.value) })
+            }
+            className={inputClass}
+          >
+            <option value={8}>8-bit (byte addressing)</option>
+            <option value={16}>16-bit (word addressing)</option>
+            <option value={32}>32-bit (dword addressing)</option>
+            <option value={64}>64-bit (qword addressing)</option>
+            <option value={128}>128-bit</option>
+          </select>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+            How many bits each address offset increment represents.
+          </p>
+        </label>
+
+        <label className="block">
+          <span className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
             Date
           </span>
           <input

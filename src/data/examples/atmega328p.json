@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "addressUnitBits": 8,
   "project": {
     "title": "ATmega328P Full Register Map",
     "description": "Complete I/O register map for the Atmel ATmega328P microcontroller with 87 registers.",
