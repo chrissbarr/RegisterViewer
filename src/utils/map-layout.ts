@@ -1,4 +1,4 @@
-import type { RegisterDef } from '../types/register';
+import type { Field, RegisterDef } from '../types/register';
 import type { RegisterOverlapWarning } from './validation';
 
 /** A register prepared for map layout with precomputed byte extents. */
@@ -11,6 +11,16 @@ export interface MapRegister {
   hasOverlap: boolean;
 }
 
+/** A field segment within a register cell's byte span. */
+export interface FieldSegment {
+  field: Field;
+  fieldIndex: number;
+  clampedMsb: number; // MSB clamped to cell range (for gap computation)
+  clampedLsb: number; // LSB clamped to cell range
+  widthBits: number;
+  isPartial: boolean;
+}
+
 /** A cell within a rendered band row. */
 export type MapCell =
   | {
@@ -20,6 +30,9 @@ export type MapCell =
       totalRowSpans: number;
       colStart: number; // 1-based CSS grid column
       colEnd: number; // exclusive
+      fieldSegments: FieldSegment[];
+      cellStartBit: number; // register-relative start bit of this cell
+      cellEndBit: number; // register-relative end bit (inclusive)
     }
   | {
       kind: 'gap';
@@ -70,6 +83,42 @@ export function buildMapRegisters(
         hasOverlap: overlapWarningIds.has(reg.id),
       };
     });
+}
+
+/**
+ * Compute field segments for a register cell spanning [cellStartByte, cellEndByte].
+ * Maps field bit positions to proportional widths within the cell's byte span.
+ * Returns segments sorted MSB→LSB (left-to-right in the map).
+ */
+export function computeFieldSegments(
+  reg: RegisterDef,
+  cellStartByte: number,
+  cellEndByte: number,
+): FieldSegment[] {
+  if (reg.fields.length === 0 || reg.offset == null) return [];
+
+  const cellStartBit = (cellStartByte - reg.offset) * 8;
+  const cellEndBit = (cellEndByte - reg.offset + 1) * 8 - 1;
+
+  const segments: FieldSegment[] = [];
+
+  for (let i = 0; i < reg.fields.length; i++) {
+    const field = reg.fields[i];
+    // Check overlap
+    if (field.lsb > cellEndBit || field.msb < cellStartBit) continue;
+
+    const clampedMsb = Math.min(field.msb, cellEndBit);
+    const clampedLsb = Math.max(field.lsb, cellStartBit);
+    const widthBits = clampedMsb - clampedLsb + 1;
+    const isPartial = field.msb > cellEndBit || field.lsb < cellStartBit;
+
+    segments.push({ field, fieldIndex: i, clampedMsb, clampedLsb, widthBits, isPartial });
+  }
+
+  // Sort MSB descending (highest bit first = left-to-right)
+  segments.sort((a, b) => b.clampedMsb - a.clampedMsb);
+
+  return segments;
 }
 
 /**
@@ -148,6 +197,10 @@ export function computeMapRows(
           rowWidthBytes,
       );
 
+      const regOffset = mr.reg.offset!; // safe: buildMapRegisters filters to offset != null
+      const cellStartBit = (clampedStart - regOffset) * 8;
+      const cellEndBit = (clampedEnd - regOffset + 1) * 8 - 1;
+
       cells.push({
         kind: 'register',
         mapReg: mr,
@@ -155,6 +208,9 @@ export function computeMapRows(
         totalRowSpans,
         colStart: clampedStart - bandStart + 1,
         colEnd: clampedEnd - bandStart + 2,
+        fieldSegments: computeFieldSegments(mr.reg, clampedStart, clampedEnd),
+        cellStartBit,
+        cellEndBit,
       });
 
       cursor = clampedEnd + 1;

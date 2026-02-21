@@ -4,6 +4,7 @@ import {
   buildMapRegisters,
   computeMapRows,
   getOverlapWarningIds,
+  type FieldSegment,
   type MapCell,
   type MapRow,
 } from '../../utils/map-layout';
@@ -194,44 +195,135 @@ function RegisterCell({
   cell: Extract<MapCell, { kind: 'register' }>;
   onNavigateToRegister: (registerId: string) => void;
 }) {
-  const { mapReg, rowSpanIndex, totalRowSpans, colStart, colEnd } = cell;
+  const { mapReg, rowSpanIndex, totalRowSpans, colStart, colEnd, fieldSegments } = cell;
+  const hasFields = fieldSegments.length > 0;
+  const borderColor = mapReg.hasOverlap
+    ? 'rgb(251,146,60)'
+    : fieldBorderColor(mapReg.colorIndex);
+  const borderWidth = mapReg.hasOverlap ? 'border-2' : 'border';
 
   return (
     <div
-      style={{
-        gridColumn: `${colStart} / ${colEnd}`,
-        backgroundColor: fieldColor(mapReg.colorIndex, 0.15),
-        borderColor: mapReg.hasOverlap
-          ? 'rgb(251,146,60)'
-          : fieldBorderColor(mapReg.colorIndex),
-      }}
-      className={`relative flex items-center justify-between px-2 rounded-sm mx-0.5 my-0.5
-        text-xs cursor-pointer hover:opacity-80 transition-opacity overflow-hidden
-        ${mapReg.hasOverlap ? 'border-2' : 'border'}`}
+      style={{ gridColumn: `${colStart} / ${colEnd}` }}
+      className="mx-0.5 my-0.5 flex flex-col overflow-hidden rounded-sm cursor-pointer hover:opacity-80 transition-opacity"
       onClick={() => onNavigateToRegister(mapReg.reg.id)}
       title={`${mapReg.reg.name} @ ${formatOffset(mapReg.startByte)}, ${mapReg.reg.width}b`}
     >
-      <span className="truncate font-medium">
-        {mapReg.reg.name}
-        {totalRowSpans > 1 && (
-          <span className="text-gray-400 dark:text-gray-500 font-normal ml-1 text-[10px]">
-            ({rowSpanIndex + 1}/{totalRowSpans})
-          </span>
-        )}
-      </span>
-      {rowSpanIndex === totalRowSpans - 1 && (
-        <span className="shrink-0 text-[10px] text-gray-500 dark:text-gray-400 ml-1 font-mono">
-          {mapReg.reg.width}b
+      {/* Name row */}
+      <div
+        style={{
+          backgroundColor: fieldColor(mapReg.colorIndex, 0.15),
+          borderColor,
+        }}
+        className={`flex items-center justify-between px-2 py-0.5 text-xs ${borderWidth} ${hasFields ? 'border-b-0 rounded-t-sm' : 'rounded-sm'}`}
+      >
+        <span className="truncate font-medium">
+          {mapReg.reg.name}
+          {totalRowSpans > 1 && (
+            <span className="text-gray-400 dark:text-gray-500 font-normal ml-1 text-[10px]">
+              ({rowSpanIndex + 1}/{totalRowSpans})
+            </span>
+          )}
         </span>
-      )}
-      {mapReg.hasOverlap && rowSpanIndex === 0 && (
-        <span
-          className="shrink-0 ml-1 text-orange-400"
-          title="Overlaps another register"
-        >
-          ⚠
+        <span className="flex items-center shrink-0">
+          {rowSpanIndex === totalRowSpans - 1 && (
+            <span className="text-[10px] text-gray-500 dark:text-gray-400 ml-1 font-mono">
+              {mapReg.reg.width}b
+            </span>
+          )}
+          {mapReg.hasOverlap && rowSpanIndex === 0 && (
+            <span className="ml-1 text-orange-400" title="Overlaps another register">⚠</span>
+          )}
         </span>
+      </div>
+      {/* Field decomposition row */}
+      {hasFields && (
+        <FieldDecompositionRow
+          fieldSegments={fieldSegments}
+          cellStartBit={cell.cellStartBit}
+          cellEndBit={cell.cellEndBit}
+          borderColor={borderColor}
+          borderWidth={borderWidth}
+        />
       )}
+    </div>
+  );
+}
+
+function FieldDecompositionRow({
+  fieldSegments,
+  cellStartBit,
+  cellEndBit,
+  borderColor,
+  borderWidth,
+}: {
+  fieldSegments: FieldSegment[];
+  cellStartBit: number;
+  cellEndBit: number;
+  borderColor: string;
+  borderWidth: string;
+}) {
+  // Build items array interleaving reserved gaps between/around field segments.
+  // Segments are sorted MSB→LSB (highest bit first). clampedMsb/clampedLsb
+  // are register-relative bit positions, same coordinate space as cellStartBit/cellEndBit.
+  type Item = { kind: 'field'; seg: FieldSegment } | { kind: 'rsvd'; widthBits: number };
+  const items: Item[] = [];
+  let cursor = cellEndBit; // start at cell's MSB
+
+  for (const seg of fieldSegments) {
+    // Gap above this segment (guard > 0 for overlapping-field edge cases)
+    const gapWidth = cursor - seg.clampedMsb;
+    if (gapWidth > 0) {
+      items.push({ kind: 'rsvd', widthBits: gapWidth });
+    }
+    items.push({ kind: 'field', seg });
+    cursor = seg.clampedLsb - 1;
+  }
+  // Trailing gap below the last segment
+  const trailingWidth = cursor - cellStartBit + 1;
+  if (trailingWidth > 0) {
+    items.push({ kind: 'rsvd', widthBits: trailingWidth });
+  }
+
+  return (
+    <div
+      style={{ borderColor }}
+      className={`flex items-stretch ${borderWidth} border-t-0 rounded-b-sm overflow-hidden`}
+    >
+      {items.map((item, i) => {
+        if (item.kind === 'rsvd') {
+          return (
+            <div
+              key={`rsvd-${i}`}
+              style={{ flexGrow: item.widthBits, flexBasis: 0 }}
+              className="flex items-center justify-center px-0.5 py-0.5 text-[9px] italic
+                text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-900/20 min-w-0"
+            >
+              {item.widthBits >= 4 && <span className="truncate">Rsvd</span>}
+            </div>
+          );
+        }
+        const { seg } = item;
+        return (
+          <div
+            key={seg.field.id + '-' + i}
+            style={{
+              flexGrow: seg.widthBits,
+              flexBasis: 0,
+              backgroundColor: fieldColor(seg.fieldIndex, 0.25),
+              borderLeftColor: fieldBorderColor(seg.fieldIndex),
+              borderRightColor: fieldBorderColor(seg.fieldIndex),
+            }}
+            className="flex items-center justify-center px-0.5 py-0.5 text-[9px] truncate border-l border-r min-w-0"
+            title={seg.isPartial ? `${seg.field.name} (partial)` : seg.field.name}
+          >
+            <span className="truncate">
+              {seg.field.name}
+              {seg.isPartial && <span className="opacity-50">…</span>}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }
