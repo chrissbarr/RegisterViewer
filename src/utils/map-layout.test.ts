@@ -48,16 +48,6 @@ describe('buildMapRegisters', () => {
     expect(result.map((r) => r.reg.id)).toEqual(['a', 'c', 'b']);
   });
 
-  it('assigns colorIndex as position in sorted array', () => {
-    const regs = [
-      makeRegister({ id: 'b', offset: 4, width: 8 }),
-      makeRegister({ id: 'a', offset: 0, width: 8 }),
-    ];
-    const result = buildMapRegisters(regs, new Set());
-    expect(result[0].colorIndex).toBe(0); // 'a' at offset 0
-    expect(result[1].colorIndex).toBe(1); // 'b' at offset 4
-  });
-
   it('computes byte size correctly', () => {
     const regs = [
       makeRegister({ id: 'a', offset: 0, width: 32 }),

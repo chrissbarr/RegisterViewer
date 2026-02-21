@@ -13,6 +13,9 @@ import { getRegisterOverlapWarnings } from '../../utils/validation';
 import { fieldColor, fieldBorderColor } from '../../utils/field-colors';
 import { formatOffset } from '../../utils/format';
 
+const OVERLAP_COLOR = 'rgb(251,146,60)';
+const OVERLAP_HATCH_BG = `repeating-linear-gradient(135deg, transparent, transparent 3px, rgba(251,146,60,0.08) 3px, rgba(251,146,60,0.08) 6px)`;
+
 interface RegisterMapViewProps {
   registers: RegisterDef[];
   onNavigateToRegister: (registerId: string) => void;
@@ -125,7 +128,7 @@ export function RegisterMapView({
           {Array.from({ length: rowWidthBytes }, (_, i) => (
             <div
               key={i}
-              className="text-[10px] font-mono text-gray-400 dark:text-gray-500 text-center"
+              className="text-[11px] font-mono font-medium text-gray-500 dark:text-gray-400 text-center"
             >
               +{i}
             </div>
@@ -175,8 +178,8 @@ function MapRowView({
 }) {
   if (row.isGapRow) {
     return (
-      <div className="flex items-center min-h-[2rem]">
-        <div className="w-16 shrink-0 font-mono text-[11px] text-gray-400 dark:text-gray-500 text-right pr-3">
+      <div className="flex items-center min-h-[2rem] hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+        <div className="w-16 shrink-0 font-mono text-xs font-medium text-gray-500 dark:text-gray-400 text-right pr-3">
           {formatOffset(row.bandStart)}
         </div>
         <div className="flex-1 border border-dashed border-gray-300 dark:border-gray-700 rounded h-6 bg-gray-50 dark:bg-gray-900/20" />
@@ -185,8 +188,8 @@ function MapRowView({
   }
 
   return (
-    <div className="flex items-stretch min-h-[2.5rem]">
-      <div className="w-16 shrink-0 font-mono text-[11px] text-gray-400 dark:text-gray-500 text-right pr-3 flex items-center justify-end">
+    <div className="flex items-stretch min-h-[2.5rem] hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+      <div className="w-16 shrink-0 font-mono text-xs font-medium text-gray-500 dark:text-gray-400 text-right pr-3 flex items-center justify-end">
         {formatOffset(row.bandStart)}
       </div>
       <div
@@ -221,10 +224,8 @@ function RegisterCell({
 }) {
   const { mapReg, rowSpanIndex, totalRowSpans, colStart, colEnd, fieldSegments } = cell;
   const hasFields = fieldSegments.length > 0;
-  const borderColor = mapReg.hasOverlap
-    ? 'rgb(251,146,60)'
-    : fieldBorderColor(mapReg.colorIndex);
-  const borderWidth = mapReg.hasOverlap ? 'border-2' : 'border';
+  const isOverlap = mapReg.hasOverlap;
+  const borderWidth = isOverlap ? 'border-2' : 'border';
 
   return (
     <div
@@ -236,10 +237,15 @@ function RegisterCell({
       {/* Name row */}
       <div
         style={{
-          backgroundColor: fieldColor(mapReg.colorIndex, 0.15),
-          borderColor,
+          ...(isOverlap
+            ? { borderColor: OVERLAP_COLOR, backgroundImage: OVERLAP_HATCH_BG }
+            : {}),
         }}
-        className={`flex items-center justify-between px-2 py-0.5 text-xs ${borderWidth} ${hasFields ? 'border-b-0 rounded-t-sm' : 'rounded-sm'}`}
+        className={`flex items-center justify-between px-2 py-1 text-xs ${borderWidth} ${hasFields ? 'border-b-0 rounded-t-sm' : 'rounded-sm'} ${
+          isOverlap
+            ? ''
+            : 'bg-slate-100 border-slate-300 dark:bg-slate-800/60 dark:border-slate-600'
+        }`}
       >
         <span className="truncate font-medium">
           {mapReg.reg.name}
@@ -266,8 +272,9 @@ function RegisterCell({
           fieldSegments={fieldSegments}
           cellStartBit={cell.cellStartBit}
           cellEndBit={cell.cellEndBit}
-          borderColor={borderColor}
+          borderColor={isOverlap ? OVERLAP_COLOR : undefined}
           borderWidth={borderWidth}
+          isOverlap={isOverlap}
         />
       )}
     </div>
@@ -280,12 +287,14 @@ function FieldDecompositionRow({
   cellEndBit,
   borderColor,
   borderWidth,
+  isOverlap,
 }: {
   fieldSegments: FieldSegment[];
   cellStartBit: number;
   cellEndBit: number;
-  borderColor: string;
+  borderColor?: string;
   borderWidth: string;
+  isOverlap: boolean;
 }) {
   // Build items array interleaving reserved gaps between/around field segments.
   // Segments are sorted MSB→LSB (highest bit first). clampedMsb/clampedLsb
@@ -311,8 +320,10 @@ function FieldDecompositionRow({
 
   return (
     <div
-      style={{ borderColor }}
-      className={`flex items-stretch ${borderWidth} border-t-0 rounded-b-sm overflow-hidden`}
+      style={borderColor ? { borderColor } : undefined}
+      className={`flex items-stretch ${borderWidth} border-t-0 rounded-b-sm overflow-hidden ${
+        !isOverlap ? 'border-slate-300 dark:border-slate-600' : ''
+      }`}
     >
       {items.map((item, i) => {
         if (item.kind === 'rsvd') {

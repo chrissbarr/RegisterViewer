@@ -4,7 +4,6 @@ import type { RegisterOverlapWarning } from './validation';
 /** A register prepared for map layout with precomputed byte extents. */
 export interface MapRegister {
   reg: RegisterDef;
-  colorIndex: number;
   startByte: number;
   endByte: number;
   byteSize: number;
@@ -72,11 +71,10 @@ export function buildMapRegisters(
   return registers
     .filter((r): r is RegisterDef & { offset: number } => r.offset != null)
     .sort((a, b) => a.offset - b.offset)
-    .map((reg, i) => {
+    .map((reg) => {
       const byteSize = Math.ceil(reg.width / 8);
       return {
         reg,
-        colorIndex: i,
         startByte: reg.offset,
         endByte: reg.offset + byteSize - 1,
         byteSize,
