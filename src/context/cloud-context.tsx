@@ -72,10 +72,17 @@ export function CloudProjectProvider({ children }: { children: ReactNode }) {
   // Increments whenever data-bearing state properties change (reference comparison).
   const dataVersionRef = useRef(0);
   const [dataVersion, setDataVersion] = useState(0);
+  const needsVersionSyncRef = useRef(false);
 
   useEffect(() => {
     dataVersionRef.current++;
     setDataVersion(dataVersionRef.current);
+
+    if (needsVersionSyncRef.current) {
+      needsVersionSyncRef.current = false;
+      const capturedVersion = dataVersionRef.current;
+      setInternal((prev) => ({ ...prev, lastSavedVersion: capturedVersion }));
+    }
   }, [appState.registers, appState.registerValues, appState.project, appState.addressUnitBits]);
 
   const isDirty = internal.projectId !== null
@@ -233,19 +240,20 @@ export function CloudProjectProvider({ children }: { children: ReactNode }) {
         const isOwner = checkOwnership(id);
         const shareUrl = `${window.location.href.split('#')[0]}#/p/${id}`;
 
-        // P-6: After IMPORT_STATE dispatch, the dataVersionRef will increment on next render.
-        // Use queueMicrotask so lastSavedVersion captures the post-dispatch version.
-        queueMicrotask(() => {
-          setInternal((prev) => ({
-            ...prev,
-            projectId: id,
-            isOwner,
-            status: 'idle',
-            shareUrl,
-            lastSavedAt: importResult.updatedAt,
-            lastSavedVersion: dataVersionRef.current,
-          }));
-        });
+        // Signal the version-tracking useEffect to capture lastSavedVersion
+        // after it increments dataVersionRef in response to the IMPORT_STATE dispatch.
+        // This avoids the stale-version bug that queueMicrotask had (microtasks run
+        // before React's commit phase, so the version hadn't incremented yet).
+        needsVersionSyncRef.current = true;
+
+        setInternal((prev) => ({
+          ...prev,
+          projectId: id,
+          isOwner,
+          status: 'idle',
+          shareUrl,
+          lastSavedAt: importResult.updatedAt,
+        }));
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to load project.';
         setInternal((prev) => ({
