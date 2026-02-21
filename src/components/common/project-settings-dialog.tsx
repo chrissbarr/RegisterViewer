@@ -78,10 +78,10 @@ export function ProjectSettingsDialog({ open, onClose }: ProjectSettingsDialogPr
             }
             className={inputClass}
           >
-            <option value={8}>8-bit (byte addressing)</option>
-            <option value={16}>16-bit (word addressing)</option>
-            <option value={32}>32-bit (dword addressing)</option>
-            <option value={64}>64-bit (qword addressing)</option>
+            <option value={8}>8-bit</option>
+            <option value={16}>16-bit</option>
+            <option value={32}>32-bit</option>
+            <option value={64}>64-bit</option>
             <option value={128}>128-bit</option>
           </select>
           <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
