@@ -1,6 +1,6 @@
 import { createContext, useContext, useReducer, type ReactNode, type Dispatch } from 'react';
 import { arrayMove } from '@dnd-kit/sortable';
-import { SIDEBAR_WIDTH_DEFAULT, type AppState, type RegisterDef, type Field, type ProjectMetadata } from '../types/register';
+import { SIDEBAR_WIDTH_DEFAULT, type AppState, type MapTableWidth, type RegisterDef, type Field, type ProjectMetadata } from '../types/register';
 import { replaceBits, toggleBit } from '../utils/bitwise';
 
 // --- Actions ---
@@ -21,7 +21,9 @@ export type Action =
   | { type: 'CLEAR_WORKSPACE' }
   | { type: 'SET_PROJECT_METADATA'; project: ProjectMetadata | undefined }
   | { type: 'SET_SIDEBAR_WIDTH'; width: number }
-  | { type: 'SET_SIDEBAR_COLLAPSED'; collapsed: boolean };
+  | { type: 'SET_SIDEBAR_COLLAPSED'; collapsed: boolean }
+  | { type: 'SET_MAP_TABLE_WIDTH'; width: MapTableWidth }
+  | { type: 'SET_MAP_SHOW_GAPS'; showGaps: boolean };
 
 // --- Reducer ---
 
@@ -135,6 +137,12 @@ export function appReducer(state: AppState, action: Action): AppState {
     case 'SET_SIDEBAR_COLLAPSED': {
       return { ...state, sidebarCollapsed: action.collapsed };
     }
+    case 'SET_MAP_TABLE_WIDTH': {
+      return { ...state, mapTableWidth: action.width };
+    }
+    case 'SET_MAP_SHOW_GAPS': {
+      return { ...state, mapShowGaps: action.showGaps };
+    }
     default:
       return state;
   }
@@ -149,6 +157,8 @@ const initialState: AppState = {
   theme: 'dark',
   sidebarWidth: SIDEBAR_WIDTH_DEFAULT,
   sidebarCollapsed: false,
+  mapTableWidth: 32,
+  mapShowGaps: true,
 };
 
 const AppStateContext = createContext<AppState | null>(null);

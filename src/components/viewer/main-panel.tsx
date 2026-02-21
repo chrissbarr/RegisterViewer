@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useAppState, useAppDispatch } from '../../context/app-context';
 import { useEditContext } from '../../context/edit-context';
 import { ValueInputBar } from './value-input-bar';
@@ -72,6 +72,11 @@ export function MainPanel() {
     exitEditMode();
   }
 
+  const mapScrollTopRef = useRef(0);
+  const handleMapScroll = useCallback((scrollTop: number) => {
+    mapScrollTopRef.current = scrollTop;
+  }, []);
+
   const hasOffsets = registers.some((r) => r.offset != null);
 
   function handleNavigateToRegister(registerId: string) {
@@ -119,6 +124,8 @@ export function MainPanel() {
         <RegisterMapView
           registers={registers}
           onNavigateToRegister={handleNavigateToRegister}
+          scrollTopRef={mapScrollTopRef}
+          onScrollChange={handleMapScroll}
         />
       </main>
     );

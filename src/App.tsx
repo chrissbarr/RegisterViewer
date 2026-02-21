@@ -25,6 +25,8 @@ function getInitialState(): AppState | undefined {
     },
     sidebarWidth: SIDEBAR_WIDTH_DEFAULT,
     sidebarCollapsed: false,
+    mapTableWidth: 32,
+    mapShowGaps: true,
   };
 }
 

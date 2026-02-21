@@ -112,6 +112,8 @@ export const SIDEBAR_WIDTH_MIN = 180;
 export const SIDEBAR_WIDTH_MAX = 400;
 export const SIDEBAR_WIDTH_DEFAULT = 224;
 
+export type MapTableWidth = 8 | 16 | 32;
+
 export interface AppState {
   registers: RegisterDef[];
   activeRegisterId: string | null;
@@ -120,6 +122,8 @@ export interface AppState {
   project?: ProjectMetadata;
   sidebarWidth: number;
   sidebarCollapsed: boolean;
+  mapTableWidth: MapTableWidth;
+  mapShowGaps: boolean;
 }
 
 /** Serializable version of AppState for localStorage / JSON export */
@@ -131,6 +135,8 @@ export interface SerializedAppState {
   project?: ProjectMetadata;
   sidebarWidth: number;
   sidebarCollapsed: boolean;
+  mapTableWidth?: MapTableWidth;
+  mapShowGaps?: boolean;
 }
 
 export type DecodedValue =

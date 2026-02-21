@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
-import type { RegisterDef } from '../../types/register';
+import { useCallback, useEffect, useMemo, useRef, type RefObject } from 'react';
+import type { MapTableWidth, RegisterDef } from '../../types/register';
+import { useAppState, useAppDispatch } from '../../context/app-context';
 import {
   buildMapRegisters,
   computeMapRows,
@@ -12,19 +13,38 @@ import { getRegisterOverlapWarnings } from '../../utils/validation';
 import { fieldColor, fieldBorderColor } from '../../utils/field-colors';
 import { formatOffset } from '../../utils/format';
 
-type TableWidth = 8 | 16 | 32;
-
 interface RegisterMapViewProps {
   registers: RegisterDef[];
   onNavigateToRegister: (registerId: string) => void;
+  scrollTopRef?: RefObject<number>;
+  onScrollChange?: (scrollTop: number) => void;
 }
 
 export function RegisterMapView({
   registers,
   onNavigateToRegister,
+  scrollTopRef,
+  onScrollChange,
 }: RegisterMapViewProps) {
-  const [tableWidthBits, setTableWidthBits] = useState<TableWidth>(32);
-  const [showGaps, setShowGaps] = useState(true);
+  const { mapTableWidth: tableWidthBits, mapShowGaps: showGaps } = useAppState();
+  const dispatch = useAppDispatch();
+  const setTableWidthBits = useCallback(
+    (width: MapTableWidth) => dispatch({ type: 'SET_MAP_TABLE_WIDTH', width }),
+    [dispatch],
+  );
+  const setShowGaps = useCallback(
+    (show: boolean) => dispatch({ type: 'SET_MAP_SHOW_GAPS', showGaps: show }),
+    [dispatch],
+  );
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Restore scroll position on mount
+  useEffect(() => {
+    if (scrollTopRef != null && scrollTopRef.current > 0 && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollTopRef.current;
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const overlapWarnings = useMemo(
     () => getRegisterOverlapWarnings(registers),
@@ -59,7 +79,11 @@ export function RegisterMapView({
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-4">
+    <div
+      ref={scrollRef}
+      className="flex-1 overflow-y-auto p-4"
+      onScroll={onScrollChange ? (e) => onScrollChange((e.target as HTMLElement).scrollTop) : undefined}
+    >
       {/* Controls */}
       <div className="flex items-center gap-4 mb-3">
         <div className="flex rounded-md border border-gray-300 dark:border-gray-600 overflow-hidden text-sm">

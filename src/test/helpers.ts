@@ -77,6 +77,8 @@ export function makeState(overrides: Partial<AppState> = {}): AppState {
     theme: 'dark',
     sidebarWidth: SIDEBAR_WIDTH_DEFAULT,
     sidebarCollapsed: false,
+    mapTableWidth: 32,
+    mapShowGaps: true,
     ...overrides,
   };
 }

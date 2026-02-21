@@ -84,6 +84,51 @@ describe('deserializeState', () => {
     const maxVal = (1n << 128n) - 1n;
     expect(state.registerValues['reg-1']).toBe(maxVal);
   });
+
+  it('defaults mapTableWidth to 32 and mapShowGaps to true for legacy data', () => {
+    const serialized = {
+      registers: [],
+      activeRegisterId: null,
+      registerValues: {},
+      theme: 'dark' as const,
+      sidebarWidth: 224,
+      sidebarCollapsed: false,
+    };
+    const state = deserializeState(serialized);
+    expect(state.mapTableWidth).toBe(32);
+    expect(state.mapShowGaps).toBe(true);
+  });
+
+  it('falls back to 32 for invalid mapTableWidth', () => {
+    const serialized = {
+      registers: [],
+      activeRegisterId: null,
+      registerValues: {},
+      theme: 'dark' as const,
+      sidebarWidth: 224,
+      sidebarCollapsed: false,
+      mapTableWidth: 64 as never,
+      mapShowGaps: true,
+    };
+    const state = deserializeState(serialized);
+    expect(state.mapTableWidth).toBe(32);
+  });
+
+  it('preserves mapShowGaps false', () => {
+    const serialized = {
+      registers: [],
+      activeRegisterId: null,
+      registerValues: {},
+      theme: 'dark' as const,
+      sidebarWidth: 224,
+      sidebarCollapsed: false,
+      mapTableWidth: 16 as const,
+      mapShowGaps: false,
+    };
+    const state = deserializeState(serialized);
+    expect(state.mapTableWidth).toBe(16);
+    expect(state.mapShowGaps).toBe(false);
+  });
 });
 
 describe('save/loadFromLocalStorage', () => {
@@ -105,6 +150,18 @@ describe('save/loadFromLocalStorage', () => {
     expect(loaded!.registerValues['reg-1']).toBe(0x1234n);
     expect(loaded!.theme).toBe('light');
     expect(loaded!.activeRegisterId).toBe('reg-1');
+  });
+
+  it('round-trips map view settings through localStorage', () => {
+    const state = makeState({
+      mapTableWidth: 8,
+      mapShowGaps: false,
+    });
+    saveToLocalStorage(state);
+    const loaded = loadFromLocalStorage();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.mapTableWidth).toBe(8);
+    expect(loaded!.mapShowGaps).toBe(false);
   });
 
   it('returns null when storage is empty', () => {

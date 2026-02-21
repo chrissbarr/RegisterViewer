@@ -17,6 +17,8 @@ export function serializeState(state: AppState): SerializedAppState {
     project: state.project,
     sidebarWidth: state.sidebarWidth,
     sidebarCollapsed: state.sidebarCollapsed,
+    mapTableWidth: state.mapTableWidth,
+    mapShowGaps: state.mapShowGaps,
   };
 }
 
@@ -55,6 +57,9 @@ export function deserializeState(data: SerializedAppState): AppState {
       ? Math.max(SIDEBAR_WIDTH_MIN, Math.min(SIDEBAR_WIDTH_MAX, data.sidebarWidth))
       : SIDEBAR_WIDTH_DEFAULT,
     sidebarCollapsed: data.sidebarCollapsed === true,
+    mapTableWidth: data.mapTableWidth === 8 || data.mapTableWidth === 16 || data.mapTableWidth === 32
+      ? data.mapTableWidth : 32,
+    mapShowGaps: data.mapShowGaps !== false,
   };
 }
 
