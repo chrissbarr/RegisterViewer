@@ -143,11 +143,36 @@ export function computeMapRows(
 
   const rows: MapRow[] = [];
 
-  for (
-    let bandStart = firstBand;
-    bandStart <= lastBand;
-    bandStart += rowWidthUnits
-  ) {
+  // Precompute the set of occupied bands for O(1) lookup when skipping gaps.
+  // When showGaps is false, we use this to jump directly to the next occupied band
+  // instead of iterating every band in the address range (critical for sparse maps).
+  let occupiedBands: Set<number> | undefined;
+  if (!showGaps) {
+    occupiedBands = new Set<number>();
+    for (const mr of mapRegisters) {
+      const regFirstBand = Math.floor(mr.startUnit / rowWidthUnits) * rowWidthUnits;
+      const regLastBand = Math.floor(mr.endUnit / rowWidthUnits) * rowWidthUnits;
+      for (let b = regFirstBand; b <= regLastBand; b += rowWidthUnits) {
+        occupiedBands.add(b);
+      }
+    }
+  }
+
+  // When showGaps is false, collect sorted occupied bands for direct iteration
+  let occupiedBandList: number[] | undefined;
+  if (occupiedBands) {
+    occupiedBandList = Array.from(occupiedBands).sort((a, b) => a - b);
+  }
+
+  // Iterate bands: when showGaps is true, iterate every band sequentially;
+  // when false, iterate only bands that contain registers.
+  const bandIterator = occupiedBandList ?? {
+    [Symbol.iterator]: function* () {
+      for (let b = firstBand; b <= lastBand; b += rowWidthUnits) yield b;
+    },
+  };
+
+  for (const bandStart of bandIterator) {
     const bandEnd = bandStart + rowWidthUnits - 1;
 
     // Find registers overlapping this band
