@@ -1,13 +1,13 @@
 import { createContext, useContext, useCallback, useState, useMemo, useRef, useEffect, type ReactNode } from 'react';
 import { useAppState, useAppDispatch } from './app-context';
-import { exportToJson, importFromJson } from '../utils/storage';
+import { exportToJson } from '../utils/storage';
 import {
   isCloudEnabled,
   createProject,
   updateProject,
   deleteProject as apiDeleteProject,
-  getProject,
 } from '../utils/api-client';
+import { fetchAndParseCloudProject } from '../utils/cloud-project-loader';
 import {
   getOrCreateOwnerToken,
   hashOwnerToken,
@@ -220,16 +220,7 @@ export function CloudProjectProvider({ children }: { children: ReactNode }) {
     async (id: string) => {
       setInternal((prev) => ({ ...prev, status: 'loading', error: null, projectId: id }));
       try {
-        const result = await getProject(id);
-        const importResult = importFromJson(result.data);
-        if (!importResult || importResult.registers.length === 0) {
-          setInternal((prev) => ({
-            ...prev,
-            status: 'idle',
-            error: 'Failed to parse project data.',
-          }));
-          return;
-        }
+        const importResult = await fetchAndParseCloudProject(id);
 
         dispatch({
           type: 'IMPORT_STATE',
@@ -251,7 +242,7 @@ export function CloudProjectProvider({ children }: { children: ReactNode }) {
             isOwner,
             status: 'idle',
             shareUrl,
-            lastSavedAt: result.updatedAt,
+            lastSavedAt: importResult.updatedAt,
             lastSavedVersion: dataVersionRef.current,
           }));
         });

@@ -5,7 +5,8 @@ import { loadFromLocalStorage, importFromJson } from '../utils/storage';
 import { createSeedRegisters } from '../utils/seed-data';
 import { SIDEBAR_WIDTH_DEFAULT, ADDRESS_UNIT_BITS_DEFAULT, type AppState } from '../types/register';
 import { isSnapshotHash, isProjectHash, decompressSnapshot } from '../utils/snapshot-url';
-import { isCloudEnabled, getProject } from '../utils/api-client';
+import { isCloudEnabled } from '../utils/api-client';
+import { fetchAndParseCloudProject } from '../utils/cloud-project-loader';
 import { checkOwnership } from '../utils/owner-token';
 
 type LoaderState =
@@ -101,15 +102,8 @@ export function AppLoader() {
         return;
       }
 
-      getProject(projectId)
-        .then((result) => {
-          const jsonString = typeof result.data === 'string' ? result.data : JSON.stringify(result.data);
-          const importResult = importFromJson(jsonString);
-          if (!importResult || importResult.registers.length === 0) {
-            setState({ phase: 'error', message: 'Failed to parse project data from cloud.' });
-            return;
-          }
-
+      fetchAndParseCloudProject(projectId)
+        .then((importResult) => {
           const defaultState = getDefaultState();
           const values: Record<string, bigint> = {};
           for (const reg of importResult.registers) {
