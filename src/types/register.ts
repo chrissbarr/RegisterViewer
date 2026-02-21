@@ -129,6 +129,7 @@ export interface AppState {
   sidebarCollapsed: boolean;
   mapTableWidth: MapTableWidth;
   mapShowGaps: boolean;
+  mapSortDescending: boolean;
   addressUnitBits: AddressUnitBits;
 }
 
@@ -143,6 +144,7 @@ export interface SerializedAppState {
   sidebarCollapsed: boolean;
   mapTableWidth?: MapTableWidth;
   mapShowGaps?: boolean;
+  mapSortDescending?: boolean;
   addressUnitBits?: AddressUnitBits;
 }
 

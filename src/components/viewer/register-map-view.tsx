@@ -29,7 +29,7 @@ export function RegisterMapView({
   scrollTopRef,
   onScrollChange,
 }: RegisterMapViewProps) {
-  const { mapTableWidth: tableWidthBits, mapShowGaps: showGaps, addressUnitBits } = useAppState();
+  const { mapTableWidth: tableWidthBits, mapShowGaps: showGaps, mapSortDescending: sortDescending, addressUnitBits } = useAppState();
   const dispatch = useAppDispatch();
   const setTableWidthBits = useCallback(
     (width: MapTableWidth) => dispatch({ type: 'SET_MAP_TABLE_WIDTH', width }),
@@ -38,6 +38,10 @@ export function RegisterMapView({
   const setShowGaps = useCallback(
     (show: boolean) => dispatch({ type: 'SET_MAP_SHOW_GAPS', showGaps: show }),
     [dispatch],
+  );
+  const toggleSortOrder = useCallback(
+    () => dispatch({ type: 'SET_MAP_SORT_DESCENDING', descending: !sortDescending }),
+    [dispatch, sortDescending],
   );
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -63,10 +67,10 @@ export function RegisterMapView({
   );
 
   const rowWidthUnits = tableWidthBits / addressUnitBits;
-  const mapRows = useMemo(
-    () => computeMapRows(mapRegisters, rowWidthUnits, showGaps, addressUnitBits),
-    [mapRegisters, rowWidthUnits, showGaps, addressUnitBits],
-  );
+  const mapRows = useMemo(() => {
+    const rows = computeMapRows(mapRegisters, rowWidthUnits, showGaps, addressUnitBits);
+    return sortDescending ? [...rows].reverse() : rows;
+  }, [mapRegisters, rowWidthUnits, showGaps, addressUnitBits, sortDescending]);
 
   if (mapRegisters.length === 0) {
     return (
@@ -84,6 +88,7 @@ export function RegisterMapView({
   return (
     <div
       ref={scrollRef}
+      data-testid="map-view"
       className="flex-1 overflow-y-auto p-4"
       onScroll={onScrollChange ? (e) => onScrollChange((e.target as HTMLElement).scrollTop) : undefined}
     >
@@ -113,6 +118,21 @@ export function RegisterMapView({
           />
           Show gaps
         </label>
+        <button
+          onClick={toggleSortOrder}
+          aria-label="Toggle sort order"
+          title={sortDescending ? 'Sorted descending — click for ascending' : 'Sorted ascending — click for descending'}
+          className="flex items-center gap-1.5 px-2 py-1 rounded-md text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+        >
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+            {sortDescending ? (
+              <path d="M8 1a.5.5 0 0 1 .5.5v11.793l3.146-3.147a.5.5 0 0 1 .708.708l-4 4a.5.5 0 0 1-.708 0l-4-4a.5.5 0 0 1 .708-.708L7.5 13.293V1.5A.5.5 0 0 1 8 1z" />
+            ) : (
+              <path d="M8 15a.5.5 0 0 0 .5-.5V2.707l3.146 3.147a.5.5 0 0 0 .708-.708l-4-4a.5.5 0 0 0-.708 0l-4 4a.5.5 0 0 0 .708.708L7.5 2.707V14.5A.5.5 0 0 0 8 15z" />
+            )}
+          </svg>
+          <span className="text-xs">{sortDescending ? 'Desc' : 'Asc'}</span>
+        </button>
       </div>
 
       {/* Column headers */}
@@ -145,7 +165,9 @@ export function RegisterMapView({
             !showGaps &&
             prevRow &&
             !prevRow.isGapRow &&
-            row.bandStart > prevRow.bandEnd + 1;
+            (sortDescending
+              ? row.bandEnd < prevRow.bandStart - 1
+              : row.bandStart > prevRow.bandEnd + 1);
 
           return (
             <div key={row.bandStart}>

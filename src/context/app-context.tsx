@@ -28,6 +28,7 @@ export type Action =
   | { type: 'SET_SIDEBAR_COLLAPSED'; collapsed: boolean }
   | { type: 'SET_MAP_TABLE_WIDTH'; width: MapTableWidth }
   | { type: 'SET_MAP_SHOW_GAPS'; showGaps: boolean }
+  | { type: 'SET_MAP_SORT_DESCENDING'; descending: boolean }
   | { type: 'SET_ADDRESS_UNIT_BITS'; addressUnitBits: number };
 
 // --- Reducer ---
@@ -161,6 +162,9 @@ export function appReducer(state: AppState, action: Action): AppState {
     case 'SET_MAP_SHOW_GAPS': {
       return { ...state, mapShowGaps: action.showGaps };
     }
+    case 'SET_MAP_SORT_DESCENDING': {
+      return { ...state, mapSortDescending: action.descending };
+    }
     case 'SET_ADDRESS_UNIT_BITS': {
       if (!isValidAddressUnitBits(action.addressUnitBits)) return state;
       const newBits = action.addressUnitBits;
@@ -185,6 +189,7 @@ const initialState: AppState = {
   sidebarCollapsed: false,
   mapTableWidth: 32,
   mapShowGaps: true,
+  mapSortDescending: false,
   addressUnitBits: ADDRESS_UNIT_BITS_DEFAULT,
 };
 

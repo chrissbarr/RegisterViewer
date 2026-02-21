@@ -27,6 +27,7 @@ function getInitialState(): AppState | undefined {
     sidebarCollapsed: false,
     mapTableWidth: 32,
     mapShowGaps: true,
+    mapSortDescending: false,
     addressUnitBits: ADDRESS_UNIT_BITS_DEFAULT,
   };
 }

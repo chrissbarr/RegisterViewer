@@ -19,6 +19,7 @@ export function serializeState(state: AppState): SerializedAppState {
     sidebarCollapsed: state.sidebarCollapsed,
     mapTableWidth: state.mapTableWidth,
     mapShowGaps: state.mapShowGaps,
+    mapSortDescending: state.mapSortDescending,
     addressUnitBits: state.addressUnitBits,
   };
 }
@@ -61,6 +62,7 @@ export function deserializeState(data: SerializedAppState): AppState {
     mapTableWidth: (MAP_TABLE_WIDTH_VALUES as readonly number[]).includes(data.mapTableWidth as number)
       ? data.mapTableWidth as MapTableWidth : 32,
     mapShowGaps: data.mapShowGaps !== false,
+    mapSortDescending: data.mapSortDescending === true,
     addressUnitBits: typeof data.addressUnitBits === 'number' && (ADDRESS_UNIT_BITS_VALUES as readonly number[]).includes(data.addressUnitBits)
       ? data.addressUnitBits as AddressUnitBits : ADDRESS_UNIT_BITS_DEFAULT,
   };

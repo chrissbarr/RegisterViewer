@@ -79,6 +79,7 @@ export function makeState(overrides: Partial<AppState> = {}): AppState {
     sidebarCollapsed: false,
     mapTableWidth: 32,
     mapShowGaps: true,
+    mapSortDescending: false,
     addressUnitBits: ADDRESS_UNIT_BITS_DEFAULT,
     ...overrides,
   };
