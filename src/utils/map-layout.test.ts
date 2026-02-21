@@ -402,6 +402,95 @@ describe('computeMapRows cellStartBit/cellEndBit', () => {
   });
 });
 
+describe('computeMapRows with overlapping registers', () => {
+  it('places two fully overlapping registers as separate cells at the same position', () => {
+    // Two 8-bit registers both at offset 0
+    const regs = [
+      makeRegister({ id: 'a', offset: 0, width: 8 }),
+      makeRegister({ id: 'b', offset: 0, width: 8 }),
+    ];
+    const mrs = buildMapRegisters(regs, new Set(['a', 'b']));
+    const rows = computeMapRows(mrs, 4, false);
+    expect(rows).toHaveLength(1);
+    // Both registers appear as cells; 'b' starts at the same position as 'a'
+    // so 'a' occupies col 1-2 and 'b' also gets col 1-2 (cursor doesn't advance past overlap)
+    const regCells = rows[0].cells.filter((c) => c.kind === 'register');
+    expect(regCells).toHaveLength(2);
+    expect(regCells[0]).toMatchObject({ kind: 'register', colStart: 1, colEnd: 2 });
+    expect(regCells[0].kind === 'register' && regCells[0].mapReg.reg.id).toBe('a');
+    expect(regCells[1]).toMatchObject({ kind: 'register', colStart: 1, colEnd: 2 });
+    expect(regCells[1].kind === 'register' && regCells[1].mapReg.reg.id).toBe('b');
+  });
+
+  it('places partially overlapping registers with correct columns', () => {
+    // 16-bit register at offset 0 (units 0-1), 16-bit register at offset 1 (units 1-2)
+    const regs = [
+      makeRegister({ id: 'a', offset: 0, width: 16 }),
+      makeRegister({ id: 'b', offset: 1, width: 16 }),
+    ];
+    const mrs = buildMapRegisters(regs, new Set(['a', 'b']));
+    const rows = computeMapRows(mrs, 4, false);
+    expect(rows).toHaveLength(1);
+    const regCells = rows[0].cells.filter((c) => c.kind === 'register');
+    expect(regCells).toHaveLength(2);
+    // 'a' occupies units 0-1 → cols 1-3
+    expect(regCells[0]).toMatchObject({ kind: 'register', colStart: 1, colEnd: 3 });
+    // 'b' occupies units 1-2, but cursor is at 2 after 'a', so clamped start is max(1,2)=2 → cols 2-4
+    // Actually sorted by clamped start: 'a' clampedStart=0, 'b' clampedStart=1
+    // After 'a', cursor=2. 'b' clampedStart=1 < cursor=2, no gap inserted.
+    // 'b' gets colStart = 1-0+1=2, colEnd = 2-0+2=4
+    expect(regCells[1]).toMatchObject({ kind: 'register', colStart: 2, colEnd: 4 });
+  });
+
+  it('marks hasOverlap on overlapping registers from warning IDs', () => {
+    const regs = [
+      makeRegister({ id: 'a', offset: 0, width: 16 }),
+      makeRegister({ id: 'b', offset: 1, width: 8 }),
+    ];
+    const mrs = buildMapRegisters(regs, new Set(['a', 'b']));
+    expect(mrs[0].hasOverlap).toBe(true);
+    expect(mrs[1].hasOverlap).toBe(true);
+  });
+
+  it('overlapping register spanning multiple bands appears in all relevant rows', () => {
+    // 'a' is 32-bit at offset 0 (units 0-3), 'b' is 16-bit at offset 2 (units 2-3)
+    // With row width 2: band [0-1] has 'a', band [2-3] has both 'a' and 'b'
+    const regs = [
+      makeRegister({ id: 'a', offset: 0, width: 32 }),
+      makeRegister({ id: 'b', offset: 2, width: 16 }),
+    ];
+    const mrs = buildMapRegisters(regs, new Set(['a', 'b']));
+    const rows = computeMapRows(mrs, 2, false);
+    expect(rows).toHaveLength(2);
+
+    // Band [0-1]: only 'a'
+    const row0Regs = rows[0].cells.filter((c) => c.kind === 'register');
+    expect(row0Regs).toHaveLength(1);
+    expect(row0Regs[0].kind === 'register' && row0Regs[0].mapReg.reg.id).toBe('a');
+
+    // Band [2-3]: both 'a' and 'b'
+    const row1Regs = rows[1].cells.filter((c) => c.kind === 'register');
+    expect(row1Regs).toHaveLength(2);
+    const row1Ids = row1Regs.map((c) => c.kind === 'register' && c.mapReg.reg.id);
+    expect(row1Ids).toContain('a');
+    expect(row1Ids).toContain('b');
+  });
+
+  it('does not insert spurious gap between overlapping registers', () => {
+    // Two registers sharing the same address: no gap cell should appear between them
+    const regs = [
+      makeRegister({ id: 'a', offset: 0, width: 8 }),
+      makeRegister({ id: 'b', offset: 0, width: 8 }),
+    ];
+    const mrs = buildMapRegisters(regs, new Set(['a', 'b']));
+    const rows = computeMapRows(mrs, 4, false);
+    expect(rows).toHaveLength(1);
+    // Should have: reg a, reg b, trailing gap — no gap between the two registers
+    const cellKinds = rows[0].cells.map((c) => c.kind);
+    expect(cellKinds).toEqual(['register', 'register', 'gap']);
+  });
+});
+
 describe('addressUnitBits support', () => {
   it('buildMapRegisters: 16-bit register at offset 0 occupies 1 unit with addressUnitBits=16', () => {
     const regs = [makeRegister({ id: 'a', offset: 0, width: 16 })];
