@@ -1,0 +1,11 @@
+name = "register-viewer-api"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+
+[vars]
+APP_URL = "https://register-viewer.app"
+
+[[kv_namespaces]]
+binding = "PROJECTS"
+id = "<production-namespace-id>"
+preview_id = "<preview-namespace-id>"

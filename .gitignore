@@ -18,6 +18,10 @@ test-results/
 playwright-report/
 blob-report/
 
+# Wrangler (Cloudflare Workers local dev)
+.wrangler
+worker/.wrangler
+
 # Claude Code
 .claude
 

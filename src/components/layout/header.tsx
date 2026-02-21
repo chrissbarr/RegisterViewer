@@ -7,10 +7,14 @@ import { ProjectSettingsDialog } from '../common/project-settings-dialog';
 import { ImportResultDialog } from '../common/import-result-dialog';
 import { Toast } from '../common/toast';
 import { GitHubIcon } from '../common/github-icon';
+import { SaveButton } from '../common/save-button';
+import { ShareButton } from '../common/share-button';
+import { SavedProjectsDialog } from '../common/saved-projects-dialog';
 import { GITHUB_URL } from '../../constants';
 import { useAppState, useAppDispatch } from '../../context/app-context';
 import { useEditContext } from '../../context/edit-context';
 import { exportToJson, importFromJson, type ImportWarning } from '../../utils/storage';
+import { isCloudEnabled } from '../../utils/api-client';
 
 function MenuIcon() {
   return (
@@ -36,6 +40,7 @@ export function Header() {
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
+  const [savedProjectsOpen, setSavedProjectsOpen] = useState(false);
   const [importFeedback, setImportFeedback] = useState<ImportFeedback | null>(null);
 
   function applyImportedData(json: string, showSuccessToast = true) {
@@ -72,7 +77,7 @@ export function Header() {
   }
 
   function handleExport() {
-    const json = exportToJson(state);
+    const json = exportToJson(state, true);
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -106,6 +111,8 @@ export function Header() {
     setImportFeedback(null);
   }
 
+  const cloudEnabled = isCloudEnabled();
+
   const menuItems: MenuItem[] = [
     { kind: 'action', label: 'Project settings', onAction: () => setProjectSettingsOpen(true) },
     { kind: 'separator' },
@@ -113,6 +120,12 @@ export function Header() {
     { kind: 'action', label: 'Export', onAction: handleExport },
     { kind: 'action', label: 'Examples', onAction: () => setExamplesOpen(true) },
     { kind: 'action', label: 'Clear workspace', onAction: () => setClearDialogOpen(true) },
+    ...(cloudEnabled
+      ? [
+          { kind: 'separator' as const },
+          { kind: 'action' as const, label: 'My saved projects', onAction: () => setSavedProjectsOpen(true) },
+        ]
+      : []),
     { kind: 'separator' },
     {
       kind: 'toggle',
@@ -137,6 +150,8 @@ export function Header() {
           )}
         </h1>
         <div className="flex items-center gap-2">
+          <ShareButton />
+          {cloudEnabled && <SaveButton />}
           <DropdownMenu
             items={menuItems}
             triggerLabel="Application menu"
@@ -170,6 +185,12 @@ export function Header() {
               dispatch({ type: 'CLEAR_WORKSPACE' });
             }}
           />
+          {cloudEnabled && (
+            <SavedProjectsDialog
+              open={savedProjectsOpen}
+              onClose={() => setSavedProjectsOpen(false)}
+            />
+          )}
         </div>
       </header>
 
