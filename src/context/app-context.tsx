@@ -1,11 +1,11 @@
 import { createContext, useContext, useReducer, type ReactNode, type Dispatch } from 'react';
 import { arrayMove } from '@dnd-kit/sortable';
 import { SIDEBAR_WIDTH_DEFAULT, ADDRESS_UNIT_BITS_DEFAULT, ADDRESS_UNIT_BITS_VALUES, type AddressUnitBits, type AppState, type MapTableWidth, type RegisterDef, type Field, type ProjectMetadata } from '../types/register';
+import { replaceBits, toggleBit } from '../utils/bitwise';
 
 function isValidAddressUnitBits(n: number): n is AddressUnitBits {
   return (ADDRESS_UNIT_BITS_VALUES as readonly number[]).includes(n);
 }
-import { replaceBits, toggleBit } from '../utils/bitwise';
 
 // --- Actions ---
 

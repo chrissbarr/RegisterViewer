@@ -47,16 +47,21 @@ export function AppShell() {
   }, []);
 
   // Keyboard shortcut: Ctrl+B toggles sidebar collapse
+  const collapsedRef = useRef(state.sidebarCollapsed);
+  useEffect(() => {
+    collapsedRef.current = state.sidebarCollapsed;
+  }, [state.sidebarCollapsed]);
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.key === 'b') {
         e.preventDefault();
-        dispatch({ type: 'SET_SIDEBAR_COLLAPSED', collapsed: !state.sidebarCollapsed });
+        dispatch({ type: 'SET_SIDEBAR_COLLAPSED', collapsed: !collapsedRef.current });
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [dispatch, state.sidebarCollapsed]);
+  }, [dispatch]);
 
   // Drag-to-resize sidebar
   const dragRef = useRef<{ startX: number; startWidth: number; lastWidth: number } | null>(null);

@@ -79,10 +79,10 @@ export function MainPanel() {
 
   const hasOffsets = registers.some((r) => r.offset != null);
 
-  function handleNavigateToRegister(registerId: string) {
+  const handleNavigateToRegister = useCallback((registerId: string) => {
     dispatch({ type: 'SET_ACTIVE_REGISTER', registerId });
     setActiveTab('register');
-  }
+  }, [dispatch]);
 
   // Editor takes over the full panel — no tab bar
   if (isEditing && activeDraft) {

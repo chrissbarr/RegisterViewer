@@ -179,7 +179,7 @@ function MapRowView({
   if (row.isGapRow) {
     return (
       <div className="flex items-center min-h-[2rem] hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
-        <div className="w-16 shrink-0 font-mono text-xs font-medium text-gray-500 dark:text-gray-400 text-right pr-3">
+        <div className="w-20 shrink-0 font-mono text-xs font-medium text-gray-500 dark:text-gray-400 text-right pr-3">
           {formatOffset(row.bandStart)}
         </div>
         <div className="flex-1 border border-dashed border-gray-300 dark:border-gray-700 rounded h-6 bg-gray-50 dark:bg-gray-900/20" />
@@ -189,7 +189,7 @@ function MapRowView({
 
   return (
     <div className="flex items-stretch min-h-[2.5rem] hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
-      <div className="w-16 shrink-0 font-mono text-xs font-medium text-gray-500 dark:text-gray-400 text-right pr-3 flex items-center justify-end">
+      <div className="w-20 shrink-0 font-mono text-xs font-medium text-gray-500 dark:text-gray-400 text-right pr-3 flex items-center justify-end">
         {formatOffset(row.bandStart)}
       </div>
       <div

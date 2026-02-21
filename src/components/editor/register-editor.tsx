@@ -93,12 +93,14 @@ export function RegisterEditor({
     return map;
   }, [fieldWarnings]);
 
-  // Check register overlap using the draft's current offset/width against saved registers
+  // Check register overlap using the draft's current offset/width against saved registers.
+  // Only recompute when offset or width changes (not on every keystroke for name/description).
   const draftOverlapWarnings = useMemo(() => {
     const registersWithDraft = registers.map((r) => (r.id === draft.id ? draft : r));
     return getRegisterOverlapWarnings(registersWithDraft, addressUnitBits)
       .filter((w) => w.registerIds.includes(draft.id));
-  }, [registers, draft, addressUnitBits]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [registers, draft.id, draft.offset, draft.width, addressUnitBits]);
 
   return (
     <div>
