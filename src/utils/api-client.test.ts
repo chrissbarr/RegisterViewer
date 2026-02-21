@@ -89,6 +89,8 @@ describe('createProject', () => {
 
     mockFetch.mockResolvedValueOnce({
       ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
       json: async () => responseData,
     });
 
@@ -146,6 +148,8 @@ describe('createProject', () => {
   it('includes Content-Type and Authorization headers', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
       json: async () => ({
         id: 'TEST',
         shareUrl: 'https://example.com',
@@ -177,6 +181,8 @@ describe('getProject', () => {
 
     mockFetch.mockResolvedValueOnce({
       ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
       json: async () => responseData,
     });
 
@@ -197,6 +203,8 @@ describe('getProject', () => {
   it('URL-encodes the project ID', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
       json: async () => ({
         id: 'test',
         data: '{}',
@@ -240,6 +248,8 @@ describe('updateProject', () => {
 
     mockFetch.mockResolvedValueOnce({
       ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
       json: async () => responseData,
     });
 
@@ -267,6 +277,8 @@ describe('updateProject', () => {
   it('URL-encodes the project ID', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
       json: async () => ({
         id: 'test',
         updatedAt: '2024-01-01T00:00:00Z',
@@ -312,7 +324,9 @@ describe('deleteProject', () => {
   it('makes DELETE request with Authorization header', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({}),
+      status: 204,
+      headers: new Headers({ 'content-length': '0' }),
+      json: async () => { throw new SyntaxError('Unexpected end of JSON input'); },
     });
 
     const id = 'ABC123DEF456';
@@ -336,7 +350,9 @@ describe('deleteProject', () => {
   it('URL-encodes the project ID', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({}),
+      status: 204,
+      headers: new Headers({ 'content-length': '0' }),
+      json: async () => { throw new SyntaxError('Unexpected end of JSON input'); },
     });
 
     await deleteProject('test/with/slashes', 'a'.repeat(64));
@@ -345,10 +361,12 @@ describe('deleteProject', () => {
     expect(callArgs[0]).toContain('test%2Fwith%2Fslashes');
   });
 
-  it('returns void on success', async () => {
+  it('returns void on success with 204 No Content', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({}),
+      status: 204,
+      headers: new Headers({ 'content-length': '0' }),
+      json: async () => { throw new SyntaxError('Unexpected end of JSON input'); },
     });
 
     const result = await deleteProject('ABC123DEF456', 'a'.repeat(64));
@@ -388,6 +406,8 @@ describe('API base URL', () => {
 
     mockFetch.mockResolvedValueOnce({
       ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
       json: async () => ({
         id: 'TEST',
         data: '{}',
@@ -409,6 +429,8 @@ describe('API base URL', () => {
 
     mockFetch.mockResolvedValueOnce({
       ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
       json: async () => ({
         id: 'TEST',
         data: '{}',
