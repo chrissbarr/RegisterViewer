@@ -88,11 +88,44 @@ export function CloudProjectProvider({ children }: { children: ReactNode }) {
     appStateRef.current = appState;
   });
 
+  const createNewProject = async (errorLabel: string) => {
+    const jsonPayload = exportToJson(appStateRef.current);
+    setInternal((prev) => ({ ...prev, status: 'saving', error: null }));
+    try {
+      const ownerToken = getOrCreateOwnerToken();
+      const tokenHash = await hashOwnerToken(ownerToken);
+      const result = await createProject(jsonPayload, tokenHash);
+
+      const projectName = appStateRef.current.project?.title ?? 'Untitled';
+      addLocalProject({
+        id: result.id,
+        ownerToken,
+        name: projectName,
+        savedAt: result.createdAt,
+        shareUrl: result.shareUrl,
+      });
+
+      const shareUrl = `${window.location.href.split('#')[0]}#/p/${result.id}`;
+      history.replaceState(null, '', `#/p/${result.id}`);
+
+      setInternal((prev) => ({
+        ...prev,
+        projectId: result.id,
+        isOwner: true,
+        status: 'idle',
+        shareUrl,
+        lastSavedAt: result.createdAt,
+        lastSavedVersion: dataVersionRef.current,
+      }));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : errorLabel;
+      setInternal((prev) => ({ ...prev, status: 'idle', error: message }));
+    }
+  };
+
   const save = useCallback(async () => {
     // P-7: Guard against concurrent saves
     if (!isCloudEnabled() || internal.status === 'saving') return;
-
-    const jsonPayload = exportToJson(appStateRef.current);
 
     // If we have a project and are owner, update it
     if (internal.projectId && internal.isOwner) {
@@ -104,6 +137,7 @@ export function CloudProjectProvider({ children }: { children: ReactNode }) {
 
       setInternal((prev) => ({ ...prev, status: 'saving', error: null }));
       try {
+        const jsonPayload = exportToJson(appStateRef.current);
         const tokenHash = await hashOwnerToken(ownerToken);
         const result = await updateProject(internal.projectId, jsonPayload, tokenHash);
         const projectName = appStateRef.current.project?.title ?? 'Untitled';
@@ -125,76 +159,12 @@ export function CloudProjectProvider({ children }: { children: ReactNode }) {
     }
 
     // Otherwise create new project
-    setInternal((prev) => ({ ...prev, status: 'saving', error: null }));
-    try {
-      const ownerToken = getOrCreateOwnerToken();
-      const tokenHash = await hashOwnerToken(ownerToken);
-      const result = await createProject(jsonPayload, tokenHash);
-
-      const projectName = appStateRef.current.project?.title ?? 'Untitled';
-      addLocalProject({
-        id: result.id,
-        ownerToken,
-        name: projectName,
-        savedAt: result.createdAt,
-        shareUrl: result.shareUrl,
-      });
-
-      // Update URL hash
-      const shareUrl = `${window.location.href.split('#')[0]}#/p/${result.id}`;
-      history.replaceState(null, '', `#/p/${result.id}`);
-
-      setInternal((prev) => ({
-        ...prev,
-        projectId: result.id,
-        isOwner: true,
-        status: 'idle',
-        shareUrl,
-        lastSavedAt: result.createdAt,
-        lastSavedVersion: dataVersionRef.current,
-      }));
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to save project.';
-      setInternal((prev) => ({ ...prev, status: 'idle', error: message }));
-    }
+    await createNewProject('Failed to save project.');
   }, [internal.projectId, internal.isOwner, internal.status]);
 
   const fork = useCallback(async () => {
     if (!isCloudEnabled() || internal.status === 'saving') return;
-
-    const jsonPayload = exportToJson(appStateRef.current);
-    setInternal((prev) => ({ ...prev, status: 'saving', error: null }));
-
-    try {
-      const ownerToken = getOrCreateOwnerToken();
-      const tokenHash = await hashOwnerToken(ownerToken);
-      const result = await createProject(jsonPayload, tokenHash);
-
-      const projectName = appStateRef.current.project?.title ?? 'Untitled';
-      addLocalProject({
-        id: result.id,
-        ownerToken,
-        name: projectName,
-        savedAt: result.createdAt,
-        shareUrl: result.shareUrl,
-      });
-
-      const shareUrl = `${window.location.href.split('#')[0]}#/p/${result.id}`;
-      history.replaceState(null, '', `#/p/${result.id}`);
-
-      setInternal((prev) => ({
-        ...prev,
-        projectId: result.id,
-        isOwner: true,
-        status: 'idle',
-        shareUrl,
-        lastSavedAt: result.createdAt,
-        lastSavedVersion: dataVersionRef.current,
-      }));
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to save copy.';
-      setInternal((prev) => ({ ...prev, status: 'idle', error: message }));
-    }
+    await createNewProject('Failed to save copy.');
   }, [internal.status]);
 
   const deleteCloud = useCallback(async () => {
