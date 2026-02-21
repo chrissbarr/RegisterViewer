@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -19,12 +19,23 @@ import { useAppState, useAppDispatch } from '../../context/app-context';
 import { useEditContext } from '../../context/edit-context';
 import { RegisterListItem } from './register-list-item';
 import { RegisterListItemOverlay } from './register-list-item-overlay';
+import { getRegisterOverlapWarnings } from '../../utils/validation';
 
 export function RegisterList() {
   const { registers, activeRegisterId } = useAppState();
   const dispatch = useAppDispatch();
   const { isEditing, enterEditMode, dirtyDraftIds } = useEditContext();
   const [activeId, setActiveId] = useState<string | null>(null);
+
+  const overlapWarnings = useMemo(
+    () => getRegisterOverlapWarnings(registers),
+    [registers],
+  );
+
+  const overlapRegisterIds = useMemo(
+    () => new Set(overlapWarnings.flatMap((w) => w.registerIds)),
+    [overlapWarnings],
+  );
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -79,6 +90,13 @@ export function RegisterList() {
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
       >
+        {overlapWarnings.length > 0 && (
+          <div className="mx-2 mt-2 px-2 py-1.5 rounded bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 text-xs text-amber-700 dark:text-amber-300 space-y-0.5">
+            {overlapWarnings.map((w, i) => (
+              <p key={i}>{'\u26A0'} {w.message}</p>
+            ))}
+          </div>
+        )}
         <SortableContext items={registers.map((r) => r.id)} strategy={verticalListSortingStrategy}>
           <ul className="p-2 space-y-1">
             {registers.map((reg) => (
@@ -87,6 +105,7 @@ export function RegisterList() {
                 register={reg}
                 isActive={reg.id === activeRegisterId}
                 hasPendingEdit={dirtyDraftIds.has(reg.id)}
+                hasOverlapWarning={overlapRegisterIds.has(reg.id)}
                 onSelect={() => {
                   dispatch({ type: 'SET_ACTIVE_REGISTER', registerId: reg.id });
                   if (isEditing) enterEditMode(reg);

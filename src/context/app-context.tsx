@@ -1,6 +1,6 @@
 import { createContext, useContext, useReducer, type ReactNode, type Dispatch } from 'react';
 import { arrayMove } from '@dnd-kit/sortable';
-import type { AppState, RegisterDef, Field, ProjectMetadata } from '../types/register';
+import { SIDEBAR_WIDTH_DEFAULT, type AppState, type RegisterDef, type Field, type ProjectMetadata } from '../types/register';
 import { replaceBits, toggleBit } from '../utils/bitwise';
 
 // --- Actions ---
@@ -19,7 +19,9 @@ export type Action =
   | { type: 'REORDER_REGISTERS'; oldIndex: number; newIndex: number }
   | { type: 'SORT_REGISTERS_BY_OFFSET' }
   | { type: 'CLEAR_WORKSPACE' }
-  | { type: 'SET_PROJECT_METADATA'; project: ProjectMetadata | undefined };
+  | { type: 'SET_PROJECT_METADATA'; project: ProjectMetadata | undefined }
+  | { type: 'SET_SIDEBAR_WIDTH'; width: number }
+  | { type: 'SET_SIDEBAR_COLLAPSED'; collapsed: boolean };
 
 // --- Reducer ---
 
@@ -127,6 +129,12 @@ export function appReducer(state: AppState, action: Action): AppState {
     case 'SET_PROJECT_METADATA': {
       return { ...state, project: action.project };
     }
+    case 'SET_SIDEBAR_WIDTH': {
+      return { ...state, sidebarWidth: action.width };
+    }
+    case 'SET_SIDEBAR_COLLAPSED': {
+      return { ...state, sidebarCollapsed: action.collapsed };
+    }
     default:
       return state;
   }
@@ -139,6 +147,8 @@ const initialState: AppState = {
   activeRegisterId: null,
   registerValues: {},
   theme: 'dark',
+  sidebarWidth: SIDEBAR_WIDTH_DEFAULT,
+  sidebarCollapsed: false,
 };
 
 const AppStateContext = createContext<AppState | null>(null);

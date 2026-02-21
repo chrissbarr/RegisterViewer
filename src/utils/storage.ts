@@ -1,4 +1,4 @@
-import type { AppState, Field, ProjectMetadata, RegisterDef, SerializedAppState } from '../types/register';
+import { SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MAX, SIDEBAR_WIDTH_DEFAULT, type AppState, type Field, type ProjectMetadata, type RegisterDef, type SerializedAppState } from '../types/register';
 import { sanitizeField, sanitizeRegisterDef } from './sanitize';
 import { validateRegisterDef, MAX_REGISTER_WIDTH, type ValidationError } from './validation';
 
@@ -15,6 +15,8 @@ export function serializeState(state: AppState): SerializedAppState {
     registerValues: serializedValues,
     theme: state.theme,
     project: state.project,
+    sidebarWidth: state.sidebarWidth,
+    sidebarCollapsed: state.sidebarCollapsed,
   };
 }
 
@@ -49,6 +51,10 @@ export function deserializeState(data: SerializedAppState): AppState {
     registerValues: values,
     theme: data.theme,
     project: sanitizeProjectMetadata(data.project),
+    sidebarWidth: typeof data.sidebarWidth === 'number'
+      ? Math.max(SIDEBAR_WIDTH_MIN, Math.min(SIDEBAR_WIDTH_MAX, data.sidebarWidth))
+      : SIDEBAR_WIDTH_DEFAULT,
+    sidebarCollapsed: data.sidebarCollapsed === true,
   };
 }
 

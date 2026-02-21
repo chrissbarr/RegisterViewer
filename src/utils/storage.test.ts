@@ -35,6 +35,8 @@ describe('deserializeState', () => {
       activeRegisterId: null,
       registerValues: { 'reg-1': '0xabcd' },
       theme: 'dark' as const,
+      sidebarWidth: 224,
+      sidebarCollapsed: false,
     };
     const state = deserializeState(serialized);
     expect(state.registerValues['reg-1']).toBe(0xABCDn);
@@ -46,6 +48,8 @@ describe('deserializeState', () => {
       activeRegisterId: null,
       registerValues: { 'reg-1': 'not-a-hex' },
       theme: 'dark' as const,
+      sidebarWidth: 224,
+      sidebarCollapsed: false,
     };
     const state = deserializeState(serialized);
     expect(state.registerValues['reg-1']).toBe(0n);
@@ -57,6 +61,8 @@ describe('deserializeState', () => {
       activeRegisterId: 'reg-1',
       registerValues: { 'reg-1': '0xFFFF' },
       theme: 'dark' as const,
+      sidebarWidth: 224,
+      sidebarCollapsed: false,
     };
     const state = deserializeState(serialized);
     expect(state.registers[0].width).toBe(128);
@@ -69,6 +75,8 @@ describe('deserializeState', () => {
       // Value with more than 128 bits set
       registerValues: { 'reg-1': '0x' + 'FF'.repeat(32) },
       theme: 'dark' as const,
+      sidebarWidth: 224,
+      sidebarCollapsed: false,
     };
     const state = deserializeState(serialized);
     expect(state.registers[0].width).toBe(128);

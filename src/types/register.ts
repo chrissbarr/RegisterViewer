@@ -108,12 +108,18 @@ export interface RegisterDef {
   fields: Field[];
 }
 
+export const SIDEBAR_WIDTH_MIN = 180;
+export const SIDEBAR_WIDTH_MAX = 400;
+export const SIDEBAR_WIDTH_DEFAULT = 224;
+
 export interface AppState {
   registers: RegisterDef[];
   activeRegisterId: string | null;
   registerValues: Record<string, bigint>; // defId -> current value
   theme: 'light' | 'dark';
   project?: ProjectMetadata;
+  sidebarWidth: number;
+  sidebarCollapsed: boolean;
 }
 
 /** Serializable version of AppState for localStorage / JSON export */
@@ -123,6 +129,8 @@ export interface SerializedAppState {
   registerValues: Record<string, string>; // defId -> hex string
   theme: 'light' | 'dark';
   project?: ProjectMetadata;
+  sidebarWidth: number;
+  sidebarCollapsed: boolean;
 }
 
 export type DecodedValue =

@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
 import type { RegisterDef, Field, FlagField } from '../../types/register';
+import { useAppState } from '../../context/app-context';
 import { useEditContext } from '../../context/edit-context';
 import { FieldDefinitionForm } from './field-definition-form';
 import { JsonConfigEditor } from './json-config-editor';
 import { formatOffset } from '../../utils/format';
-import { MAX_REGISTER_WIDTH, getFieldWarnings } from '../../utils/validation';
+import { MAX_REGISTER_WIDTH, getFieldWarnings, getRegisterOverlapWarnings } from '../../utils/validation';
 import { inputClass, inputClassSans } from './editor-styles';
 
 interface Props {
@@ -24,6 +25,7 @@ export function RegisterEditor({
   onCancel,
   saveErrors,
 }: Props) {
+  const { registers } = useAppState();
   const { dirtyCount } = useEditContext();
   const [tab, setTab] = useState<EditorTab>('gui');
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
@@ -91,6 +93,13 @@ export function RegisterEditor({
     return map;
   }, [fieldWarnings]);
 
+  // Check register overlap using the draft's current offset/width against saved registers
+  const draftOverlapWarnings = useMemo(() => {
+    const registersWithDraft = registers.map((r) => (r.id === draft.id ? draft : r));
+    return getRegisterOverlapWarnings(registersWithDraft)
+      .filter((w) => w.registerIds.includes(draft.id));
+  }, [registers, draft]);
+
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
@@ -124,6 +133,14 @@ export function RegisterEditor({
         <div className="mb-3 px-3 py-2 rounded-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-sm text-red-700 dark:text-red-300 space-y-1">
           {saveErrors.map((err, i) => (
             <p key={i}>{err}</p>
+          ))}
+        </div>
+      )}
+
+      {draftOverlapWarnings.length > 0 && (
+        <div className="mb-3 px-3 py-2 rounded-md bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-sm text-amber-700 dark:text-amber-300 space-y-1">
+          {draftOverlapWarnings.map((w, i) => (
+            <p key={i}>{'\u26A0'} {w.message}</p>
           ))}
         </div>
       )}
