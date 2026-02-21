@@ -63,7 +63,7 @@ export async function createProject(
 
 export interface GetProjectResponse {
   id: string;
-  data: string;
+  data: unknown;
   createdAt: string;
   updatedAt: string;
 }
