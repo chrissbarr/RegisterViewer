@@ -70,6 +70,7 @@ export function CloudProjectProvider({ children }: { children: ReactNode }) {
 
   // P-1: O(1) dirty tracking via generation counter instead of full JSON serialization.
   // Increments whenever data-bearing state properties change (reference comparison).
+  const mutationLockRef = useRef(false);
   const dataVersionRef = useRef(0);
   const [dataVersion, setDataVersion] = useState(0);
   const needsVersionSyncRef = useRef(false);
@@ -131,19 +132,19 @@ export function CloudProjectProvider({ children }: { children: ReactNode }) {
   };
 
   const save = useCallback(async () => {
-    // P-7: Guard against concurrent saves
-    if (!isCloudEnabled() || internal.status === 'saving') return;
+    // P-7: Guard against concurrent saves (ref for synchronous lock, immune to stale closures)
+    if (!isCloudEnabled() || mutationLockRef.current) return;
+    mutationLockRef.current = true;
+    try {
+      // If we have a project and are owner, update it
+      if (internal.projectId && internal.isOwner) {
+        const ownerToken = getOwnerTokenForProject(internal.projectId);
+        if (!ownerToken) {
+          setInternal((prev) => ({ ...prev, error: 'Owner token not found for this project.' }));
+          return;
+        }
 
-    // If we have a project and are owner, update it
-    if (internal.projectId && internal.isOwner) {
-      const ownerToken = getOwnerTokenForProject(internal.projectId);
-      if (!ownerToken) {
-        setInternal((prev) => ({ ...prev, error: 'Owner token not found for this project.' }));
-        return;
-      }
-
-      setInternal((prev) => ({ ...prev, status: 'saving', error: null }));
-      try {
+        setInternal((prev) => ({ ...prev, status: 'saving', error: null }));
         const jsonPayload = exportToJson(appStateRef.current);
         const tokenHash = await hashOwnerToken(ownerToken);
         const result = await updateProject(internal.projectId, jsonPayload, tokenHash);
@@ -158,33 +159,40 @@ export function CloudProjectProvider({ children }: { children: ReactNode }) {
           lastSavedAt: result.updatedAt,
           lastSavedVersion: dataVersionRef.current,
         }));
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to update project.';
-        setInternal((prev) => ({ ...prev, status: 'idle', error: message }));
+        return;
       }
-      return;
-    }
 
-    // Otherwise create new project
-    await createNewProject('Failed to save project.');
-  }, [internal.projectId, internal.isOwner, internal.status]);
+      // Otherwise create new project
+      await createNewProject('Failed to save project.');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to save project.';
+      setInternal((prev) => ({ ...prev, status: 'idle', error: message }));
+    } finally {
+      mutationLockRef.current = false;
+    }
+  }, [internal.projectId, internal.isOwner]);
 
   const fork = useCallback(async () => {
-    if (!isCloudEnabled() || internal.status === 'saving') return;
-    await createNewProject('Failed to save copy.');
-  }, [internal.status]);
+    if (!isCloudEnabled() || mutationLockRef.current) return;
+    mutationLockRef.current = true;
+    try {
+      await createNewProject('Failed to save copy.');
+    } finally {
+      mutationLockRef.current = false;
+    }
+  }, []);
 
   const deleteCloud = useCallback(async () => {
-    if (!internal.projectId || !internal.isOwner) return;
-
-    const ownerToken = getOwnerTokenForProject(internal.projectId);
-    if (!ownerToken) {
-      setInternal((prev) => ({ ...prev, error: 'Owner token not found.' }));
-      return;
-    }
-
-    setInternal((prev) => ({ ...prev, status: 'deleting', error: null }));
+    if (!internal.projectId || !internal.isOwner || mutationLockRef.current) return;
+    mutationLockRef.current = true;
     try {
+      const ownerToken = getOwnerTokenForProject(internal.projectId);
+      if (!ownerToken) {
+        setInternal((prev) => ({ ...prev, error: 'Owner token not found.' }));
+        return;
+      }
+
+      setInternal((prev) => ({ ...prev, status: 'deleting', error: null }));
       const tokenHash = await hashOwnerToken(ownerToken);
       await apiDeleteProject(internal.projectId, tokenHash);
       removeLocalProject(internal.projectId);
@@ -196,6 +204,8 @@ export function CloudProjectProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to delete project.';
       setInternal((prev) => ({ ...prev, status: 'idle', error: message }));
+    } finally {
+      mutationLockRef.current = false;
     }
   }, [internal.projectId, internal.isOwner]);
 
