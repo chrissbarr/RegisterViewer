@@ -21,7 +21,7 @@ function createMockKV(): KVNamespace {
       return Promise.resolve();
     }) as KVNamespace['delete'],
     list: (() => Promise.resolve({ keys: [], list_complete: true, cacheStatus: null })) as KVNamespace['list'],
-    getWithMetadata: (() => Promise.resolve({ value: null, metadata: null, cacheStatus: null })) as KVNamespace['getWithMetadata'],
+    getWithMetadata: (() => Promise.resolve({ value: null, metadata: null, cacheStatus: null })) as unknown as KVNamespace['getWithMetadata'],
   };
 }
 
