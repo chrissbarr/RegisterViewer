@@ -1,9 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Dialog } from './dialog';
 import { CopyButton } from './copy-button';
-import { loadLocalProjects, removeLocalProject, type LocalProjectRecord } from '../../utils/cloud-projects';
-import { deleteProject } from '../../utils/api-client';
-import { hashOwnerToken } from '../../utils/owner-token';
+import { loadLocalProjects, type LocalProjectRecord } from '../../utils/cloud-projects';
+import { useCloudActions } from '../../context/cloud-context';
 
 interface SavedProjectsDialogProps {
   open: boolean;
@@ -11,6 +10,7 @@ interface SavedProjectsDialogProps {
 }
 
 export function SavedProjectsDialog({ open, onClose }: SavedProjectsDialogProps) {
+  const { deleteCloudById } = useCloudActions();
   const [projects, setProjects] = useState<LocalProjectRecord[]>([]);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -34,9 +34,7 @@ export function SavedProjectsDialog({ open, onClose }: SavedProjectsDialogProps)
     setError(null);
 
     try {
-      const tokenHash = await hashOwnerToken(project.ownerToken);
-      await deleteProject(project.id, tokenHash);
-      removeLocalProject(project.id);
+      await deleteCloudById(project.id);
       setProjects((prev) => prev.filter((p) => p.id !== project.id));
       setConfirmDeleteId(null);
     } catch (err) {
@@ -45,7 +43,7 @@ export function SavedProjectsDialog({ open, onClose }: SavedProjectsDialogProps)
     } finally {
       setDeletingId(null);
     }
-  }, [confirmDeleteId]);
+  }, [confirmDeleteId, deleteCloudById]);
 
   const handleOpen = useCallback((project: LocalProjectRecord) => {
     const url = `${window.location.href.split('#')[0]}#/p/${project.id}`;

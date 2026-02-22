@@ -33,7 +33,7 @@ export interface CloudProjectState {
 interface CloudActions {
   save: () => Promise<void>;
   fork: () => Promise<void>;
-  deleteCloud: () => Promise<void>;
+  deleteCloudById: (id: string) => Promise<void>;
   setProjectId: (id: string, isOwner: boolean, shareUrl?: string | null) => void;
   clearCloud: () => void;
   dismissError: () => void;
@@ -182,32 +182,31 @@ export function CloudProjectProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const deleteCloud = useCallback(async () => {
-    if (!internal.projectId || !internal.isOwner || mutationLockRef.current) return;
+  const deleteCloudById = useCallback(async (id: string) => {
+    if (mutationLockRef.current) return;
     mutationLockRef.current = true;
     try {
-      const ownerToken = getOwnerTokenForProject(internal.projectId);
+      const ownerToken = getOwnerTokenForProject(id);
       if (!ownerToken) {
-        setInternal((prev) => ({ ...prev, error: 'Owner token not found.' }));
-        return;
+        throw new Error('Owner token not found.');
       }
 
-      setInternal((prev) => ({ ...prev, status: 'deleting', error: null }));
       const tokenHash = await hashOwnerToken(ownerToken);
-      await apiDeleteProject(internal.projectId, tokenHash);
-      removeLocalProject(internal.projectId);
+      await apiDeleteProject(id, tokenHash);
+      removeLocalProject(id);
 
-      // Clear hash from URL
-      history.replaceState(null, '', window.location.pathname + window.location.search);
-
-      setInternal({ ...initialInternalState });
+      // If we just deleted the currently-active project, clean up cloud state and URL
+      if (id === internal.projectId) {
+        history.replaceState(null, '', window.location.pathname + window.location.search);
+        setInternal({ ...initialInternalState });
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to delete project.';
-      setInternal((prev) => ({ ...prev, status: 'idle', error: message }));
+      throw new Error(message);
     } finally {
       mutationLockRef.current = false;
     }
-  }, [internal.projectId, internal.isOwner]);
+  }, [internal.projectId]);
 
   // P-6: setProjectId now marks current dataVersion as saved, avoiding re-serialization
   const setProjectId = useCallback(
@@ -278,8 +277,8 @@ export function CloudProjectProvider({ children }: { children: ReactNode }) {
 
   // P-3: Memoize actions object to prevent cascading re-renders
   const actionsWithLoad = useMemo(
-    () => ({ save, fork, deleteCloud, setProjectId, clearCloud, dismissError, loadProject }),
-    [save, fork, deleteCloud, setProjectId, clearCloud, dismissError, loadProject],
+    () => ({ save, fork, deleteCloudById, setProjectId, clearCloud, dismissError, loadProject }),
+    [save, fork, deleteCloudById, setProjectId, clearCloud, dismissError, loadProject],
   );
 
   // P-2: List individual properties as dependencies instead of entire internal object
