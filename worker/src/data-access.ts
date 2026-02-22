@@ -41,24 +41,17 @@ export async function putProject(kv: KVNamespace, project: StoredProject): Promi
 }
 
 /**
- * Update only the lastAccessedAt timestamp without re-serializing the full project.
+ * Update only the lastAccessedAt timestamp on a stored project.
  *
- * Reads the raw JSON string from KV, patches the timestamp via string
- * replacement, and writes it back. Avoids JSON.parse + JSON.stringify
- * of potentially large project data on the read path.
+ * This runs at most once per 24 hours per project (throttled by the caller),
+ * so the cost of a full parse + serialize round-trip is negligible.
  */
 export async function touchLastAccessed(kv: KVNamespace, id: string, isoTimestamp: string): Promise<void> {
-  const raw = await kv.get(projectKey(id), 'text');
-  if (!raw) return;
+  const project = await getProject(kv, id);
+  if (!project) return;
 
-  const patched = raw.replace(
-    /"lastAccessedAt"\s*:\s*"[^"]*"/,
-    `"lastAccessedAt":"${isoTimestamp}"`,
-  );
-
-  if (patched !== raw) {
-    await kv.put(projectKey(id), patched);
-  }
+  project.lastAccessedAt = isoTimestamp;
+  await putProject(kv, project);
 }
 
 /**

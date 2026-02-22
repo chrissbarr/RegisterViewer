@@ -1,6 +1,29 @@
 import { describe, it, expect } from 'vitest';
-import { projectKey, migrateStoredProject } from './data-access';
+import { projectKey, migrateStoredProject, getProject, putProject, touchLastAccessed } from './data-access';
 import type { StoredProject } from './types';
+
+/** Minimal in-memory KVNamespace mock for testing async KV operations. */
+function createMockKV(): KVNamespace {
+  const store = new Map<string, string>();
+  return {
+    get: ((key: string, format?: string) => {
+      const val = store.get(key) ?? null;
+      if (val === null) return Promise.resolve(null);
+      if (format === 'json') return Promise.resolve(JSON.parse(val));
+      return Promise.resolve(val);
+    }) as KVNamespace['get'],
+    put: ((key: string, value: string) => {
+      store.set(key, value);
+      return Promise.resolve();
+    }) as KVNamespace['put'],
+    delete: ((key: string) => {
+      store.delete(key);
+      return Promise.resolve();
+    }) as KVNamespace['delete'],
+    list: (() => Promise.resolve({ keys: [], list_complete: true, cacheStatus: null })) as KVNamespace['list'],
+    getWithMetadata: (() => Promise.resolve({ value: null, metadata: null, cacheStatus: null })) as KVNamespace['getWithMetadata'],
+  };
+}
 
 describe('projectKey', () => {
   it('formats key with project: prefix', () => {
@@ -419,5 +442,116 @@ describe('migrateStoredProject', () => {
       expect(migrated.updatedAt).toMatch(iso8601Regex);
       expect(migrated.lastAccessedAt).toMatch(iso8601Regex);
     });
+  });
+});
+
+describe('touchLastAccessed', () => {
+  const createStoredProject = (overrides?: Partial<StoredProject>): StoredProject => ({
+    schemaVersion: 1,
+    id: 'TEST123',
+    ownerTokenHash: 'a'.repeat(64),
+    createdAt: '2024-01-01T00:00:00Z',
+    updatedAt: '2024-01-02T00:00:00Z',
+    lastAccessedAt: '2024-01-03T00:00:00Z',
+    data: { version: 1, registers: [], registerValues: {} },
+    ...overrides,
+  });
+
+  it('updates lastAccessedAt on an existing project', async () => {
+    const kv = createMockKV();
+    const project = createStoredProject();
+    await putProject(kv, project);
+
+    const newTimestamp = '2024-06-15T12:00:00Z';
+    await touchLastAccessed(kv, 'TEST123', newTimestamp);
+
+    const updated = await getProject(kv, 'TEST123');
+    expect(updated).not.toBeNull();
+    expect(updated!.lastAccessedAt).toBe(newTimestamp);
+  });
+
+  it('preserves all other fields', async () => {
+    const kv = createMockKV();
+    const project = createStoredProject();
+    await putProject(kv, project);
+
+    const newTimestamp = '2024-06-15T12:00:00Z';
+    await touchLastAccessed(kv, 'TEST123', newTimestamp);
+
+    const updated = await getProject(kv, 'TEST123');
+    expect(updated).not.toBeNull();
+    expect(updated!.id).toBe(project.id);
+    expect(updated!.ownerTokenHash).toBe(project.ownerTokenHash);
+    expect(updated!.createdAt).toBe(project.createdAt);
+    expect(updated!.updatedAt).toBe(project.updatedAt);
+    expect(updated!.data).toEqual(project.data);
+  });
+
+  it('is a no-op for a non-existent project', async () => {
+    const kv = createMockKV();
+
+    // Should not throw
+    await touchLastAccessed(kv, 'NONEXISTENT', '2024-06-15T12:00:00Z');
+
+    const result = await getProject(kv, 'NONEXISTENT');
+    expect(result).toBeNull();
+  });
+
+  it('does not corrupt user data containing "lastAccessedAt"', async () => {
+    const kv = createMockKV();
+    const project = createStoredProject({
+      data: {
+        version: 1,
+        registers: [
+          {
+            name: 'lastAccessedAt',
+            width: 8,
+            fields: [],
+          },
+        ],
+        registerValues: { 'lastAccessedAt': '0xFF' },
+      },
+    });
+    await putProject(kv, project);
+
+    const newTimestamp = '2024-06-15T12:00:00Z';
+    await touchLastAccessed(kv, 'TEST123', newTimestamp);
+
+    const updated = await getProject(kv, 'TEST123');
+    expect(updated).not.toBeNull();
+    expect(updated!.lastAccessedAt).toBe(newTimestamp);
+    // User data should be preserved intact
+    expect(updated!.data.registers[0]).toEqual({
+      name: 'lastAccessedAt',
+      width: 8,
+      fields: [],
+    });
+    expect(updated!.data.registerValues['lastAccessedAt']).toBe('0xFF');
+  });
+});
+
+describe('getProject / putProject round-trip', () => {
+  it('stores and retrieves a project', async () => {
+    const kv = createMockKV();
+    const project: StoredProject = {
+      schemaVersion: 1,
+      id: 'ROUNDTRIP',
+      ownerTokenHash: 'b'.repeat(64),
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-02T00:00:00Z',
+      lastAccessedAt: '2024-01-03T00:00:00Z',
+      data: { version: 1, registers: [], registerValues: {} },
+    };
+
+    await putProject(kv, project);
+    const retrieved = await getProject(kv, 'ROUNDTRIP');
+
+    expect(retrieved).toEqual(project);
+  });
+
+  it('returns null for non-existent project', async () => {
+    const kv = createMockKV();
+    const result = await getProject(kv, 'MISSING');
+    expect(result).toBeNull();
   });
 });
