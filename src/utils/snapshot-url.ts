@@ -1,4 +1,4 @@
-import { deflate, inflate } from 'pako';
+import { deflate, Inflate } from 'pako';
 import { exportToJson } from './storage';
 import type { AppState } from '../types/register';
 
@@ -37,16 +37,41 @@ export function compressSnapshot(jsonString: string): string {
   return toUrlSafeBase64(compressed);
 }
 
+const MAX_COMPRESSED_SIZE = 512 * 1024; // 512 KB
 const MAX_DECOMPRESSED_SIZE = 2 * 1024 * 1024; // 2 MB
 
 export function decompressSnapshot(encoded: string): string {
   const compressed = fromUrlSafeBase64(encoded);
-  const decompressed = inflate(compressed);
-  if (decompressed.length > MAX_DECOMPRESSED_SIZE) {
-    throw new Error('Decompressed snapshot exceeds maximum allowed size');
+  if (compressed.length > MAX_COMPRESSED_SIZE) {
+    throw new Error('Compressed snapshot exceeds maximum allowed size');
   }
-  const decoder = new TextDecoder();
-  return decoder.decode(decompressed);
+
+  let totalSize = 0;
+  const chunks: Uint8Array[] = [];
+  const inflator = new Inflate();
+
+  inflator.onData = (chunk: Uint8Array) => {
+    totalSize += chunk.length;
+    if (totalSize > MAX_DECOMPRESSED_SIZE) {
+      throw new Error('Decompressed snapshot exceeds maximum allowed size');
+    }
+    chunks.push(chunk);
+  };
+
+  inflator.push(compressed, true);
+
+  if (inflator.err) {
+    throw new Error(`Decompression failed: ${inflator.msg}`);
+  }
+
+  const result = new Uint8Array(totalSize);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.length;
+  }
+
+  return new TextDecoder().decode(result);
 }
 
 export function buildSnapshotUrl(state: AppState): string {

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { deflate } from 'pako';
 import {
   compressSnapshot,
   decompressSnapshot,
@@ -7,6 +8,19 @@ import {
   isProjectHash,
 } from './snapshot-url';
 import { makeState, makeRegister } from '../test/helpers';
+
+/** URL-safe base64 encode (mirrors the one in snapshot-url.ts) */
+function toUrlSafeBase64(bytes: Uint8Array): string {
+  const CHUNK = 8192;
+  const parts: string[] = [];
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    parts.push(String.fromCharCode(...bytes.subarray(i, i + CHUNK)));
+  }
+  return btoa(parts.join(''))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+}
 
 describe('compressSnapshot / decompressSnapshot', () => {
   describe('round-trip encoding', () => {
@@ -213,5 +227,39 @@ describe('isProjectHash', () => {
     expect(isProjectHash('/p/ABC123DEF456')).toBe(false); // missing #
     expect(isProjectHash('#p/ABC123DEF456')).toBe(false); // missing /
     expect(isProjectHash('#/ABC123DEF456')).toBe(false); // missing p/
+  });
+});
+
+describe('decompression bomb protection', () => {
+  it('rejects compressed input exceeding MAX_COMPRESSED_SIZE (512 KB)', () => {
+    // Create a fake base64 payload > 512 KB (raw bytes)
+    // 512 * 1024 = 524288 bytes; base64 encodes 3 bytes per 4 chars
+    const oversizedBytes = new Uint8Array(600 * 1024);
+    const encoded = toUrlSafeBase64(oversizedBytes);
+
+    expect(() => decompressSnapshot(encoded)).toThrow(
+      'Compressed snapshot exceeds maximum allowed size',
+    );
+  });
+
+  it('rejects payloads that decompress beyond MAX_DECOMPRESSED_SIZE (2 MB)', () => {
+    // 3 MB of zeros compresses to a few KB with deflate
+    const bigPayload = new Uint8Array(3 * 1024 * 1024);
+    const compressed = deflate(bigPayload);
+    const encoded = toUrlSafeBase64(compressed);
+
+    // Compressed size is small, but decompressed exceeds 2 MB
+    expect(compressed.length).toBeLessThan(512 * 1024);
+    expect(() => decompressSnapshot(encoded)).toThrow(
+      'Decompressed snapshot exceeds maximum allowed size',
+    );
+  });
+
+  it('allows payloads just under the decompressed size limit', () => {
+    // Create a payload just under 2 MB
+    const justUnder = JSON.stringify({ data: 'x'.repeat(1.9 * 1024 * 1024) });
+    const compressed = compressSnapshot(justUnder);
+    const result = decompressSnapshot(compressed);
+    expect(result).toBe(justUnder);
   });
 });
