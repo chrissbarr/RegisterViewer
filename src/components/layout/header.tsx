@@ -9,11 +9,12 @@ import { Toast } from '../common/toast';
 import { GitHubIcon } from '../common/github-icon';
 import { SaveButton } from '../common/save-button';
 import { ShareButton } from '../common/share-button';
-import { SavedProjectsDialog } from '../common/saved-projects-dialog';
+import { MyProjectsDialog } from '../projects/my-projects-dialog';
 import { GITHUB_URL } from '../../constants';
 import { useAppState, useAppDispatch } from '../../context/app-context';
 import { useEditContext } from '../../context/edit-context';
 import { usePreferences, usePreferencesActions } from '../../context/preferences-context';
+import { useProjectStorageActions } from '../../context/project-storage-context';
 import { exportToJson, importFromJson, type ImportWarning } from '../../utils/storage';
 import { isCloudEnabled } from '../../utils/api-client';
 
@@ -43,8 +44,9 @@ export function Header() {
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
-  const [savedProjectsOpen, setSavedProjectsOpen] = useState(false);
+  const [myProjectsOpen, setMyProjectsOpen] = useState(false);
   const [importFeedback, setImportFeedback] = useState<ImportFeedback | null>(null);
+  const { createNewProject, switchProject } = useProjectStorageActions();
 
   function applyImportedData(json: string, showSuccessToast = true) {
     const result = importFromJson(json);
@@ -123,12 +125,12 @@ export function Header() {
     { kind: 'action', label: 'Export', onAction: handleExport },
     { kind: 'action', label: 'Examples', onAction: () => setExamplesOpen(true) },
     { kind: 'action', label: 'Clear workspace', onAction: () => setClearDialogOpen(true) },
-    ...(cloudEnabled
-      ? [
-          { kind: 'separator' as const },
-          { kind: 'action' as const, label: 'My saved projects', onAction: () => setSavedProjectsOpen(true) },
-        ]
-      : []),
+    { kind: 'separator' },
+    { kind: 'action', label: 'New project', onAction: () => {
+      const localId = createNewProject();
+      switchProject(localId);
+    }},
+    { kind: 'action', label: 'My Projects', onAction: () => setMyProjectsOpen(true) },
     { kind: 'separator' },
     {
       kind: 'toggle',
@@ -188,12 +190,10 @@ export function Header() {
               dispatch({ type: 'CLEAR_WORKSPACE' });
             }}
           />
-          {cloudEnabled && (
-            <SavedProjectsDialog
-              open={savedProjectsOpen}
-              onClose={() => setSavedProjectsOpen(false)}
-            />
-          )}
+          <MyProjectsDialog
+            open={myProjectsOpen}
+            onClose={() => setMyProjectsOpen(false)}
+          />
         </div>
       </header>
 
