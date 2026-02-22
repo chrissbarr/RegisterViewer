@@ -8,6 +8,7 @@
     "tail": "wrangler tail",
     "test": "vitest run",
     "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "knip": "knip"
   },
