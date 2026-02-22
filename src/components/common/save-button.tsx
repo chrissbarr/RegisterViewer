@@ -27,7 +27,7 @@ export function SaveButton() {
 
   let tooltip: string;
   if (hasProject && isOwner) {
-    tooltip = 'Update saved project';
+    tooltip = 'Update cloud copy';
   } else if (hasProject && !isOwner) {
     tooltip = 'Save as copy';
   } else {
