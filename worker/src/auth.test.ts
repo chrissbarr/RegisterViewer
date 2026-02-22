@@ -67,7 +67,7 @@ describe('extractTokenHash', () => {
     expect(result).toBeNull();
   });
 
-  it('returns null if hash contains uppercase letters', () => {
+  it('normalizes uppercase hash to lowercase', () => {
     const uppercaseHash = 'A'.repeat(64);
     const request = new Request('https://example.com', {
       headers: {
@@ -76,10 +76,10 @@ describe('extractTokenHash', () => {
     });
 
     const result = extractTokenHash(request);
-    expect(result).toBeNull();
+    expect(result).toBe(uppercaseHash.toLowerCase());
   });
 
-  it('normalizes hash to lowercase', () => {
+  it('normalizes mixed-case hash to lowercase', () => {
     const mixedCaseHash = 'AbCdEf0123456789'.repeat(4);
     const request = new Request('https://example.com', {
       headers: {

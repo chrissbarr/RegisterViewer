@@ -237,7 +237,7 @@ describe('migrateStoredProject', () => {
       expect(() => migrateStoredProject(undefined)).toThrow('not an object');
       expect(() => migrateStoredProject('string')).toThrow('not an object');
       expect(() => migrateStoredProject(123)).toThrow('not an object');
-      expect(() => migrateStoredProject([])).toThrow('not an object');
+      expect(() => migrateStoredProject([])).toThrow('missing a valid id');
     });
 
     it('throws if id is missing', () => {

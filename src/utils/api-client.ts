@@ -44,7 +44,7 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json();
 }
 
-export interface CreateProjectResponse {
+interface CreateProjectResponse {
   id: string;
   shareUrl: string;
   createdAt: string;
@@ -61,7 +61,7 @@ export async function createProject(
   });
 }
 
-export interface GetProjectResponse {
+interface GetProjectResponse {
   id: string;
   data: unknown;
   createdAt: string;
@@ -72,7 +72,7 @@ export async function getProject(id: string): Promise<GetProjectResponse> {
   return apiFetch<GetProjectResponse>(`/api/projects/${encodeURIComponent(id)}`);
 }
 
-export interface UpdateProjectResponse {
+interface UpdateProjectResponse {
   id: string;
   updatedAt: string;
 }

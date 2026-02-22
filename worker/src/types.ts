@@ -8,7 +8,7 @@ export interface Env {
 
 // ---- Project Data (matches frontend export format) ----
 
-export interface ProjectMetadata {
+interface ProjectMetadata {
   title?: string;
   description?: string;
   date?: string;

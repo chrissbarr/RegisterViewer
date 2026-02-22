@@ -1,7 +1,7 @@
 import { getProject } from './api-client';
 import { importFromJson, type ImportResult } from './storage';
 
-export interface CloudProjectLoadResult extends ImportResult {
+interface CloudProjectLoadResult extends ImportResult {
   updatedAt: string;
 }
 

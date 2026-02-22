@@ -20,7 +20,7 @@ import {
   updateLocalProject,
 } from '../utils/cloud-projects';
 
-export interface CloudProjectState {
+interface CloudProjectState {
   projectId: string | null;
   isOwner: boolean;
   isDirty: boolean;
