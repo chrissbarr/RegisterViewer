@@ -10,7 +10,7 @@ import {
 } from '../utils/project-storage';
 import type { ProjectListEntry, StoredLocalProject } from '../types/project';
 import type { AppState, SerializedAppState } from '../types/register';
-import { SIDEBAR_WIDTH_DEFAULT, ADDRESS_UNIT_BITS_DEFAULT } from '../types/register';
+import { ADDRESS_UNIT_BITS_DEFAULT } from '../types/register';
 
 const ACTIVE_PROJECT_SESSION_KEY = 'register-viewer-active-project';
 
@@ -77,9 +77,6 @@ export function ProjectStorageProvider({ children, initialLocalId }: ProjectStor
       registers: [],
       activeRegisterId: null,
       registerValues: {},
-      theme: 'dark',
-      sidebarWidth: SIDEBAR_WIDTH_DEFAULT,
-      sidebarCollapsed: false,
       mapTableWidth: 32,
       mapShowGaps: true,
       mapSortDescending: false,
@@ -177,9 +174,6 @@ function deserializeState(project: StoredLocalProject): AppState {
     registers: s.registers,
     activeRegisterId: s.activeRegisterId,
     registerValues: values,
-    theme: s.theme,
-    sidebarWidth: s.sidebarWidth,
-    sidebarCollapsed: s.sidebarCollapsed,
     mapTableWidth: s.mapTableWidth ?? 32,
     mapShowGaps: s.mapShowGaps ?? true,
     mapSortDescending: s.mapSortDescending ?? false,

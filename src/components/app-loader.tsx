@@ -1,23 +1,29 @@
 import { useState, useEffect, useCallback } from 'react';
 import { AppProvider } from '../context/app-context';
 import { AppShell } from './layout/app-shell';
-import { loadFromLocalStorage, importFromJson } from '../utils/storage';
+import { importFromJson, deserializeState, serializeState } from '../utils/storage';
 import { createSeedRegisters } from '../utils/seed-data';
-import { SIDEBAR_WIDTH_DEFAULT, ADDRESS_UNIT_BITS_DEFAULT, type AppState } from '../types/register';
-import { isSnapshotHash, isProjectHash, decompressSnapshot } from '../utils/snapshot-url';
+import { ADDRESS_UNIT_BITS_DEFAULT, type AppState } from '../types/register';
+import { decompressSnapshot } from '../utils/snapshot-url';
 import { isCloudEnabled } from '../utils/api-client';
 import { fetchAndParseCloudProject } from '../utils/cloud-project-loader';
 import { checkOwnership } from '../utils/owner-token';
+import { resolveInitialProject } from '../utils/project-resolution';
+import {
+  runMigrationIfNeeded,
+  loadManifest,
+  loadProject,
+  createProject,
+} from '../utils/project-storage';
+
+const ACTIVE_PROJECT_SESSION_KEY = 'register-viewer-active-project';
 
 type LoaderState =
   | { phase: 'loading' }
-  | { phase: 'ready'; initialState: AppState | undefined; cloudInit?: { projectId: string; isOwner: boolean } }
+  | { phase: 'ready'; initialState: AppState | undefined; cloudInit?: { projectId: string; isOwner: boolean }; localId?: string }
   | { phase: 'error'; message: string };
 
-function getDefaultState(): AppState | undefined {
-  const saved = loadFromLocalStorage();
-  if (saved) return saved;
-
+function createSeedState(): AppState {
   const seedRegisters = createSeedRegisters();
   const seedValues: Record<string, bigint> = {};
   for (const reg of seedRegisters) {
@@ -27,18 +33,21 @@ function getDefaultState(): AppState | undefined {
     registers: seedRegisters,
     activeRegisterId: seedRegisters[0]?.id ?? null,
     registerValues: seedValues,
-    theme: 'dark',
     project: {
       title: 'Example Project',
       description: 'Demonstrates register field types. Open Project Settings from the menu to customize.',
     },
-    sidebarWidth: SIDEBAR_WIDTH_DEFAULT,
-    sidebarCollapsed: false,
     mapTableWidth: 32,
     mapShowGaps: true,
     mapSortDescending: false,
     addressUnitBits: ADDRESS_UNIT_BITS_DEFAULT,
   };
+}
+
+function createDefaultProject(): { state: AppState; localId: string } {
+  const seedState = createSeedState();
+  const localId = createProject(serializeState(seedState), 'Example Project');
+  return { state: seedState, localId };
 }
 
 function parseSnapshotHash(hash: string): AppState | null {
@@ -48,7 +57,6 @@ function parseSnapshotHash(hash: string): AppState | null {
     const result = importFromJson(json);
     if (!result || result.registers.length === 0) return null;
 
-    const defaultState = getDefaultState();
     const values: Record<string, bigint> = {};
     for (const reg of result.registers) {
       values[reg.id] = result.values[reg.id] ?? 0n;
@@ -57,13 +65,10 @@ function parseSnapshotHash(hash: string): AppState | null {
       registers: result.registers,
       activeRegisterId: result.registers[0]?.id ?? null,
       registerValues: values,
-      theme: defaultState?.theme ?? 'dark',
       project: result.project,
-      sidebarWidth: defaultState?.sidebarWidth ?? SIDEBAR_WIDTH_DEFAULT,
-      sidebarCollapsed: defaultState?.sidebarCollapsed ?? false,
-      mapTableWidth: defaultState?.mapTableWidth ?? 32,
-      mapShowGaps: defaultState?.mapShowGaps ?? true,
-      mapSortDescending: defaultState?.mapSortDescending ?? false,
+      mapTableWidth: 32,
+      mapShowGaps: true,
+      mapSortDescending: false,
       addressUnitBits: result.addressUnitBits ?? ADDRESS_UNIT_BITS_DEFAULT,
     };
   } catch {
@@ -71,81 +76,112 @@ function parseSnapshotHash(hash: string): AppState | null {
   }
 }
 
-function extractProjectId(hash: string): string | null {
-  // #/p/{12-char-id}
-  const match = hash.match(/^#\/p\/([A-Za-z0-9]{12})$/);
-  return match ? match[1] : null;
+function getSessionActiveId(): string | null {
+  try {
+    return sessionStorage.getItem(ACTIVE_PROJECT_SESSION_KEY);
+  } catch {
+    return null;
+  }
 }
 
 export function AppLoader() {
   const [state, setState] = useState<LoaderState>({ phase: 'loading' });
 
   useEffect(() => {
+    // Step 1: Run migration from legacy storage
+    runMigrationIfNeeded();
+
+    // Step 2: Load manifest and resolve initial project
+    const manifest = loadManifest();
     const hash = window.location.hash;
+    const sessionActiveId = getSessionActiveId();
+    const cloudEnabled = isCloudEnabled();
 
-    // Snapshot URL: #data=...
-    if (isSnapshotHash(hash)) {
-      const parsed = parseSnapshotHash(hash);
-      if (parsed) {
-        setState({ phase: 'ready', initialState: parsed });
-      } else {
-        setState({ phase: 'error', message: 'Failed to decode shared snapshot. The URL may be corrupted or invalid.' });
-      }
-      return;
-    }
+    const resolution = resolveInitialProject(hash, manifest, sessionActiveId, cloudEnabled);
 
-    // Cloud project URL: #/p/{id}
-    if (isProjectHash(hash) && isCloudEnabled()) {
-      const projectId = extractProjectId(hash);
-      if (!projectId) {
-        setState({ phase: 'error', message: 'Invalid project URL.' });
-        return;
+    switch (resolution.type) {
+      case 'snapshot': {
+        const parsed = parseSnapshotHash(hash);
+        if (parsed) {
+          setState({ phase: 'ready', initialState: parsed });
+        } else {
+          setState({ phase: 'error', message: 'Failed to decode shared snapshot. The URL may be corrupted or invalid.' });
+        }
+        break;
       }
 
-      fetchAndParseCloudProject(projectId)
-        .then((importResult) => {
-          const defaultState = getDefaultState();
-          const values: Record<string, bigint> = {};
-          for (const reg of importResult.registers) {
-            values[reg.id] = importResult.values[reg.id] ?? 0n;
-          }
+      case 'cloud': {
+        fetchAndParseCloudProject(resolution.cloudId)
+          .then((importResult) => {
+            const values: Record<string, bigint> = {};
+            for (const reg of importResult.registers) {
+              values[reg.id] = importResult.values[reg.id] ?? 0n;
+            }
 
-          const loadedState: AppState = {
-            registers: importResult.registers,
-            activeRegisterId: importResult.registers[0]?.id ?? null,
-            registerValues: values,
-            theme: defaultState?.theme ?? 'dark',
-            project: importResult.project,
-            sidebarWidth: defaultState?.sidebarWidth ?? SIDEBAR_WIDTH_DEFAULT,
-            sidebarCollapsed: defaultState?.sidebarCollapsed ?? false,
-            mapTableWidth: defaultState?.mapTableWidth ?? 32,
-            mapShowGaps: defaultState?.mapShowGaps ?? true,
-            mapSortDescending: defaultState?.mapSortDescending ?? false,
-            addressUnitBits: importResult.addressUnitBits ?? ADDRESS_UNIT_BITS_DEFAULT,
-          };
+            const loadedState: AppState = {
+              registers: importResult.registers,
+              activeRegisterId: importResult.registers[0]?.id ?? null,
+              registerValues: values,
+              project: importResult.project,
+              mapTableWidth: 32,
+              mapShowGaps: true,
+              mapSortDescending: false,
+              addressUnitBits: importResult.addressUnitBits ?? ADDRESS_UNIT_BITS_DEFAULT,
+            };
 
-          const isOwner = checkOwnership(projectId);
-          setState({
-            phase: 'ready',
-            initialState: loadedState,
-            cloudInit: { projectId, isOwner },
+            const isOwner = checkOwnership(resolution.cloudId);
+            setState({
+              phase: 'ready',
+              initialState: loadedState,
+              cloudInit: { projectId: resolution.cloudId, isOwner },
+            });
+          })
+          .catch((err) => {
+            const message = err instanceof Error ? err.message : 'Failed to load project.';
+            setState({ phase: 'error', message });
           });
-        })
-        .catch((err) => {
-          const message = err instanceof Error ? err.message : 'Failed to load project.';
-          setState({ phase: 'error', message });
-        });
-      return;
-    }
+        break;
+      }
 
-    // Default: load from localStorage or seed data
-    setState({ phase: 'ready', initialState: getDefaultState() });
+      case 'local': {
+        const project = loadProject(resolution.localId);
+        if (project) {
+          const appState = deserializeState(project.state);
+          setState({ phase: 'ready', initialState: appState, localId: resolution.localId });
+        } else {
+          // Project record missing — fall back to creating default
+          const { state: seedState, localId } = createDefaultProject();
+          setState({ phase: 'ready', initialState: seedState, localId });
+        }
+        break;
+      }
+
+      case 'create-default': {
+        const { state: seedState, localId } = createDefaultProject();
+        setState({ phase: 'ready', initialState: seedState, localId });
+        break;
+      }
+    }
   }, []);
 
   const handleContinue = useCallback(() => {
     // Clear the hash and load default state
     history.replaceState(null, '', window.location.pathname + window.location.search);
-    setState({ phase: 'ready', initialState: getDefaultState() });
+    runMigrationIfNeeded();
+    const manifest = loadManifest();
+    if (manifest.projects.length > 0) {
+      const sorted = [...manifest.projects].sort(
+        (a, b) => new Date(b.localSavedAt).getTime() - new Date(a.localSavedAt).getTime(),
+      );
+      const project = loadProject(sorted[0].localId);
+      if (project) {
+        const appState = deserializeState(project.state);
+        setState({ phase: 'ready', initialState: appState, localId: sorted[0].localId });
+        return;
+      }
+    }
+    const { state: seedState, localId } = createDefaultProject();
+    setState({ phase: 'ready', initialState: seedState, localId });
   }, []);
 
   if (state.phase === 'loading') {
@@ -192,8 +228,8 @@ export function AppLoader() {
   }
 
   return (
-    <AppProvider savedState={state.initialState} key={state.cloudInit?.projectId ?? 'default'}>
-      <AppShell cloudInit={state.cloudInit} />
+    <AppProvider savedState={state.initialState} key={state.cloudInit?.projectId ?? state.localId ?? 'default'}>
+      <AppShell cloudInit={state.cloudInit} initialLocalId={state.localId} />
     </AppProvider>
   );
 }

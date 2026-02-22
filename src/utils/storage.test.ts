@@ -34,9 +34,6 @@ describe('deserializeState', () => {
       registers: [],
       activeRegisterId: null,
       registerValues: { 'reg-1': '0xabcd' },
-      theme: 'dark' as const,
-      sidebarWidth: 224,
-      sidebarCollapsed: false,
     };
     const state = deserializeState(serialized);
     expect(state.registerValues['reg-1']).toBe(0xABCDn);
@@ -47,9 +44,6 @@ describe('deserializeState', () => {
       registers: [],
       activeRegisterId: null,
       registerValues: { 'reg-1': 'not-a-hex' },
-      theme: 'dark' as const,
-      sidebarWidth: 224,
-      sidebarCollapsed: false,
     };
     const state = deserializeState(serialized);
     expect(state.registerValues['reg-1']).toBe(0n);
@@ -60,9 +54,6 @@ describe('deserializeState', () => {
       registers: [{ id: 'reg-1', name: 'WIDE', width: 256, fields: [] }],
       activeRegisterId: 'reg-1',
       registerValues: { 'reg-1': '0xFFFF' },
-      theme: 'dark' as const,
-      sidebarWidth: 224,
-      sidebarCollapsed: false,
     };
     const state = deserializeState(serialized);
     expect(state.registers[0].width).toBe(128);
@@ -74,9 +65,6 @@ describe('deserializeState', () => {
       activeRegisterId: 'reg-1',
       // Value with more than 128 bits set
       registerValues: { 'reg-1': '0x' + 'FF'.repeat(32) },
-      theme: 'dark' as const,
-      sidebarWidth: 224,
-      sidebarCollapsed: false,
     };
     const state = deserializeState(serialized);
     expect(state.registers[0].width).toBe(128);
@@ -90,9 +78,6 @@ describe('deserializeState', () => {
       registers: [],
       activeRegisterId: null,
       registerValues: {},
-      theme: 'dark' as const,
-      sidebarWidth: 224,
-      sidebarCollapsed: false,
     };
     const state = deserializeState(serialized);
     expect(state.mapTableWidth).toBe(32);
@@ -104,9 +89,6 @@ describe('deserializeState', () => {
       registers: [],
       activeRegisterId: null,
       registerValues: {},
-      theme: 'dark' as const,
-      sidebarWidth: 224,
-      sidebarCollapsed: false,
       mapTableWidth: 99 as never,
       mapShowGaps: true,
     };
@@ -114,14 +96,27 @@ describe('deserializeState', () => {
     expect(state.mapTableWidth).toBe(32);
   });
 
+  it('ignores legacy theme/sidebar fields without errors', () => {
+    const serialized = {
+      registers: [],
+      activeRegisterId: null,
+      registerValues: {},
+      theme: 'dark' as never,
+      sidebarWidth: 250 as never,
+      sidebarCollapsed: true as never,
+    };
+    const state = deserializeState(serialized);
+    expect(state.registers).toEqual([]);
+    expect('theme' in state).toBe(false);
+    expect('sidebarWidth' in state).toBe(false);
+    expect('sidebarCollapsed' in state).toBe(false);
+  });
+
   it('preserves mapShowGaps false', () => {
     const serialized = {
       registers: [],
       activeRegisterId: null,
       registerValues: {},
-      theme: 'dark' as const,
-      sidebarWidth: 224,
-      sidebarCollapsed: false,
       mapTableWidth: 16 as const,
       mapShowGaps: false,
     };
@@ -142,13 +137,11 @@ describe('save/loadFromLocalStorage', () => {
       registers: [reg],
       activeRegisterId: 'reg-1',
       registerValues: { 'reg-1': 0x1234n },
-      theme: 'light',
     });
     saveToLocalStorage(state);
     const loaded = loadFromLocalStorage();
     expect(loaded).not.toBeNull();
     expect(loaded!.registerValues['reg-1']).toBe(0x1234n);
-    expect(loaded!.theme).toBe('light');
     expect(loaded!.activeRegisterId).toBe('reg-1');
   });
 
@@ -571,9 +564,6 @@ describe('addressUnitBits round-trip', () => {
       registers: [],
       activeRegisterId: null,
       registerValues: {},
-      theme: 'dark' as const,
-      sidebarWidth: 224,
-      sidebarCollapsed: false,
     };
     const state = deserializeState(serialized);
     expect(state.addressUnitBits).toBe(8);
@@ -584,9 +574,6 @@ describe('addressUnitBits round-trip', () => {
       registers: [],
       activeRegisterId: null,
       registerValues: {},
-      theme: 'dark' as const,
-      sidebarWidth: 224,
-      sidebarCollapsed: false,
       addressUnitBits: 7 as never,
     };
     const state = deserializeState(serialized);

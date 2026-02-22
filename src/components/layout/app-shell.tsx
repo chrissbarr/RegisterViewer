@@ -3,9 +3,10 @@ import { SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MAX, type AppState } from '../../types
 import { useAppState } from '../../context/app-context';
 import { EditProvider } from '../../context/edit-context';
 import { PreferencesProvider, usePreferences, usePreferencesActions } from '../../context/preferences-context';
-import { ProjectStorageProvider } from '../../context/project-storage-context';
+import { ProjectStorageProvider, useProjectStorage } from '../../context/project-storage-context';
 import { CloudSyncProvider, useCloudSync, useCloudSyncActions } from '../../context/cloud-sync-context';
-import { saveToLocalStorage } from '../../utils/storage';
+import { serializeState } from '../../utils/storage';
+import { saveProject, loadProject } from '../../utils/project-storage';
 import { Header } from './header';
 import { Sidebar } from './sidebar';
 import { MainPanel } from '../viewer/main-panel';
@@ -16,6 +17,7 @@ const SAVE_DEBOUNCE_MS = 300;
 
 interface AppShellProps {
   cloudInit?: { projectId: string; isOwner: boolean };
+  initialLocalId?: string | null;
 }
 
 function AppShellInner({ cloudInit }: AppShellProps) {
@@ -25,6 +27,7 @@ function AppShellInner({ cloudInit }: AppShellProps) {
   const pendingStateRef = useRef<AppState | null>(null);
   const cloud = useCloudSync();
   const cloudActions = useCloudSyncActions();
+  const { activeLocalId } = useProjectStorage();
 
   // Initialize cloud state from props (when loaded from #/p/{id} URL)
   const cloudInitRef = useRef(cloudInit);
@@ -36,21 +39,39 @@ function AppShellInner({ cloudInit }: AppShellProps) {
     }
   }, [cloudActions]);
 
-  // Auto-save to localStorage (debounced)
+  // Auto-save to per-project localStorage key (debounced)
+  const activeLocalIdRef = useRef(activeLocalId);
   useEffect(() => {
+    activeLocalIdRef.current = activeLocalId;
+  }, [activeLocalId]);
+
+  useEffect(() => {
+    if (!activeLocalId) return;
     pendingStateRef.current = state;
     const timer = setTimeout(() => {
-      saveToLocalStorage(state);
+      const id = activeLocalIdRef.current;
+      if (id) {
+        const project = loadProject(id);
+        if (project) {
+          project.state = serializeState(state);
+          saveProject(project);
+        }
+      }
       pendingStateRef.current = null;
     }, SAVE_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [state]);
+  }, [state, activeLocalId]);
 
   // Flush any pending save on unmount or page unload
   useEffect(() => {
     const flush = () => {
-      if (pendingStateRef.current !== null) {
-        saveToLocalStorage(pendingStateRef.current);
+      const id = activeLocalIdRef.current;
+      if (pendingStateRef.current !== null && id) {
+        const project = loadProject(id);
+        if (project) {
+          project.state = serializeState(pendingStateRef.current);
+          saveProject(project);
+        }
         pendingStateRef.current = null;
       }
     };
@@ -166,11 +187,11 @@ function AppShellInner({ cloudInit }: AppShellProps) {
   );
 }
 
-export function AppShell({ cloudInit }: AppShellProps) {
+export function AppShell({ cloudInit, initialLocalId }: AppShellProps) {
   return (
     <PreferencesProvider>
       <EditProvider>
-        <ProjectStorageProvider initialLocalId={null}>
+        <ProjectStorageProvider initialLocalId={initialLocalId ?? null}>
           <CloudSyncProvider>
             <AppShellInner cloudInit={cloudInit} />
           </CloudSyncProvider>

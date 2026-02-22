@@ -1,4 +1,4 @@
-import { SIDEBAR_WIDTH_DEFAULT, ADDRESS_UNIT_BITS_DEFAULT, type IntegerField, type FlagField, type EnumField, type FloatField, type FixedPointField, type RegisterDef, type AppState } from '../types/register';
+import { ADDRESS_UNIT_BITS_DEFAULT, type IntegerField, type FlagField, type EnumField, type FloatField, type FixedPointField, type RegisterDef, type AppState } from '../types/register';
 
 /** Creates an IntegerField by default. For other types, use the type-specific factories. */
 export function makeField(overrides: Partial<IntegerField> = {}): IntegerField {
@@ -74,9 +74,6 @@ export function makeState(overrides: Partial<AppState> = {}): AppState {
     registers: [],
     activeRegisterId: null,
     registerValues: {},
-    theme: 'dark',
-    sidebarWidth: SIDEBAR_WIDTH_DEFAULT,
-    sidebarCollapsed: false,
     mapTableWidth: 32,
     mapShowGaps: true,
     mapSortDescending: false,

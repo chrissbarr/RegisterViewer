@@ -1,4 +1,4 @@
-import { SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MAX, SIDEBAR_WIDTH_DEFAULT, ADDRESS_UNIT_BITS_DEFAULT, ADDRESS_UNIT_BITS_VALUES, MAP_TABLE_WIDTH_VALUES, type AddressUnitBits, type AppState, type Field, type MapTableWidth, type ProjectMetadata, type RegisterDef, type SerializedAppState } from '../types/register';
+import { ADDRESS_UNIT_BITS_DEFAULT, ADDRESS_UNIT_BITS_VALUES, MAP_TABLE_WIDTH_VALUES, type AddressUnitBits, type AppState, type Field, type MapTableWidth, type ProjectMetadata, type RegisterDef, type SerializedAppState } from '../types/register';
 import { sanitizeField, sanitizeRegisterDef } from './sanitize';
 import { validateRegisterDef, MAX_REGISTER_WIDTH, type ValidationError } from './validation';
 
@@ -13,10 +13,7 @@ export function serializeState(state: AppState): SerializedAppState {
     registers: state.registers,
     activeRegisterId: state.activeRegisterId,
     registerValues: serializedValues,
-    theme: state.theme,
     project: state.project,
-    sidebarWidth: state.sidebarWidth,
-    sidebarCollapsed: state.sidebarCollapsed,
     mapTableWidth: state.mapTableWidth,
     mapShowGaps: state.mapShowGaps,
     mapSortDescending: state.mapSortDescending,
@@ -53,12 +50,7 @@ export function deserializeState(data: SerializedAppState): AppState {
     registers,
     activeRegisterId: data.activeRegisterId,
     registerValues: values,
-    theme: data.theme,
     project: sanitizeProjectMetadata(data.project),
-    sidebarWidth: typeof data.sidebarWidth === 'number'
-      ? Math.max(SIDEBAR_WIDTH_MIN, Math.min(SIDEBAR_WIDTH_MAX, data.sidebarWidth))
-      : SIDEBAR_WIDTH_DEFAULT,
-    sidebarCollapsed: data.sidebarCollapsed === true,
     mapTableWidth: (MAP_TABLE_WIDTH_VALUES as readonly number[]).includes(data.mapTableWidth as number)
       ? data.mapTableWidth as MapTableWidth : 32,
     mapShowGaps: data.mapShowGaps !== false,

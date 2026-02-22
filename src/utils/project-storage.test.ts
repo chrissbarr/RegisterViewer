@@ -21,9 +21,6 @@ function makeSerializedState(overrides?: Partial<SerializedAppState>): Serialize
     registers: [],
     activeRegisterId: null,
     registerValues: {},
-    theme: 'light',
-    sidebarWidth: 224,
-    sidebarCollapsed: false,
     ...overrides,
   };
 }
@@ -264,10 +261,10 @@ describe('createProject', () => {
   });
 
   it('stores the initial state', () => {
-    const state = makeSerializedState({ theme: 'dark' });
+    const state = makeSerializedState({ mapTableWidth: 16 });
     const localId = createProject(state);
     const project = loadProject(localId);
-    expect(project!.state.theme).toBe('dark');
+    expect(project!.state.mapTableWidth).toBe(16);
   });
 });
 

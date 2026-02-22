@@ -123,10 +123,7 @@ export interface AppState {
   registers: RegisterDef[];
   activeRegisterId: string | null;
   registerValues: Record<string, bigint>; // defId -> current value
-  theme: 'light' | 'dark';
   project?: ProjectMetadata;
-  sidebarWidth: number;
-  sidebarCollapsed: boolean;
   mapTableWidth: MapTableWidth;
   mapShowGaps: boolean;
   mapSortDescending: boolean;
@@ -138,10 +135,7 @@ export interface SerializedAppState {
   registers: RegisterDef[];
   activeRegisterId: string | null;
   registerValues: Record<string, string>; // defId -> hex string
-  theme: 'light' | 'dark';
   project?: ProjectMetadata;
-  sidebarWidth: number;
-  sidebarCollapsed: boolean;
   mapTableWidth?: MapTableWidth;
   mapShowGaps?: boolean;
   mapSortDescending?: boolean;
