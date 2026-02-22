@@ -37,6 +37,7 @@ interface CloudActions {
   setProjectId: (id: string, isOwner: boolean, shareUrl?: string | null) => void;
   clearCloud: () => void;
   dismissError: () => void;
+  loadProject: (id: string) => Promise<void>;
 }
 
 const CloudProjectStateContext = createContext<CloudProjectState | null>(null);
@@ -270,6 +271,7 @@ export function CloudProjectProvider({ children }: { children: ReactNode }) {
           status: 'idle',
           error: message,
         }));
+        throw err;
       }
     },
     [dispatch],
@@ -320,8 +322,8 @@ export function useCloudProject(): CloudProjectState {
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
-export function useCloudActions(): CloudActions & { loadProject?: (id: string) => Promise<void> } {
+export function useCloudActions(): CloudActions {
   const ctx = useContext(CloudActionsContext);
   if (!ctx) throw new Error('useCloudActions must be used within CloudProjectProvider');
-  return ctx as CloudActions & { loadProject?: (id: string) => Promise<void> };
+  return ctx as CloudActions;
 }

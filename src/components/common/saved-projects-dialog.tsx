@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Dialog } from './dialog';
 import { CopyButton } from './copy-button';
 import { loadLocalProjects, type LocalProjectRecord } from '../../utils/cloud-projects';
-import { useCloudActions } from '../../context/cloud-context';
+import { useCloudActions, useCloudProject } from '../../context/cloud-context';
 
 interface SavedProjectsDialogProps {
   open: boolean;
@@ -10,8 +10,10 @@ interface SavedProjectsDialogProps {
 }
 
 export function SavedProjectsDialog({ open, onClose }: SavedProjectsDialogProps) {
-  const { deleteCloudById } = useCloudActions();
+  const { deleteCloudById, loadProject, dismissError } = useCloudActions();
+  const { isDirty } = useCloudProject();
   const [projects, setProjects] = useState<LocalProjectRecord[]>([]);
+  const [openingId, setOpeningId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -45,11 +47,26 @@ export function SavedProjectsDialog({ open, onClose }: SavedProjectsDialogProps)
     }
   }, [confirmDeleteId, deleteCloudById]);
 
-  const handleOpen = useCallback((project: LocalProjectRecord) => {
-    const url = `${window.location.href.split('#')[0]}#/p/${project.id}`;
-    window.location.href = url;
-    window.location.reload();
-  }, []);
+  const handleOpen = useCallback(async (project: LocalProjectRecord) => {
+    if (isDirty && !window.confirm('You have unsaved changes. Discard and open this project?')) {
+      return;
+    }
+
+    setOpeningId(project.id);
+    setError(null);
+
+    try {
+      await loadProject(project.id);
+      window.location.hash = `#/p/${project.id}`;
+      onClose();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to open project.';
+      setError(message);
+      dismissError();
+    } finally {
+      setOpeningId(null);
+    }
+  }, [isDirty, loadProject, onClose, dismissError]);
 
   const handleDownloadRecoveryKey = useCallback(() => {
     // Find the owner token from the first project (they should all use the same token)
@@ -95,6 +112,7 @@ export function SavedProjectsDialog({ open, onClose }: SavedProjectsDialogProps)
           <ul className="space-y-2">
             {projects.map((project) => {
               const shareUrl = project.shareUrl || `${window.location.href.split('#')[0]}#/p/${project.id}`;
+              const isOpening = openingId === project.id;
               const isConfirming = confirmDeleteId === project.id;
               const isDeleting = deletingId === project.id;
 
@@ -117,16 +135,25 @@ export function SavedProjectsDialog({ open, onClose }: SavedProjectsDialogProps)
                     <CopyButton value={shareUrl} label="Copy project URL" />
                     <button
                       onClick={() => handleOpen(project)}
+                      disabled={isOpening}
                       title="Open project"
                       aria-label="Open project"
                       className="p-1 rounded text-gray-400 dark:text-gray-500
                         hover:text-blue-600 dark:hover:text-blue-400
                         hover:bg-gray-100 dark:hover:bg-gray-700
+                        disabled:opacity-50 disabled:cursor-not-allowed
                         transition-colors"
                     >
-                      <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
-                        <path d="M3.5 1.75v11.5c0 .09.048.17.126.217a.25.25 0 0 0 .25-.004l5.49-3.12a.75.75 0 0 1 .739 0l5.49 3.12a.25.25 0 0 0 .374-.217V1.75a.25.25 0 0 0-.25-.25h-12a.25.25 0 0 0-.25.25ZM1.005 1.75C1.005.784 1.784.005 2.75.005h10.5c.966 0 1.745.779 1.745 1.745v11.876a1.748 1.748 0 0 1-2.626 1.514L8 12.626l-4.37 2.514A1.748 1.748 0 0 1 1.005 13.626Z" />
-                      </svg>
+                      {isOpening ? (
+                        <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" className="animate-spin">
+                          <path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0Zm0 14A6 6 0 1 1 8 2a6 6 0 0 1 0 12Z" opacity=".25" />
+                          <path d="M14 8a6 6 0 0 0-6-6V0a8 8 0 0 1 8 8Z" />
+                        </svg>
+                      ) : (
+                        <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+                          <path d="M3.5 1.75v11.5c0 .09.048.17.126.217a.25.25 0 0 0 .25-.004l5.49-3.12a.75.75 0 0 1 .739 0l5.49 3.12a.25.25 0 0 0 .374-.217V1.75a.25.25 0 0 0-.25-.25h-12a.25.25 0 0 0-.25.25ZM1.005 1.75C1.005.784 1.784.005 2.75.005h10.5c.966 0 1.745.779 1.745 1.745v11.876a1.748 1.748 0 0 1-2.626 1.514L8 12.626l-4.37 2.514A1.748 1.748 0 0 1 1.005 13.626Z" />
+                        </svg>
+                      )}
                     </button>
                     <button
                       onClick={() => handleDelete(project)}
