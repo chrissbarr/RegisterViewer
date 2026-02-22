@@ -8,11 +8,13 @@ import { DeleteConfirmation } from './delete-confirmation';
 interface ProjectListItemProps {
   project: ProjectListEntry;
   isActive: boolean;
+  isStaleCloud?: boolean;
   onOpen: (localId: string) => void;
   onShare: (localId: string) => void;
   onDelete: (localId: string) => void;
   onRename: (localId: string, name: string) => void;
   onChangeVisibility?: (localId: string, v: Visibility) => void;
+  onUnlinkCloud?: (localId: string) => void;
 }
 
 /** Format an ISO date string as a relative timestamp */
@@ -45,11 +47,13 @@ function formatRelativeTime(dateString: string): string {
 export function ProjectListItem({
   project,
   isActive,
+  isStaleCloud,
   onOpen,
   onShare,
   onDelete,
   onRename,
   onChangeVisibility,
+  onUnlinkCloud,
 }: ProjectListItemProps) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
@@ -94,7 +98,7 @@ export function ProjectListItem({
             <span className="text-xs text-gray-500 dark:text-gray-400">
               Modified {formatRelativeTime(project.localSavedAt)}
             </span>
-            {project.isCloudSaved && (
+            {project.isCloudSaved && !isStaleCloud && (
               <VisibilityBadge
                 visibility={project.visibility}
                 isCloudSaved={project.isCloudSaved}
@@ -103,6 +107,22 @@ export function ProjectListItem({
                   : undefined}
                 projectName={project.name || 'Untitled Project'}
               />
+            )}
+            {isStaleCloud && (
+              <span className="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
+                <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true">
+                  <path d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575ZM8 5a.75.75 0 0 0-.75.75v2.5a.75.75 0 0 0 1.5 0v-2.5A.75.75 0 0 0 8 5Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" />
+                </svg>
+                Cloud copy not found
+                {onUnlinkCloud && (
+                  <button
+                    onClick={() => onUnlinkCloud(project.localId)}
+                    className="underline hover:text-amber-700 dark:hover:text-amber-300"
+                  >
+                    Remove link
+                  </button>
+                )}
+              </span>
             )}
           </div>
         </div>

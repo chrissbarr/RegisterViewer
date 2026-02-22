@@ -9,6 +9,7 @@ import { Toast } from '../common/toast';
 import { GitHubIcon } from '../common/github-icon';
 import { SaveButton } from '../common/save-button';
 import { ShareButton } from '../common/share-button';
+import { ShareDialog } from '../common/share-dialog';
 import { MyProjectsDialog } from '../projects/my-projects-dialog';
 import { GITHUB_URL } from '../../constants';
 import { useAppState, useAppDispatch } from '../../context/app-context';
@@ -45,6 +46,7 @@ export function Header() {
   const [aboutOpen, setAboutOpen] = useState(false);
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   const [myProjectsOpen, setMyProjectsOpen] = useState(false);
+  const [shareDialogOpenFromProjects, setShareDialogOpenFromProjects] = useState(false);
   const [importFeedback, setImportFeedback] = useState<ImportFeedback | null>(null);
   const { createNewProject, switchProject } = useProjectStorageActions();
 
@@ -193,6 +195,11 @@ export function Header() {
           <MyProjectsDialog
             open={myProjectsOpen}
             onClose={() => setMyProjectsOpen(false)}
+            onShareProject={() => setShareDialogOpenFromProjects(true)}
+          />
+          <ShareDialog
+            open={shareDialogOpenFromProjects}
+            onClose={() => setShareDialogOpenFromProjects(false)}
           />
         </div>
       </header>

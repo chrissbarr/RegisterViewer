@@ -4,7 +4,7 @@ import { SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MAX, SIDEBAR_WIDTH_DEFAULT } from '../
 const PREFS_KEY = 'register-viewer-prefs';
 
 const DEFAULT_PREFERENCES: GlobalPreferences = {
-  theme: 'light',
+  theme: 'dark',
   sidebarWidth: SIDEBAR_WIDTH_DEFAULT,
   sidebarCollapsed: false,
 };

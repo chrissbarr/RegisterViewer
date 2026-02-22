@@ -1,9 +1,11 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { Dialog } from '../common/dialog';
+import { ConfirmationDialog } from '../common/confirmation-dialog';
 import { ProjectListItem } from './project-list-item';
 import { useProjectStorage, useProjectStorageActions } from '../../context/project-storage-context';
 import { useCloudSyncActions } from '../../context/cloud-sync-context';
 import { useAnnounce } from '../common/announcer';
+import { isCloudEnabled } from '../../utils/api-client';
 import { getStorageUsage } from '../../utils/project-storage';
 import type { Visibility } from '../../types/project';
 
@@ -13,22 +15,38 @@ const STORAGE_WARNING_PERCENT = 80;
 interface MyProjectsDialogProps {
   open: boolean;
   onClose: () => void;
+  onShareProject?: (localId: string) => void;
 }
 
-export function MyProjectsDialog({ open, onClose }: MyProjectsDialogProps) {
+export function MyProjectsDialog({ open, onClose, onShareProject }: MyProjectsDialogProps) {
   const { activeLocalId, projects } = useProjectStorage();
   const { createNewProject, switchProject, deleteLocalProject, renameProject, refreshProjectList } = useProjectStorageActions();
-  const { setVisibility } = useCloudSyncActions();
+  const { setVisibility, syncCloudProjects, deleteProjectFromCloud, unlinkCloudProject } = useCloudSyncActions();
   const announce = useAnnounce();
 
   const [filter, setFilter] = useState('');
+  const [staleCloudIds, setStaleCloudIds] = useState<string[]>([]);
+  const [deleteCloudConfirm, setDeleteCloudConfirm] = useState<{ localId: string; cloudId: string; name: string } | null>(null);
+  const [cloudDeleteError, setCloudDeleteError] = useState<string | null>(null);
 
-  // Refresh project list when dialog opens (external system sync)
+  // Refresh project list and sync with cloud when dialog opens
   useEffect(() => {
     if (open) {
       refreshProjectList();
+      // Sync cloud projects in the background
+      if (isCloudEnabled()) {
+        syncCloudProjects().then((result) => {
+          setStaleCloudIds(result.staleCloudIds);
+          if (result.updatedCount > 0 || result.staleCloudIds.length > 0) {
+            refreshProjectList();
+          }
+        });
+      }
+    } else {
+      // Reset stale cloud IDs when dialog closes
+      setStaleCloudIds([]);
     }
-  }, [open, refreshProjectList]);
+  }, [open, refreshProjectList, syncCloudProjects]);
 
   // Compute storage percent when dialog is open (derived, no state needed)
   const storagePercent = useMemo(
@@ -75,21 +93,69 @@ export function MyProjectsDialog({ open, onClose }: MyProjectsDialogProps) {
 
   const handleDelete = useCallback((localId: string) => {
     const project = projects.find(p => p.localId === localId);
+
+    // If project is cloud-saved, show the cloud delete confirmation instead
+    if (project?.isCloudSaved && project.cloudId) {
+      setDeleteCloudConfirm({
+        localId,
+        cloudId: project.cloudId,
+        name: project.name || 'Untitled Project',
+      });
+      return;
+    }
+
     deleteLocalProject(localId);
     announce(`Project "${project?.name || 'Untitled Project'}" deleted`);
   }, [deleteLocalProject, announce, projects]);
+
+  const handleConfirmCloudDelete = useCallback(async () => {
+    if (!deleteCloudConfirm) return;
+    try {
+      await deleteProjectFromCloud(deleteCloudConfirm.cloudId);
+      refreshProjectList();
+      announce('Removed from cloud');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to delete from cloud.';
+      setCloudDeleteError(message);
+    }
+    setDeleteCloudConfirm(null);
+  }, [deleteCloudConfirm, deleteProjectFromCloud, refreshProjectList, announce]);
+
+  const handleUnlinkCloud = useCallback((localId: string) => {
+    unlinkCloudProject(localId);
+    setStaleCloudIds((prev) => {
+      const project = projects.find(p => p.localId === localId);
+      if (project?.cloudId) {
+        return prev.filter(id => id !== project.cloudId);
+      }
+      return prev;
+    });
+    refreshProjectList();
+    announce('Cloud link removed');
+  }, [unlinkCloudProject, refreshProjectList, announce, projects]);
 
   const handleRename = useCallback((localId: string, name: string) => {
     renameProject(localId, name);
     announce(`Project renamed to "${name}"`);
   }, [renameProject, announce]);
 
+  const handleShare = useCallback((localId: string) => {
+    // Switch to the project if it's not active, then open share dialog
+    if (localId !== activeLocalId) {
+      switchProject(localId);
+    }
+    onClose();
+    if (onShareProject) {
+      // Use a short delay to let the dialog close animation complete
+      setTimeout(() => onShareProject(localId), 100);
+    }
+  }, [activeLocalId, switchProject, onClose, onShareProject]);
+
   const handleChangeVisibility = useCallback((_localId: string, v: Visibility) => {
-    // Stub: this will be fully wired in Phase 8 (cloud integration).
-    // For now, update via the cloud sync context which is a local-only stub.
     setVisibility(v);
+    refreshProjectList();
     announce(`Visibility changed to ${v}`);
-  }, [setVisibility, announce]);
+  }, [setVisibility, refreshProjectList, announce]);
 
   const handleDownloadRecoveryKey = useCallback(() => {
     try {
@@ -118,6 +184,7 @@ export function MyProjectsDialog({ open, onClose }: MyProjectsDialogProps) {
   }, [announce]);
 
   return (
+    <>
     <Dialog open={open} onClose={onClose} title="My Projects" maxWidth="max-w-2xl">
       <div className="flex flex-col gap-3">
         {/* Header actions row */}
@@ -202,11 +269,13 @@ export function MyProjectsDialog({ open, onClose }: MyProjectsDialogProps) {
                 key={project.localId}
                 project={project}
                 isActive={project.localId === activeLocalId}
+                isStaleCloud={project.cloudId !== null && staleCloudIds.includes(project.cloudId)}
                 onOpen={handleOpen}
-                onShare={() => {}}
+                onShare={handleShare}
                 onDelete={handleDelete}
                 onRename={handleRename}
                 onChangeVisibility={handleChangeVisibility}
+                onUnlinkCloud={handleUnlinkCloud}
               />
             ))}
           </ul>
@@ -229,5 +298,37 @@ export function MyProjectsDialog({ open, onClose }: MyProjectsDialogProps) {
         )}
       </div>
     </Dialog>
+
+    {/* Cloud delete confirmation dialog */}
+    <ConfirmationDialog
+      open={deleteCloudConfirm !== null}
+      onClose={() => setDeleteCloudConfirm(null)}
+      onConfirm={handleConfirmCloudDelete}
+      title="Remove from Cloud"
+      description="This will delete the cloud copy. Shared links will stop working. Your local copy will remain."
+      confirmLabel="Remove from Cloud"
+      cancelLabel="Cancel"
+      variant="destructive"
+    />
+
+    {/* Cloud delete error toast */}
+    {cloudDeleteError && (
+      <div
+        role="alert"
+        className="fixed bottom-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg
+          bg-red-600 text-white text-sm font-medium
+          animate-in fade-in slide-in-from-bottom-2"
+      >
+        {cloudDeleteError}
+        <button
+          onClick={() => setCloudDeleteError(null)}
+          className="ml-3 text-white/80 hover:text-white"
+          aria-label="Dismiss error"
+        >
+          &times;
+        </button>
+      </div>
+    )}
+    </>
   );
 }

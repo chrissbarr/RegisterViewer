@@ -12,7 +12,7 @@ describe('loadPreferences', () => {
   it('returns defaults when nothing is stored', () => {
     const prefs = loadPreferences();
     expect(prefs).toEqual({
-      theme: 'light',
+      theme: 'dark',
       sidebarWidth: SIDEBAR_WIDTH_DEFAULT,
       sidebarCollapsed: false,
     });
@@ -90,7 +90,7 @@ describe('loadPreferences', () => {
     localStorage.setItem(PREFS_KEY, 'null');
     // JSON.parse('null') returns null, which has no properties — should fall back gracefully
     const prefs = loadPreferences();
-    expect(prefs.theme).toBe('light');
+    expect(prefs.theme).toBe('dark');
   });
 });
 
@@ -120,7 +120,7 @@ describe('savePreferences', () => {
 
 describe('DEFAULT_PREFERENCES', () => {
   it('has expected default values', () => {
-    expect(DEFAULT_PREFERENCES.theme).toBe('light');
+    expect(DEFAULT_PREFERENCES.theme).toBe('dark');
     expect(DEFAULT_PREFERENCES.sidebarWidth).toBe(SIDEBAR_WIDTH_DEFAULT);
     expect(DEFAULT_PREFERENCES.sidebarCollapsed).toBe(false);
   });
