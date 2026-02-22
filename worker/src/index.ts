@@ -130,7 +130,7 @@ async function handleCreate(request: Request, env: Env, cors: Record<string, str
 }
 
 async function handleGet(
-  request: Request,
+  _request: Request,
   env: Env,
   ctx: ExecutionContext,
   id: string,
