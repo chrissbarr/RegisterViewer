@@ -49,8 +49,8 @@ export function Toast({ message, variant = 'success', duration = 3000, onDismiss
 
   return createPortal(
     <div
-      role="status"
-      aria-live="polite"
+      role={variant === 'error' ? 'alert' : 'status'}
+      aria-live={variant === 'error' ? 'assertive' : 'polite'}
       className={`fixed top-4 right-4 z-50 max-w-sm w-full
         transition-all duration-200 ease-out
         ${visible ? 'translate-x-0 opacity-100' : 'translate-x-4 opacity-0'}`}

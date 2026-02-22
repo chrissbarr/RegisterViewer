@@ -1,5 +1,14 @@
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { CopyButton } from './copy-button';
+import { AnnouncerProvider } from './announcer';
+
+function renderCopyButton(props: { value: string; label: string }) {
+  return render(
+    <AnnouncerProvider>
+      <CopyButton {...props} />
+    </AnnouncerProvider>,
+  );
+}
 
 describe('CopyButton', () => {
   beforeEach(() => {
@@ -14,12 +23,12 @@ describe('CopyButton', () => {
   });
 
   it('renders a button with the given aria-label', () => {
-    render(<CopyButton value="0xFF" label="Copy hex value" />);
+    renderCopyButton({ value: '0xFF', label: 'Copy hex value' });
     expect(screen.getByRole('button', { name: 'Copy hex value' })).toBeInTheDocument();
   });
 
   it('copies the value to clipboard on click', async () => {
-    render(<CopyButton value="0xDEADBEEF" label="Copy hex" />);
+    renderCopyButton({ value: '0xDEADBEEF', label: 'Copy hex' });
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Copy hex' }));
     });
@@ -27,7 +36,7 @@ describe('CopyButton', () => {
   });
 
   it('shows checkmark icon after copying', async () => {
-    const { container } = render(<CopyButton value="42" label="Copy dec" />);
+    const { container } = renderCopyButton({ value: '42', label: 'Copy dec' });
 
     // Before click: clipboard icon (has <rect> element)
     expect(container.querySelector('rect')).toBeInTheDocument();
@@ -43,7 +52,7 @@ describe('CopyButton', () => {
   });
 
   it('reverts to clipboard icon after 1500ms', async () => {
-    const { container } = render(<CopyButton value="0b101" label="Copy bin" />);
+    const { container } = renderCopyButton({ value: '0b101', label: 'Copy bin' });
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Copy bin' }));
@@ -64,7 +73,7 @@ describe('CopyButton', () => {
 
   it('cleans up timer on unmount', async () => {
     const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
-    const { unmount } = render(<CopyButton value="0xAB" label="Copy" />);
+    const { unmount } = renderCopyButton({ value: '0xAB', label: 'Copy' });
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
@@ -78,7 +87,7 @@ describe('CopyButton', () => {
   });
 
   it('resets timer on rapid clicks', async () => {
-    const { container } = render(<CopyButton value="0xCD" label="Copy" />);
+    const { container } = renderCopyButton({ value: '0xCD', label: 'Copy' });
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
@@ -116,7 +125,7 @@ describe('CopyButton', () => {
       clipboard: { writeText: vi.fn().mockRejectedValue(new Error('denied')) },
     });
 
-    const { container } = render(<CopyButton value="test" label="Copy" />);
+    const { container } = renderCopyButton({ value: 'test', label: 'Copy' });
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
     });

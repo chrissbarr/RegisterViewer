@@ -1,13 +1,17 @@
-import { useRef, useEffect, useId, type ReactNode } from 'react';
+import { useRef, useEffect, useId, type ReactNode, type RefObject } from 'react';
 
 interface DialogProps {
   open: boolean;
   onClose: () => void;
   title: string;
   children: ReactNode;
+  maxWidth?: string;
+  initialFocusRef?: RefObject<HTMLElement | null>;
+  role?: 'dialog' | 'alertdialog';
+  'aria-describedby'?: string;
 }
 
-export function Dialog({ open, onClose, title, children }: DialogProps) {
+export function Dialog({ open, onClose, title, children, maxWidth = 'max-w-lg', initialFocusRef, role = 'dialog', 'aria-describedby': ariaDescribedBy }: DialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleId = useId();
 
@@ -22,10 +26,15 @@ export function Dialog({ open, onClose, title, children }: DialogProps) {
       } else {
         el.setAttribute('open', '');
       }
+
+      // Custom initial focus if provided
+      if (initialFocusRef?.current) {
+        requestAnimationFrame(() => initialFocusRef.current?.focus());
+      }
     } else if (!open && el.open) {
       el.close();
     }
-  }, [open]);
+  }, [open, initialFocusRef]);
 
   function handleClick(e: React.MouseEvent<HTMLDialogElement>) {
     // Clicks on the <dialog> itself (backdrop area) close it
@@ -39,16 +48,19 @@ export function Dialog({ open, onClose, title, children }: DialogProps) {
       ref={dialogRef}
       onClose={onClose}
       onClick={handleClick}
+      role={role}
       aria-labelledby={titleId}
-      className="backdrop:bg-black/50 dark:backdrop:bg-black/70
+      aria-describedby={ariaDescribedBy}
+      aria-modal="true"
+      className={`backdrop:bg-black/50 dark:backdrop:bg-black/70
         bg-white dark:bg-gray-800
         text-gray-900 dark:text-gray-100
         border border-gray-200 dark:border-gray-700
         rounded-xl shadow-xl
         p-0 m-auto
-        max-w-lg w-[calc(100%-2rem)]
+        ${maxWidth} w-[calc(100%-2rem)]
         max-h-[calc(100vh-4rem)]
-        overflow-hidden"
+        overflow-hidden`}
     >
       {open && (
         <div className="flex flex-col max-h-[calc(100vh-4rem)]">

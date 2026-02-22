@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { useAnnounce } from './announcer';
 
 interface CopyButtonProps {
   value: string;
@@ -9,6 +10,7 @@ interface CopyButtonProps {
 export function CopyButton({ value, label, className = '' }: CopyButtonProps) {
   const [copied, setCopied] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const announce = useAnnounce();
 
   useEffect(() => {
     return () => {
@@ -22,6 +24,7 @@ export function CopyButton({ value, label, className = '' }: CopyButtonProps) {
     try {
       await navigator.clipboard.writeText(value);
       setCopied(true);
+      announce('Copied to clipboard');
       if (timerRef.current !== null) {
         clearTimeout(timerRef.current);
       }
@@ -29,7 +32,7 @@ export function CopyButton({ value, label, className = '' }: CopyButtonProps) {
     } catch {
       // Clipboard API may fail in non-secure contexts; fail silently
     }
-  }, [value]);
+  }, [value, announce]);
 
   return (
     <button
