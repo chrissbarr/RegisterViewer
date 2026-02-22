@@ -1,4 +1,4 @@
-import { useCloudProject, useCloudActions } from '../../context/cloud-context';
+import { useCloudSync, useCloudSyncActions } from '../../context/cloud-sync-context';
 
 function CloudUploadIcon({ className }: { className?: string }) {
   return (
@@ -18,12 +18,12 @@ function SpinnerIcon({ className }: { className?: string }) {
 }
 
 export function SaveButton() {
-  const cloud = useCloudProject();
-  const actions = useCloudActions();
+  const cloud = useCloudSync();
+  const actions = useCloudSyncActions();
 
   const isSaving = cloud.status === 'saving';
   const isOwner = cloud.isOwner;
-  const hasProject = cloud.projectId !== null;
+  const hasProject = cloud.cloudId !== null;
 
   let tooltip: string;
   if (hasProject && isOwner) {
@@ -39,7 +39,7 @@ export function SaveButton() {
     if (hasProject && !isOwner) {
       actions.fork();
     } else {
-      actions.save();
+      actions.saveToCloud();
     }
   }
 

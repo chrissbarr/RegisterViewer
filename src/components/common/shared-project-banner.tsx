@@ -1,13 +1,13 @@
 import { useState } from 'react';
-import { useCloudProject, useCloudActions } from '../../context/cloud-context';
+import { useCloudSync, useCloudSyncActions } from '../../context/cloud-sync-context';
 
 export function SharedProjectBanner() {
-  const cloud = useCloudProject();
-  const actions = useCloudActions();
+  const cloud = useCloudSync();
+  const actions = useCloudSyncActions();
   const [dismissed, setDismissed] = useState(false);
 
   // Only show for non-owner viewing a cloud project
-  if (!cloud.projectId || cloud.isOwner || dismissed) return null;
+  if (!cloud.cloudId || cloud.isOwner || dismissed) return null;
 
   const isSaving = cloud.status === 'saving';
 

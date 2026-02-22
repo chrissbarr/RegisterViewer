@@ -13,6 +13,7 @@ import { SavedProjectsDialog } from '../common/saved-projects-dialog';
 import { GITHUB_URL } from '../../constants';
 import { useAppState, useAppDispatch } from '../../context/app-context';
 import { useEditContext } from '../../context/edit-context';
+import { usePreferences, usePreferencesActions } from '../../context/preferences-context';
 import { exportToJson, importFromJson, type ImportWarning } from '../../utils/storage';
 import { isCloudEnabled } from '../../utils/api-client';
 
@@ -35,6 +36,8 @@ export function Header() {
   const state = useAppState();
   const dispatch = useAppDispatch();
   const { exitEditMode } = useEditContext();
+  const preferences = usePreferences();
+  const preferencesActions = usePreferencesActions();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [examplesOpen, setExamplesOpen] = useState(false);
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
@@ -130,8 +133,8 @@ export function Header() {
     {
       kind: 'toggle',
       label: 'Dark mode',
-      checked: state.theme === 'dark',
-      onToggle: () => dispatch({ type: 'TOGGLE_THEME' }),
+      checked: preferences.theme === 'dark',
+      onToggle: () => preferencesActions.toggleTheme(),
     },
     { kind: 'separator' },
     { kind: 'action', label: 'About', onAction: () => setAboutOpen(true) },

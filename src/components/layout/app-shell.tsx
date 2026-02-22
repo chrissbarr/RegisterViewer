@@ -1,8 +1,10 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MAX, type AppState } from '../../types/register';
-import { useAppState, useAppDispatch } from '../../context/app-context';
+import { useAppState } from '../../context/app-context';
 import { EditProvider } from '../../context/edit-context';
-import { CloudProjectProvider, useCloudProject, useCloudActions } from '../../context/cloud-context';
+import { PreferencesProvider, usePreferences, usePreferencesActions } from '../../context/preferences-context';
+import { ProjectStorageProvider } from '../../context/project-storage-context';
+import { CloudSyncProvider, useCloudSync, useCloudSyncActions } from '../../context/cloud-sync-context';
 import { saveToLocalStorage } from '../../utils/storage';
 import { Header } from './header';
 import { Sidebar } from './sidebar';
@@ -18,25 +20,21 @@ interface AppShellProps {
 
 function AppShellInner({ cloudInit }: AppShellProps) {
   const state = useAppState();
-  const dispatch = useAppDispatch();
+  const preferences = usePreferences();
+  const preferencesActions = usePreferencesActions();
   const pendingStateRef = useRef<AppState | null>(null);
-  const cloud = useCloudProject();
-  const cloudActions = useCloudActions();
+  const cloud = useCloudSync();
+  const cloudActions = useCloudSyncActions();
 
   // Initialize cloud state from props (when loaded from #/p/{id} URL)
   const cloudInitRef = useRef(cloudInit);
   useEffect(() => {
     const init = cloudInitRef.current;
     if (init) {
-      cloudActions.setProjectId(init.projectId, init.isOwner);
+      cloudActions.initFromProject(init.projectId, init.isOwner);
       cloudInitRef.current = undefined;
     }
   }, [cloudActions]);
-
-  // Sync theme class on <html>
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', state.theme === 'dark');
-  }, [state.theme]);
 
   // Auto-save to localStorage (debounced)
   useEffect(() => {
@@ -66,21 +64,21 @@ function AppShellInner({ cloudInit }: AppShellProps) {
   }, []);
 
   // Keyboard shortcut: Ctrl+B toggles sidebar collapse
-  const collapsedRef = useRef(state.sidebarCollapsed);
+  const collapsedRef = useRef(preferences.sidebarCollapsed);
   useEffect(() => {
-    collapsedRef.current = state.sidebarCollapsed;
-  }, [state.sidebarCollapsed]);
+    collapsedRef.current = preferences.sidebarCollapsed;
+  }, [preferences.sidebarCollapsed]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.key === 'b') {
         e.preventDefault();
-        dispatch({ type: 'SET_SIDEBAR_COLLAPSED', collapsed: !collapsedRef.current });
+        preferencesActions.setSidebarCollapsed(!collapsedRef.current);
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [dispatch]);
+  }, [preferencesActions]);
 
   // Drag-to-resize sidebar
   const dragRef = useRef<{ startX: number; startWidth: number; lastWidth: number } | null>(null);
@@ -88,8 +86,8 @@ function AppShellInner({ cloudInit }: AppShellProps) {
   const handleResizerPointerDown = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    dragRef.current = { startX: e.clientX, startWidth: state.sidebarWidth, lastWidth: state.sidebarWidth };
-  }, [state.sidebarWidth]);
+    dragRef.current = { startX: e.clientX, startWidth: preferences.sidebarWidth, lastWidth: preferences.sidebarWidth };
+  }, [preferences.sidebarWidth]);
 
   const handleResizerPointerMove = useCallback((e: React.PointerEvent) => {
     if (!dragRef.current) return;
@@ -97,16 +95,16 @@ function AppShellInner({ cloudInit }: AppShellProps) {
     const newWidth = Math.max(SIDEBAR_WIDTH_MIN, Math.min(SIDEBAR_WIDTH_MAX, dragRef.current.startWidth + delta));
     if (newWidth !== dragRef.current.lastWidth) {
       dragRef.current.lastWidth = newWidth;
-      dispatch({ type: 'SET_SIDEBAR_WIDTH', width: newWidth });
+      preferencesActions.setSidebarWidth(newWidth);
     }
-  }, [dispatch]);
+  }, [preferencesActions]);
 
   const handleResizerPointerUp = useCallback(() => {
     dragRef.current = null;
   }, []);
 
-  const collapsed = state.sidebarCollapsed;
-  const sidebarWidth = collapsed ? 0 : state.sidebarWidth;
+  const collapsed = preferences.sidebarCollapsed;
+  const sidebarWidth = collapsed ? 0 : preferences.sidebarWidth;
 
   return (
     <div className="h-screen flex flex-col bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100">
@@ -123,7 +121,7 @@ function AppShellInner({ cloudInit }: AppShellProps) {
       <div className="flex flex-1 overflow-hidden relative">
         {collapsed && (
           <button
-            onClick={() => dispatch({ type: 'SET_SIDEBAR_COLLAPSED', collapsed: false })}
+            onClick={() => preferencesActions.setSidebarCollapsed(false)}
             className="absolute left-0 top-1/2 -translate-y-1/2 z-20
               w-5 h-10 flex items-center justify-center
               bg-gray-200 dark:bg-gray-800
@@ -144,7 +142,7 @@ function AppShellInner({ cloudInit }: AppShellProps) {
         <Sidebar
           width={sidebarWidth}
           collapsed={collapsed}
-          onToggleCollapse={() => dispatch({ type: 'SET_SIDEBAR_COLLAPSED', collapsed: !collapsed })}
+          onToggleCollapse={() => preferencesActions.setSidebarCollapsed(!collapsed)}
         />
 
         {!collapsed && (
@@ -170,10 +168,14 @@ function AppShellInner({ cloudInit }: AppShellProps) {
 
 export function AppShell({ cloudInit }: AppShellProps) {
   return (
-    <EditProvider>
-      <CloudProjectProvider>
-        <AppShellInner cloudInit={cloudInit} />
-      </CloudProjectProvider>
-    </EditProvider>
+    <PreferencesProvider>
+      <EditProvider>
+        <ProjectStorageProvider initialLocalId={null}>
+          <CloudSyncProvider>
+            <AppShellInner cloudInit={cloudInit} />
+          </CloudSyncProvider>
+        </ProjectStorageProvider>
+      </EditProvider>
+    </PreferencesProvider>
   );
 }

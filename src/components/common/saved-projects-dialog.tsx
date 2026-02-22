@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Dialog } from './dialog';
 import { CopyButton } from './copy-button';
-import { buildProjectUrl, loadLocalProjects, type LocalProjectRecord } from '../../utils/cloud-projects';
-import { useCloudActions, useCloudProject } from '../../context/cloud-context';
+import { buildProjectUrl, loadLocalProjects, removeLocalProject, type LocalProjectRecord } from '../../utils/cloud-projects';
+import { useCloudSync, useCloudSyncActions } from '../../context/cloud-sync-context';
+import { deleteProject as apiDeleteProject } from '../../utils/api-client';
+import { hashOwnerToken } from '../../utils/owner-token';
 
 interface SavedProjectsDialogProps {
   open: boolean;
@@ -10,8 +12,8 @@ interface SavedProjectsDialogProps {
 }
 
 export function SavedProjectsDialog({ open, onClose }: SavedProjectsDialogProps) {
-  const { deleteCloudById, loadProject, dismissError } = useCloudActions();
-  const { isDirty } = useCloudProject();
+  const { loadCloudProject, dismissError } = useCloudSyncActions();
+  const { isDirty } = useCloudSync();
   const [projects, setProjects] = useState<LocalProjectRecord[]>([]);
   const [openingId, setOpeningId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -36,7 +38,9 @@ export function SavedProjectsDialog({ open, onClose }: SavedProjectsDialogProps)
     setError(null);
 
     try {
-      await deleteCloudById(project.id);
+      const tokenHash = await hashOwnerToken(project.ownerToken);
+      await apiDeleteProject(project.id, tokenHash);
+      removeLocalProject(project.id);
       setProjects((prev) => prev.filter((p) => p.id !== project.id));
       setConfirmDeleteId(null);
     } catch (err) {
@@ -45,7 +49,7 @@ export function SavedProjectsDialog({ open, onClose }: SavedProjectsDialogProps)
     } finally {
       setDeletingId(null);
     }
-  }, [confirmDeleteId, deleteCloudById]);
+  }, [confirmDeleteId]);
 
   const handleOpen = useCallback(async (project: LocalProjectRecord) => {
     if (isDirty && !window.confirm('You have unsaved changes. Discard and open this project?')) {
@@ -56,7 +60,7 @@ export function SavedProjectsDialog({ open, onClose }: SavedProjectsDialogProps)
     setError(null);
 
     try {
-      await loadProject(project.id);
+      await loadCloudProject(project.id);
       window.location.hash = `#/p/${project.id}`;
       onClose();
     } catch (err) {
@@ -66,7 +70,7 @@ export function SavedProjectsDialog({ open, onClose }: SavedProjectsDialogProps)
     } finally {
       setOpeningId(null);
     }
-  }, [isDirty, loadProject, onClose, dismissError]);
+  }, [isDirty, loadCloudProject, onClose, dismissError]);
 
   const handleDownloadRecoveryKey = useCallback(() => {
     // Find the owner token from the first project (they should all use the same token)

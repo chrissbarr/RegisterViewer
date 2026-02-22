@@ -4,7 +4,7 @@ import { CopyButton } from './copy-button';
 import { useAppState } from '../../context/app-context';
 import { buildSnapshotUrl } from '../../utils/snapshot-url';
 import { isCloudEnabled } from '../../utils/api-client';
-import { useCloudProject } from '../../context/cloud-context';
+import { useCloudSync } from '../../context/cloud-sync-context';
 
 interface ShareDialogProps {
   open: boolean;
@@ -13,7 +13,7 @@ interface ShareDialogProps {
 
 export function ShareDialog({ open, onClose }: ShareDialogProps) {
   const state = useAppState();
-  const cloud = useCloudProject();
+  const cloud = useCloudSync();
   const snapshotUrl = useMemo(() => {
     if (!open) return null;
     try {
@@ -26,7 +26,7 @@ export function ShareDialog({ open, onClose }: ShareDialogProps) {
   const charCount = snapshotUrl?.length ?? 0;
   const isUrlLong = charCount > 2000;
 
-  const hasCloudProject = cloud.projectId !== null;
+  const hasCloudProject = cloud.cloudId !== null;
   const cloudUrl = cloud.shareUrl;
 
   return (
