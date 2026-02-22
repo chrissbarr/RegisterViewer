@@ -7,7 +7,11 @@
     "lib": ["ES2022"],
     "types": ["@cloudflare/workers-types"],
     "outDir": "dist",
-    "noEmit": true
+    "skipLibCheck": true,
+    "noEmit": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true
   },
   "include": ["src"]
 }

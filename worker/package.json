@@ -1,17 +1,24 @@
 {
   "name": "register-viewer-api",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "tail": "wrangler tail",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "knip": "knip"
   },
   "devDependencies": {
     "wrangler": "^3.0.0",
     "@cloudflare/workers-types": "^4.0.0",
+    "@eslint/js": "^9.39.1",
+    "eslint": "^9.39.1",
+    "knip": "^5.0.0",
     "typescript": "~5.7.0",
+    "typescript-eslint": "^8.48.0",
     "vitest": "^4.0.18"
   }
 }
