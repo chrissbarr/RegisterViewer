@@ -53,11 +53,16 @@ interface CreateProjectResponse {
 export async function createProject(
   data: string,
   tokenHash: string,
+  visibility?: 'private' | 'unlisted',
 ): Promise<CreateProjectResponse> {
+  const body: { data: unknown; visibility?: string } = { data: JSON.parse(data) };
+  if (visibility) {
+    body.visibility = visibility;
+  }
   return apiFetch<CreateProjectResponse>('/api/projects', {
     method: 'POST',
     headers: { Authorization: `Bearer ${tokenHash}` },
-    body: JSON.stringify({ data: JSON.parse(data) }),
+    body: JSON.stringify(body),
   });
 }
 
@@ -68,8 +73,14 @@ interface GetProjectResponse {
   updatedAt: string;
 }
 
-export async function getProject(id: string): Promise<GetProjectResponse> {
-  return apiFetch<GetProjectResponse>(`/api/projects/${encodeURIComponent(id)}`);
+export async function getProject(id: string, tokenHash?: string): Promise<GetProjectResponse> {
+  const headers: Record<string, string> = {};
+  if (tokenHash) {
+    headers['Authorization'] = `Bearer ${tokenHash}`;
+  }
+  return apiFetch<GetProjectResponse>(`/api/projects/${encodeURIComponent(id)}`, {
+    headers,
+  });
 }
 
 interface UpdateProjectResponse {
@@ -81,13 +92,18 @@ export async function updateProject(
   id: string,
   data: string,
   tokenHash: string,
+  visibility?: 'private' | 'unlisted',
 ): Promise<UpdateProjectResponse> {
+  const body: { data: unknown; visibility?: string } = { data: JSON.parse(data) };
+  if (visibility !== undefined) {
+    body.visibility = visibility;
+  }
   return apiFetch<UpdateProjectResponse>(
     `/api/projects/${encodeURIComponent(id)}`,
     {
       method: 'PUT',
       headers: { Authorization: `Bearer ${tokenHash}` },
-      body: JSON.stringify({ data: JSON.parse(data) }),
+      body: JSON.stringify(body),
     },
   );
 }
@@ -103,4 +119,21 @@ export async function deleteProject(
       headers: { Authorization: `Bearer ${tokenHash}` },
     },
   );
+}
+
+interface ProjectListItem {
+  id: string;
+  visibility: 'private' | 'unlisted';
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface ListProjectsResponse {
+  projects: ProjectListItem[];
+}
+
+export async function listProjects(tokenHash: string): Promise<ListProjectsResponse> {
+  return apiFetch<ListProjectsResponse>('/api/projects', {
+    headers: { Authorization: `Bearer ${tokenHash}` },
+  });
 }

@@ -1,4 +1,4 @@
-import type { StoredProject } from './types';
+import type { StoredProject, Visibility } from './types';
 
 /**
  * Format the KV key for a project.
@@ -8,6 +8,16 @@ import type { StoredProject } from './types';
  */
 export function projectKey(id: string): string {
   return `project:${id}`;
+}
+
+/**
+ * Format the KV key for the owner secondary index.
+ *
+ * Allows listing all projects owned by a given token hash.
+ * Key format: `owner:{tokenHash}:{projectId}` → "1"
+ */
+export function ownerIndexKey(tokenHash: string, projectId: string): string {
+  return `owner:${tokenHash}:${projectId}`;
 }
 
 /**
@@ -30,14 +40,14 @@ export async function getProject(kv: KVNamespace, id: string): Promise<StoredPro
 }
 
 /**
- * Write a StoredProject to KV.
+ * Write a StoredProject to KV and update the owner index.
  *
- * Projects are stored as JSON with no explicit TTL (they live until deleted).
- * KV's eventual consistency means reads may take up to 60s to reflect writes
- * in other regions, but this is acceptable for a sharing use case.
+ * Write order: project key first, then owner index.
+ * This ensures the project data is always accessible even if the index write fails.
  */
 export async function putProject(kv: KVNamespace, project: StoredProject): Promise<void> {
   await kv.put(projectKey(project.id), JSON.stringify(project));
+  await kv.put(ownerIndexKey(project.ownerTokenHash, project.id), '1');
 }
 
 /**
@@ -51,16 +61,57 @@ export async function touchLastAccessed(kv: KVNamespace, id: string, isoTimestam
   if (!project) return;
 
   project.lastAccessedAt = isoTimestamp;
-  await putProject(kv, project);
+  // Write directly to project key — no need to update owner index for timestamp
+  await kv.put(projectKey(project.id), JSON.stringify(project));
 }
 
 /**
- * Delete a project from KV by ID.
+ * Delete a project from KV by ID, including its owner index entry.
  *
+ * Deletes the owner index key first, then the project key.
  * This is idempotent — deleting a non-existent key is a no-op in KV.
  */
-export async function deleteProject(kv: KVNamespace, id: string): Promise<void> {
+export async function deleteProject(kv: KVNamespace, id: string, ownerTokenHash: string): Promise<void> {
+  await kv.delete(ownerIndexKey(ownerTokenHash, id));
   await kv.delete(projectKey(id));
+}
+
+/**
+ * List all projects owned by a given token hash.
+ *
+ * Uses the owner secondary index (prefix scan) to find project IDs,
+ * then fetches each project. Filters out null results to handle
+ * phantom index entries from eventual consistency.
+ */
+export async function listProjectsByOwner(kv: KVNamespace, tokenHash: string): Promise<StoredProject[]> {
+  const prefix = `owner:${tokenHash}:`;
+  const projects: StoredProject[] = [];
+
+  let cursor: string | undefined;
+
+  for (;;) {
+    const listResult = await kv.list({ prefix, cursor });
+    for (const key of listResult.keys) {
+      const projectId = key.name.slice(prefix.length);
+      const project = await getProject(kv, projectId);
+      if (project) {
+        projects.push(project);
+      }
+    }
+    if (listResult.list_complete) break;
+    cursor = (listResult as { cursor: string }).cursor;
+  }
+
+  return projects;
+}
+
+const VALID_VISIBILITIES: readonly Visibility[] = ['private', 'unlisted'];
+
+/**
+ * Check whether a string is a valid visibility value.
+ */
+export function isValidVisibility(value: unknown): value is Visibility {
+  return typeof value === 'string' && VALID_VISIBILITIES.includes(value as Visibility);
 }
 
 /**
@@ -96,6 +147,7 @@ export function migrateStoredProject(raw: unknown): StoredProject {
   }
 
   const now = new Date().toISOString();
+  const visibility: Visibility = isValidVisibility(record.visibility) ? record.visibility : 'private';
 
   // v0 -> v1: backfill missing fields
   const schemaVersion = record.schemaVersion;
@@ -104,6 +156,7 @@ export function migrateStoredProject(raw: unknown): StoredProject {
       schemaVersion: 1,
       id: record.id as string,
       ownerTokenHash: record.ownerTokenHash as string,
+      visibility,
       createdAt: typeof record.createdAt === 'string' ? record.createdAt : now,
       updatedAt: typeof record.updatedAt === 'string' ? record.updatedAt : now,
       lastAccessedAt: typeof record.lastAccessedAt === 'string' ? record.lastAccessedAt : now,
@@ -117,6 +170,7 @@ export function migrateStoredProject(raw: unknown): StoredProject {
       schemaVersion: 1,
       id: record.id as string,
       ownerTokenHash: record.ownerTokenHash as string,
+      visibility,
       createdAt: typeof record.createdAt === 'string' ? record.createdAt : now,
       updatedAt: typeof record.updatedAt === 'string' ? record.updatedAt : now,
       lastAccessedAt: typeof record.lastAccessedAt === 'string' ? record.lastAccessedAt : now,
@@ -125,12 +179,11 @@ export function migrateStoredProject(raw: unknown): StoredProject {
   }
 
   // Unknown future schema version — attempt best-effort passthrough
-  // This allows forward compatibility if a newer worker writes v2 records
-  // and an older worker instance reads them during a rolling deploy.
   return {
     schemaVersion: 1,
     id: record.id as string,
     ownerTokenHash: record.ownerTokenHash as string,
+    visibility,
     createdAt: typeof record.createdAt === 'string' ? record.createdAt : now,
     updatedAt: typeof record.updatedAt === 'string' ? record.updatedAt : now,
     lastAccessedAt: typeof record.lastAccessedAt === 'string' ? record.lastAccessedAt : now,

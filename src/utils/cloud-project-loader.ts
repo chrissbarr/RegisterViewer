@@ -11,8 +11,8 @@ interface CloudProjectLoadResult extends ImportResult {
  * navigation path (CloudProjectProvider.loadProject) call this,
  * ensuring consistent data handling.
  */
-export async function fetchAndParseCloudProject(id: string): Promise<CloudProjectLoadResult> {
-  const result = await getProject(id);
+export async function fetchAndParseCloudProject(id: string, tokenHash?: string): Promise<CloudProjectLoadResult> {
+  const result = await getProject(id, tokenHash);
 
   // The API returns `data` as a parsed object (from res.json()),
   // but importFromJson expects a JSON string. Normalize here.

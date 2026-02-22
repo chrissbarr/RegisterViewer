@@ -26,10 +26,13 @@ export interface ProjectData {
 
 // ---- Stored Record (KV value) ----
 
+export type Visibility = 'private' | 'unlisted';
+
 export interface StoredProject {
   schemaVersion: 1;
   id: string;
   ownerTokenHash: string;
+  visibility: Visibility;
   createdAt: string; // ISO 8601
   updatedAt: string; // ISO 8601
   lastAccessedAt: string; // ISO 8601
@@ -54,6 +57,17 @@ export interface GetProjectResponse {
 export interface UpdateProjectResponse {
   id: string;
   updatedAt: string;
+}
+
+export interface ProjectListItem {
+  id: string;
+  visibility: Visibility;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ListProjectsResponse {
+  projects: ProjectListItem[];
 }
 
 // ---- Validation Result ----

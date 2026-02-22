@@ -6,6 +6,7 @@ import {
   getProject,
   updateProject,
   deleteProject,
+  listProjects,
 } from './api-client';
 
 // Mock fetch globally
@@ -198,6 +199,33 @@ describe('getProject', () => {
       },
     );
     expect(result).toEqual(responseData);
+  });
+
+  it('sends Authorization header when tokenHash provided', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => ({
+        id: 'ABC123DEF456',
+        data: '{}',
+        createdAt: '2024-01-01T00:00:00Z',
+        updatedAt: '2024-01-01T00:00:00Z',
+      }),
+    });
+
+    const tokenHash = 'a'.repeat(64);
+    await getProject('ABC123DEF456', tokenHash);
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://api.example.com/api/projects/ABC123DEF456',
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${tokenHash}`,
+        },
+      },
+    );
   });
 
   it('URL-encodes the project ID', async () => {
@@ -393,6 +421,120 @@ describe('deleteProject', () => {
     mockFetch.mockResolvedValueOnce(mockErrorResponse(404, { error: 'Project not found' }));
 
     await expect(deleteProject('NONEXISTENT', 'a'.repeat(64))).rejects.toThrow(ApiError);
+  });
+});
+
+describe('createProject with visibility', () => {
+  beforeEach(() => {
+    mockFetch.mockClear();
+    import.meta.env.VITE_API_URL = 'https://api.example.com';
+  });
+
+  it('includes visibility in request body when provided', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => ({
+        id: 'TEST',
+        shareUrl: 'https://example.com/#/p/TEST',
+        createdAt: '2024-01-01T00:00:00Z',
+      }),
+    });
+
+    const data = '{"version":1,"registers":[]}';
+    await createProject(data, 'a'.repeat(64), 'unlisted');
+
+    const callArgs = mockFetch.mock.calls[0];
+    const body = JSON.parse(callArgs[1].body);
+    expect(body.visibility).toBe('unlisted');
+  });
+
+  it('omits visibility from body when not provided', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => ({
+        id: 'TEST',
+        shareUrl: 'https://example.com/#/p/TEST',
+        createdAt: '2024-01-01T00:00:00Z',
+      }),
+    });
+
+    const data = '{"version":1,"registers":[]}';
+    await createProject(data, 'a'.repeat(64));
+
+    const callArgs = mockFetch.mock.calls[0];
+    const body = JSON.parse(callArgs[1].body);
+    expect(body.visibility).toBeUndefined();
+  });
+});
+
+describe('updateProject with visibility', () => {
+  beforeEach(() => {
+    mockFetch.mockClear();
+    import.meta.env.VITE_API_URL = 'https://api.example.com';
+  });
+
+  it('includes visibility in request body when provided', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => ({
+        id: 'TEST',
+        updatedAt: '2024-01-01T00:00:00Z',
+      }),
+    });
+
+    await updateProject('TEST', '{"version":1}', 'a'.repeat(64), 'unlisted');
+
+    const callArgs = mockFetch.mock.calls[0];
+    const body = JSON.parse(callArgs[1].body);
+    expect(body.visibility).toBe('unlisted');
+  });
+});
+
+describe('listProjects', () => {
+  beforeEach(() => {
+    mockFetch.mockClear();
+    import.meta.env.VITE_API_URL = 'https://api.example.com';
+  });
+
+  it('makes GET request to /api/projects with auth header', async () => {
+    const responseData = {
+      projects: [
+        { id: 'PROJ1', visibility: 'private', createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
+      ],
+    };
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => responseData,
+    });
+
+    const tokenHash = 'a'.repeat(64);
+    const result = await listProjects(tokenHash);
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://api.example.com/api/projects',
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${tokenHash}`,
+        },
+      },
+    );
+    expect(result).toEqual(responseData);
+  });
+
+  it('throws ApiError on 401', async () => {
+    mockFetch.mockResolvedValue(mockErrorResponse(401, { error: 'Unauthorized' }));
+
+    await expect(listProjects('bad'.repeat(16))).rejects.toThrow(ApiError);
   });
 });
 

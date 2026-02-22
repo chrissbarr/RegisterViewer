@@ -1,6 +1,6 @@
-import type { Env, StoredProject, CreateProjectResponse, GetProjectResponse, UpdateProjectResponse } from './types';
+import type { Env, StoredProject, CreateProjectResponse, GetProjectResponse, UpdateProjectResponse, ListProjectsResponse } from './types';
 import { LIMITS } from './types';
-import { getProject, putProject, deleteProject, touchLastAccessed } from './data-access';
+import { getProject, putProject, deleteProject, listProjectsByOwner, isValidVisibility } from './data-access';
 import { validateProjectData } from './validation';
 import { extractTokenHash, isOwner } from './auth';
 import { generateId } from './id';
@@ -75,7 +75,7 @@ async function handleCreate(request: Request, env: Env, cors: Record<string, str
     return errorResponse(`Request body must be at most ${LIMITS.MAX_PAYLOAD_SIZE} bytes`, 400, cors);
   }
 
-  let body: { data?: unknown };
+  let body: { data?: unknown; visibility?: unknown };
   try {
     const text = await request.text();
     if (text.length > LIMITS.MAX_PAYLOAD_SIZE) {
@@ -89,6 +89,15 @@ async function handleCreate(request: Request, env: Env, cors: Record<string, str
   const validation = validateProjectData(body.data);
   if (!validation.valid) {
     return errorResponse(validation.error, 400, cors);
+  }
+
+  // Validate visibility (optional, defaults to 'private')
+  let visibility: 'private' | 'unlisted' = 'private';
+  if (body.visibility !== undefined) {
+    if (!isValidVisibility(body.visibility)) {
+      return errorResponse('visibility must be "private" or "unlisted"', 400, cors);
+    }
+    visibility = body.visibility;
   }
 
   // Generate ID with collision check (max 3 attempts)
@@ -111,6 +120,7 @@ async function handleCreate(request: Request, env: Env, cors: Record<string, str
     schemaVersion: 1,
     id,
     ownerTokenHash: tokenHash,
+    visibility,
     createdAt: now,
     updatedAt: now,
     lastAccessedAt: now,
@@ -130,7 +140,7 @@ async function handleCreate(request: Request, env: Env, cors: Record<string, str
 }
 
 async function handleGet(
-  _request: Request,
+  request: Request,
   env: Env,
   ctx: ExecutionContext,
   id: string,
@@ -141,6 +151,14 @@ async function handleGet(
     return errorResponse('Project not found', 404, cors);
   }
 
+  // Private projects require ownership
+  if (project.visibility === 'private') {
+    const tokenHash = extractTokenHash(request);
+    if (!tokenHash || !isOwner(tokenHash, project)) {
+      return errorResponse('Project not found', 404, cors);
+    }
+  }
+
   // Throttled write-back: update lastAccessedAt if >24h stale
   const lastAccessed = new Date(project.lastAccessedAt).getTime();
   const now = Date.now();
@@ -148,7 +166,13 @@ async function handleGet(
 
   if (now - lastAccessed > ONE_DAY_MS) {
     ctx.waitUntil(
-      touchLastAccessed(env.PROJECTS, id, new Date(now).toISOString()),
+      (async () => {
+        const p = await getProject(env.PROJECTS, id);
+        if (p) {
+          p.lastAccessedAt = new Date(now).toISOString();
+          await env.PROJECTS.put(`project:${id}`, JSON.stringify(p));
+        }
+      })(),
     );
   }
 
@@ -159,9 +183,13 @@ async function handleGet(
     updatedAt: project.updatedAt,
   };
 
+  const cacheControl = project.visibility === 'private'
+    ? 'private, no-store'
+    : 'public, max-age=60';
+
   return jsonResponse(response, 200, {
     ...cors,
-    'Cache-Control': 'public, max-age=60',
+    'Cache-Control': cacheControl,
   });
 }
 
@@ -185,7 +213,7 @@ async function handleUpdate(request: Request, env: Env, id: string, cors: Record
     return errorResponse(`Request body must be at most ${LIMITS.MAX_PAYLOAD_SIZE} bytes`, 400, cors);
   }
 
-  let body: { data?: unknown };
+  let body: { data?: unknown; visibility?: unknown };
   try {
     const text = await request.text();
     if (text.length > LIMITS.MAX_PAYLOAD_SIZE) {
@@ -201,10 +229,20 @@ async function handleUpdate(request: Request, env: Env, id: string, cors: Record
     return errorResponse(validation.error, 400, cors);
   }
 
+  // Validate visibility (optional, keeps existing if not provided)
+  let visibility = existing.visibility;
+  if (body.visibility !== undefined) {
+    if (!isValidVisibility(body.visibility)) {
+      return errorResponse('visibility must be "private" or "unlisted"', 400, cors);
+    }
+    visibility = body.visibility;
+  }
+
   const now = new Date().toISOString();
   const updated: StoredProject = {
     ...existing,
     data: body.data as StoredProject['data'],
+    visibility,
     updatedAt: now,
     lastAccessedAt: now,
   };
@@ -234,9 +272,32 @@ async function handleDelete(request: Request, env: Env, id: string, cors: Record
     return errorResponse('Forbidden: you do not own this project', 403, cors);
   }
 
-  await deleteProject(env.PROJECTS, id);
+  await deleteProject(env.PROJECTS, id, existing.ownerTokenHash);
 
   return new Response(null, { status: 204, headers: cors });
+}
+
+async function handleList(request: Request, env: Env, cors: Record<string, string>): Promise<Response> {
+  const tokenHash = extractTokenHash(request);
+  if (!tokenHash) {
+    return errorResponse('Missing or invalid Authorization header', 401, cors);
+  }
+
+  const projects = await listProjectsByOwner(env.PROJECTS, tokenHash);
+
+  const response: ListProjectsResponse = {
+    projects: projects.map((p) => ({
+      id: p.id,
+      visibility: p.visibility,
+      createdAt: p.createdAt,
+      updatedAt: p.updatedAt,
+    })),
+  };
+
+  return jsonResponse(response, 200, {
+    ...cors,
+    'Cache-Control': 'private, no-store',
+  });
 }
 
 // ---- Worker entry point ----
@@ -254,9 +315,14 @@ export default {
     }
 
     try {
-      // POST /api/projects
-      if (method === 'POST' && COLLECTION_PATTERN.test(pathname)) {
-        return await handleCreate(request, env, cors);
+      // Collection routes: POST /api/projects (create) and GET /api/projects (list)
+      if (COLLECTION_PATTERN.test(pathname)) {
+        if (method === 'POST') {
+          return await handleCreate(request, env, cors);
+        }
+        if (method === 'GET') {
+          return await handleList(request, env, cors);
+        }
       }
 
       // Routes with :id parameter

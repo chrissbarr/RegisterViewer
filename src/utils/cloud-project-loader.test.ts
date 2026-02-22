@@ -46,7 +46,7 @@ describe('fetchAndParseCloudProject', () => {
 
     const result = await fetchAndParseCloudProject('ABC123DEF456');
 
-    expect(mockGetProject).toHaveBeenCalledWith('ABC123DEF456');
+    expect(mockGetProject).toHaveBeenCalledWith('ABC123DEF456', undefined);
     expect(result.registers).toHaveLength(1);
     expect(result.registers[0].name).toBe('STATUS');
   });

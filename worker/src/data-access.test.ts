@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { projectKey, migrateStoredProject, getProject, putProject, touchLastAccessed } from './data-access';
+import { projectKey, ownerIndexKey, migrateStoredProject, getProject, putProject, touchLastAccessed, deleteProject, listProjectsByOwner, isValidVisibility } from './data-access';
 import type { StoredProject } from './types';
 
 /** Minimal in-memory KVNamespace mock for testing async KV operations. */
@@ -20,7 +20,13 @@ function createMockKV(): KVNamespace {
       store.delete(key);
       return Promise.resolve();
     }) as KVNamespace['delete'],
-    list: (() => Promise.resolve({ keys: [], list_complete: true, cacheStatus: null })) as KVNamespace['list'],
+    list: ((opts?: { prefix?: string; cursor?: string }) => {
+      const prefix = opts?.prefix ?? '';
+      const keys = Array.from(store.keys())
+        .filter((k) => k.startsWith(prefix))
+        .map((name) => ({ name, expiration: undefined, metadata: undefined }));
+      return Promise.resolve({ keys, list_complete: true, cursor: '', cacheStatus: null });
+    }) as KVNamespace['list'],
     getWithMetadata: (() => Promise.resolve({ value: null, metadata: null, cacheStatus: null })) as unknown as KVNamespace['getWithMetadata'],
   };
 }
@@ -46,11 +52,40 @@ describe('projectKey', () => {
   });
 });
 
+describe('ownerIndexKey', () => {
+  it('formats key with owner: prefix', () => {
+    const hash = 'a'.repeat(64);
+    expect(ownerIndexKey(hash, 'proj123')).toBe(`owner:${hash}:proj123`);
+  });
+});
+
+describe('isValidVisibility', () => {
+  it('accepts "private"', () => {
+    expect(isValidVisibility('private')).toBe(true);
+  });
+
+  it('accepts "unlisted"', () => {
+    expect(isValidVisibility('unlisted')).toBe(true);
+  });
+
+  it('rejects invalid strings', () => {
+    expect(isValidVisibility('public')).toBe(false);
+    expect(isValidVisibility('')).toBe(false);
+  });
+
+  it('rejects non-strings', () => {
+    expect(isValidVisibility(123)).toBe(false);
+    expect(isValidVisibility(null)).toBe(false);
+    expect(isValidVisibility(undefined)).toBe(false);
+  });
+});
+
 describe('migrateStoredProject', () => {
   const createValidV1Project = (): StoredProject => ({
     schemaVersion: 1,
     id: 'ABC123DEF456',
     ownerTokenHash: 'a'.repeat(64),
+    visibility: 'unlisted',
     createdAt: '2024-01-01T00:00:00Z',
     updatedAt: '2024-01-02T00:00:00Z',
     lastAccessedAt: '2024-01-03T00:00:00Z',
@@ -75,17 +110,33 @@ describe('migrateStoredProject', () => {
       expect(migrated).toEqual(project);
     });
 
-    it('preserves all fields', () => {
+    it('preserves all fields including visibility', () => {
       const project = createValidV1Project();
       const migrated = migrateStoredProject(project);
 
       expect(migrated.schemaVersion).toBe(1);
       expect(migrated.id).toBe('ABC123DEF456');
       expect(migrated.ownerTokenHash).toBe('a'.repeat(64));
+      expect(migrated.visibility).toBe('unlisted');
       expect(migrated.createdAt).toBe('2024-01-01T00:00:00Z');
       expect(migrated.updatedAt).toBe('2024-01-02T00:00:00Z');
       expect(migrated.lastAccessedAt).toBe('2024-01-03T00:00:00Z');
       expect(migrated.data).toEqual(project.data);
+    });
+
+    it('defaults visibility to private if missing', () => {
+      const project = {
+        schemaVersion: 1,
+        id: 'TEST',
+        ownerTokenHash: 'a'.repeat(64),
+        createdAt: '2024-01-01T00:00:00Z',
+        updatedAt: '2024-01-02T00:00:00Z',
+        lastAccessedAt: '2024-01-03T00:00:00Z',
+        data: { version: 1, registers: [], registerValues: {} },
+      };
+
+      const migrated = migrateStoredProject(project);
+      expect(migrated.visibility).toBe('private');
     });
 
     it('fills missing timestamps with current time', () => {
@@ -110,7 +161,7 @@ describe('migrateStoredProject', () => {
   });
 
   describe('v0 schema (legacy)', () => {
-    it('migrates v0 project to v1', () => {
+    it('migrates v0 project to v1 with default visibility', () => {
       const v0Project = {
         id: 'LEGACY',
         ownerTokenHash: 'b'.repeat(64),
@@ -128,6 +179,7 @@ describe('migrateStoredProject', () => {
       expect(migrated.schemaVersion).toBe(1);
       expect(migrated.id).toBe('LEGACY');
       expect(migrated.ownerTokenHash).toBe('b'.repeat(64));
+      expect(migrated.visibility).toBe('private');
       expect(migrated.createdAt).toBe('2023-01-01T00:00:00Z');
       expect(migrated.updatedAt).toBe('2023-01-02T00:00:00Z');
       expect(migrated.lastAccessedAt).toBeDefined();
@@ -145,6 +197,7 @@ describe('migrateStoredProject', () => {
       const migrated = migrateStoredProject(v0Project);
 
       expect(migrated.schemaVersion).toBe(1);
+      expect(migrated.visibility).toBe('private');
     });
 
     it('backfills lastAccessedAt if missing', () => {
@@ -218,6 +271,7 @@ describe('migrateStoredProject', () => {
         schemaVersion: 2,
         id: 'FUTURE',
         ownerTokenHash: 'c'.repeat(64),
+        visibility: 'unlisted',
         createdAt: '2025-01-01T00:00:00Z',
         updatedAt: '2025-01-02T00:00:00Z',
         lastAccessedAt: '2025-01-03T00:00:00Z',
@@ -232,6 +286,7 @@ describe('migrateStoredProject', () => {
       expect(migrated.schemaVersion).toBe(1);
       expect(migrated.id).toBe('FUTURE');
       expect(migrated.ownerTokenHash).toBe('c'.repeat(64));
+      expect(migrated.visibility).toBe('unlisted');
       expect(migrated.createdAt).toBe('2025-01-01T00:00:00Z');
       expect(migrated.updatedAt).toBe('2025-01-02T00:00:00Z');
       expect(migrated.lastAccessedAt).toBe('2025-01-03T00:00:00Z');
@@ -248,6 +303,7 @@ describe('migrateStoredProject', () => {
       const migrated = migrateStoredProject(futureProject);
 
       expect(migrated.schemaVersion).toBe(1);
+      expect(migrated.visibility).toBe('private');
       expect(migrated.createdAt).toBeDefined();
       expect(migrated.updatedAt).toBeDefined();
       expect(migrated.lastAccessedAt).toBeDefined();
@@ -412,6 +468,7 @@ describe('migrateStoredProject', () => {
           schemaVersion: 1,
           id: 'TEST',
           ownerTokenHash: 'f'.repeat(64),
+          visibility: 'unlisted' as const,
           createdAt: timestamp,
           updatedAt: timestamp,
           lastAccessedAt: timestamp,
@@ -450,6 +507,7 @@ describe('touchLastAccessed', () => {
     schemaVersion: 1,
     id: 'TEST123',
     ownerTokenHash: 'a'.repeat(64),
+    visibility: 'private',
     createdAt: '2024-01-01T00:00:00Z',
     updatedAt: '2024-01-02T00:00:00Z',
     lastAccessedAt: '2024-01-03T00:00:00Z',
@@ -482,6 +540,7 @@ describe('touchLastAccessed', () => {
     expect(updated).not.toBeNull();
     expect(updated!.id).toBe(project.id);
     expect(updated!.ownerTokenHash).toBe(project.ownerTokenHash);
+    expect(updated!.visibility).toBe(project.visibility);
     expect(updated!.createdAt).toBe(project.createdAt);
     expect(updated!.updatedAt).toBe(project.updatedAt);
     expect(updated!.data).toEqual(project.data);
@@ -530,13 +589,14 @@ describe('touchLastAccessed', () => {
   });
 });
 
-describe('getProject / putProject round-trip', () => {
+describe('putProject / getProject round-trip', () => {
   it('stores and retrieves a project', async () => {
     const kv = createMockKV();
     const project: StoredProject = {
       schemaVersion: 1,
       id: 'ROUNDTRIP',
       ownerTokenHash: 'b'.repeat(64),
+      visibility: 'unlisted',
       createdAt: '2024-01-01T00:00:00Z',
       updatedAt: '2024-01-02T00:00:00Z',
       lastAccessedAt: '2024-01-03T00:00:00Z',
@@ -549,9 +609,165 @@ describe('getProject / putProject round-trip', () => {
     expect(retrieved).toEqual(project);
   });
 
+  it('writes owner index key on put', async () => {
+    const kv = createMockKV();
+    const tokenHash = 'b'.repeat(64);
+    const project: StoredProject = {
+      schemaVersion: 1,
+      id: 'INDEXED',
+      ownerTokenHash: tokenHash,
+      visibility: 'private',
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-02T00:00:00Z',
+      lastAccessedAt: '2024-01-03T00:00:00Z',
+      data: { version: 1, registers: [], registerValues: {} },
+    };
+
+    await putProject(kv, project);
+
+    // Verify owner index key exists
+    const indexValue = await kv.get(ownerIndexKey(tokenHash, 'INDEXED'));
+    expect(indexValue).toBe('1');
+  });
+
   it('returns null for non-existent project', async () => {
     const kv = createMockKV();
     const result = await getProject(kv, 'MISSING');
     expect(result).toBeNull();
+  });
+});
+
+describe('deleteProject', () => {
+  it('removes both project key and owner index', async () => {
+    const kv = createMockKV();
+    const tokenHash = 'a'.repeat(64);
+    const project: StoredProject = {
+      schemaVersion: 1,
+      id: 'TODELETE',
+      ownerTokenHash: tokenHash,
+      visibility: 'private',
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-02T00:00:00Z',
+      lastAccessedAt: '2024-01-03T00:00:00Z',
+      data: { version: 1, registers: [], registerValues: {} },
+    };
+
+    await putProject(kv, project);
+    await deleteProject(kv, 'TODELETE', tokenHash);
+
+    expect(await getProject(kv, 'TODELETE')).toBeNull();
+    expect(await kv.get(ownerIndexKey(tokenHash, 'TODELETE'))).toBeNull();
+  });
+
+  it('is idempotent for non-existent project', async () => {
+    const kv = createMockKV();
+    // Should not throw
+    await deleteProject(kv, 'NONEXISTENT', 'a'.repeat(64));
+  });
+});
+
+describe('listProjectsByOwner', () => {
+  it('returns all projects owned by token hash', async () => {
+    const kv = createMockKV();
+    const tokenHash = 'a'.repeat(64);
+
+    const project1: StoredProject = {
+      schemaVersion: 1,
+      id: 'PROJ1',
+      ownerTokenHash: tokenHash,
+      visibility: 'private',
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+      lastAccessedAt: '2024-01-01T00:00:00Z',
+      data: { version: 1, registers: [], registerValues: {} },
+    };
+
+    const project2: StoredProject = {
+      schemaVersion: 1,
+      id: 'PROJ2',
+      ownerTokenHash: tokenHash,
+      visibility: 'unlisted',
+      createdAt: '2024-01-02T00:00:00Z',
+      updatedAt: '2024-01-02T00:00:00Z',
+      lastAccessedAt: '2024-01-02T00:00:00Z',
+      data: { version: 1, registers: [], registerValues: {} },
+    };
+
+    await putProject(kv, project1);
+    await putProject(kv, project2);
+
+    const result = await listProjectsByOwner(kv, tokenHash);
+    expect(result).toHaveLength(2);
+    expect(result.map((p) => p.id).sort()).toEqual(['PROJ1', 'PROJ2']);
+  });
+
+  it('does not return projects from other owners', async () => {
+    const kv = createMockKV();
+    const tokenA = 'a'.repeat(64);
+    const tokenB = 'b'.repeat(64);
+
+    const projectA: StoredProject = {
+      schemaVersion: 1,
+      id: 'PROJA',
+      ownerTokenHash: tokenA,
+      visibility: 'private',
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+      lastAccessedAt: '2024-01-01T00:00:00Z',
+      data: { version: 1, registers: [], registerValues: {} },
+    };
+
+    const projectB: StoredProject = {
+      schemaVersion: 1,
+      id: 'PROJB',
+      ownerTokenHash: tokenB,
+      visibility: 'private',
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+      lastAccessedAt: '2024-01-01T00:00:00Z',
+      data: { version: 1, registers: [], registerValues: {} },
+    };
+
+    await putProject(kv, projectA);
+    await putProject(kv, projectB);
+
+    const resultA = await listProjectsByOwner(kv, tokenA);
+    expect(resultA).toHaveLength(1);
+    expect(resultA[0].id).toBe('PROJA');
+
+    const resultB = await listProjectsByOwner(kv, tokenB);
+    expect(resultB).toHaveLength(1);
+    expect(resultB[0].id).toBe('PROJB');
+  });
+
+  it('returns empty array for owner with no projects', async () => {
+    const kv = createMockKV();
+    const result = await listProjectsByOwner(kv, 'c'.repeat(64));
+    expect(result).toEqual([]);
+  });
+
+  it('filters out phantom index entries (orphaned indexes)', async () => {
+    const kv = createMockKV();
+    const tokenHash = 'a'.repeat(64);
+
+    // Write an owner index entry without a corresponding project
+    await kv.put(ownerIndexKey(tokenHash, 'PHANTOM'), '1');
+
+    // Write a real project
+    const project: StoredProject = {
+      schemaVersion: 1,
+      id: 'REAL',
+      ownerTokenHash: tokenHash,
+      visibility: 'private',
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+      lastAccessedAt: '2024-01-01T00:00:00Z',
+      data: { version: 1, registers: [], registerValues: {} },
+    };
+    await putProject(kv, project);
+
+    const result = await listProjectsByOwner(kv, tokenHash);
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('REAL');
   });
 });

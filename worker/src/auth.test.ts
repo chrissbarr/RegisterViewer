@@ -132,6 +132,7 @@ describe('isOwner', () => {
     schemaVersion: 1,
     id: 'test-project',
     ownerTokenHash,
+    visibility: 'private',
     createdAt: '2024-01-01T00:00:00Z',
     updatedAt: '2024-01-01T00:00:00Z',
     lastAccessedAt: '2024-01-01T00:00:00Z',
