@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Dialog } from './dialog';
 import { CopyButton } from './copy-button';
-import { loadLocalProjects, type LocalProjectRecord } from '../../utils/cloud-projects';
+import { buildProjectUrl, loadLocalProjects, type LocalProjectRecord } from '../../utils/cloud-projects';
 import { useCloudActions, useCloudProject } from '../../context/cloud-context';
 
 interface SavedProjectsDialogProps {
@@ -111,7 +111,7 @@ export function SavedProjectsDialog({ open, onClose }: SavedProjectsDialogProps)
         ) : (
           <ul className="space-y-2">
             {projects.map((project) => {
-              const shareUrl = project.shareUrl || `${window.location.href.split('#')[0]}#/p/${project.id}`;
+              const shareUrl = buildProjectUrl(project.id);
               const isOpening = openingId === project.id;
               const isConfirming = confirmDeleteId === project.id;
               const isDeleting = deletingId === project.id;

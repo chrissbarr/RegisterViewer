@@ -16,6 +16,7 @@ import {
 } from '../utils/owner-token';
 import {
   addLocalProject,
+  buildProjectUrl,
   removeLocalProject,
   updateLocalProject,
 } from '../utils/cloud-projects';
@@ -34,7 +35,7 @@ interface CloudActions {
   save: () => Promise<void>;
   fork: () => Promise<void>;
   deleteCloudById: (id: string) => Promise<void>;
-  setProjectId: (id: string, isOwner: boolean, shareUrl?: string | null) => void;
+  setProjectId: (id: string, isOwner: boolean) => void;
   clearCloud: () => void;
   dismissError: () => void;
   loadProject: (id: string) => Promise<void>;
@@ -111,10 +112,10 @@ export function CloudProjectProvider({ children }: { children: ReactNode }) {
         ownerToken,
         name: projectName,
         savedAt: result.createdAt,
-        shareUrl: result.shareUrl,
+        shareUrl: buildProjectUrl(result.id),
       });
 
-      const shareUrl = `${window.location.href.split('#')[0]}#/p/${result.id}`;
+      const shareUrl = buildProjectUrl(result.id);
       history.replaceState(null, '', `#/p/${result.id}`);
 
       setInternal((prev) => ({
@@ -211,12 +212,12 @@ export function CloudProjectProvider({ children }: { children: ReactNode }) {
 
   // P-6: setProjectId now marks current dataVersion as saved, avoiding re-serialization
   const setProjectId = useCallback(
-    (id: string, isOwner: boolean, shareUrl?: string | null) => {
+    (id: string, isOwner: boolean) => {
       setInternal((prev) => ({
         ...prev,
         projectId: id,
         isOwner,
-        shareUrl: shareUrl ?? `${window.location.href.split('#')[0]}#/p/${id}`,
+        shareUrl: buildProjectUrl(id),
         lastSavedVersion: dataVersionRef.current,
       }));
     },
@@ -248,7 +249,7 @@ export function CloudProjectProvider({ children }: { children: ReactNode }) {
         });
 
         const isOwner = checkOwnership(id);
-        const shareUrl = `${window.location.href.split('#')[0]}#/p/${id}`;
+        const shareUrl = buildProjectUrl(id);
 
         // Signal the version-tracking useEffect to capture lastSavedVersion
         // after it increments dataVersionRef in response to the IMPORT_STATE dispatch.

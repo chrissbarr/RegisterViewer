@@ -1,3 +1,7 @@
+export function buildProjectUrl(id: string): string {
+  return `${window.location.href.split('#')[0]}#/p/${id}`;
+}
+
 export interface LocalProjectRecord {
   id: string;
   ownerToken: string;
