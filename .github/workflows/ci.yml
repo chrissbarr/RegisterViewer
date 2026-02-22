@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  check:
+  frontend:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -22,6 +22,9 @@ jobs:
         run: npm ci
       - name: Lint
         run: npm run lint
+      - name: Dead code check (knip)
+        run: npm run knip
+        continue-on-error: true
       - name: Unit tests
         run: npm test
       - name: Build
@@ -30,3 +33,28 @@ jobs:
         run: npx playwright install chromium --with-deps
       - name: E2E tests
         run: npm run test:e2e
+
+  worker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        working-directory: worker
+        run: npm ci
+      - name: Lint
+        working-directory: worker
+        run: npm run lint
+      - name: Type check
+        working-directory: worker
+        run: npx tsc --noEmit
+      - name: Dead code check (knip)
+        working-directory: worker
+        run: npm run knip
+        continue-on-error: true
+      - name: Run tests
+        working-directory: worker
+        run: npm test

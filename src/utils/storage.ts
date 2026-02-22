@@ -114,7 +114,7 @@ export function sanitizeProjectMetadata(raw: unknown): ProjectMetadata | undefin
   return Object.keys(result).length > 0 ? result : undefined;
 }
 
-export function exportToJson(state: AppState): string {
+export function exportToJson(state: AppState, pretty = false): string {
   const cleanRegisters = state.registers.map(stripIds);
   const registerValues: Record<string, string> = {};
   for (const reg of state.registers) {
@@ -134,7 +134,7 @@ export function exportToJson(state: AppState): string {
   if (state.addressUnitBits !== ADDRESS_UNIT_BITS_DEFAULT) {
     data.addressUnitBits = state.addressUnitBits;
   }
-  return JSON.stringify(data, null, 2);
+  return pretty ? JSON.stringify(data, null, 2) : JSON.stringify(data);
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

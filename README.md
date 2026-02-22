@@ -19,7 +19,9 @@ Enter a raw register value (hex, binary, or decimal) and instantly see how it br
   - IEEE 754 floats (half, single, double precision)
   - Fixed-point (Qm.n notation)
 - **GUI + JSON editor** — define fields via a visual form or edit raw JSON for power users
-- **Persistence** — auto-saves to localStorage; export/import as JSON files for sharing
+- **Persistence** — auto-saves to localStorage; export/import as JSON files
+- **Cloud save & share** — save projects to the cloud and share via short URLs; no account required
+- **Snapshot URLs** — share small projects as self-contained compressed URLs with no server dependency
 - **Dark/light theme** with toggle
 
 ## Tech Stack
@@ -28,6 +30,7 @@ Enter a raw register value (hex, binary, or decimal) and instantly see how it br
 - **Vite** for builds and dev server
 - **Tailwind CSS v4** for styling
 - **@dnd-kit** for drag-and-drop register reordering
+- **Cloudflare Workers + KV** for the cloud save/share backend (optional, see [DEPLOYMENT.md](docs/DEPLOYMENT.md))
 
 ## Getting Started
 
@@ -49,6 +52,15 @@ Open http://localhost:5173 in your browser. On first launch, an example 32-bit S
 | `npm test` | Run all unit tests |
 | `npm run test:watch` | Run tests in watch mode (re-runs on file changes) |
 | `npm run test:coverage` | Run tests with V8 coverage report |
+| `npm run test:e2e` | Run Playwright end-to-end tests |
+
+### Worker (cloud backend)
+
+| Command | Description |
+|---------|-------------|
+| `cd worker && npm run dev` | Start local Worker dev server (localhost:8787) |
+| `cd worker && npm test` | Run Worker unit tests |
+| `cd worker && npm run deploy` | Deploy Worker to Cloudflare |
 
 ## Testing
 
@@ -74,40 +86,40 @@ Test files:
 
 ```
 src/
-  App.tsx                       # Root component, loads saved state or seeds example
-  main.tsx                      # Entry point
-  index.css                     # Tailwind directives + theme config
-  types/
-    register.ts                 # TypeScript interfaces (Field, RegisterDef, AppState, etc.)
-  context/
-    app-context.tsx             # React Context + useReducer state management
-  utils/
-    bitwise.ts                  # Bit extraction, replacement, toggling
-    decode.ts                   # Decode field values from register (all types)
-    encode.ts                   # Encode user input back to raw bits
-    float.ts                    # IEEE 754 half/single/double conversion
-    fixed-point.ts              # Qm.n fixed-point encode/decode
-    validation.ts               # Register definition validation, overlap detection
-    storage.ts                  # localStorage persistence, JSON export/import
-    seed-data.ts                # Example register for first-launch experience
   components/
+    app-loader.tsx              # Hash fragment routing (cloud links, snapshot URLs)
     layout/
       app-shell.tsx             # Top-level layout, theme sync, auto-save
-      header.tsx                # Title bar, import/export buttons, theme toggle
+      header.tsx                # Title bar, save/share/import/export, theme toggle
       sidebar.tsx               # Register list panel
-    register-list/
-      register-list.tsx         # List of registers + add button
-      register-list-item.tsx    # Single register entry
-    viewer/
-      main-panel.tsx            # Main content area (viewer or editor mode)
-      value-input-bar.tsx       # Hex/binary/decimal value inputs
-      bit-grid.tsx              # Visual bit grid with field coloring
-      field-table.tsx           # Decoded field values table
-      field-row.tsx             # Single field with edit controls
-    editor/
-      register-editor.tsx       # Register definition editor (GUI + JSON tabs)
-      field-definition-form.tsx # GUI form for defining a single field
-      json-config-editor.tsx    # Raw JSON editor with validation
     common/
-      dropdown-menu.tsx         # Reusable dropdown menu with action/toggle items
+      save-button.tsx           # Cloud save button with loading state
+      share-button.tsx          # Share button (opens share dialog)
+      share-dialog.tsx          # Share URL options (snapshot + cloud link)
+      saved-projects-dialog.tsx # List of saved cloud projects
+      shared-project-banner.tsx # Banner when viewing a shared project
+      ...
+    viewer/  editor/  register-list/  # (unchanged)
+  context/
+    app-context.tsx             # React Context + useReducer state management
+    cloud-context.tsx           # Cloud project state (save/share/dirty tracking)
+  utils/
+    api-client.ts               # Fetch wrapper for cloud API
+    owner-token.ts              # Anonymous owner token generation + hashing
+    cloud-projects.ts           # Local project records in localStorage
+    snapshot-url.ts             # Compressed snapshot URL encode/decode
+    bitwise.ts  decode.ts  encode.ts  float.ts  fixed-point.ts
+    validation.ts  storage.ts  seed-data.ts  ...
+  types/
+    register.ts                 # Core TypeScript interfaces
+
+worker/                         # Cloudflare Worker backend (optional)
+  src/
+    index.ts                    # Entry point: CORS, routing, CRUD handlers
+    types.ts                    # StoredProject, Env, API response types
+    data-access.ts              # KV read/write with schema migration
+    validation.ts               # Payload structural validation
+    auth.ts                     # Token extraction + constant-time comparison
+    id.ts                       # 12-char base62 ID generation
+  wrangler.toml                 # Worker configuration
 ```

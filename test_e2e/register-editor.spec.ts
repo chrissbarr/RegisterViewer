@@ -24,7 +24,7 @@ test.describe('Register Editor', () => {
     await nameInput.clear();
     await nameInput.fill('MY_CUSTOM_REG');
 
-    await page.getByRole('button', { name: 'Save' }).click();
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
 
     await expect(page.getByRole('heading', { name: 'MY_CUSTOM_REG' })).toBeVisible();
   });
@@ -54,7 +54,7 @@ test.describe('Register Editor', () => {
 
     // Close the field form, then save
     await page.getByRole('button', { name: 'Done' }).click();
-    await page.getByRole('button', { name: 'Save' }).click();
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
 
     // Back in viewer mode, the field should be visible in the table
     await expect(page.getByRole('cell', { name: 'FIELD_0' })).toBeVisible();
