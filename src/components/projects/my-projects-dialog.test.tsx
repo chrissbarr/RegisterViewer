@@ -67,12 +67,17 @@ vi.mock('../../context/cloud-sync-context', () => ({
   }),
   useCloudSyncActions: () => ({
     saveToCloud: vi.fn(),
+    saveProjectToCloud: vi.fn(),
     deleteFromCloud: vi.fn(),
+    deleteProjectFromCloud: vi.fn(),
     setVisibility: mockSetVisibility,
+    setProjectVisibility: vi.fn(),
     loadCloudProject: vi.fn(),
     fork: vi.fn(),
     dismissError: vi.fn(),
     initFromProject: vi.fn(),
+    syncCloudProjects: vi.fn().mockResolvedValue({ updatedCount: 0, staleCloudIds: [] }),
+    unlinkCloudProject: vi.fn(),
   }),
 }));
 
