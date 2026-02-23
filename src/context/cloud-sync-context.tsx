@@ -1,7 +1,7 @@
 import { createContext, useContext, useCallback, useState, useMemo, useRef, useEffect, type ReactNode } from 'react';
 import { useAppState, useAppDispatch } from './app-context';
 import { useProjectStorage, useProjectStorageActions } from './project-storage-context';
-import { exportToJson, deserializeState } from '../utils/storage';
+import { exportToObject, deserializeState } from '../utils/storage';
 import {
   isCloudEnabled,
   ApiError,
@@ -164,7 +164,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   });
 
   const createNewCloudProject = useCallback(async (errorLabel: string) => {
-    const jsonPayload = exportToJson(appStateRef.current);
+    const jsonPayload = exportToObject(appStateRef.current);
     setInternal((prev) => ({ ...prev, status: 'saving', error: null }));
     try {
       const ownerToken = getOrCreateOwnerToken();
@@ -212,7 +212,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
         }
 
         setInternal((prev) => ({ ...prev, status: 'saving', error: null }));
-        const jsonPayload = exportToJson(appStateRef.current);
+        const jsonPayload = exportToObject(appStateRef.current);
         const tokenHash = await hashOwnerToken(ownerToken);
         try {
           const result = await updateProject(internal.cloudId, jsonPayload, tokenHash);
@@ -292,7 +292,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     if (!project) throw new Error('Project not found.');
 
     const projectState = deserializeState(project.state);
-    const jsonPayload = exportToJson(projectState);
+    const jsonPayload = exportToObject(projectState);
     const ownerToken = getOrCreateOwnerToken();
     const tokenHash = await hashOwnerToken(ownerToken);
 
@@ -376,7 +376,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
         if (!ownerToken) return;
 
         const tokenHash = await hashOwnerToken(ownerToken);
-        const jsonPayload = exportToJson(appStateRef.current);
+        const jsonPayload = exportToObject(appStateRef.current);
         await updateProject(internal.cloudId, jsonPayload, tokenHash, v);
 
         // Update the manifest entry's visibility
@@ -407,7 +407,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       const project = loadProject(localId);
       if (!project) return;
       const projectState = deserializeState(project.state);
-      const jsonPayload = exportToJson(projectState);
+      const jsonPayload = exportToObject(projectState);
       await updateProject(entry.cloudId, jsonPayload, tokenHash, v);
 
       updateCloudMetadata(localId, { visibility: v });
@@ -416,8 +416,9 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       if (localId === activeLocalIdRef.current) {
         setInternal((prev) => ({ ...prev, visibility: v }));
       }
-    } catch {
-      // Silently fail — the dialog should refresh to show the actual value
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to update visibility.';
+      throw new Error(message);
     }
   }, [updateCloudMetadata]);
 

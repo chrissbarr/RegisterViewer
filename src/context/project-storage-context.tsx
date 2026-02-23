@@ -8,6 +8,7 @@ import {
   deleteProject,
   updateProjectMetadata,
   toProjectListEntry,
+  getMostRecentProjectId,
 } from '../utils/project-storage';
 import type { ProjectListEntry, StoredLocalProject } from '../types/project';
 import type { SerializedAppState } from '../types/register';
@@ -112,16 +113,7 @@ export function ProjectStorageProvider({ children, initialLocalId }: ProjectStor
 
     // If we just deleted the active project, switch to most recent remaining
     if (localId === activeLocalId) {
-      const manifest = loadManifest();
-      const remaining = manifest.projects;
-      if (remaining.length > 0) {
-        const sorted = [...remaining].sort(
-          (a, b) => new Date(b.localSavedAt).getTime() - new Date(a.localSavedAt).getTime(),
-        );
-        setActiveAndPersist(sorted[0].localId);
-      } else {
-        setActiveAndPersist(null);
-      }
+      setActiveAndPersist(getMostRecentProjectId());
     }
 
     refreshProjectList();

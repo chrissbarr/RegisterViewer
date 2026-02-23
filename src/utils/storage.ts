@@ -84,7 +84,8 @@ export function sanitizeProjectMetadata(raw: unknown): ProjectMetadata | undefin
   return Object.keys(result).length > 0 ? result : undefined;
 }
 
-export function exportToJson(state: AppState, pretty = false): string {
+/** Build the export payload as a plain object (no serialization). */
+export function exportToObject(state: AppState): Record<string, unknown> {
   const cleanRegisters = state.registers.map(stripIds);
   const registerValues: Record<string, string> = {};
   for (const reg of state.registers) {
@@ -104,6 +105,11 @@ export function exportToJson(state: AppState, pretty = false): string {
   if (state.addressUnitBits !== ADDRESS_UNIT_BITS_DEFAULT) {
     data.addressUnitBits = state.addressUnitBits;
   }
+  return data;
+}
+
+export function exportToJson(state: AppState, pretty = false): string {
+  const data = exportToObject(state);
   return pretty ? JSON.stringify(data, null, 2) : JSON.stringify(data);
 }
 

@@ -95,7 +95,7 @@ describe('createProject', () => {
       json: async () => responseData,
     });
 
-    const data = '{"version":1,"registers":[]}';
+    const data = { version: 1, registers: [] };
     const tokenHash = 'a'.repeat(64);
 
     const result = await createProject(data, tokenHash);
@@ -107,7 +107,7 @@ describe('createProject', () => {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${'a'.repeat(64)}`,
       },
-      body: JSON.stringify({ data: JSON.parse(data) }),
+      body: JSON.stringify({ data }),
     });
     expect(result).toEqual(responseData);
   });
@@ -115,7 +115,7 @@ describe('createProject', () => {
   it('throws ApiError on non-ok response', async () => {
     mockFetch.mockResolvedValue(mockErrorResponse(400, { error: 'Invalid data' }));
 
-    const data = '{"version":1}';
+    const data = { version: 1 };
     const tokenHash = 'a'.repeat(64);
 
     await expect(createProject(data, tokenHash)).rejects.toThrow(ApiError);
@@ -132,7 +132,7 @@ describe('createProject', () => {
   it('handles response without JSON error body', async () => {
     mockFetch.mockResolvedValue(mockNonJsonErrorResponse(500, 'Internal Server Error'));
 
-    const data = '{"version":1}';
+    const data = { version: 1 };
     const tokenHash = 'a'.repeat(64);
 
     await expect(createProject(data, tokenHash)).rejects.toThrow(ApiError);
@@ -158,7 +158,7 @@ describe('createProject', () => {
       }),
     });
 
-    await createProject('{}', 'a'.repeat(64));
+    await createProject({}, 'a'.repeat(64));
 
     const callArgs = mockFetch.mock.calls[0];
     expect(callArgs[1].headers).toHaveProperty('Content-Type', 'application/json');
@@ -282,7 +282,7 @@ describe('updateProject', () => {
     });
 
     const id = 'ABC123DEF456';
-    const data = '{"version":1,"registers":[]}';
+    const data = { version: 1, registers: [] };
     const tokenHash = 'a'.repeat(64);
 
     const result = await updateProject(id, data, tokenHash);
@@ -296,7 +296,7 @@ describe('updateProject', () => {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${'a'.repeat(64)}`,
         },
-        body: JSON.stringify({ data: JSON.parse(data) }),
+        body: JSON.stringify({ data }),
       },
     );
     expect(result).toEqual(responseData);
@@ -313,7 +313,7 @@ describe('updateProject', () => {
       }),
     });
 
-    await updateProject('test/with/slashes', '{}', 'a'.repeat(64));
+    await updateProject('test/with/slashes', {}, 'a'.repeat(64));
 
     const callArgs = mockFetch.mock.calls[0];
     expect(callArgs[0]).toContain('test%2Fwith%2Fslashes');
@@ -323,11 +323,11 @@ describe('updateProject', () => {
     mockFetch.mockResolvedValue(mockErrorResponse(401, { error: 'Unauthorized' }));
 
     await expect(
-      updateProject('ABC123DEF456', '{}', 'wrong'.repeat(16)),
+      updateProject('ABC123DEF456', {}, 'wrong'.repeat(16)),
     ).rejects.toThrow(ApiError);
 
     try {
-      await updateProject('ABC123DEF456', '{}', 'wrong'.repeat(16));
+      await updateProject('ABC123DEF456', {}, 'wrong'.repeat(16));
     } catch (error) {
       expect(error).toBeInstanceOf(ApiError);
       expect((error as ApiError).status).toBe(401);
@@ -338,7 +338,7 @@ describe('updateProject', () => {
     mockFetch.mockResolvedValueOnce(mockErrorResponse(404, { error: 'Project not found' }));
 
     await expect(
-      updateProject('NONEXISTENT', '{}', 'a'.repeat(64)),
+      updateProject('NONEXISTENT', {}, 'a'.repeat(64)),
     ).rejects.toThrow(ApiError);
   });
 });
@@ -442,7 +442,7 @@ describe('createProject with visibility', () => {
       }),
     });
 
-    const data = '{"version":1,"registers":[]}';
+    const data = { version: 1, registers: [] };
     await createProject(data, 'a'.repeat(64), 'unlisted');
 
     const callArgs = mockFetch.mock.calls[0];
@@ -462,7 +462,7 @@ describe('createProject with visibility', () => {
       }),
     });
 
-    const data = '{"version":1,"registers":[]}';
+    const data = { version: 1, registers: [] };
     await createProject(data, 'a'.repeat(64));
 
     const callArgs = mockFetch.mock.calls[0];
@@ -488,7 +488,7 @@ describe('updateProject with visibility', () => {
       }),
     });
 
-    await updateProject('TEST', '{"version":1}', 'a'.repeat(64), 'unlisted');
+    await updateProject('TEST', { version: 1 }, 'a'.repeat(64), 'unlisted');
 
     const callArgs = mockFetch.mock.calls[0];
     const body = JSON.parse(callArgs[1].body);

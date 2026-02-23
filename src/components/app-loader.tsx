@@ -14,6 +14,7 @@ import {
   loadManifest,
   loadProject,
   createProject,
+  getMostRecentProjectId,
 } from '../utils/project-storage';
 
 const ACTIVE_PROJECT_SESSION_KEY = 'register-viewer-active-project';
@@ -176,15 +177,12 @@ export function AppLoader() {
     // Clear the hash and load default state
     history.replaceState(null, '', window.location.pathname + window.location.search);
     runMigrationIfNeeded();
-    const manifest = loadManifest();
-    if (manifest.projects.length > 0) {
-      const sorted = [...manifest.projects].sort(
-        (a, b) => new Date(b.localSavedAt).getTime() - new Date(a.localSavedAt).getTime(),
-      );
-      const project = loadProject(sorted[0].localId);
+    const mostRecentId = getMostRecentProjectId();
+    if (mostRecentId) {
+      const project = loadProject(mostRecentId);
       if (project) {
         const appState = deserializeState(project.state);
-        setState({ phase: 'ready', initialState: appState, localId: sorted[0].localId });
+        setState({ phase: 'ready', initialState: appState, localId: mostRecentId });
         return;
       }
     }

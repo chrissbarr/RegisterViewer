@@ -1,12 +1,14 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { Dialog } from '../common/dialog';
 import { ConfirmationDialog } from '../common/confirmation-dialog';
+import { FirstTimeCloudPrompt } from '../common/first-time-cloud-prompt';
 import { ProjectListItem } from './project-list-item';
 import { useProjectStorage, useProjectStorageActions } from '../../context/project-storage-context';
 import { useCloudSync, useCloudSyncActions } from '../../context/cloud-sync-context';
 import { useAnnounce } from '../common/announcer';
 import { isCloudEnabled } from '../../utils/api-client';
 import { getStorageUsage } from '../../utils/project-storage';
+import { getOrCreateOwnerToken } from '../../utils/owner-token';
 import type { Visibility } from '../../types/project';
 
 const FILTER_THRESHOLD = 8;
@@ -137,8 +139,13 @@ export function MyProjectsDialog({ open, onClose, onShareProject }: MyProjectsDi
   }, [onShareProject]);
 
   const handleChangeVisibility = useCallback(async (localId: string, v: Visibility) => {
-    await setProjectVisibility(localId, v);
-    announce(`Visibility changed to ${v}`);
+    try {
+      await setProjectVisibility(localId, v);
+      announce(`Visibility changed to ${v}`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to change visibility.';
+      setCloudDeleteError(message);
+    }
   }, [setProjectVisibility, announce]);
 
   const handleSaveToCloud = useCallback((localId: string) => {
@@ -171,7 +178,7 @@ export function MyProjectsDialog({ open, onClose, onShareProject }: MyProjectsDi
 
   const handleDownloadRecoveryKey = useCallback(() => {
     try {
-      const token = localStorage.getItem('register-viewer-owner-token');
+      const token = getOrCreateOwnerToken();
       if (!token) {
         announce('No recovery key found', { politeness: 'assertive' });
         return;
@@ -315,21 +322,11 @@ export function MyProjectsDialog({ open, onClose, onShareProject }: MyProjectsDi
     </Dialog>
 
     {/* First-time cloud save confirmation */}
-    <ConfirmationDialog
+    <FirstTimeCloudPrompt
       open={showFirstTimeCloudPrompt !== null}
       onClose={() => setShowFirstTimeCloudPrompt(null)}
       onConfirm={handleConfirmSaveToCloud}
-      title="Save to Cloud"
-      description="Your project will be uploaded to our servers and you'll get a shareable link."
-      confirmLabel="Save to Cloud"
-      cancelLabel="Cancel"
-    >
-      <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/50 px-4 py-3 mb-2">
-        <p className="text-xs text-blue-700 dark:text-blue-300">
-          Your browser stores an ownership token. Download a recovery key from &ldquo;My Projects&rdquo; to protect against browser data loss.
-        </p>
-      </div>
-    </ConfirmationDialog>
+    />
 
     {/* Cloud delete confirmation dialog */}
     <ConfirmationDialog

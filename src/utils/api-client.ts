@@ -51,11 +51,11 @@ interface CreateProjectResponse {
 }
 
 export async function createProject(
-  data: string,
+  data: unknown,
   tokenHash: string,
   visibility?: 'private' | 'unlisted',
 ): Promise<CreateProjectResponse> {
-  const body: { data: unknown; visibility?: string } = { data: JSON.parse(data) };
+  const body: { data: unknown; visibility?: string } = { data };
   if (visibility) {
     body.visibility = visibility;
   }
@@ -90,11 +90,11 @@ interface UpdateProjectResponse {
 
 export async function updateProject(
   id: string,
-  data: string,
+  data: unknown,
   tokenHash: string,
   visibility?: 'private' | 'unlisted',
 ): Promise<UpdateProjectResponse> {
-  const body: { data: unknown; visibility?: string } = { data: JSON.parse(data) };
+  const body: { data: unknown; visibility?: string } = { data };
   if (visibility !== undefined) {
     body.visibility = visibility;
   }

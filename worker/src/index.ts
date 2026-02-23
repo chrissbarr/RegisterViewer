@@ -193,12 +193,8 @@ async function handleUpdate(request: Request, env: Env, id: string, cors: Record
   }
 
   const existing = await getProject(env.PROJECTS, id);
-  if (!existing) {
+  if (!existing || !isOwner(tokenHash, existing)) {
     return errorResponse('Project not found', 404, cors);
-  }
-
-  if (!isOwner(tokenHash, existing)) {
-    return errorResponse('Forbidden: you do not own this project', 403, cors);
   }
 
   const contentLength = request.headers.get('Content-Length');
@@ -257,12 +253,8 @@ async function handleDelete(request: Request, env: Env, id: string, cors: Record
   }
 
   const existing = await getProject(env.PROJECTS, id);
-  if (!existing) {
+  if (!existing || !isOwner(tokenHash, existing)) {
     return errorResponse('Project not found', 404, cors);
-  }
-
-  if (!isOwner(tokenHash, existing)) {
-    return errorResponse('Forbidden: you do not own this project', 403, cors);
   }
 
   await deleteProject(env.PROJECTS, id, existing.ownerTokenHash);

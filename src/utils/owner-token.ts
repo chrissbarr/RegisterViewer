@@ -10,14 +10,23 @@ export function generateOwnerToken(): string {
     .join('');
 }
 
+/** Cache: token -> hash. Avoids recomputing SHA-256 for the same token. */
+const hashCache = new Map<string, string>();
+
 export async function hashOwnerToken(token: string): Promise<string> {
+  const cached = hashCache.get(token);
+  if (cached) return cached;
+
   const encoder = new TextEncoder();
   const data = encoder.encode(token);
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
   const hashArray = new Uint8Array(hashBuffer);
-  return Array.from(hashArray)
+  const hash = Array.from(hashArray)
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
+
+  hashCache.set(token, hash);
+  return hash;
 }
 
 export function getOrCreateOwnerToken(): string {

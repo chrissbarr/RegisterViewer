@@ -1,7 +1,7 @@
 import { useMemo, useState, useCallback } from 'react';
 import { Dialog } from './dialog';
 import { CopyButton } from './copy-button';
-import { ConfirmationDialog } from './confirmation-dialog';
+import { FirstTimeCloudPrompt } from './first-time-cloud-prompt';
 import { useAppState } from '../../context/app-context';
 import { buildSnapshotUrl } from '../../utils/snapshot-url';
 import { isCloudEnabled } from '../../utils/api-client';
@@ -29,19 +29,13 @@ export function ShareDialog({ open, onClose, projectLocalId }: ShareDialogProps)
 
   // When projectLocalId is provided, load that project's state from localStorage.
   // Otherwise fall back to the active project's state from context.
-  const targetState = useMemo((): AppState | null => {
-    if (!open) return null;
-    if (projectLocalId) {
-      const stored = loadProject(projectLocalId);
-      return stored ? deserializeState(stored.state) : null;
-    }
-    return activeState;
-    // activeState intentionally omitted when projectLocalId is set — the stored
-    // project data doesn't change with active state, and including it would cause
-    // unnecessary deserializeState calls. The dependency array is correct because
-    // the early return for projectLocalId skips activeState entirely.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, projectLocalId, ...(projectLocalId ? [] : [activeState])]);
+  const storedTargetState = useMemo((): AppState | null => {
+    if (!open || !projectLocalId) return null;
+    const stored = loadProject(projectLocalId);
+    return stored ? deserializeState(stored.state) : null;
+  }, [open, projectLocalId]);
+
+  const targetState = projectLocalId ? storedTargetState : (open ? activeState : null);
 
   // Resolve cloud info: from manifest entry when projectLocalId is given, else from context.
   const cloudInfo = useMemo(() => {
@@ -112,7 +106,11 @@ export function ShareDialog({ open, onClose, projectLocalId }: ShareDialogProps)
   const handleMakeUnlisted = useCallback(() => {
     if (projectLocalId) {
       cloudActions.setProjectVisibility(projectLocalId, 'unlisted')
-        .then(() => setRefreshKey(k => k + 1));
+        .then(() => setRefreshKey(k => k + 1))
+        .catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : 'Failed to change visibility.';
+          setSaveError(message);
+        });
     } else {
       cloudActions.setVisibility('unlisted');
     }
@@ -172,21 +170,11 @@ export function ShareDialog({ open, onClose, projectLocalId }: ShareDialogProps)
       </Dialog>
 
       {/* First-time cloud save confirmation */}
-      <ConfirmationDialog
+      <FirstTimeCloudPrompt
         open={showFirstTimePrompt}
         onClose={() => setShowFirstTimePrompt(false)}
         onConfirm={handleConfirmFirstSave}
-        title="Save to Cloud"
-        description="Your project will be uploaded to our servers and you'll get a shareable link."
-        confirmLabel="Save to Cloud"
-        cancelLabel="Cancel"
-      >
-        <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/50 px-4 py-3 mb-2">
-          <p className="text-xs text-blue-700 dark:text-blue-300">
-            Your browser stores an ownership token. Download a recovery key from &ldquo;My Projects&rdquo; to protect against browser data loss.
-          </p>
-        </div>
-      </ConfirmationDialog>
+      />
     </>
   );
 }
