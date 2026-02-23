@@ -12,7 +12,6 @@ vi.mock('../utils/api-client', () => ({
 }));
 
 vi.mock('../utils/project-storage', () => ({
-  loadManifest: vi.fn(),
   loadProject: vi.fn(),
   buildProjectUrl: vi.fn((id: string) => `https://app/#/p/${id}`),
 }));
@@ -36,9 +35,10 @@ vi.mock('../utils/cloud-operations', () => ({
 }));
 
 import { isCloudEnabled } from '../utils/api-client';
-import { loadManifest, loadProject } from '../utils/project-storage';
+import { loadProject } from '../utils/project-storage';
 import { setCloudUrl, clearCloudUrl } from '../utils/cloud-url';
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
+import type { ProjectListEntry } from '../types/project';
 
 function makeInitialState() {
   return {
@@ -53,11 +53,25 @@ function makeInitialState() {
   };
 }
 
+function makeProjectList(entries: Array<{ localId: string; cloudId?: string | null }>): ProjectListEntry[] {
+  return entries.map(p => ({
+    localId: p.localId,
+    cloudId: p.cloudId ?? null,
+    name: 'Test',
+    visibility: 'private' as const,
+    createdAt: '2026-01-01T00:00:00Z',
+    localSavedAt: '2026-01-01T00:00:00Z',
+    cloudSavedAt: null,
+    isCloudSaved: (p.cloudId ?? null) !== null,
+  }));
+}
+
 function makeDeps(overrides: Record<string, unknown> = {}) {
   const initial = makeInitialState();
   const internalRef = { current: overrides.internalState as typeof initial ?? initial };
   return {
     updateCloudMetadata: vi.fn() as Mock,
+    projects: (overrides.projects as ProjectListEntry[]) ?? makeProjectList([{ localId: 'local-1', cloudId: 'cloud-1' }]),
     activeLocalIdRef: { current: (overrides.activeLocalId as string) ?? 'local-1' },
     dataVersionRef: { current: 1 },
     mutationLockRef: { current: false },
@@ -67,24 +81,16 @@ function makeDeps(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function setupManifest(projects: Array<{ localId: string; cloudId?: string | null }>) {
-  (loadManifest as Mock).mockReturnValue({
-    projects: projects.map(p => ({ localId: p.localId, cloudId: p.cloudId ?? null })),
-  });
-}
-
 beforeEach(() => {
   vi.clearAllMocks();
   (isCloudEnabled as Mock).mockReturnValue(true);
   (loadProject as Mock).mockReturnValue({ state: '{}', cloudId: null });
-  setupManifest([{ localId: 'local-1', cloudId: 'cloud-1' }]);
 });
 
 describe('useProjectCloudOps', () => {
   describe('saveProjectToCloud', () => {
     it('creates a new cloud project when no existing cloudId', async () => {
-      const deps = makeDeps();
-      setupManifest([{ localId: 'local-1', cloudId: null }]);
+      const deps = makeDeps({ projects: makeProjectList([{ localId: 'local-1', cloudId: null }]) });
       (loadProject as Mock).mockReturnValue({ state: '{}', cloudId: null });
       (saveProjectToCloudImpl as Mock).mockResolvedValue({
         kind: 'created',
@@ -110,7 +116,6 @@ describe('useProjectCloudOps', () => {
 
     it('updates an existing cloud project', async () => {
       const deps = makeDeps();
-      setupManifest([{ localId: 'local-1', cloudId: 'cloud-1' }]);
       (saveProjectToCloudImpl as Mock).mockResolvedValue({
         kind: 'updated',
         timestamp: '2026-01-02T00:00:00Z',
@@ -169,8 +174,7 @@ describe('useProjectCloudOps', () => {
     });
 
     it('does not update cloud state for non-active project on create', async () => {
-      const deps = makeDeps({ activeLocalId: 'other-local' });
-      setupManifest([{ localId: 'local-1', cloudId: null }]);
+      const deps = makeDeps({ activeLocalId: 'other-local', projects: makeProjectList([{ localId: 'local-1', cloudId: null }]) });
       (loadProject as Mock).mockReturnValue({ state: '{}', cloudId: null });
       (saveProjectToCloudImpl as Mock).mockResolvedValue({
         kind: 'created',
@@ -194,7 +198,6 @@ describe('useProjectCloudOps', () => {
   describe('deleteProjectFromCloud', () => {
     it('deletes and clears metadata for matching project', async () => {
       const deps = makeDeps();
-      setupManifest([{ localId: 'local-1', cloudId: 'cloud-1' }]);
       (deleteProjectFromCloudImpl as Mock).mockResolvedValue(undefined);
 
       const { result } = renderHook(() => useProjectCloudOps(deps));
@@ -215,7 +218,6 @@ describe('useProjectCloudOps', () => {
     it('clears cloud state when deleting active project', async () => {
       const internalState = { ...makeInitialState(), cloudId: 'cloud-1' };
       const deps = makeDeps({ internalState });
-      setupManifest([{ localId: 'local-1', cloudId: 'cloud-1' }]);
       (deleteProjectFromCloudImpl as Mock).mockResolvedValue(undefined);
 
       const { result } = renderHook(() => useProjectCloudOps(deps));
@@ -230,7 +232,6 @@ describe('useProjectCloudOps', () => {
 
     it('does not clear cloud state when deleting non-active project', async () => {
       const deps = makeDeps(); // internalRef.current.cloudId is null (different from cloud-1)
-      setupManifest([{ localId: 'local-1', cloudId: 'cloud-1' }]);
       (deleteProjectFromCloudImpl as Mock).mockResolvedValue(undefined);
 
       const { result } = renderHook(() => useProjectCloudOps(deps));
@@ -246,7 +247,6 @@ describe('useProjectCloudOps', () => {
   describe('setProjectVisibility', () => {
     it('patches visibility and updates metadata', async () => {
       const deps = makeDeps();
-      setupManifest([{ localId: 'local-1', cloudId: 'cloud-1' }]);
       (patchVisibilityImpl as Mock).mockResolvedValue(undefined);
 
       const { result } = renderHook(() => useProjectCloudOps(deps));
@@ -261,7 +261,6 @@ describe('useProjectCloudOps', () => {
 
     it('updates internal state when targeting active project', async () => {
       const deps = makeDeps({ activeLocalId: 'local-1' });
-      setupManifest([{ localId: 'local-1', cloudId: 'cloud-1' }]);
       (patchVisibilityImpl as Mock).mockResolvedValue(undefined);
 
       const { result } = renderHook(() => useProjectCloudOps(deps));
@@ -274,8 +273,7 @@ describe('useProjectCloudOps', () => {
     });
 
     it('returns early when project has no cloudId', async () => {
-      const deps = makeDeps();
-      setupManifest([{ localId: 'local-1', cloudId: null }]);
+      const deps = makeDeps({ projects: makeProjectList([{ localId: 'local-1', cloudId: null }]) });
 
       const { result } = renderHook(() => useProjectCloudOps(deps));
 
@@ -290,7 +288,6 @@ describe('useProjectCloudOps', () => {
   describe('unlinkCloudProject', () => {
     it('clears cloud metadata for the project', () => {
       const deps = makeDeps();
-      setupManifest([{ localId: 'local-1', cloudId: 'cloud-1' }]);
 
       const { result } = renderHook(() => useProjectCloudOps(deps));
 
@@ -309,7 +306,6 @@ describe('useProjectCloudOps', () => {
     it('clears cloud state when unlinking active project', () => {
       const internalState = { ...makeInitialState(), cloudId: 'cloud-1' };
       const deps = makeDeps({ internalState });
-      setupManifest([{ localId: 'local-1', cloudId: 'cloud-1' }]);
 
       const { result } = renderHook(() => useProjectCloudOps(deps));
 
@@ -322,8 +318,7 @@ describe('useProjectCloudOps', () => {
     });
 
     it('does nothing when project has no cloudId', () => {
-      const deps = makeDeps();
-      setupManifest([{ localId: 'local-1', cloudId: null }]);
+      const deps = makeDeps({ projects: makeProjectList([{ localId: 'local-1', cloudId: null }]) });
 
       const { result } = renderHook(() => useProjectCloudOps(deps));
 
@@ -335,8 +330,7 @@ describe('useProjectCloudOps', () => {
     });
 
     it('does nothing when project not found in manifest', () => {
-      const deps = makeDeps();
-      setupManifest([]);
+      const deps = makeDeps({ projects: makeProjectList([]) });
 
       const { result } = renderHook(() => useProjectCloudOps(deps));
 

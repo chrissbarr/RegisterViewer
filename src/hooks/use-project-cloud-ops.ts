@@ -1,10 +1,10 @@
 import { useCallback, useMemo, type MutableRefObject, type SetStateAction, type Dispatch } from 'react';
 import { exportToObject, deserializeState } from '../utils/storage';
 import { isCloudEnabled } from '../utils/api-client';
-import { loadManifest, loadProject, buildProjectUrl } from '../utils/project-storage';
+import { loadProject, buildProjectUrl } from '../utils/project-storage';
 import { setCloudUrl, clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock } from '../utils/cloud-url';
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
-import type { Visibility } from '../types/project';
+import type { Visibility, ProjectListEntry } from '../types/project';
 
 /** Minimal slice of internal cloud-sync state needed by project operations. */
 interface CloudSyncInternalSlice {
@@ -25,6 +25,7 @@ interface ProjectCloudOpsDeps<T extends CloudSyncInternalSlice> {
     visibility: Visibility;
     ownerToken: string | null;
   }>) => void;
+  projects: ProjectListEntry[];
   activeLocalIdRef: MutableRefObject<string | null>;
   dataVersionRef: MutableRefObject<number>;
   mutationLockRef: MutableRefObject<boolean>;
@@ -46,7 +47,7 @@ interface ProjectCloudOps {
  * Used primarily by the My Projects dialog.
  */
 export function useProjectCloudOps<T extends CloudSyncInternalSlice>(deps: ProjectCloudOpsDeps<T>): ProjectCloudOps {
-  const { updateCloudMetadata, activeLocalIdRef, dataVersionRef, mutationLockRef, internalRef, setInternal, initialInternalState } = deps;
+  const { updateCloudMetadata, projects, activeLocalIdRef, dataVersionRef, mutationLockRef, internalRef, setInternal, initialInternalState } = deps;
 
   const saveProjectToCloud = useCallback(async (localId: string) => {
     if (!isCloudEnabled()) return;
@@ -57,8 +58,7 @@ export function useProjectCloudOps<T extends CloudSyncInternalSlice>(deps: Proje
       const projectState = deserializeState(project.state);
       const jsonPayload = exportToObject(projectState);
 
-      const manifest = loadManifest();
-      const entry = manifest.projects.find(p => p.localId === localId);
+      const entry = projects.find(p => p.localId === localId);
       const existingCloudId = entry?.cloudId ?? project.cloudId;
 
       const result = await saveProjectToCloudImpl(jsonPayload, existingCloudId);
@@ -90,14 +90,13 @@ export function useProjectCloudOps<T extends CloudSyncInternalSlice>(deps: Proje
         updateCloudMetadata(localId, { cloudSavedAt: result.timestamp });
       }
     });
-  }, [updateCloudMetadata, mutationLockRef, activeLocalIdRef, dataVersionRef, setInternal]);
+  }, [updateCloudMetadata, projects, mutationLockRef, activeLocalIdRef, dataVersionRef, setInternal]);
 
   const deleteProjectFromCloud = useCallback(async (cloudId: string) => {
     await withMutationLock(mutationLockRef, async () => {
       await deleteProjectFromCloudImpl(cloudId);
 
-      const manifest = loadManifest();
-      const entry = manifest.projects.find(p => p.cloudId === cloudId);
+      const entry = projects.find(p => p.cloudId === cloudId);
       if (entry) {
         updateCloudMetadata(entry.localId, CLEARED_CLOUD_METADATA);
       }
@@ -108,11 +107,10 @@ export function useProjectCloudOps<T extends CloudSyncInternalSlice>(deps: Proje
         setInternal({ ...initialInternalState });
       }
     });
-  }, [updateCloudMetadata, mutationLockRef, internalRef, setInternal, initialInternalState]);
+  }, [updateCloudMetadata, projects, mutationLockRef, internalRef, setInternal, initialInternalState]);
 
   const setProjectVisibility = useCallback(async (localId: string, v: Visibility) => {
-    const manifest = loadManifest();
-    const entry = manifest.projects.find(p => p.localId === localId);
+    const entry = projects.find(p => p.localId === localId);
     if (!entry?.cloudId) return;
 
     await patchVisibilityImpl(entry.cloudId, v);
@@ -123,11 +121,10 @@ export function useProjectCloudOps<T extends CloudSyncInternalSlice>(deps: Proje
     if (localId === activeLocalIdRef.current) {
       setInternal((prev) => ({ ...prev, visibility: v }));
     }
-  }, [updateCloudMetadata, activeLocalIdRef, setInternal]);
+  }, [updateCloudMetadata, projects, activeLocalIdRef, setInternal]);
 
   const unlinkCloudProject = useCallback((localId: string) => {
-    const manifest = loadManifest();
-    const entry = manifest.projects.find(p => p.localId === localId);
+    const entry = projects.find(p => p.localId === localId);
     if (!entry || !entry.cloudId) return;
 
     const cloudId = entry.cloudId;
@@ -138,7 +135,7 @@ export function useProjectCloudOps<T extends CloudSyncInternalSlice>(deps: Proje
       clearCloudUrl();
       setInternal({ ...initialInternalState });
     }
-  }, [updateCloudMetadata, internalRef, setInternal, initialInternalState]);
+  }, [updateCloudMetadata, projects, internalRef, setInternal, initialInternalState]);
 
   return useMemo(
     () => ({ saveProjectToCloud, deleteProjectFromCloud, setProjectVisibility, unlinkCloudProject }),
