@@ -9,7 +9,7 @@ export interface ValidationError {
   message: string;
 }
 
-export interface FieldWarning {
+interface FieldWarning {
   fieldIds: string[];
   message: string;
 }

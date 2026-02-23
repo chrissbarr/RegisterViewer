@@ -9,7 +9,7 @@ function isValidAddressUnitBits(n: number): n is AddressUnitBits {
 
 // --- Actions ---
 
-export type Action =
+type Action =
   | { type: 'SET_REGISTER_VALUE'; registerId: string; value: bigint }
   | { type: 'TOGGLE_BIT'; registerId: string; bit: number }
   | { type: 'SET_FIELD_VALUE'; registerId: string; field: Field; rawBits: bigint }

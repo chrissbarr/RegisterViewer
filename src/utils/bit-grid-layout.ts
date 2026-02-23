@@ -7,7 +7,7 @@ export interface BitRow {
   endBit: number;
 }
 
-export interface FieldInRow {
+interface FieldInRow {
   field: Field;
   fieldIndex: number;
   startCol: number;
@@ -106,7 +106,7 @@ export function gridTemplateColumns(bitsInRow: number): string {
   return parts.join(' ');
 }
 
-export interface NibbleInRow {
+interface NibbleInRow {
   nibbleIndex: number;    // Absolute nibble index (bit 0-3 = nibble 0, bit 4-7 = nibble 1, etc.)
   hexDigit: string;       // '0'-'F' — the hex digit for this nibble's current value
   startCol: number;       // CSS grid column start (1-based)
@@ -241,7 +241,7 @@ function computeNibbleFieldIndices(lsb: number, msb: number, fields: Field[]): n
   return indices;
 }
 
-export interface UnassignedRange {
+interface UnassignedRange {
   startBit: number;   // MSB of range (highest bit)
   endBit: number;     // LSB of range (lowest bit)
   startCol: number;   // CSS grid column start

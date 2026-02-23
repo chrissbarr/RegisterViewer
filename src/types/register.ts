@@ -10,7 +10,7 @@ export interface QFormat {
   n: number; // fractional bits
 }
 
-export interface BaseField {
+interface BaseField {
   id: string;
   name: string;
   description?: string;

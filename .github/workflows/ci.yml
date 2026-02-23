@@ -26,7 +26,6 @@ jobs:
         run: npm run lint
       - name: Dead code check (knip)
         run: npm run knip
-        continue-on-error: true
       - name: Unit tests with coverage
         run: npm run test:coverage
       - name: Build
@@ -67,7 +66,6 @@ jobs:
       - name: Dead code check (knip)
         working-directory: worker
         run: npm run knip
-        continue-on-error: true
       - name: Run tests
         working-directory: worker
         run: npm test
