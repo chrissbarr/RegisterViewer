@@ -106,6 +106,9 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
 
   // Sync cloud state when active project changes (handles project switch)
   const internalRef = useRef(internal);
+  // No dependency array: intentionally runs every render so callbacks
+  // reading internalRef.current always see the latest state without
+  // needing `internal` in their dependency arrays (avoids re-creating callbacks).
   useEffect(() => {
     internalRef.current = internal;
   });
@@ -137,6 +140,9 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
 
   // Ref to avoid stale closures in save/fork callbacks
   const appStateRef = useRef(appState);
+  // No dependency array: intentionally runs every render so callbacks
+  // reading appStateRef.current always see the latest state without
+  // needing `appState` in their dependency arrays (avoids re-creating callbacks).
   useEffect(() => {
     appStateRef.current = appState;
   });
