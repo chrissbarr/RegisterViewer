@@ -27,7 +27,10 @@ export async function withMutationLock<T>(
   ref: MutableRefObject<boolean>,
   fn: () => Promise<T>,
 ): Promise<T | undefined> {
-  if (ref.current) return;
+  if (ref.current) {
+    console.warn('[cloud-sync] mutation dropped — another operation is in progress');
+    return;
+  }
   ref.current = true;
   try {
     return await fn();
