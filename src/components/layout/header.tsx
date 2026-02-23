@@ -46,7 +46,7 @@ export function Header() {
   const [aboutOpen, setAboutOpen] = useState(false);
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   const [myProjectsOpen, setMyProjectsOpen] = useState(false);
-  const [shareDialogOpenFromProjects, setShareDialogOpenFromProjects] = useState(false);
+  const [shareProjectLocalId, setShareProjectLocalId] = useState<string | null>(null);
   const [importFeedback, setImportFeedback] = useState<ImportFeedback | null>(null);
   const { createNewProject, switchProject } = useProjectStorageActions();
 
@@ -195,15 +195,16 @@ export function Header() {
           <MyProjectsDialog
             open={myProjectsOpen}
             onClose={() => setMyProjectsOpen(false)}
-            onShareProject={() => {
+            onShareProject={(localId) => {
               setMyProjectsOpen(false);
-              setShareDialogOpenFromProjects(true);
+              setShareProjectLocalId(localId);
             }}
           />
           <ShareDialog
-            open={shareDialogOpenFromProjects}
+            open={shareProjectLocalId !== null}
+            projectLocalId={shareProjectLocalId}
             onClose={() => {
-              setShareDialogOpenFromProjects(false);
+              setShareProjectLocalId(null);
               setMyProjectsOpen(true);
             }}
           />

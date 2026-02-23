@@ -54,6 +54,10 @@ function AppShellInner({ cloudInit }: AppShellProps) {
         const project = loadProject(id);
         if (project) {
           project.state = serializeState(state);
+          // Sync project name from AppState title → StoredLocalProject name
+          if (state.project?.title) {
+            project.name = state.project.title;
+          }
           saveProject(project);
         }
       }
@@ -70,6 +74,9 @@ function AppShellInner({ cloudInit }: AppShellProps) {
         const project = loadProject(id);
         if (project) {
           project.state = serializeState(pendingStateRef.current);
+          if (pendingStateRef.current.project?.title) {
+            project.name = pendingStateRef.current.project.title;
+          }
           saveProject(project);
         }
         pendingStateRef.current = null;

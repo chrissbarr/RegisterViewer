@@ -10,7 +10,6 @@ const MANIFEST_KEY = 'register-viewer-manifest';
 const PROJECT_PREFIX = 'register-viewer-project:';
 const LEGACY_STATE_KEY = 'register-viewer-state';
 const LEGACY_PROJECTS_KEY = 'register-viewer-projects';
-const LEGACY_TOKEN_KEY = 'register-viewer-owner-token';
 
 export function projectStorageKey(localId: string): string {
   return `${PROJECT_PREFIX}${localId}`;
@@ -222,10 +221,11 @@ export function runMigrationIfNeeded(): void {
     }
   }
 
-  // Clean up all legacy keys unconditionally (even if manifest already exists)
+  // Clean up legacy keys unconditionally (even if manifest already exists).
+  // Note: LEGACY_TOKEN_KEY ('register-viewer-owner-token') is NOT removed here
+  // because getOrCreateOwnerToken() actively uses that key for cloud auth.
   localStorage.removeItem(LEGACY_STATE_KEY);
   localStorage.removeItem(LEGACY_PROJECTS_KEY);
-  localStorage.removeItem(LEGACY_TOKEN_KEY);
 
   // Ensure a manifest exists even if no migration happened
   if (!localStorage.getItem(MANIFEST_KEY)) {

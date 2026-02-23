@@ -7,7 +7,7 @@ import { ADDRESS_UNIT_BITS_DEFAULT, type AppState } from '../types/register';
 import { decompressSnapshot } from '../utils/snapshot-url';
 import { isCloudEnabled } from '../utils/api-client';
 import { fetchAndParseCloudProject } from '../utils/cloud-project-loader';
-import { checkOwnership } from '../utils/owner-token';
+import { checkOwnership, getOwnerTokenForProject, hashOwnerToken } from '../utils/owner-token';
 import { resolveInitialProject } from '../utils/project-resolution';
 import {
   runMigrationIfNeeded,
@@ -111,7 +111,12 @@ export function AppLoader() {
       }
 
       case 'cloud': {
-        fetchAndParseCloudProject(resolution.cloudId)
+        // If the user owns this project, send auth so private projects don't 404
+        const ownerToken = getOwnerTokenForProject(resolution.cloudId);
+        const tokenHashPromise = ownerToken ? hashOwnerToken(ownerToken) : Promise.resolve(undefined);
+
+        tokenHashPromise
+          .then((tokenHash) => fetchAndParseCloudProject(resolution.cloudId, tokenHash))
           .then((importResult) => {
             const values: Record<string, bigint> = {};
             for (const reg of importResult.registers) {

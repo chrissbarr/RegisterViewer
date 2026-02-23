@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useMemo, type ReactNode } from 'react';
-import { useAppDispatch } from './app-context';
+import { useAppState, useAppDispatch } from './app-context';
 import {
   loadManifest,
   loadProject,
@@ -37,6 +37,7 @@ interface ProjectStorageProviderProps {
 }
 
 export function ProjectStorageProvider({ children, initialLocalId }: ProjectStorageProviderProps) {
+  const appState = useAppState();
   const dispatch = useAppDispatch();
 
   const [activeLocalId, setActiveLocalId] = useState<string | null>(() => {
@@ -118,8 +119,12 @@ export function ProjectStorageProvider({ children, initialLocalId }: ProjectStor
 
   const renameProject = useCallback((localId: string, name: string) => {
     updateProjectMetadata(localId, { name });
+    // If renaming the active project, also update AppState.project.title
+    if (localId === activeLocalId) {
+      dispatch({ type: 'SET_PROJECT_METADATA', project: { ...appState.project, title: name } });
+    }
     refreshProjectList();
-  }, [refreshProjectList]);
+  }, [activeLocalId, appState.project, dispatch, refreshProjectList]);
 
   const getActiveProject = useCallback((): StoredLocalProject | null => {
     if (!activeLocalId) return null;

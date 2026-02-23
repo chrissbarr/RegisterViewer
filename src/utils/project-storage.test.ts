@@ -413,7 +413,7 @@ describe('runMigrationIfNeeded', () => {
     expect(manifest.projects[0].name).toBe('Untitled Project');
   });
 
-  it('cleans up legacy keys', () => {
+  it('cleans up legacy keys but preserves owner token', () => {
     localStorage.setItem('register-viewer-state', JSON.stringify(makeSerializedState()));
     localStorage.setItem('register-viewer-projects', 'some-data');
     localStorage.setItem('register-viewer-owner-token', 'some-token');
@@ -422,7 +422,8 @@ describe('runMigrationIfNeeded', () => {
 
     expect(localStorage.getItem('register-viewer-state')).toBeNull();
     expect(localStorage.getItem('register-viewer-projects')).toBeNull();
-    expect(localStorage.getItem('register-viewer-owner-token')).toBeNull();
+    // Owner token is preserved — it's actively used by getOrCreateOwnerToken()
+    expect(localStorage.getItem('register-viewer-owner-token')).toBe('some-token');
   });
 
   it('cleans up legacy keys even when no legacy state exists', () => {
@@ -432,7 +433,8 @@ describe('runMigrationIfNeeded', () => {
     runMigrationIfNeeded();
 
     expect(localStorage.getItem('register-viewer-projects')).toBeNull();
-    expect(localStorage.getItem('register-viewer-owner-token')).toBeNull();
+    // Owner token is preserved
+    expect(localStorage.getItem('register-viewer-owner-token')).toBe('some-token');
   });
 
   it('is idempotent — does not re-migrate if manifest exists, but still cleans legacy keys', () => {
@@ -447,10 +449,10 @@ describe('runMigrationIfNeeded', () => {
 
     // Manifest should still be empty (migration was skipped)
     expect(loadManifest().projects).toHaveLength(0);
-    // But all legacy keys should still be cleaned up unconditionally
+    // Legacy keys cleaned up, but owner token preserved
     expect(localStorage.getItem('register-viewer-state')).toBeNull();
     expect(localStorage.getItem('register-viewer-projects')).toBeNull();
-    expect(localStorage.getItem('register-viewer-owner-token')).toBeNull();
+    expect(localStorage.getItem('register-viewer-owner-token')).toBe('old-token');
   });
 
   it('creates empty manifest when no legacy data exists', () => {

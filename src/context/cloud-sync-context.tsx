@@ -1,7 +1,7 @@
 import { createContext, useContext, useCallback, useState, useMemo, useRef, useEffect, type ReactNode } from 'react';
 import { useAppState, useAppDispatch } from './app-context';
 import { useProjectStorage, useProjectStorageActions } from './project-storage-context';
-import { exportToJson } from '../utils/storage';
+import { exportToJson, deserializeState } from '../utils/storage';
 import {
   isCloudEnabled,
   ApiError,
@@ -26,6 +26,7 @@ import {
 import {
   loadManifest,
   saveManifest,
+  loadProject,
   updateProjectMetadata,
 } from '../utils/project-storage';
 import type { Visibility } from '../types/project';
@@ -48,9 +49,11 @@ interface SyncResult {
 
 interface CloudSyncActions {
   saveToCloud: () => Promise<void>;
+  saveProjectToCloud: (localId: string) => Promise<void>;
   deleteFromCloud: () => Promise<void>;
   deleteProjectFromCloud: (cloudId: string) => Promise<void>;
   setVisibility: (v: Visibility) => Promise<void>;
+  setProjectVisibility: (localId: string, v: Visibility) => Promise<void>;
   loadCloudProject: (cloudId: string) => Promise<void>;
   fork: () => Promise<void>;
   dismissError: () => void;
@@ -306,6 +309,76 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     }
   }, [createNewCloudProject]);
 
+  // Save a specific project to cloud without switching active project.
+  // Used by My Projects dialog for non-active projects.
+  const saveProjectToCloud = useCallback(async (localId: string) => {
+    if (!isCloudEnabled()) return;
+
+    const project = loadProject(localId);
+    if (!project) throw new Error('Project not found.');
+
+    const projectState = deserializeState(project.state);
+    const jsonPayload = exportToJson(projectState);
+    const ownerToken = getOrCreateOwnerToken();
+    const tokenHash = await hashOwnerToken(ownerToken);
+
+    const manifest = loadManifest();
+    const entry = manifest.projects.find(p => p.localId === localId);
+    const existingCloudId = entry?.cloudId ?? project.cloudId;
+
+    if (existingCloudId) {
+      // Update existing cloud project
+      const existingOwnerToken = getOwnerTokenForProject(existingCloudId);
+      if (!existingOwnerToken) throw new Error('Owner token not found.');
+      const existingTokenHash = await hashOwnerToken(existingOwnerToken);
+      const result = await updateProject(existingCloudId, jsonPayload, existingTokenHash);
+      updateLocalProject(existingCloudId, {
+        name: projectState.project?.title ?? 'Untitled',
+        savedAt: result.updatedAt,
+      });
+      if (entry) {
+        entry.cloudSavedAt = result.updatedAt;
+        saveManifest(manifest);
+      }
+      updateProjectMetadata(localId, { cloudSavedAt: result.updatedAt });
+    } else {
+      // Create new cloud project
+      const result = await createProject(jsonPayload, tokenHash);
+      const projectName = projectState.project?.title ?? 'Untitled';
+      addLocalProject({
+        id: result.id,
+        ownerToken,
+        name: projectName,
+        savedAt: result.createdAt,
+        shareUrl: buildProjectUrl(result.id),
+      });
+      if (entry) {
+        entry.cloudId = result.id;
+        entry.cloudSavedAt = result.createdAt;
+        saveManifest(manifest);
+      }
+      updateProjectMetadata(localId, {
+        cloudId: result.id,
+        cloudSavedAt: result.createdAt,
+      });
+
+      // If this is the active project, update cloud state + URL
+      if (localId === activeLocalIdRef.current) {
+        history.replaceState(null, '', `#/p/${result.id}`);
+        setInternal((prev) => ({
+          ...prev,
+          cloudId: result.id,
+          isOwner: true,
+          shareUrl: buildProjectUrl(result.id),
+          lastCloudSavedAt: result.createdAt,
+          lastSavedVersion: dataVersionRef.current,
+        }));
+      }
+    }
+
+    refreshProjectList();
+  }, [refreshProjectList]);
+
   const deleteFromCloud = useCallback(async () => {
     if (!internal.cloudId || mutationLockRef.current) return;
     mutationLockRef.current = true;
@@ -373,6 +446,40 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       }
     }
   }, [internal.cloudId, internal.isOwner]);
+
+  // Set visibility for a specific project by localId, without relying on active project state.
+  // Used by My Projects dialog for non-active projects.
+  const setProjectVisibility = useCallback(async (localId: string, v: Visibility) => {
+    const manifest = loadManifest();
+    const entry = manifest.projects.find(p => p.localId === localId);
+    if (!entry?.cloudId) return;
+
+    const ownerToken = getOwnerTokenForProject(entry.cloudId);
+    if (!ownerToken) return;
+
+    try {
+      const tokenHash = await hashOwnerToken(ownerToken);
+      // Load and serialize this project's state for the PUT body
+      const project = loadProject(localId);
+      if (!project) return;
+      const projectState = deserializeState(project.state);
+      const jsonPayload = exportToJson(projectState);
+      await updateProject(entry.cloudId, jsonPayload, tokenHash, v);
+
+      entry.visibility = v;
+      saveManifest(manifest);
+      updateProjectMetadata(localId, { visibility: v });
+
+      // If this is the active project, update cloud state too
+      if (localId === activeLocalIdRef.current) {
+        setInternal((prev) => ({ ...prev, visibility: v }));
+      }
+
+      refreshProjectList();
+    } catch {
+      // Silently fail — the dialog should refresh to show the actual value
+    }
+  }, [refreshProjectList]);
 
   const initFromProject = useCallback(
     (cloudId: string | null, isOwner: boolean) => {
@@ -522,11 +629,12 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     removeLocalProject(cloudId);
 
     // If the currently active cloud project is this one, clear cloud state
-    if (internal.cloudId === cloudId) {
+    // Use ref to avoid stale closure — internal.cloudId may be outdated
+    if (internalRef.current.cloudId === cloudId) {
       history.replaceState(null, '', window.location.pathname + window.location.search);
       setInternal({ ...initialInternalState });
     }
-  }, [internal.cloudId]);
+  }, []);
 
   const unlinkCloudProject = useCallback((localId: string) => {
     const manifest = loadManifest();
@@ -546,18 +654,21 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     });
 
     // If the currently active cloud project is this one, clear cloud state
-    if (internal.cloudId === cloudId) {
+    // Use ref to avoid stale closure
+    if (internalRef.current.cloudId === cloudId) {
       history.replaceState(null, '', window.location.pathname + window.location.search);
       setInternal({ ...initialInternalState });
     }
-  }, [internal.cloudId]);
+  }, []);
 
   const actions = useMemo(
     () => ({
-      saveToCloud, deleteFromCloud, deleteProjectFromCloud, setVisibility, loadCloudProject,
+      saveToCloud, saveProjectToCloud, deleteFromCloud, deleteProjectFromCloud,
+      setVisibility, setProjectVisibility, loadCloudProject,
       fork, dismissError, initFromProject, syncCloudProjects, unlinkCloudProject,
     }),
-    [saveToCloud, deleteFromCloud, deleteProjectFromCloud, setVisibility, loadCloudProject,
+    [saveToCloud, saveProjectToCloud, deleteFromCloud, deleteProjectFromCloud,
+     setVisibility, setProjectVisibility, loadCloudProject,
      fork, dismissError, initFromProject, syncCloudProjects, unlinkCloudProject],
   );
 

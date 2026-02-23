@@ -21,7 +21,7 @@ interface MyProjectsDialogProps {
 export function MyProjectsDialog({ open, onClose, onShareProject }: MyProjectsDialogProps) {
   const { activeLocalId, projects } = useProjectStorage();
   const { createNewProject, switchProject, deleteLocalProject, renameProject, refreshProjectList } = useProjectStorageActions();
-  const { setVisibility, syncCloudProjects, deleteProjectFromCloud, unlinkCloudProject, saveToCloud } = useCloudSyncActions();
+  const { setProjectVisibility, syncCloudProjects, deleteProjectFromCloud, unlinkCloudProject, saveProjectToCloud } = useCloudSyncActions();
   const cloudState = useCloudSync();
   const announce = useAnnounce();
 
@@ -131,36 +131,32 @@ export function MyProjectsDialog({ open, onClose, onShareProject }: MyProjectsDi
   }, [renameProject, announce]);
 
   const handleShare = useCallback((localId: string) => {
-    // Switch to the project if it's not active, then open share dialog
-    if (localId !== activeLocalId) {
-      switchProject(localId);
-    }
-    // onShareProject closes My Projects and opens Share in the same render batch
     if (onShareProject) {
       onShareProject(localId);
     }
-  }, [activeLocalId, switchProject, onShareProject]);
+  }, [onShareProject]);
 
-  const handleChangeVisibility = useCallback(async (_localId: string, v: Visibility) => {
-    await setVisibility(v);
-    refreshProjectList();
+  const handleChangeVisibility = useCallback(async (localId: string, v: Visibility) => {
+    await setProjectVisibility(localId, v);
     announce(`Visibility changed to ${v}`);
-  }, [setVisibility, refreshProjectList, announce]);
+  }, [setProjectVisibility, announce]);
 
   const handleSaveToCloud = useCallback((localId: string) => {
-    // Must switch to the project first so saveToCloud operates on it
-    if (localId !== activeLocalId) {
-      switchProject(localId);
-    }
     setShowFirstTimeCloudPrompt(localId);
-  }, [activeLocalId, switchProject]);
+  }, []);
 
   const handleConfirmSaveToCloud = useCallback(async () => {
+    const localId = showFirstTimeCloudPrompt;
     setShowFirstTimeCloudPrompt(null);
-    await saveToCloud();
-    refreshProjectList();
-    announce('Saved to cloud');
-  }, [saveToCloud, refreshProjectList, announce]);
+    if (!localId) return;
+    try {
+      await saveProjectToCloud(localId);
+      announce('Saved to cloud');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to save to cloud.';
+      setCloudDeleteError(message); // reuse error toast for cloud errors
+    }
+  }, [showFirstTimeCloudPrompt, saveProjectToCloud, announce]);
 
   const handleRemoveFromCloud = useCallback((localId: string) => {
     const project = projects.find(p => p.localId === localId);

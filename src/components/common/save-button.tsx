@@ -25,6 +25,9 @@ export function SaveButton() {
   const isOwner = cloud.isOwner;
   const hasProject = cloud.cloudId !== null;
 
+  // Only show for projects already saved to cloud (first save happens from My Projects)
+  if (!hasProject && !isSaving) return null;
+
   let tooltip: string;
   if (hasProject && isOwner) {
     tooltip = 'Update cloud copy';

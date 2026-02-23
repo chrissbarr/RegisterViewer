@@ -6,51 +6,118 @@ import { useAppState } from '../../context/app-context';
 import { buildSnapshotUrl } from '../../utils/snapshot-url';
 import { isCloudEnabled } from '../../utils/api-client';
 import { useCloudSync, useCloudSyncActions } from '../../context/cloud-sync-context';
+import { loadProject, loadManifest } from '../../utils/project-storage';
+import { deserializeState } from '../../utils/storage';
+import { buildProjectUrl } from '../../utils/cloud-projects';
+import type { AppState } from '../../types/register';
 
 interface ShareDialogProps {
   open: boolean;
   onClose: () => void;
+  /** When provided, shows share info for this project instead of the active project. */
+  projectLocalId?: string | null;
 }
 
-export function ShareDialog({ open, onClose }: ShareDialogProps) {
-  const state = useAppState();
+export function ShareDialog({ open, onClose, projectLocalId }: ShareDialogProps) {
+  const activeState = useAppState();
   const cloud = useCloudSync();
-  const actions = useCloudSyncActions();
+  const cloudActions = useCloudSyncActions();
   const [showFirstTimePrompt, setShowFirstTimePrompt] = useState(false);
+  const [isSavingByLocalId, setIsSavingByLocalId] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  // Bumped after save/visibility mutations to force cloudInfo memo to re-read manifest
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // When projectLocalId is provided, load that project's state from localStorage.
+  // Otherwise fall back to the active project's state from context.
+  const targetState = useMemo((): AppState | null => {
+    if (!open) return null;
+    if (projectLocalId) {
+      const stored = loadProject(projectLocalId);
+      return stored ? deserializeState(stored.state) : null;
+    }
+    return activeState;
+    // activeState intentionally omitted when projectLocalId is set — the stored
+    // project data doesn't change with active state, and including it would cause
+    // unnecessary deserializeState calls. The dependency array is correct because
+    // the early return for projectLocalId skips activeState entirely.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, projectLocalId, ...(projectLocalId ? [] : [activeState])]);
+
+  // Resolve cloud info: from manifest entry when projectLocalId is given, else from context.
+  const cloudInfo = useMemo(() => {
+    if (!projectLocalId) {
+      return {
+        cloudId: cloud.cloudId,
+        shareUrl: cloud.shareUrl,
+        visibility: cloud.visibility,
+        isSaving: cloud.status === 'saving',
+      };
+    }
+    // refreshKey forces re-read after save/visibility mutations
+    void refreshKey;
+    const manifest = loadManifest();
+    const entry = manifest.projects.find(p => p.localId === projectLocalId);
+    return {
+      cloudId: entry?.cloudId ?? null,
+      shareUrl: entry?.cloudId ? buildProjectUrl(entry.cloudId) : null,
+      visibility: (entry?.visibility ?? 'private') as 'private' | 'unlisted',
+      isSaving: isSavingByLocalId,
+    };
+  }, [projectLocalId, cloud.cloudId, cloud.shareUrl, cloud.visibility, cloud.status, isSavingByLocalId, refreshKey]);
 
   const snapshotUrl = useMemo(() => {
-    if (!open) return null;
+    if (!open || !targetState) return null;
     try {
-      return buildSnapshotUrl(state);
+      return buildSnapshotUrl(targetState);
     } catch {
       return null;
     }
-  }, [open, state]);
+  }, [open, targetState]);
 
   const charCount = snapshotUrl?.length ?? 0;
   const isUrlLong = charCount > 2000;
 
-  const hasCloudProject = cloud.cloudId !== null;
-  const cloudUrl = cloud.shareUrl;
-  const isSaving = cloud.status === 'saving';
+  const hasCloudProject = cloudInfo.cloudId !== null;
+
+  // Shared save logic for both first-time and update paths
+  const doSave = useCallback(() => {
+    setSaveError(null);
+    if (projectLocalId) {
+      setIsSavingByLocalId(true);
+      cloudActions.saveProjectToCloud(projectLocalId)
+        .then(() => setRefreshKey(k => k + 1))
+        .catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : 'Failed to save to cloud.';
+          setSaveError(message);
+        })
+        .finally(() => setIsSavingByLocalId(false));
+    } else {
+      cloudActions.saveToCloud();
+    }
+  }, [projectLocalId, cloudActions]);
 
   const handleSaveToCloud = useCallback(() => {
-    // Show first-time prompt if project has never been saved to cloud
     if (!hasCloudProject) {
       setShowFirstTimePrompt(true);
       return;
     }
-    actions.saveToCloud();
-  }, [hasCloudProject, actions]);
+    doSave();
+  }, [hasCloudProject, doSave]);
 
   const handleConfirmFirstSave = useCallback(() => {
     setShowFirstTimePrompt(false);
-    actions.saveToCloud();
-  }, [actions]);
+    doSave();
+  }, [doSave]);
 
   const handleMakeUnlisted = useCallback(() => {
-    actions.setVisibility('unlisted');
-  }, [actions]);
+    if (projectLocalId) {
+      cloudActions.setProjectVisibility(projectLocalId, 'unlisted')
+        .then(() => setRefreshKey(k => k + 1));
+    } else {
+      cloudActions.setVisibility('unlisted');
+    }
+  }, [projectLocalId, cloudActions]);
 
   return (
     <>
@@ -94,9 +161,10 @@ export function ShareDialog({ open, onClose }: ShareDialogProps) {
           {isCloudEnabled() && (
             <CloudLinkSection
               hasCloudProject={hasCloudProject}
-              cloudUrl={cloudUrl}
-              visibility={cloud.visibility}
-              isSaving={isSaving}
+              cloudUrl={cloudInfo.shareUrl}
+              visibility={cloudInfo.visibility}
+              isSaving={cloudInfo.isSaving}
+              error={saveError}
               onSaveToCloud={handleSaveToCloud}
               onMakeUnlisted={handleMakeUnlisted}
             />
@@ -129,6 +197,7 @@ interface CloudLinkSectionProps {
   cloudUrl: string | null;
   visibility: 'private' | 'unlisted';
   isSaving: boolean;
+  error: string | null;
   onSaveToCloud: () => void;
   onMakeUnlisted: () => void;
 }
@@ -138,6 +207,7 @@ function CloudLinkSection({
   cloudUrl,
   visibility,
   isSaving,
+  error,
   onSaveToCloud,
   onMakeUnlisted,
 }: CloudLinkSectionProps) {
@@ -218,6 +288,9 @@ function CloudLinkSection({
         >
           {isSaving ? 'Saving...' : 'Save to Cloud'}
         </button>
+        {error && (
+          <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>
+        )}
       </div>
     </div>
   );
