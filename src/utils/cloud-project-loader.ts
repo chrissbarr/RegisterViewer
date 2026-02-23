@@ -1,5 +1,5 @@
 import { getProject } from './api-client';
-import { importFromJson, type ImportResult } from './storage';
+import { importFromObject, type ImportResult } from './storage';
 
 interface CloudProjectLoadResult extends ImportResult {
   updatedAt: string;
@@ -14,12 +14,11 @@ interface CloudProjectLoadResult extends ImportResult {
 export async function fetchAndParseCloudProject(id: string, tokenHash?: string): Promise<CloudProjectLoadResult> {
   const result = await getProject(id, tokenHash);
 
-  // The API returns `data` as a parsed object (from res.json()),
-  // but importFromJson expects a JSON string. Normalize here.
-  const jsonString =
-    typeof result.data === 'string' ? result.data : JSON.stringify(result.data);
+  // The API returns `data` as a parsed object (from res.json()).
+  // Use importFromObject directly to avoid re-serializing then re-parsing.
+  const data = typeof result.data === 'string' ? JSON.parse(result.data) : result.data;
 
-  const importResult = importFromJson(jsonString);
+  const importResult = importFromObject(data as Record<string, unknown>);
   if (!importResult || importResult.registers.length === 0) {
     throw new Error('Failed to parse project data from cloud.');
   }

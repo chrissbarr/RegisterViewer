@@ -129,9 +129,8 @@ export interface ImportResult {
   addressUnitBits?: AddressUnitBits;
 }
 
-export function importFromJson(json: string): ImportResult | null {
+export function importFromObject(data: Record<string, unknown>): ImportResult | null {
   try {
-    const data = JSON.parse(json);
     if (!data.registers || !Array.isArray(data.registers)) return null;
 
     const warnings: ImportWarning[] = [];
@@ -164,7 +163,7 @@ export function importFromJson(json: string): ImportResult | null {
 
     const values: Record<string, bigint> = {};
     if (data.registerValues) {
-      for (const [key, hex] of Object.entries(data.registerValues)) {
+      for (const [key, hex] of Object.entries(data.registerValues as Record<string, string>)) {
         // Resolve key: if it's a UUID matching a register id, use as-is;
         // otherwise treat it as a register name and map to the generated id
         let resolvedId: string | undefined;
@@ -175,7 +174,7 @@ export function importFromJson(json: string): ImportResult | null {
         }
         if (resolvedId) {
           try {
-            values[resolvedId] = BigInt(hex as string);
+            values[resolvedId] = BigInt(hex);
           } catch {
             values[resolvedId] = 0n;
           }
@@ -186,6 +185,14 @@ export function importFromJson(json: string): ImportResult | null {
     const addressUnitBits: AddressUnitBits | undefined = typeof data.addressUnitBits === 'number' && (ADDRESS_UNIT_BITS_VALUES as readonly number[]).includes(data.addressUnitBits)
       ? data.addressUnitBits as AddressUnitBits : undefined;
     return { registers: validRegisters, values, warnings, project, addressUnitBits };
+  } catch {
+    return null;
+  }
+}
+
+export function importFromJson(json: string): ImportResult | null {
+  try {
+    return importFromObject(JSON.parse(json));
   } catch {
     return null;
   }

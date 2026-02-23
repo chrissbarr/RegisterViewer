@@ -9,11 +9,11 @@ vi.mock('./api-client', async (importOriginal) => {
 });
 vi.mock('./storage', async (importOriginal) => {
   const actual = await importOriginal<typeof storage>();
-  return { ...actual, importFromJson: vi.fn(actual.importFromJson) };
+  return { ...actual, importFromObject: vi.fn(actual.importFromObject) };
 });
 
 const mockGetProject = vi.mocked(apiClient.getProject);
-const mockImportFromJson = vi.mocked(storage.importFromJson);
+const mockImportFromObject = vi.mocked(storage.importFromObject);
 
 // Minimal valid project data as it comes from the API (parsed JSON object)
 function makeApiProjectData() {
@@ -38,11 +38,11 @@ describe('fetchAndParseCloudProject', () => {
     vi.clearAllMocks();
   });
 
-  it('normalizes object data to a JSON string before parsing', async () => {
+  it('passes object data directly to importFromObject', async () => {
     const apiResponse = makeGetProjectResponse();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     mockGetProject.mockResolvedValue(apiResponse as any);
-    mockImportFromJson.mockRestore();
+    mockImportFromObject.mockRestore();
 
     const result = await fetchAndParseCloudProject('ABC123DEF456');
 
@@ -56,7 +56,7 @@ describe('fetchAndParseCloudProject', () => {
     const apiResponse = makeGetProjectResponse(jsonString);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     mockGetProject.mockResolvedValue(apiResponse as any);
-    mockImportFromJson.mockRestore();
+    mockImportFromObject.mockRestore();
 
     const result = await fetchAndParseCloudProject('ABC123DEF456');
 
@@ -68,18 +68,18 @@ describe('fetchAndParseCloudProject', () => {
     const apiResponse = makeGetProjectResponse();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     mockGetProject.mockResolvedValue(apiResponse as any);
-    mockImportFromJson.mockRestore();
+    mockImportFromObject.mockRestore();
 
     const result = await fetchAndParseCloudProject('ABC123DEF456');
 
     expect(result.updatedAt).toBe('2024-06-15T12:00:00Z');
   });
 
-  it('throws when importFromJson returns null', async () => {
+  it('throws when importFromObject returns null', async () => {
     const apiResponse = makeGetProjectResponse();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     mockGetProject.mockResolvedValue(apiResponse as any);
-    mockImportFromJson.mockReturnValue(null);
+    mockImportFromObject.mockReturnValue(null);
 
     await expect(fetchAndParseCloudProject('ABC123DEF456')).rejects.toThrow(
       'Failed to parse project data from cloud.',
@@ -94,7 +94,7 @@ describe('fetchAndParseCloudProject', () => {
     });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     mockGetProject.mockResolvedValue(apiResponse as any);
-    mockImportFromJson.mockRestore();
+    mockImportFromObject.mockRestore();
 
     await expect(fetchAndParseCloudProject('ABC123DEF456')).rejects.toThrow(
       'Failed to parse project data from cloud.',
