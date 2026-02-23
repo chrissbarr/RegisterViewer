@@ -5,6 +5,7 @@ import { FirstTimeCloudPrompt } from './first-time-cloud-prompt';
 import { useAppState } from '../../context/app-context';
 import { buildSnapshotUrl } from '../../utils/snapshot-url';
 import { isCloudEnabled } from '../../utils/api-client';
+import { friendlyErrorMessage } from '../../utils/friendly-error';
 import { useCloudSync, useCloudSyncActions } from '../../context/cloud-sync-context';
 import { useProjectStorage } from '../../context/project-storage-context';
 import { loadProject, buildProjectUrl } from '../../utils/project-storage';
@@ -85,8 +86,7 @@ export function ShareDialog({ open, onClose, projectLocalId }: ShareDialogProps)
       cloudActions.saveProjectToCloud(projectLocalId)
         .then(() => setRefreshKey(k => k + 1))
         .catch((err: unknown) => {
-          const message = err instanceof Error ? err.message : 'Failed to save to cloud.';
-          setSaveError(message);
+          setSaveError(friendlyErrorMessage(err, 'Failed to save to cloud.'));
         })
         .finally(() => setIsSavingByLocalId(false));
     } else {
@@ -112,8 +112,7 @@ export function ShareDialog({ open, onClose, projectLocalId }: ShareDialogProps)
       cloudActions.setProjectVisibility(projectLocalId, 'unlisted')
         .then(() => setRefreshKey(k => k + 1))
         .catch((err: unknown) => {
-          const message = err instanceof Error ? err.message : 'Failed to change visibility.';
-          setSaveError(message);
+          setSaveError(friendlyErrorMessage(err, 'Failed to change visibility.'));
         });
     } else {
       cloudActions.setVisibility('unlisted');

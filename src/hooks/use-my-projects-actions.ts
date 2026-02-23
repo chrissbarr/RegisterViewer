@@ -4,6 +4,7 @@ import { useCloudSyncActions } from '../context/cloud-sync-context';
 import { useAnnounce } from '../components/common/announcer';
 import { isCloudEnabled } from '../utils/api-client';
 import { getOrCreateOwnerToken } from '../utils/owner-token';
+import { friendlyErrorMessage } from '../utils/friendly-error';
 import type { Visibility } from '../types/project';
 
 interface CloudDeleteConfirm {
@@ -80,8 +81,7 @@ export function useMyProjectsActions(
       await setProjectVisibility(localId, v);
       announce(`Visibility changed to ${v}`);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to change visibility.';
-      setCloudError(message);
+      setCloudError(friendlyErrorMessage(err, 'Failed to change visibility.'));
     }
   }, [setProjectVisibility, announce]);
 
@@ -97,8 +97,7 @@ export function useMyProjectsActions(
       await saveProjectToCloud(localId);
       announce('Saved to cloud');
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to save to cloud.';
-      setCloudError(message);
+      setCloudError(friendlyErrorMessage(err, 'Failed to save to cloud.'));
     }
   }, [saveToCloudLocalId, saveProjectToCloud, announce]);
 
@@ -120,8 +119,7 @@ export function useMyProjectsActions(
       refreshProjectList();
       announce('Removed from cloud');
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to delete from cloud.';
-      setCloudError(message);
+      setCloudError(friendlyErrorMessage(err, 'Failed to delete from cloud.'));
     }
     setDeleteCloudConfirm(null);
   }, [deleteCloudConfirm, deleteProjectFromCloud, refreshProjectList, announce]);

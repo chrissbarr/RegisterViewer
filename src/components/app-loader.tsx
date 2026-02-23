@@ -6,6 +6,7 @@ import { createSeedRegisters } from '../utils/seed-data';
 import { ADDRESS_UNIT_BITS_DEFAULT, type AppState } from '../types/register';
 import { decompressSnapshot } from '../utils/snapshot-url';
 import { isCloudEnabled } from '../utils/api-client';
+import { friendlyErrorMessage } from '../utils/friendly-error';
 import { fetchAndParseCloudProject } from '../utils/cloud-project-loader';
 import { checkOwnership, getOwnerTokenForProject, hashOwnerToken } from '../utils/owner-token';
 import { resolveInitialProject } from '../utils/project-resolution';
@@ -149,8 +150,7 @@ export function AppLoader() {
             });
           })
           .catch((err) => {
-            const message = err instanceof Error ? err.message : 'Failed to load project.';
-            setState({ phase: 'error', message });
+            setState({ phase: 'error', message: friendlyErrorMessage(err, 'Failed to load project.') });
           });
         break;
       }

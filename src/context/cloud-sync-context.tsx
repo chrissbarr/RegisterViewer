@@ -13,6 +13,7 @@ import {
   hashOwnerToken,
   checkOwnership,
 } from '../utils/owner-token';
+import { friendlyErrorMessage } from '../utils/friendly-error';
 import {
   loadManifest,
   saveManifest,
@@ -236,8 +237,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
           }));
         }
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to save project.';
-        setInternal((prev) => ({ ...prev, status: 'idle', error: message }));
+        setInternal((prev) => ({ ...prev, status: 'idle', error: friendlyErrorMessage(err, 'Failed to save project.') }));
       }
     });
   }, [updateCloudMetadata, applyCreatedResult, mutationLockRef, dataVersionRef]);
@@ -252,8 +252,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
         if (result.kind !== 'created') throw new Error('Failed to save copy.');
         applyCreatedResult(result);
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to save copy.';
-        setInternal((prev) => ({ ...prev, status: 'idle', error: message }));
+        setInternal((prev) => ({ ...prev, status: 'idle', error: friendlyErrorMessage(err, 'Failed to save copy.') }));
       }
     });
   }, [applyCreatedResult, mutationLockRef]);
@@ -355,11 +354,10 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
           }));
           return;
         }
-        const message = err instanceof Error ? err.message : 'Failed to load project.';
         setInternal((prev) => ({
           ...prev,
           status: 'idle',
-          error: message,
+          error: friendlyErrorMessage(err, 'Failed to load project.'),
         }));
       }
     },

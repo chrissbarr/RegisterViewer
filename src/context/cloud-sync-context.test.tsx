@@ -387,7 +387,7 @@ describe('CloudSyncProvider', () => {
         await result.current.actions.saveToCloud();
       });
 
-      expect(result.current.state.error).toBe('Owner token not found for this project.');
+      expect(result.current.state.error).toBe('Authentication error. Your owner token may be missing or corrupted.');
     });
   });
 
