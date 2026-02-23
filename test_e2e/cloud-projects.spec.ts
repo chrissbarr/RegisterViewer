@@ -77,6 +77,8 @@ async function mockCloudApi(page: Page, options: {
   getResponse?: { status: number; body: unknown };
   /** Override for PUT /api/projects/:id (update). */
   updateResponse?: { status: number; body: unknown };
+  /** Override for PATCH /api/projects/:id (visibility). */
+  patchResponse?: { status: number; body: unknown };
   /** Status code for DELETE /api/projects/:id. Default: 204. */
   deleteStatus?: number;
   /** Override for GET /api/projects (list). */
@@ -150,6 +152,18 @@ async function mockCloudApi(page: Page, options: {
         }
         if (method === 'PUT') {
           const resp = options.updateResponse ?? {
+            status: 200,
+            body: { id: projectId, updatedAt: new Date().toISOString() },
+          };
+          await route.fulfill({
+            status: resp.status,
+            contentType: 'application/json',
+            body: JSON.stringify(resp.body),
+          });
+          return;
+        }
+        if (method === 'PATCH') {
+          const resp = options.patchResponse ?? {
             status: 200,
             body: { id: projectId, updatedAt: new Date().toISOString() },
           };
