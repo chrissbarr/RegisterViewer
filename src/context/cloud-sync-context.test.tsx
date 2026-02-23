@@ -523,14 +523,14 @@ describe('CloudSyncProvider', () => {
   });
 
   describe('setVisibility', () => {
-    it('updates visibility optimistically and persists to cloud', async () => {
+    it('updates visibility optimistically and persists via PATCH', async () => {
       // Create a cloud project first
       (apiCreateProject as Mock).mockResolvedValue({
         id: 'cloud-abc',
         shareUrl: 'https://example.com/#/p/cloud-abc',
         createdAt: '2024-01-01T12:00:00Z',
       });
-      (apiUpdateProject as Mock).mockResolvedValue({
+      (apiPatchVisibility as Mock).mockResolvedValue({
         id: 'cloud-abc',
         updatedAt: '2024-01-02T12:00:00Z',
       });
@@ -546,7 +546,8 @@ describe('CloudSyncProvider', () => {
       });
 
       expect(result.current.state.visibility).toBe('unlisted');
-      expect(apiUpdateProject).toHaveBeenCalled();
+      expect(apiPatchVisibility).toHaveBeenCalledWith('cloud-abc', 'unlisted', 'mock-token-hash');
+      expect(apiUpdateProject).not.toHaveBeenCalled();
     });
 
     it('reverts visibility on server failure', async () => {
@@ -562,7 +563,7 @@ describe('CloudSyncProvider', () => {
         await result.current.actions.saveToCloud();
       });
 
-      (apiUpdateProject as Mock).mockRejectedValue(new Error('Server error'));
+      (apiPatchVisibility as Mock).mockRejectedValue(new Error('Server error'));
 
       await act(async () => {
         await result.current.actions.setVisibility('unlisted');

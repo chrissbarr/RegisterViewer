@@ -5,9 +5,6 @@ import { exportToObject } from '../utils/storage';
 import {
   isCloudEnabled,
   ApiError,
-  createProject,
-  updateProject,
-  deleteProject as apiDeleteProject,
   listProjects,
 } from '../utils/api-client';
 import { fetchAndParseCloudProject } from '../utils/cloud-project-loader';
@@ -15,7 +12,6 @@ import {
   getOrCreateOwnerToken,
   hashOwnerToken,
   checkOwnership,
-  getOwnerTokenForProject,
 } from '../utils/owner-token';
 import {
   loadManifest,
@@ -23,6 +19,7 @@ import {
   buildProjectUrl,
 } from '../utils/project-storage';
 import { setCloudUrl, clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock } from '../utils/cloud-url';
+import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
 import { useDirtyTracking } from '../hooks/use-dirty-tracking';
 import { useProjectCloudOps } from '../hooks/use-project-cloud-ops';
 import type { Visibility } from '../types/project';
@@ -147,39 +144,28 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     appStateRef.current = appState;
   });
 
-  const createNewCloudProject = useCallback(async (errorLabel: string) => {
-    const jsonPayload = exportToObject(appStateRef.current);
-    setInternal((prev) => ({ ...prev, status: 'saving', error: null }));
-    try {
-      const ownerToken = getOrCreateOwnerToken();
-      const tokenHash = await hashOwnerToken(ownerToken);
-      const result = await createProject(jsonPayload, tokenHash);
-
-      const currentLocalId = activeLocalIdRef.current;
-      if (currentLocalId) {
-        updateCloudMetadata(currentLocalId, {
-          cloudId: result.id,
-          cloudSavedAt: result.createdAt,
-          ownerToken,
-        });
-      }
-
-      const shareUrl = buildProjectUrl(result.id);
-      setCloudUrl(result.id);
-
-      setInternal((prev) => ({
-        ...prev,
-        cloudId: result.id,
-        isOwner: true,
-        status: 'idle',
-        shareUrl,
-        lastCloudSavedAt: result.createdAt,
-        lastSavedVersion: dataVersionRef.current,
-      }));
-    } catch (err) {
-      const message = err instanceof Error ? err.message : errorLabel;
-      setInternal((prev) => ({ ...prev, status: 'idle', error: message }));
+  const applyCreatedResult = useCallback((result: { cloudId: string; timestamp: string; ownerToken: string }) => {
+    const currentLocalId = activeLocalIdRef.current;
+    if (currentLocalId) {
+      updateCloudMetadata(currentLocalId, {
+        cloudId: result.cloudId,
+        cloudSavedAt: result.timestamp,
+        ownerToken: result.ownerToken,
+      });
     }
+
+    const shareUrl = buildProjectUrl(result.cloudId);
+    setCloudUrl(result.cloudId);
+
+    setInternal((prev) => ({
+      ...prev,
+      cloudId: result.cloudId,
+      isOwner: true,
+      status: 'idle',
+      shareUrl,
+      lastCloudSavedAt: result.timestamp,
+      lastSavedVersion: dataVersionRef.current,
+    }));
   }, [updateCloudMetadata, dataVersionRef]);
 
   const saveToCloud = useCallback(async () => {
@@ -187,84 +173,73 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     await withMutationLock(mutationLockRef, async () => {
       try {
         const { cloudId, isOwner } = internalRef.current;
-        // If we have a cloud project and are owner, update it
-        if (cloudId && isOwner) {
-          const ownerToken = getOwnerTokenForProject(cloudId);
-          if (!ownerToken) {
-            setInternal((prev) => ({ ...prev, error: 'Owner token not found for this project.' }));
-            return;
+        const existingCloudId = (cloudId && isOwner) ? cloudId : null;
+
+        setInternal((prev) => ({ ...prev, status: 'saving', error: null }));
+        const jsonPayload = exportToObject(appStateRef.current);
+        const result = await saveProjectToCloudImpl(jsonPayload, existingCloudId);
+
+        if (result.kind === 'not-found') {
+          const currentLocalId = activeLocalIdRef.current;
+          if (currentLocalId) {
+            updateCloudMetadata(currentLocalId, CLEARED_CLOUD_METADATA);
           }
-
-          setInternal((prev) => ({ ...prev, status: 'saving', error: null }));
-          const jsonPayload = exportToObject(appStateRef.current);
-          const tokenHash = await hashOwnerToken(ownerToken);
-          try {
-            const result = await updateProject(cloudId, jsonPayload, tokenHash);
-
-            const currentLocalId = activeLocalIdRef.current;
-            if (currentLocalId) {
-              updateCloudMetadata(currentLocalId, { cloudSavedAt: result.updatedAt });
-            }
-
-            setInternal((prev) => ({
-              ...prev,
-              status: 'idle',
-              lastCloudSavedAt: result.updatedAt,
-              lastSavedVersion: dataVersionRef.current,
-            }));
-            return;
-          } catch (err) {
-            if (err instanceof ApiError && err.status === 404) {
-              // Cloud project was deleted — clear cloudId and save as new
-              const currentLocalId = activeLocalIdRef.current;
-              if (currentLocalId) {
-                updateCloudMetadata(currentLocalId, CLEARED_CLOUD_METADATA);
-              }
-
-              clearCloudUrl();
-              setInternal((prev) => ({
-                ...prev,
-                cloudId: null,
-                isOwner: false,
-                status: 'idle',
-                shareUrl: null,
-                lastCloudSavedAt: null,
-                visibility: 'private',
-                error: 'Cloud project not found. It may have been deleted. Use "Save to Cloud" to create a new copy.',
-              }));
-              return;
-            }
-            throw err;
-          }
+          clearCloudUrl();
+          setInternal((prev) => ({
+            ...prev,
+            cloudId: null,
+            isOwner: false,
+            status: 'idle',
+            shareUrl: null,
+            lastCloudSavedAt: null,
+            visibility: 'private',
+            error: 'Cloud project not found. It may have been deleted. Use "Save to Cloud" to create a new copy.',
+          }));
+          return;
         }
 
-        // Otherwise create new cloud project
-        await createNewCloudProject('Failed to save project.');
+        if (result.kind === 'created') {
+          applyCreatedResult(result);
+        } else {
+          const currentLocalId = activeLocalIdRef.current;
+          if (currentLocalId) {
+            updateCloudMetadata(currentLocalId, { cloudSavedAt: result.timestamp });
+          }
+          setInternal((prev) => ({
+            ...prev,
+            status: 'idle',
+            lastCloudSavedAt: result.timestamp,
+            lastSavedVersion: dataVersionRef.current,
+          }));
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to save project.';
         setInternal((prev) => ({ ...prev, status: 'idle', error: message }));
       }
     });
-  }, [updateCloudMetadata, createNewCloudProject, mutationLockRef, dataVersionRef]);
+  }, [updateCloudMetadata, applyCreatedResult, mutationLockRef, dataVersionRef]);
 
   const fork = useCallback(async () => {
     if (!isCloudEnabled()) return;
     await withMutationLock(mutationLockRef, async () => {
-      await createNewCloudProject('Failed to save copy.');
+      setInternal((prev) => ({ ...prev, status: 'saving', error: null }));
+      try {
+        const jsonPayload = exportToObject(appStateRef.current);
+        const result = await saveProjectToCloudImpl(jsonPayload, null);
+        if (result.kind !== 'created') throw new Error('Failed to save copy.');
+        applyCreatedResult(result);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to save copy.';
+        setInternal((prev) => ({ ...prev, status: 'idle', error: message }));
+      }
     });
-  }, [createNewCloudProject, mutationLockRef]);
+  }, [applyCreatedResult, mutationLockRef]);
 
   const deleteFromCloud = useCallback(async () => {
     const { cloudId } = internalRef.current;
     if (!cloudId) return;
     await withMutationLock(mutationLockRef, async () => {
-      const ownerToken = getOwnerTokenForProject(cloudId);
-      if (!ownerToken) {
-        throw new Error('Owner token not found.');
-      }
-
-      const tokenHash = await hashOwnerToken(ownerToken);
-      await apiDeleteProject(cloudId, tokenHash);
+      await deleteProjectFromCloudImpl(cloudId);
 
       const currentLocalId = activeLocalIdRef.current;
       if (currentLocalId) {
@@ -282,12 +257,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
 
     if (cloudId && isOwner) {
       try {
-        const ownerToken = getOwnerTokenForProject(cloudId);
-        if (!ownerToken) return;
-
-        const tokenHash = await hashOwnerToken(ownerToken);
-        const jsonPayload = exportToObject(appStateRef.current);
-        await updateProject(cloudId, jsonPayload, tokenHash, v);
+        await patchVisibilityImpl(cloudId, v);
 
         const currentLocalId = activeLocalIdRef.current;
         if (currentLocalId) {
@@ -419,6 +389,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     updateCloudMetadata,
     activeLocalIdRef,
     dataVersionRef,
+    mutationLockRef,
     internalRef,
     setInternal,
     initialInternalState,
