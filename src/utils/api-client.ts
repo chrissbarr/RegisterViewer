@@ -1,3 +1,5 @@
+import type { Visibility } from '../types/project';
+
 function getApiBase(): string {
   return (import.meta.env.VITE_API_URL ?? '').trim();
 }
@@ -53,7 +55,7 @@ interface CreateProjectResponse {
 export async function createProject(
   data: unknown,
   tokenHash: string,
-  visibility?: 'private' | 'unlisted',
+  visibility?: Visibility,
 ): Promise<CreateProjectResponse> {
   const body: { data: unknown; visibility?: string } = { data };
   if (visibility) {
@@ -92,7 +94,7 @@ export async function updateProject(
   id: string,
   data: unknown,
   tokenHash: string,
-  visibility?: 'private' | 'unlisted',
+  visibility?: Visibility,
 ): Promise<UpdateProjectResponse> {
   const body: { data: unknown; visibility?: string } = { data };
   if (visibility !== undefined) {
@@ -110,7 +112,7 @@ export async function updateProject(
 
 export async function patchProjectVisibility(
   id: string,
-  visibility: 'private' | 'unlisted',
+  visibility: Visibility,
   tokenHash: string,
 ): Promise<UpdateProjectResponse> {
   return apiFetch<UpdateProjectResponse>(
@@ -138,7 +140,7 @@ export async function deleteProject(
 
 interface ProjectListItem {
   id: string;
-  visibility: 'private' | 'unlisted';
+  visibility: Visibility;
   createdAt: string;
   updatedAt: string;
 }
