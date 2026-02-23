@@ -50,8 +50,6 @@ export function ShareDialog({ open, onClose, projectLocalId }: ShareDialogProps)
         isSaving: cloud.status === 'saving',
       };
     }
-    // refreshKey forces re-read after save/visibility mutations
-    void refreshKey;
     const entry = projects.find(p => p.localId === projectLocalId);
     return {
       cloudId: entry?.cloudId ?? null,
@@ -59,6 +57,7 @@ export function ShareDialog({ open, onClose, projectLocalId }: ShareDialogProps)
       visibility: (entry?.visibility ?? 'private') as 'private' | 'unlisted',
       isSaving: isSavingByLocalId,
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refreshKey is an invalidation trigger, not used in computation
   }, [projectLocalId, projects, cloud.cloudId, cloud.shareUrl, cloud.visibility, cloud.status, isSavingByLocalId, refreshKey]);
 
   // Defer targetState so snapshot computation doesn't block dialog open render
