@@ -329,6 +329,18 @@ describe('Worker handler integration tests', () => {
       expect(res.status).toBe(400);
     });
 
+    it('rejects PATCH with Content-Length exceeding limit', async () => {
+      const id = await createProject();
+      const req = makeRequest('PATCH', `/api/projects/${id}`, {
+        origin: 'http://localhost:5173',
+        token: VALID_TOKEN_HASH,
+        body: { visibility: 'unlisted' },
+        contentLength: String(LIMITS.MAX_PAYLOAD_SIZE + 1),
+      });
+      const res = await worker.fetch(req, env, ctx);
+      expect(res.status).toBe(400);
+    });
+
     it('accepts POST with body within size limit', async () => {
       const req = makeRequest('POST', '/api/projects', {
         origin: 'http://localhost:5173',

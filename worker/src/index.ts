@@ -257,9 +257,18 @@ async function handlePatch(request: Request, env: Env, id: string, cors: Record<
     return errorResponse('Project not found', 404, cors);
   }
 
+  const contentLength = request.headers.get('Content-Length');
+  if (contentLength && parseInt(contentLength, 10) > LIMITS.MAX_PAYLOAD_SIZE) {
+    return errorResponse(`Request body must be at most ${LIMITS.MAX_PAYLOAD_SIZE} bytes`, 400, cors);
+  }
+
   let body: { visibility?: unknown };
   try {
-    body = await request.json() as { visibility?: unknown };
+    const text = await request.text();
+    if (text.length > LIMITS.MAX_PAYLOAD_SIZE) {
+      return errorResponse(`Request body must be at most ${LIMITS.MAX_PAYLOAD_SIZE} bytes`, 400, cors);
+    }
+    body = JSON.parse(text);
   } catch {
     return errorResponse('Invalid JSON body', 400, cors);
   }
