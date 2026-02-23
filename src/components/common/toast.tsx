@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useToastPortalTarget } from '../../context/toast-portal-context';
 
 interface ToastProps {
   message: string;
@@ -9,6 +10,7 @@ interface ToastProps {
 }
 
 export function Toast({ message, variant = 'success', duration = 3000, onDismiss }: ToastProps) {
+  const portalTarget = useToastPortalTarget();
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -51,7 +53,7 @@ export function Toast({ message, variant = 'success', duration = 3000, onDismiss
     <div
       role={variant === 'error' ? 'alert' : 'status'}
       aria-live={variant === 'error' ? 'assertive' : 'polite'}
-      className={`fixed top-4 right-4 z-50 max-w-sm w-full
+      className={`fixed top-4 right-4 z-50 max-w-sm w-full pointer-events-auto
         transition-all duration-200 ease-out
         ${visible ? 'translate-x-0 opacity-100' : 'translate-x-4 opacity-0'}`}
     >
@@ -65,6 +67,6 @@ export function Toast({ message, variant = 'success', duration = 3000, onDismiss
         </div>
       </div>
     </div>,
-    document.body,
+    portalTarget ?? document.body,
   );
 }

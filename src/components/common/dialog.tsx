@@ -1,4 +1,5 @@
 import { useRef, useEffect, useId, type ReactNode, type RefObject } from 'react';
+import { useToastPortalRegister } from '../../context/toast-portal-context';
 
 interface DialogProps {
   open: boolean;
@@ -14,6 +15,13 @@ interface DialogProps {
 export function Dialog({ open, onClose, title, children, maxWidth = 'max-w-lg', initialFocusRef, role = 'dialog', 'aria-describedby': ariaDescribedBy }: DialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleId = useId();
+  const registerPortal = useToastPortalRegister();
+
+  // Signal that a dialog is open so toasts render in the top-layer popover
+  useEffect(() => {
+    if (!open) return;
+    return registerPortal();
+  }, [open, registerPortal]);
 
   useEffect(() => {
     const el = dialogRef.current;

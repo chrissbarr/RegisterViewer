@@ -11,6 +11,7 @@ import { Header } from './header';
 import { Sidebar } from './sidebar';
 import { MainPanel } from '../viewer/main-panel';
 import { Toast } from '../common/toast';
+import { ToastPortalProvider } from '../../context/toast-portal-context';
 
 const SAVE_DEBOUNCE_MS = 300;
 
@@ -179,14 +180,16 @@ function AppShellInner({ cloudInit }: AppShellProps) {
 
 export function AppShell({ cloudInit, initialLocalId }: AppShellProps) {
   return (
-    <PreferencesProvider>
-      <EditProvider>
-        <ProjectStorageProvider initialLocalId={initialLocalId ?? null}>
-          <CloudSyncProvider>
-            <AppShellInner cloudInit={cloudInit} />
-          </CloudSyncProvider>
-        </ProjectStorageProvider>
-      </EditProvider>
-    </PreferencesProvider>
+    <ToastPortalProvider>
+      <PreferencesProvider>
+        <EditProvider>
+          <ProjectStorageProvider initialLocalId={initialLocalId ?? null}>
+            <CloudSyncProvider>
+              <AppShellInner cloudInit={cloudInit} />
+            </CloudSyncProvider>
+          </ProjectStorageProvider>
+        </EditProvider>
+      </PreferencesProvider>
+    </ToastPortalProvider>
   );
 }

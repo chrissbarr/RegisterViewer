@@ -1,5 +1,6 @@
 import { FirstTimeCloudPrompt } from '../common/first-time-cloud-prompt';
 import { ConfirmationDialog } from '../common/confirmation-dialog';
+import { Toast } from '../common/toast';
 
 interface MyProjectsCloudDialogsProps {
   isSaveToCloudOpen: boolean;
@@ -45,21 +46,12 @@ export function MyProjectsCloudDialogs({
 
       {/* Cloud error toast */}
       {cloudError && (
-        <div
-          role="alert"
-          className="fixed bottom-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg
-            bg-red-600 text-white text-sm font-medium
-            animate-in fade-in slide-in-from-bottom-2"
-        >
-          {cloudError}
-          <button
-            onClick={onDismissCloudError}
-            className="ml-3 text-white/80 hover:text-white"
-            aria-label="Dismiss error"
-          >
-            &times;
-          </button>
-        </div>
+        <Toast
+          message={cloudError}
+          variant="error"
+          duration={5000}
+          onDismiss={onDismissCloudError}
+        />
       )}
     </>
   );

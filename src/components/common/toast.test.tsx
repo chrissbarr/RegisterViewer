@@ -22,9 +22,9 @@ describe('Toast', () => {
       expect(container).toHaveAttribute('aria-live', 'polite');
     });
 
-    it('renders into document.body via portal', () => {
+    it('renders into document.body via portal (fallback when no ToastPortalProvider)', () => {
       const { baseElement } = render(<Toast message="Portal test" onDismiss={vi.fn()} />);
-      // The toast should be rendered as a direct child of body, not inside the render container
+      // Without a provider, the toast falls back to document.body
       const status = baseElement.ownerDocument.body.querySelector('[role="status"]');
       expect(status).toBeInTheDocument();
     });
