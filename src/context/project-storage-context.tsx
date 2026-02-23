@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useMemo, type ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useMemo, useRef, useEffect, type ReactNode } from 'react';
 import { useAppState, useAppDispatch } from './app-context';
 import {
   loadManifest,
@@ -118,14 +118,19 @@ export function ProjectStorageProvider({ children, initialLocalId }: ProjectStor
     refreshProjectList();
   }, [activeLocalId, setActiveAndPersist, refreshProjectList]);
 
+  const projectRef = useRef(appState.project);
+  useEffect(() => {
+    projectRef.current = appState.project;
+  });
+
   const renameProject = useCallback((localId: string, name: string) => {
     updateProjectMetadata(localId, { name });
     // If renaming the active project, also update AppState.project.title
     if (localId === activeLocalId) {
-      dispatch({ type: 'SET_PROJECT_METADATA', project: { ...appState.project, title: name } });
+      dispatch({ type: 'SET_PROJECT_METADATA', project: { ...projectRef.current, title: name } });
     }
     refreshProjectList();
-  }, [activeLocalId, appState.project, dispatch, refreshProjectList]);
+  }, [activeLocalId, dispatch, refreshProjectList]);
 
   const updateCloudMetadata = useCallback((localId: string, updates: CloudMetadataUpdates) => {
     // updateProjectMetadata saves the project record and updates the manifest in one pass
