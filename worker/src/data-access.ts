@@ -162,36 +162,8 @@ export function migrateStoredProject(raw: unknown): StoredProject {
   const now = new Date().toISOString();
   const visibility: Visibility = isValidVisibility(record.visibility) ? record.visibility : 'private';
 
-  // v0 -> v1: backfill missing fields
-  const schemaVersion = record.schemaVersion;
-  if (schemaVersion === undefined || schemaVersion === 0) {
-    return {
-      schemaVersion: 1,
-      id: record.id as string,
-      ownerTokenHash: record.ownerTokenHash as string,
-      visibility,
-      createdAt: typeof record.createdAt === 'string' ? record.createdAt : now,
-      updatedAt: typeof record.updatedAt === 'string' ? record.updatedAt : now,
-      lastAccessedAt: typeof record.lastAccessedAt === 'string' ? record.lastAccessedAt : now,
-      data: record.data as StoredProject['data'],
-    };
-  }
-
-  // v1: current schema — pass through with defaults for any missing timestamps
-  if (schemaVersion === 1) {
-    return {
-      schemaVersion: 1,
-      id: record.id as string,
-      ownerTokenHash: record.ownerTokenHash as string,
-      visibility,
-      createdAt: typeof record.createdAt === 'string' ? record.createdAt : now,
-      updatedAt: typeof record.updatedAt === 'string' ? record.updatedAt : now,
-      lastAccessedAt: typeof record.lastAccessedAt === 'string' ? record.lastAccessedAt : now,
-      data: record.data as StoredProject['data'],
-    };
-  }
-
-  // Unknown future schema version — attempt best-effort passthrough
+  // All schema versions (v0, v1, and unknown future) normalize to v1
+  // with defaults for any missing timestamps.
   return {
     schemaVersion: 1,
     id: record.id as string,
