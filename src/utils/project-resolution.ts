@@ -9,6 +9,13 @@ type ProjectResolution =
 /**
  * Determine what project to load on startup.
  * Pure function — no side effects, fully unit-testable.
+ *
+ * Resolution priority:
+ * 1. Snapshot URL (`#data=…`) — compressed state in the hash
+ * 2. Cloud project link (`#/p/{id}`) — fetch from Worker API (if cloud enabled)
+ * 3. Session-stored active project — tab isolation via sessionStorage
+ * 4. Most recently saved local project from manifest
+ * 5. Create a new default project (seed data)
  */
 export function resolveInitialProject(
   hash: string,
