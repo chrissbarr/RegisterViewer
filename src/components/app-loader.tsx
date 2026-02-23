@@ -147,7 +147,10 @@ export function AppLoader() {
         const project = loadProject(resolution.localId);
         if (project) {
           const appState = deserializeState(project.state);
-          setState({ phase: 'ready', initialState: appState, localId: resolution.localId });
+          const cloudInit = project.cloudId
+            ? { projectId: project.cloudId, isOwner: checkOwnership(project.cloudId) }
+            : undefined;
+          setState({ phase: 'ready', initialState: appState, localId: resolution.localId, cloudInit });
         } else {
           // Project record missing — fall back to creating default
           const { state: seedState, localId } = createDefaultProject();

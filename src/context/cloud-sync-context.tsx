@@ -1,5 +1,6 @@
 import { createContext, useContext, useCallback, useState, useMemo, useRef, useEffect, type ReactNode } from 'react';
 import { useAppState, useAppDispatch } from './app-context';
+import { useProjectStorage, useProjectStorageActions } from './project-storage-context';
 import { exportToJson } from '../utils/storage';
 import {
   isCloudEnabled,
@@ -86,8 +87,16 @@ const initialInternalState: InternalCloudSyncState = {
 export function CloudSyncProvider({ children }: { children: ReactNode }) {
   const appState = useAppState();
   const dispatch = useAppDispatch();
+  const { activeLocalId } = useProjectStorage();
+  const { refreshProjectList } = useProjectStorageActions();
 
   const [internal, setInternal] = useState<InternalCloudSyncState>(initialInternalState);
+
+  // Track activeLocalId in a ref for use in async callbacks
+  const activeLocalIdRef = useRef(activeLocalId);
+  useEffect(() => {
+    activeLocalIdRef.current = activeLocalId;
+  }, [activeLocalId]);
 
   // Generation counter dirty tracking (same pattern as old CloudProjectProvider)
   const mutationLockRef = useRef(false);
@@ -110,13 +119,44 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     && internal.lastSavedVersion >= 0
     && dataVersion !== internal.lastSavedVersion;
 
+  // Sync cloud state when active project changes (handles project switch)
+  const internalRef = useRef(internal);
+  useEffect(() => {
+    internalRef.current = internal;
+  });
+
+  useEffect(() => {
+    if (!activeLocalId) return;
+    const manifest = loadManifest();
+    const entry = manifest.projects.find(p => p.localId === activeLocalId);
+    const cloudId = entry?.cloudId ?? null;
+    // Skip if cloudId hasn't changed (avoid redundant state updates)
+    if (cloudId === internalRef.current.cloudId) return;
+    const isOwner = cloudId ? checkOwnership(cloudId) : false;
+    if (cloudId === null) {
+      setInternal({ ...initialInternalState });
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+    } else {
+      setInternal((prev) => ({
+        ...prev,
+        cloudId,
+        isOwner,
+        shareUrl: buildProjectUrl(cloudId),
+        lastSavedVersion: dataVersionRef.current,
+        lastCloudSavedAt: null,
+        error: null,
+        visibility: entry?.visibility ?? 'private',
+      }));
+    }
+  }, [activeLocalId]);
+
   // Ref to avoid stale closures in save/fork callbacks
   const appStateRef = useRef(appState);
   useEffect(() => {
     appStateRef.current = appState;
   });
 
-  const createNewCloudProject = async (errorLabel: string) => {
+  const createNewCloudProject = useCallback(async (errorLabel: string) => {
     const jsonPayload = exportToJson(appStateRef.current);
     setInternal((prev) => ({ ...prev, status: 'saving', error: null }));
     try {
@@ -132,6 +172,23 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
         savedAt: result.createdAt,
         shareUrl: buildProjectUrl(result.id),
       });
+
+      // Update manifest and project record with new cloudId
+      const currentLocalId = activeLocalIdRef.current;
+      if (currentLocalId) {
+        const manifest = loadManifest();
+        const entry = manifest.projects.find(p => p.localId === currentLocalId);
+        if (entry) {
+          entry.cloudId = result.id;
+          entry.cloudSavedAt = result.createdAt;
+          saveManifest(manifest);
+        }
+        updateProjectMetadata(currentLocalId, {
+          cloudId: result.id,
+          cloudSavedAt: result.createdAt,
+        });
+        refreshProjectList();
+      }
 
       const shareUrl = buildProjectUrl(result.id);
       history.replaceState(null, '', `#/p/${result.id}`);
@@ -149,7 +206,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       const message = err instanceof Error ? err.message : errorLabel;
       setInternal((prev) => ({ ...prev, status: 'idle', error: message }));
     }
-  };
+  }, [refreshProjectList]);
 
   const saveToCloud = useCallback(async () => {
     if (!isCloudEnabled() || mutationLockRef.current) return;
@@ -173,6 +230,22 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
             name: projectName,
             savedAt: result.updatedAt,
           });
+
+          // Update manifest cloudSavedAt
+          const currentLocalId = activeLocalIdRef.current;
+          if (currentLocalId) {
+            const manifest = loadManifest();
+            const entry = manifest.projects.find(p => p.localId === currentLocalId);
+            if (entry) {
+              entry.cloudSavedAt = result.updatedAt;
+              saveManifest(manifest);
+            }
+            updateProjectMetadata(currentLocalId, {
+              cloudSavedAt: result.updatedAt,
+            });
+            refreshProjectList();
+          }
+
           setInternal((prev) => ({
             ...prev,
             status: 'idle',
@@ -221,7 +294,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     } finally {
       mutationLockRef.current = false;
     }
-  }, [internal.cloudId, internal.isOwner]);
+  }, [internal.cloudId, internal.isOwner, refreshProjectList, createNewCloudProject]);
 
   const fork = useCallback(async () => {
     if (!isCloudEnabled() || mutationLockRef.current) return;
@@ -231,7 +304,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     } finally {
       mutationLockRef.current = false;
     }
-  }, []);
+  }, [createNewCloudProject]);
 
   const deleteFromCloud = useCallback(async () => {
     if (!internal.cloudId || mutationLockRef.current) return;
@@ -265,13 +338,14 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       // Clean up cloud state and URL
       history.replaceState(null, '', window.location.pathname + window.location.search);
       setInternal({ ...initialInternalState });
+      refreshProjectList();
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to delete project.';
       throw new Error(message);
     } finally {
       mutationLockRef.current = false;
     }
-  }, [internal.cloudId]);
+  }, [internal.cloudId, refreshProjectList]);
 
   const setVisibility = useCallback(async (v: Visibility) => {
     setInternal((prev) => ({ ...prev, visibility: v }));

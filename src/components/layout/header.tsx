@@ -199,7 +199,10 @@ export function Header() {
           />
           <ShareDialog
             open={shareDialogOpenFromProjects}
-            onClose={() => setShareDialogOpenFromProjects(false)}
+            onClose={() => {
+              setShareDialogOpenFromProjects(false);
+              setMyProjectsOpen(true);
+            }}
           />
         </div>
       </header>
