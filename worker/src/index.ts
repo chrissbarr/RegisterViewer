@@ -110,6 +110,24 @@ async function readBodyWithLimit(
   return { ok: true, text };
 }
 
+// ---- Body parsing ----
+
+async function readAndParseJson<T = Record<string, unknown>>(
+  request: Request,
+  cors: Record<string, string>,
+): Promise<{ ok: true; body: T } | { ok: false; response: Response }> {
+  const result = await readBodyWithLimit(request, LIMITS.MAX_PAYLOAD_SIZE);
+  if (!result.ok) {
+    return { ok: false, response: errorResponse(`Request body must be at most ${LIMITS.MAX_PAYLOAD_SIZE} bytes`, 400, cors) };
+  }
+
+  try {
+    return { ok: true, body: JSON.parse(result.text) as T };
+  } catch {
+    return { ok: false, response: errorResponse('Invalid JSON body', 400, cors) };
+  }
+}
+
 // ---- Handlers ----
 
 async function handleCreate(request: Request, env: Env, cors: Record<string, string>): Promise<Response> {
@@ -118,30 +136,21 @@ async function handleCreate(request: Request, env: Env, cors: Record<string, str
     return errorResponse('Missing or invalid Authorization header', 401, cors);
   }
 
-  const result = await readBodyWithLimit(request, LIMITS.MAX_PAYLOAD_SIZE);
-  if (!result.ok) {
-    return errorResponse(`Request body must be at most ${LIMITS.MAX_PAYLOAD_SIZE} bytes`, 400, cors);
-  }
+  const parsed = await readAndParseJson<{ data?: unknown; visibility?: unknown }>(request, cors);
+  if (!parsed.ok) return parsed.response;
 
-  let body: { data?: unknown; visibility?: unknown };
-  try {
-    body = JSON.parse(result.text);
-  } catch {
-    return errorResponse('Invalid JSON body', 400, cors);
-  }
-
-  const validation = validateProjectData(body.data);
+  const validation = validateProjectData(parsed.body.data);
   if (!validation.valid) {
     return errorResponse(validation.error, 400, cors);
   }
 
   // Validate visibility (optional, defaults to 'private')
   let visibility: 'private' | 'unlisted' = 'private';
-  if (body.visibility !== undefined) {
-    if (!isValidVisibility(body.visibility)) {
+  if (parsed.body.visibility !== undefined) {
+    if (!isValidVisibility(parsed.body.visibility)) {
       return errorResponse('visibility must be "private" or "unlisted"', 400, cors);
     }
-    visibility = body.visibility;
+    visibility = parsed.body.visibility;
   }
 
   // Generate ID with collision check (max 3 attempts)
@@ -168,7 +177,7 @@ async function handleCreate(request: Request, env: Env, cors: Record<string, str
     createdAt: now,
     updatedAt: now,
     lastAccessedAt: now,
-    data: body.data as StoredProject['data'],
+    data: parsed.body.data as StoredProject['data'],
   };
 
   await putProject(env.PROJECTS, project);
@@ -240,36 +249,27 @@ async function handleUpdate(request: Request, env: Env, id: string, cors: Record
     return errorResponse('Project not found', 404, cors);
   }
 
-  const result = await readBodyWithLimit(request, LIMITS.MAX_PAYLOAD_SIZE);
-  if (!result.ok) {
-    return errorResponse(`Request body must be at most ${LIMITS.MAX_PAYLOAD_SIZE} bytes`, 400, cors);
-  }
+  const parsed = await readAndParseJson<{ data?: unknown; visibility?: unknown }>(request, cors);
+  if (!parsed.ok) return parsed.response;
 
-  let body: { data?: unknown; visibility?: unknown };
-  try {
-    body = JSON.parse(result.text);
-  } catch {
-    return errorResponse('Invalid JSON body', 400, cors);
-  }
-
-  const validation = validateProjectData(body.data);
+  const validation = validateProjectData(parsed.body.data);
   if (!validation.valid) {
     return errorResponse(validation.error, 400, cors);
   }
 
   // Validate visibility (optional, keeps existing if not provided)
   let visibility = existing.visibility;
-  if (body.visibility !== undefined) {
-    if (!isValidVisibility(body.visibility)) {
+  if (parsed.body.visibility !== undefined) {
+    if (!isValidVisibility(parsed.body.visibility)) {
       return errorResponse('visibility must be "private" or "unlisted"', 400, cors);
     }
-    visibility = body.visibility;
+    visibility = parsed.body.visibility;
   }
 
   const now = new Date().toISOString();
   const updated: StoredProject = {
     ...existing,
-    data: body.data as StoredProject['data'],
+    data: parsed.body.data as StoredProject['data'],
     visibility,
     updatedAt: now,
     lastAccessedAt: now,
@@ -296,29 +296,20 @@ async function handlePatch(request: Request, env: Env, id: string, cors: Record<
     return errorResponse('Project not found', 404, cors);
   }
 
-  const result = await readBodyWithLimit(request, LIMITS.MAX_PAYLOAD_SIZE);
-  if (!result.ok) {
-    return errorResponse(`Request body must be at most ${LIMITS.MAX_PAYLOAD_SIZE} bytes`, 400, cors);
-  }
+  const parsed = await readAndParseJson<{ visibility?: unknown }>(request, cors);
+  if (!parsed.ok) return parsed.response;
 
-  let body: { visibility?: unknown };
-  try {
-    body = JSON.parse(result.text);
-  } catch {
-    return errorResponse('Invalid JSON body', 400, cors);
-  }
-
-  if (body.visibility === undefined) {
+  if (parsed.body.visibility === undefined) {
     return errorResponse('PATCH requires a visibility field', 400, cors);
   }
-  if (!isValidVisibility(body.visibility)) {
+  if (!isValidVisibility(parsed.body.visibility)) {
     return errorResponse('visibility must be "private" or "unlisted"', 400, cors);
   }
 
   const now = new Date().toISOString();
   const updated: StoredProject = {
     ...existing,
-    visibility: body.visibility,
+    visibility: parsed.body.visibility,
     updatedAt: now,
   };
 
