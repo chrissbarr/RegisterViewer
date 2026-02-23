@@ -24,25 +24,39 @@ type LoaderState =
   | { phase: 'ready'; initialState: AppState | undefined; cloudInit?: { projectId: string; isOwner: boolean }; localId?: string }
   | { phase: 'error'; message: string };
 
+/** Build an AppState from import-style data, filling in map/sort defaults. */
+function buildAppState(data: {
+  registers: AppState['registers'];
+  values: Record<string, bigint>;
+  project?: AppState['project'];
+  addressUnitBits?: AppState['addressUnitBits'];
+}): AppState {
+  return {
+    registers: data.registers,
+    activeRegisterId: data.registers[0]?.id ?? null,
+    registerValues: data.values,
+    project: data.project,
+    mapTableWidth: 32,
+    mapShowGaps: true,
+    mapSortDescending: false,
+    addressUnitBits: data.addressUnitBits ?? ADDRESS_UNIT_BITS_DEFAULT,
+  };
+}
+
 function createSeedState(): AppState {
   const seedRegisters = createSeedRegisters();
   const seedValues: Record<string, bigint> = {};
   for (const reg of seedRegisters) {
     seedValues[reg.id] = 0xDEADBEEFn;
   }
-  return {
+  return buildAppState({
     registers: seedRegisters,
-    activeRegisterId: seedRegisters[0]?.id ?? null,
-    registerValues: seedValues,
+    values: seedValues,
     project: {
       title: 'Example Project',
       description: 'Demonstrates register field types. Open Project Settings from the menu to customize.',
     },
-    mapTableWidth: 32,
-    mapShowGaps: true,
-    mapSortDescending: false,
-    addressUnitBits: ADDRESS_UNIT_BITS_DEFAULT,
-  };
+  });
 }
 
 function createDefaultProject(): { state: AppState; localId: string } {
@@ -62,16 +76,12 @@ function parseSnapshotHash(hash: string): AppState | null {
     for (const reg of result.registers) {
       values[reg.id] = result.values[reg.id] ?? 0n;
     }
-    return {
+    return buildAppState({
       registers: result.registers,
-      activeRegisterId: result.registers[0]?.id ?? null,
-      registerValues: values,
+      values,
       project: result.project,
-      mapTableWidth: 32,
-      mapShowGaps: true,
-      mapSortDescending: false,
-      addressUnitBits: result.addressUnitBits ?? ADDRESS_UNIT_BITS_DEFAULT,
-    };
+      addressUnitBits: result.addressUnitBits,
+    });
   } catch {
     return null;
   }
@@ -124,16 +134,12 @@ export function AppLoader() {
               values[reg.id] = importResult.values[reg.id] ?? 0n;
             }
 
-            const loadedState: AppState = {
+            const loadedState = buildAppState({
               registers: importResult.registers,
-              activeRegisterId: importResult.registers[0]?.id ?? null,
-              registerValues: values,
+              values,
               project: importResult.project,
-              mapTableWidth: 32,
-              mapShowGaps: true,
-              mapSortDescending: false,
-              addressUnitBits: importResult.addressUnitBits ?? ADDRESS_UNIT_BITS_DEFAULT,
-            };
+              addressUnitBits: importResult.addressUnitBits,
+            });
 
             const isOwner = checkOwnership(resolution.cloudId);
             setState({
