@@ -62,6 +62,17 @@ Open http://localhost:5173 in your browser. On first launch, an example 32-bit S
 | `cd worker && npm test` | Run Worker unit tests |
 | `cd worker && npm run deploy` | Deploy Worker to Cloudflare |
 
+### Worker Environment Variables
+
+Configured in `worker/wrangler.toml` (see [DEPLOYMENT.md](docs/DEPLOYMENT.md) for full setup):
+
+| Variable | Description |
+|----------|-------------|
+| `PROJECTS` | KV namespace binding for project storage |
+| `APP_URL` | Frontend origin for CORS (`https://register-viewer.app`) |
+| `ALLOWED_ORIGINS` | Optional comma-separated override for CORS origins |
+| `ENVIRONMENT` | `production` or `development` |
+
 ## Testing
 
 Unit tests use [Vitest](https://vitest.dev/) and live alongside source files as `.test.ts` siblings.

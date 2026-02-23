@@ -80,6 +80,23 @@ const initialInternalState: InternalCloudSyncState = {
   visibility: 'private',
 };
 
+/**
+ * Manages cloud synchronization state for the active project.
+ *
+ * Architecture: split into two contexts (state + actions) to avoid
+ * re-rendering consumers that only need actions. Cloud state tracks
+ * the active project's cloudId, ownership, dirty status (generation-
+ * counter pattern via useDirtyTracking), and operation status.
+ *
+ * Refs (appStateRef, internalRef, activeLocalIdRef) are used to give
+ * stable callbacks access to latest values without appearing in
+ * dependency arrays — this keeps the actions object referentially
+ * stable across renders.
+ *
+ * By-localId operations (saveProjectToCloud, deleteProjectFromCloud,
+ * setProjectVisibility, unlinkCloudProject) are delegated to
+ * useProjectCloudOps for use by the My Projects dialog.
+ */
 export function CloudSyncProvider({ children }: { children: ReactNode }) {
   const appState = useAppState();
   const dispatch = useAppDispatch();

@@ -15,7 +15,14 @@ const PROJECT_PREFIX = 'register-viewer-project:';
 const LEGACY_STATE_KEY = 'register-viewer-state';
 const LEGACY_PROJECTS_KEY = 'register-viewer-projects';
 
-/** In-memory manifest cache to avoid repeated localStorage reads + JSON parses */
+/**
+ * In-memory manifest cache to avoid repeated localStorage reads + JSON parses.
+ *
+ * Limitation: this cache is per-tab. If the user has multiple tabs open,
+ * writes in one tab are not visible to another until the cache is
+ * invalidated (e.g., by saveManifest or invalidateManifestCache).
+ * This is acceptable because the app is designed as a single-tab experience.
+ */
 let cachedManifest: ProjectManifest | null = null;
 
 /** Invalidate the in-memory manifest cache (for testing) */

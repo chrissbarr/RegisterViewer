@@ -1,3 +1,18 @@
+/**
+ * Owner token security model:
+ *
+ * Each browser gets a random 256-bit token stored in localStorage. This token
+ * proves ownership of cloud projects without requiring user accounts.
+ *
+ * - The raw token is sent to the worker only for write operations (create,
+ *   update, delete, patch visibility). The worker hashes it with SHA-256 and
+ *   compares against the stored hash using constant-time comparison.
+ * - The raw token is NEVER stored server-side; only the SHA-256 hash is persisted.
+ * - Per-project ownerToken copies are stored in StoredLocalProject records
+ *   so ownership can survive localStorage key migration.
+ * - Ownership check (checkOwnership) is local-only: it verifies a local project
+ *   record exists with an ownerToken for the given cloudId.
+ */
 import { loadManifest, loadProject } from './project-storage';
 
 const OWNER_TOKEN_KEY = 'register-viewer-owner-token';
