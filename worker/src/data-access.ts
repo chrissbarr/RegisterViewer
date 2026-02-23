@@ -140,9 +140,14 @@ export function migrateStoredProject(raw: unknown): StoredProject {
     throw new Error('Stored project is missing a valid id');
   }
 
-  // Must have data
+  // Must have data with valid structure
   if (!record.data || typeof record.data !== 'object') {
     throw new Error('Stored project is missing data');
+  }
+  const data = record.data as Record<string, unknown>;
+  if (typeof data.version !== 'number' || !Array.isArray(data.registers) ||
+      typeof data.registerValues !== 'object' || data.registerValues === null) {
+    throw new Error('Stored project data has invalid structure');
   }
 
   // Must have ownerTokenHash
