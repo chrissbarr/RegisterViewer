@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { Loader2, TriangleAlert } from 'lucide-react';
 import { AppProvider } from '../context/app-context';
 import { AppShell } from './layout/app-shell';
 import { importFromJson, deserializeState, serializeState } from '../utils/storage';
@@ -200,15 +201,7 @@ export function AppLoader() {
     return (
       <div className="h-screen flex items-center justify-center bg-gray-950 text-gray-100">
         <div className="flex flex-col items-center gap-4">
-          <svg
-            className="animate-spin h-8 w-8 text-blue-500"
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-          >
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-          </svg>
+          <Loader2 className="animate-spin h-8 w-8 text-blue-500" />
           <p className="text-sm text-gray-400">Loading project...</p>
         </div>
       </div>
@@ -220,9 +213,7 @@ export function AppLoader() {
       <div className="h-screen flex items-center justify-center bg-gray-950 text-gray-100">
         <div className="max-w-md w-full mx-4 rounded-xl border border-gray-700 bg-gray-800 p-6 shadow-xl">
           <div className="flex items-center gap-3 mb-4">
-            <svg viewBox="0 0 16 16" width="24" height="24" fill="currentColor" className="text-red-400 shrink-0">
-              <path d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575ZM8 5a.75.75 0 0 0-.75.75v2.5a.75.75 0 0 0 1.5 0v-2.5A.75.75 0 0 0 8 5Zm0 7a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" />
-            </svg>
+            <TriangleAlert size={24} className="text-red-400 shrink-0" />
             <h2 className="text-lg font-bold">Unable to load project</h2>
           </div>
           <p className="text-sm text-gray-300 mb-6">{state.message}</p>

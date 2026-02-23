@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
+import { Plus, TriangleAlert } from 'lucide-react';
 import { Dialog } from '../common/dialog';
 import { ProjectListItem } from './project-list-item';
 import { MyProjectsCloudDialogs } from './my-projects-cloud-dialogs';
@@ -70,9 +71,7 @@ export function MyProjectsDialog({ open, onClose, onShareProject }: MyProjectsDi
               bg-blue-600 text-white hover:bg-blue-500
               transition-colors"
           >
-            <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
-              <path d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z" />
-            </svg>
+            <Plus size={14} aria-hidden="true" />
             New Project
           </button>
         </div>
@@ -83,9 +82,7 @@ export function MyProjectsDialog({ open, onClose, onShareProject }: MyProjectsDi
             bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400
             border border-amber-200 dark:border-amber-800"
           >
-            <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
-              <path d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575ZM8 5a.75.75 0 0 0-.75.75v2.5a.75.75 0 0 0 1.5 0v-2.5A.75.75 0 0 0 8 5Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" />
-            </svg>
+            <TriangleAlert size={14} aria-hidden="true" />
             Local storage is {storagePercent}% full. Delete old projects to free space.
           </div>
         )}
@@ -122,9 +119,7 @@ export function MyProjectsDialog({ open, onClose, onShareProject }: MyProjectsDi
                     bg-blue-600 text-white hover:bg-blue-500
                     transition-colors"
                 >
-                  <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
-                    <path d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z" />
-                  </svg>
+                  <Plus size={14} />
                   Create your first project
                 </button>
               </>

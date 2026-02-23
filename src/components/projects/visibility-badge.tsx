@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { useClickOutside } from '../../hooks/use-click-outside';
 import type { Visibility } from '../../types/project';
 
@@ -68,9 +69,7 @@ export function VisibilityBadge({
           hover:ring-1 hover:ring-gray-300 dark:hover:ring-gray-500 transition-all ${badgeColors}`}
       >
         {visibility === 'unlisted' ? 'Unlisted' : 'Private'}
-        <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" className="ml-0.5" aria-hidden="true">
-          <path d="M4.427 7.427l3.396 3.396a.25.25 0 0 0 .354 0l3.396-3.396A.25.25 0 0 0 11.396 7H4.604a.25.25 0 0 0-.177.427Z" />
-        </svg>
+        <ChevronDown size={12} className="ml-0.5" />
       </button>
 
       {isOpen && (

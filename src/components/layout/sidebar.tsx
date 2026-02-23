@@ -1,3 +1,4 @@
+import { ChevronLeft } from 'lucide-react';
 import { RegisterList } from '../register-list/register-list';
 
 interface Props {
@@ -24,9 +25,7 @@ export function Sidebar({ width, collapsed, onToggleCollapse }: Props) {
           title="Collapse sidebar (Ctrl+B)"
           aria-label="Collapse sidebar"
         >
-          <svg viewBox="0 0 8 12" width="8" height="12" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <polyline points="7,1 1,6 7,11" />
-          </svg>
+          <ChevronLeft size={12} />
         </button>
       </div>
       <RegisterList />

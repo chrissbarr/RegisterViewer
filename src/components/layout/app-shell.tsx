@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react';
+import { ChevronRight } from 'lucide-react';
 import { SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MAX, type AppState } from '../../types/register';
 import { useAppState } from '../../context/app-context';
 import { EditProvider } from '../../context/edit-context';
@@ -145,9 +146,7 @@ function AppShellInner({ cloudInit }: AppShellProps) {
             title="Expand sidebar (Ctrl+B)"
             aria-label="Expand sidebar"
           >
-            <svg viewBox="0 0 8 12" width="8" height="12" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <polyline points="1,1 7,6 1,11" />
-            </svg>
+            <ChevronRight size={12} />
           </button>
         )}
 

@@ -6,7 +6,7 @@ import { ExamplesDialog } from '../common/examples-dialog';
 import { ProjectSettingsDialog } from '../common/project-settings-dialog';
 import { ImportResultDialog } from '../common/import-result-dialog';
 import { Toast } from '../common/toast';
-import { GitHubIcon } from '../common/github-icon';
+import { GithubIcon, MenuIcon } from 'lucide-react';
 import { SaveButton } from '../common/save-button';
 import { ShareButton } from '../common/share-button';
 import { ShareDialog } from '../common/share-dialog';
@@ -18,16 +18,6 @@ import { usePreferences, usePreferencesActions } from '../../context/preferences
 import { useProjectStorageActions } from '../../context/project-storage-context';
 import { exportToJson, importFromJson, type ImportWarning } from '../../utils/storage';
 import { isCloudEnabled } from '../../utils/api-client';
-
-function MenuIcon() {
-  return (
-    <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" className="block">
-      <rect x="1" y="2" width="14" height="2" rx="0.5" />
-      <rect x="1" y="7" width="14" height="2" rx="0.5" />
-      <rect x="1" y="12" width="14" height="2" rx="0.5" />
-    </svg>
-  );
-}
 
 type ImportFeedback =
   | { kind: 'success'; message: string }
@@ -142,7 +132,7 @@ export function Header() {
     },
     { kind: 'separator' },
     { kind: 'action', label: 'About', onAction: () => setAboutOpen(true) },
-    { kind: 'link', label: 'GitHub', href: GITHUB_URL, icon: <GitHubIcon /> },
+    { kind: 'link', label: 'GitHub', href: GITHUB_URL, icon: <GithubIcon size={14} /> },
   ];
 
   return (
@@ -162,7 +152,7 @@ export function Header() {
           <DropdownMenu
             items={menuItems}
             triggerLabel="Application menu"
-            triggerContent={<MenuIcon />}
+            triggerContent={<MenuIcon size={16} className="block" />}
           />
           <input
             ref={fileInputRef}

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { TriangleAlert, CloudUpload, CloudOff, ChevronsDown, Link, Trash2 } from 'lucide-react';
 import type { ProjectListEntry, Visibility } from '../../types/project';
 import { projectDisplayName } from '../../utils/project-helpers';
 import { CloudStatusIndicator } from './cloud-status-indicator';
@@ -118,9 +119,7 @@ export function ProjectListItem({
             )}
             {isStaleCloud && (
               <span className="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
-                <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true">
-                  <path d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575ZM8 5a.75.75 0 0 0-.75.75v2.5a.75.75 0 0 0 1.5 0v-2.5A.75.75 0 0 0 8 5Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" />
-                </svg>
+                <TriangleAlert size={12} aria-hidden="true" />
                 Cloud copy not found
                 {onUnlinkCloud && (
                   <button
@@ -160,15 +159,7 @@ export function ProjectListItem({
                   disabled:opacity-50 disabled:cursor-not-allowed
                   transition-colors"
               >
-                {isSavingToCloud ? (
-                  <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" className="animate-pulse" aria-hidden="true">
-                    <path d="M8 2.002a4.998 4.998 0 0 0-4.868 3.862A3.5 3.5 0 0 0 3.5 12.5h9a3.5 3.5 0 0 0 .368-6.636A4.998 4.998 0 0 0 8 2.002ZM7.25 7.25v2.5a.75.75 0 0 0 1.5 0v-2.5l.97.97a.75.75 0 1 0 1.06-1.06l-2.25-2.25a.75.75 0 0 0-1.06 0L5.22 7.16a.75.75 0 1 0 1.06 1.06l.97-.97Z" />
-                  </svg>
-                ) : (
-                  <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
-                    <path d="M8 2.002a4.998 4.998 0 0 0-4.868 3.862A3.5 3.5 0 0 0 3.5 12.5h9a3.5 3.5 0 0 0 .368-6.636A4.998 4.998 0 0 0 8 2.002ZM7.25 7.25v2.5a.75.75 0 0 0 1.5 0v-2.5l.97.97a.75.75 0 1 0 1.06-1.06l-2.25-2.25a.75.75 0 0 0-1.06 0L5.22 7.16a.75.75 0 1 0 1.06 1.06l.97-.97Z" />
-                  </svg>
-                )}
+                <CloudUpload size={14} className={isSavingToCloud ? 'animate-pulse' : undefined} aria-hidden="true" />
               </button>
             )}
             {/* Remove from cloud (cloud projects) */}
@@ -182,9 +173,7 @@ export function ProjectListItem({
                   hover:bg-gray-100 dark:hover:bg-gray-700
                   transition-colors"
               >
-                <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
-                  <path d="M8 2.002a4.998 4.998 0 0 0-4.868 3.862A3.5 3.5 0 0 0 3.5 12.5h9a3.5 3.5 0 0 0 .368-6.636A4.998 4.998 0 0 0 8 2.002ZM5.72 6.72a.75.75 0 0 1 1.06 0L8 7.94l1.22-1.22a.75.75 0 1 1 1.06 1.06L9.06 9l1.22 1.22a.75.75 0 1 1-1.06 1.06L8 10.06l-1.22 1.22a.75.75 0 0 1-1.06-1.06L6.94 9 5.72 7.78a.75.75 0 0 1 0-1.06Z" />
-                </svg>
+                <CloudOff size={14} aria-hidden="true" />
               </button>
             )}
             {!isActive && (
@@ -197,10 +186,7 @@ export function ProjectListItem({
                   hover:bg-gray-100 dark:hover:bg-gray-700
                   transition-colors"
               >
-                <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
-                  <path d="M1.97 2.97a.75.75 0 0 1 1.06 0L8 7.94l4.97-4.97a.75.75 0 1 1 1.06 1.06l-5.5 5.5a.75.75 0 0 1-1.06 0l-5.5-5.5a.75.75 0 0 1 0-1.06Z" />
-                  <path d="M1.97 7.97a.75.75 0 0 1 1.06 0L8 12.94l4.97-4.97a.75.75 0 1 1 1.06 1.06l-5.5 5.5a.75.75 0 0 1-1.06 0l-5.5-5.5a.75.75 0 0 1 0-1.06Z" />
-                </svg>
+                <ChevronsDown size={14} aria-hidden="true" />
               </button>
             )}
             <button
@@ -212,9 +198,7 @@ export function ProjectListItem({
                 hover:bg-gray-100 dark:hover:bg-gray-700
                 transition-colors"
             >
-              <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
-                <path d="M7.775 3.275a.75.75 0 0 0 1.06 1.06l1.25-1.25a2 2 0 1 1 2.83 2.83l-2.5 2.5a2 2 0 0 1-2.83 0 .75.75 0 0 0-1.06 1.06 3.5 3.5 0 0 0 4.95 0l2.5-2.5a3.5 3.5 0 0 0-4.95-4.95l-1.25 1.25Zm-.8 9.45a.75.75 0 0 0 1.06-1.06l-1.25 1.25a2 2 0 0 1-2.83-2.83l2.5-2.5a2 2 0 0 1 2.83 0 .75.75 0 0 0 1.06-1.06 3.5 3.5 0 0 0-4.95 0l-2.5 2.5a3.5 3.5 0 0 0 4.95 4.95l1.25-1.25Z" />
-              </svg>
+              <Link size={14} aria-hidden="true" />
             </button>
             <button
               onClick={() => setConfirmingDelete(true)}
@@ -225,9 +209,7 @@ export function ProjectListItem({
                 hover:bg-gray-100 dark:hover:bg-gray-700
                 transition-colors"
             >
-              <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
-                <path d="M11 1.75V3h2.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H5V1.75C5 .784 5.784 0 6.75 0h2.5C10.216 0 11 .784 11 1.75ZM4.496 6.675l.66 6.6a.25.25 0 0 0 .249.225h5.19a.25.25 0 0 0 .249-.225l.66-6.6a.75.75 0 0 1 1.492.15l-.66 6.6A1.748 1.748 0 0 1 10.595 15h-5.19a1.75 1.75 0 0 1-1.741-1.575l-.66-6.6a.75.75 0 1 1 1.492-.15ZM6.5 1.75V3h3V1.75a.25.25 0 0 0-.25-.25h-2.5a.25.25 0 0 0-.25.25Z" />
-              </svg>
+              <Trash2 size={14} aria-hidden="true" />
             </button>
           </>
         )}

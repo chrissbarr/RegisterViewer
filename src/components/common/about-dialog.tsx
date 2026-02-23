@@ -1,6 +1,6 @@
 import { GITHUB_URL } from '../../constants';
 import { Dialog } from './dialog';
-import { GitHubIcon } from './github-icon';
+import { GithubIcon } from 'lucide-react';
 
 interface AboutDialogProps {
   open: boolean;
@@ -30,7 +30,7 @@ export function AboutDialog({ open, onClose }: AboutDialogProps) {
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 text-sm text-blue-600 dark:text-blue-400 hover:underline"
           >
-            <GitHubIcon />
+            <GithubIcon size={14} />
             {GITHUB_URL.replace('https://', '')}
           </a>
         </div>

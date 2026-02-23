@@ -1,3 +1,4 @@
+import { TriangleAlert, CircleX } from 'lucide-react';
 import { Dialog } from './dialog';
 import type { ImportWarning } from '../../utils/storage';
 
@@ -9,22 +10,6 @@ interface ImportResultDialogProps {
   skippedCount: number;
   warnings: ImportWarning[];
   errorMessage?: string;
-}
-
-function WarningIcon() {
-  return (
-    <svg viewBox="0 0 16 16" width="24" height="24" fill="currentColor" className="shrink-0 text-amber-400">
-      <path d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575ZM8 5a.75.75 0 0 0-.75.75v2.5a.75.75 0 0 0 1.5 0v-2.5A.75.75 0 0 0 8 5Zm1 6a1 1 0 1 0-2 0 1 1 0 0 0 2 0Z" />
-    </svg>
-  );
-}
-
-function ErrorIcon() {
-  return (
-    <svg viewBox="0 0 16 16" width="24" height="24" fill="currentColor" className="shrink-0 text-red-400">
-      <path d="M2.343 13.657A8 8 0 1 1 13.658 2.343 8 8 0 0 1 2.343 13.657ZM6.03 4.97a.75.75 0 0 0-1.06 1.06L6.94 8 4.97 9.97a.75.75 0 1 0 1.06 1.06L8 9.06l1.97 1.97a.75.75 0 1 0 1.06-1.06L9.06 8l1.97-1.97a.75.75 0 0 0-1.06-1.06L8 6.94Z" />
-    </svg>
-  );
 }
 
 export function ImportResultDialog({
@@ -41,7 +26,9 @@ export function ImportResultDialog({
   return (
     <Dialog open={open} onClose={onClose} title={title}>
       <div className="flex items-start gap-3 mb-4">
-        {variant === 'error' ? <ErrorIcon /> : <WarningIcon />}
+        {variant === 'error'
+          ? <CircleX size={24} className="shrink-0 text-red-400" />
+          : <TriangleAlert size={24} className="shrink-0 text-amber-400" />}
         <p className="text-sm text-gray-500 dark:text-gray-300">
           {variant === 'error'
             ? (errorMessage ?? 'Failed to import: invalid JSON or missing registers array.')
