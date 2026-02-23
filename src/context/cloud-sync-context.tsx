@@ -203,9 +203,10 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     if (!isCloudEnabled() || mutationLockRef.current) return;
     mutationLockRef.current = true;
     try {
+      const { cloudId, isOwner } = internalRef.current;
       // If we have a cloud project and are owner, update it
-      if (internal.cloudId && internal.isOwner) {
-        const ownerToken = getOwnerTokenForProject(internal.cloudId);
+      if (cloudId && isOwner) {
+        const ownerToken = getOwnerTokenForProject(cloudId);
         if (!ownerToken) {
           setInternal((prev) => ({ ...prev, error: 'Owner token not found for this project.' }));
           return;
@@ -215,7 +216,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
         const jsonPayload = exportToObject(appStateRef.current);
         const tokenHash = await hashOwnerToken(ownerToken);
         try {
-          const result = await updateProject(internal.cloudId, jsonPayload, tokenHash);
+          const result = await updateProject(cloudId, jsonPayload, tokenHash);
 
           // Update manifest cloudSavedAt
           const currentLocalId = activeLocalIdRef.current;
@@ -271,7 +272,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     } finally {
       mutationLockRef.current = false;
     }
-  }, [internal.cloudId, internal.isOwner, updateCloudMetadata, createNewCloudProject]);
+  }, [updateCloudMetadata, createNewCloudProject]);
 
   const fork = useCallback(async () => {
     if (!isCloudEnabled() || mutationLockRef.current) return;
@@ -332,16 +333,17 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   }, [updateCloudMetadata]);
 
   const deleteFromCloud = useCallback(async () => {
-    if (!internal.cloudId || mutationLockRef.current) return;
+    const { cloudId } = internalRef.current;
+    if (!cloudId || mutationLockRef.current) return;
     mutationLockRef.current = true;
     try {
-      const ownerToken = getOwnerTokenForProject(internal.cloudId);
+      const ownerToken = getOwnerTokenForProject(cloudId);
       if (!ownerToken) {
         throw new Error('Owner token not found.');
       }
 
       const tokenHash = await hashOwnerToken(ownerToken);
-      await apiDeleteProject(internal.cloudId, tokenHash);
+      await apiDeleteProject(cloudId, tokenHash);
 
       // Update manifest: clear cloudId, set visibility to private
       const currentLocalId = activeLocalIdRef.current;
@@ -363,21 +365,21 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     } finally {
       mutationLockRef.current = false;
     }
-  }, [internal.cloudId, updateCloudMetadata]);
+  }, [updateCloudMetadata]);
 
   const setVisibility = useCallback(async (v: Visibility) => {
-    const previousVisibility = internal.visibility;
+    const { cloudId, isOwner, visibility: previousVisibility } = internalRef.current;
     setInternal((prev) => ({ ...prev, visibility: v }));
 
     // If we have a cloud project, update visibility on the server
-    if (internal.cloudId && internal.isOwner) {
+    if (cloudId && isOwner) {
       try {
-        const ownerToken = getOwnerTokenForProject(internal.cloudId);
+        const ownerToken = getOwnerTokenForProject(cloudId);
         if (!ownerToken) return;
 
         const tokenHash = await hashOwnerToken(ownerToken);
         const jsonPayload = exportToObject(appStateRef.current);
-        await updateProject(internal.cloudId, jsonPayload, tokenHash, v);
+        await updateProject(cloudId, jsonPayload, tokenHash, v);
 
         // Update the manifest entry's visibility
         const currentLocalId = activeLocalIdRef.current;
@@ -389,7 +391,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
         setInternal((prev) => ({ ...prev, visibility: previousVisibility }));
       }
     }
-  }, [internal.cloudId, internal.isOwner, internal.visibility, updateCloudMetadata]);
+  }, [updateCloudMetadata]);
 
   // Set visibility for a specific project by localId, without relying on active project state.
   // Used by My Projects dialog for non-active projects.
