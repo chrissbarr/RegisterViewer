@@ -41,8 +41,8 @@ export function useMyProjectsActions(
         if (result.updatedCount > 0 || result.staleCloudIds.length > 0) {
           refreshProjectList();
         }
-      }).catch(() => {
-        // Best-effort background sync — swallow network errors
+      }).catch((err) => {
+        setCloudError(friendlyErrorMessage(err, 'Failed to sync cloud projects.'));
       });
     }
     return () => setStaleCloudIds([]);

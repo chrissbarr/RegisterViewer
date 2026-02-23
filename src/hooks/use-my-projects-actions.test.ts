@@ -75,6 +75,16 @@ describe('useMyProjectsActions', () => {
       });
     });
 
+    it('sets cloudError when syncCloudProjects fails', async () => {
+      mockCloudActions.syncCloudProjects.mockRejectedValue(new Error('Network error'));
+      const onClose = vi.fn();
+      const { result } = renderHook(() => useMyProjectsActions(true, onClose));
+
+      await vi.waitFor(() => {
+        expect(result.current.cloudError).toBe('Network error');
+      });
+    });
+
     it('does not sync cloud when cloud is disabled', () => {
       (isCloudEnabled as Mock).mockReturnValue(false);
       const onClose = vi.fn();

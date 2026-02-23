@@ -947,18 +947,16 @@ describe('CloudSyncProvider', () => {
       expect(apiListProjects).not.toHaveBeenCalled();
     });
 
-    it('silently handles sync errors', async () => {
+    it('propagates sync errors to callers', async () => {
       (apiListProjects as Mock).mockRejectedValue(new Error('Network error'));
 
       const { result } = renderCloudSync();
 
-      let syncResult: { updatedCount: number; staleCloudIds: string[] };
-      await act(async () => {
-        syncResult = await result.current.actions.syncCloudProjects();
-      });
-
-      expect(syncResult!.updatedCount).toBe(0);
-      expect(syncResult!.staleCloudIds).toHaveLength(0);
+      await expect(
+        act(async () => {
+          await result.current.actions.syncCloudProjects();
+        }),
+      ).rejects.toThrow('Network error');
     });
   });
 

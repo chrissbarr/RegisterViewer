@@ -367,41 +367,36 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   const syncCloudProjects = useCallback(async (): Promise<SyncResult> => {
     if (!isCloudEnabled()) return { updatedCount: 0, staleCloudIds: [] };
 
-    try {
-      const ownerToken = getOrCreateOwnerToken();
-      const tokenHash = await hashOwnerToken(ownerToken);
-      const response = await listProjects(tokenHash);
+    const ownerToken = getOrCreateOwnerToken();
+    const tokenHash = await hashOwnerToken(ownerToken);
+    const response = await listProjects(tokenHash);
 
-      const serverMap = new Map(response.projects.map(p => [p.id, p]));
-      const manifest = loadManifest();
-      let updatedCount = 0;
-      const staleCloudIds: string[] = [];
+    const serverMap = new Map(response.projects.map(p => [p.id, p]));
+    const manifest = loadManifest();
+    let updatedCount = 0;
+    const staleCloudIds: string[] = [];
 
-      for (const entry of manifest.projects) {
-        if (!entry.cloudId) continue;
+    for (const entry of manifest.projects) {
+      if (!entry.cloudId) continue;
 
-        const serverProject = serverMap.get(entry.cloudId);
-        if (serverProject) {
-          const serverTime = new Date(serverProject.updatedAt).getTime();
-          const localCloudTime = entry.cloudSavedAt ? new Date(entry.cloudSavedAt).getTime() : 0;
-          if (serverTime > localCloudTime) {
-            entry.cloudSavedAt = serverProject.updatedAt;
-            updatedCount++;
-          }
-          if (serverProject.visibility !== entry.visibility) {
-            entry.visibility = serverProject.visibility;
-          }
-        } else {
-          staleCloudIds.push(entry.cloudId);
+      const serverProject = serverMap.get(entry.cloudId);
+      if (serverProject) {
+        const serverTime = new Date(serverProject.updatedAt).getTime();
+        const localCloudTime = entry.cloudSavedAt ? new Date(entry.cloudSavedAt).getTime() : 0;
+        if (serverTime > localCloudTime) {
+          entry.cloudSavedAt = serverProject.updatedAt;
+          updatedCount++;
         }
+        if (serverProject.visibility !== entry.visibility) {
+          entry.visibility = serverProject.visibility;
+        }
+      } else {
+        staleCloudIds.push(entry.cloudId);
       }
-
-      saveManifest(manifest);
-      return { updatedCount, staleCloudIds };
-    } catch {
-      // Silently fail sync — not critical
-      return { updatedCount: 0, staleCloudIds: [] };
     }
+
+    saveManifest(manifest);
+    return { updatedCount, staleCloudIds };
   }, []);
 
   // By-localId cloud operations (used by My Projects dialog)
