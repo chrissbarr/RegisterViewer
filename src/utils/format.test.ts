@@ -1,4 +1,4 @@
-import { formatOffset, offsetHexDigits, formatBinary } from './format';
+import { formatOffset, offsetHexDigits, formatBinary, formatRelativeTime } from './format';
 
 describe('formatOffset', () => {
   it('formats zero as 0x00', () => {
@@ -75,5 +75,46 @@ describe('formatBinary', () => {
 
   it('handles 4-char string (no spaces needed)', () => {
     expect(formatBinary('1010')).toBe('1010');
+  });
+});
+
+describe('formatRelativeTime', () => {
+  it('returns "just now" for recent timestamps', () => {
+    const now = new Date().toISOString();
+    expect(formatRelativeTime(now)).toBe('just now');
+  });
+
+  it('returns minutes ago', () => {
+    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    expect(formatRelativeTime(fiveMinAgo)).toBe('5m ago');
+  });
+
+  it('returns hours ago', () => {
+    const threeHrAgo = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+    expect(formatRelativeTime(threeHrAgo)).toBe('3h ago');
+  });
+
+  it('returns "yesterday" for 1 day ago', () => {
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    expect(formatRelativeTime(yesterday)).toBe('yesterday');
+  });
+
+  it('returns days ago for 2-6 days', () => {
+    const threeDays = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+    expect(formatRelativeTime(threeDays)).toBe('3d ago');
+  });
+
+  it('returns formatted date for older timestamps', () => {
+    const twoWeeks = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+    const result = formatRelativeTime(twoWeeks);
+    // Should be a locale-formatted date like "Feb 10"
+    expect(result).not.toMatch(/ago$/);
+    expect(result).not.toBe('just now');
+  });
+
+  it('handles invalid date gracefully', () => {
+    // new Date('not-a-date') may produce NaN or throw depending on environment
+    const result = formatRelativeTime('not-a-date');
+    expect(typeof result).toBe('string');
   });
 });

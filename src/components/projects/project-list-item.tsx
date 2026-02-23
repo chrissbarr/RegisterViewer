@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { TriangleAlert, CloudUpload, CloudOff, ChevronsDown, Link, Trash2 } from 'lucide-react';
 import type { ProjectListEntry, Visibility } from '../../types/project';
+import { formatRelativeTime } from '../../utils/format';
 import { projectDisplayName } from '../../utils/project-helpers';
 import { CloudStatusIndicator } from './cloud-status-indicator';
 import { InlineRename } from './inline-rename';
@@ -20,33 +21,6 @@ interface ProjectListItemProps {
   onSaveToCloud?: (localId: string) => void;
   onRemoveFromCloud?: (localId: string) => void;
   isSavingToCloud?: boolean;
-}
-
-/** Format an ISO date string as a relative timestamp */
-function formatRelativeTime(dateString: string): string {
-  try {
-    const date = new Date(dateString);
-    const now = Date.now();
-    const diffMs = now - date.getTime();
-    const diffSec = Math.floor(diffMs / 1000);
-    const diffMin = Math.floor(diffSec / 60);
-    const diffHr = Math.floor(diffMin / 60);
-    const diffDays = Math.floor(diffHr / 24);
-
-    if (diffSec < 60) return 'just now';
-    if (diffMin < 60) return `${diffMin}m ago`;
-    if (diffHr < 24) return `${diffHr}h ago`;
-    if (diffDays === 1) return 'yesterday';
-    if (diffDays < 7) return `${diffDays}d ago`;
-
-    return date.toLocaleDateString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      ...(date.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}),
-    });
-  } catch {
-    return dateString;
-  }
 }
 
 export function ProjectListItem({
