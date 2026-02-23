@@ -1,8 +1,9 @@
-import type {
-  ProjectManifest,
-  ProjectManifestEntry,
-  StoredLocalProject,
-  ProjectListEntry,
+import {
+  DEFAULT_PROJECT_NAME,
+  type ProjectManifest,
+  type ProjectManifestEntry,
+  type StoredLocalProject,
+  type ProjectListEntry,
 } from '../types/project';
 import type { SerializedAppState } from '../types/register';
 
@@ -162,7 +163,7 @@ export function createProject(initialState: SerializedAppState, name?: string): 
   const project: StoredLocalProject = {
     localId,
     cloudId: null,
-    name: name ?? 'Untitled Project',
+    name: name ?? DEFAULT_PROJECT_NAME,
     visibility: 'private',
     createdAt: now,
     localSavedAt: now,
@@ -266,7 +267,7 @@ function migrateLegacyState(): void {
   if (!legacyState) return;
   try {
     const parsed = JSON.parse(legacyState) as SerializedAppState;
-    createProject(parsed, parsed.project?.title ?? 'Untitled Project');
+    createProject(parsed, parsed.project?.title ?? DEFAULT_PROJECT_NAME);
   } catch {
     // Corrupt legacy data — start fresh
   }

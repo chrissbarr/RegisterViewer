@@ -7,6 +7,7 @@ import { useCloudSync } from '../../context/cloud-sync-context';
 import { useMyProjectsActions } from '../../hooks/use-my-projects-actions';
 import { isCloudEnabled } from '../../utils/api-client';
 import { getStorageUsage } from '../../utils/project-storage';
+import { projectDisplayName } from '../../utils/project-helpers';
 
 const FILTER_THRESHOLD = 8;
 const STORAGE_WARNING_PERCENT = 80;
@@ -48,7 +49,7 @@ export function MyProjectsDialog({ open, onClose, onShareProject }: MyProjectsDi
     if (!effectiveFilter.trim()) return sortedProjects;
     const query = effectiveFilter.toLowerCase().trim();
     return sortedProjects.filter((p) =>
-      (p.name || 'Untitled Project').toLowerCase().includes(query),
+      projectDisplayName(p.name).toLowerCase().includes(query),
     );
   }, [sortedProjects, effectiveFilter]);
 

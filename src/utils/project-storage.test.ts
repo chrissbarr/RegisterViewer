@@ -14,7 +14,7 @@ import {
   projectStorageKey,
   invalidateManifestCache,
 } from './project-storage';
-import type { StoredLocalProject, ProjectManifest, ProjectManifestEntry } from '../types/project';
+import { DEFAULT_PROJECT_NAME, type StoredLocalProject, type ProjectManifest, type ProjectManifestEntry } from '../types/project';
 import type { SerializedAppState } from '../types/register';
 
 function makeSerializedState(overrides?: Partial<SerializedAppState>): SerializedAppState {
@@ -249,7 +249,7 @@ describe('createProject', () => {
     expect(localId).toBeTruthy();
     const project = loadProject(localId);
     expect(project).not.toBeNull();
-    expect(project!.name).toBe('Untitled Project');
+    expect(project!.name).toBe(DEFAULT_PROJECT_NAME);
     expect(project!.visibility).toBe('private');
     expect(project!.cloudId).toBeNull();
     expect(project!.ownerToken).toBeNull();
@@ -417,7 +417,7 @@ describe('runMigrationIfNeeded', () => {
 
     const manifest = loadManifest();
     expect(manifest.projects).toHaveLength(1);
-    expect(manifest.projects[0].name).toBe('Untitled Project');
+    expect(manifest.projects[0].name).toBe(DEFAULT_PROJECT_NAME);
   });
 
   it('cleans up legacy keys but preserves owner token', () => {

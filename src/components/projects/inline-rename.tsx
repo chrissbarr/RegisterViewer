@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { DEFAULT_PROJECT_NAME } from '../../types/project';
 
 interface InlineRenameProps {
   name: string;
@@ -84,7 +85,7 @@ export function InlineRename({ name, onRename, projectName }: InlineRenameProps)
         rounded -mx-1 px-1 -my-0.5 py-0
         focus:outline-none focus:ring-2 focus:ring-blue-400 dark:focus:ring-blue-500"
     >
-      {name || 'Untitled Project'}
+      {name || DEFAULT_PROJECT_NAME}
     </button>
   );
 }

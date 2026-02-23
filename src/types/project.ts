@@ -1,3 +1,6 @@
+/** Default display name for projects without a title */
+export const DEFAULT_PROJECT_NAME = 'Untitled Project';
+
 /** Visibility levels for cloud-saved projects */
 export type Visibility = 'private' | 'unlisted';
 

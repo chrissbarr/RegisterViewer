@@ -6,6 +6,7 @@ import { isCloudEnabled } from '../utils/api-client';
 import { getOrCreateOwnerToken } from '../utils/owner-token';
 import { friendlyErrorMessage } from '../utils/friendly-error';
 import type { Visibility } from '../types/project';
+import { projectDisplayName } from '../utils/project-helpers';
 
 interface CloudDeleteConfirm {
   localId: string;
@@ -64,7 +65,7 @@ export function useMyProjectsActions(
   const handleDelete = useCallback((localId: string) => {
     const project = projects.find(p => p.localId === localId);
     deleteLocalProject(localId);
-    announce(`Project "${project?.name || 'Untitled Project'}" deleted`);
+    announce(`Project "${projectDisplayName(project?.name)}" deleted`);
   }, [deleteLocalProject, announce, projects]);
 
   const handleRename = useCallback((localId: string, name: string) => {
@@ -107,7 +108,7 @@ export function useMyProjectsActions(
       setDeleteCloudConfirm({
         localId,
         cloudId: project.cloudId,
-        name: project.name || 'Untitled Project',
+        name: projectDisplayName(project.name),
       });
     }
   }, [projects]);

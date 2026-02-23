@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { ProjectListEntry, Visibility } from '../../types/project';
+import { projectDisplayName } from '../../utils/project-helpers';
 import { CloudStatusIndicator } from './cloud-status-indicator';
 import { InlineRename } from './inline-rename';
 import { VisibilityBadge } from './visibility-badge';
@@ -61,6 +62,7 @@ export function ProjectListItem({
   onRemoveFromCloud,
   isSavingToCloud,
 }: ProjectListItemProps) {
+  const displayName = projectDisplayName(project.name);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const handleDelete = () => {
@@ -88,9 +90,9 @@ export function ProjectListItem({
           {/* Line 1: Name + Active badge */}
           <div className="flex items-center gap-2">
             <InlineRename
-              name={project.name || 'Untitled Project'}
+              name={displayName}
               onRename={(newName) => onRename(project.localId, newName)}
-              projectName={project.name || 'Untitled Project'}
+              projectName={displayName}
             />
             {isActive && (
               <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium
@@ -111,7 +113,7 @@ export function ProjectListItem({
                 onChangeVisibility={onChangeVisibility
                   ? (v) => onChangeVisibility(project.localId, v)
                   : undefined}
-                projectName={project.name || 'Untitled Project'}
+                projectName={displayName}
               />
             )}
             {isStaleCloud && (
@@ -138,7 +140,7 @@ export function ProjectListItem({
       <div className="flex items-center gap-1 shrink-0 pt-0.5">
         {confirmingDelete ? (
           <DeleteConfirmation
-            projectName={project.name || 'Untitled Project'}
+            projectName={displayName}
             isCloudSaved={project.isCloudSaved}
             onConfirm={handleDelete}
             onCancel={handleCancelDelete}
@@ -151,7 +153,7 @@ export function ProjectListItem({
                 onClick={() => onSaveToCloud(project.localId)}
                 disabled={isSavingToCloud}
                 title="Save to cloud"
-                aria-label={`Save project ${project.name || 'Untitled Project'} to cloud`}
+                aria-label={`Save project ${displayName} to cloud`}
                 className="p-1 rounded text-gray-400 dark:text-gray-500
                   hover:text-blue-600 dark:hover:text-blue-400
                   hover:bg-gray-100 dark:hover:bg-gray-700
@@ -174,7 +176,7 @@ export function ProjectListItem({
               <button
                 onClick={() => onRemoveFromCloud(project.localId)}
                 title="Remove from cloud"
-                aria-label={`Remove project ${project.name || 'Untitled Project'} from cloud`}
+                aria-label={`Remove project ${displayName} from cloud`}
                 className="p-1 rounded text-gray-400 dark:text-gray-500
                   hover:text-amber-600 dark:hover:text-amber-400
                   hover:bg-gray-100 dark:hover:bg-gray-700
@@ -188,8 +190,8 @@ export function ProjectListItem({
             {!isActive && (
               <button
                 onClick={() => onOpen(project.localId)}
-                title={`Open project ${project.name || 'Untitled Project'}`}
-                aria-label={`Open project ${project.name || 'Untitled Project'}`}
+                title={`Open project ${displayName}`}
+                aria-label={`Open project ${displayName}`}
                 className="p-1 rounded text-gray-400 dark:text-gray-500
                   hover:text-blue-600 dark:hover:text-blue-400
                   hover:bg-gray-100 dark:hover:bg-gray-700
@@ -203,8 +205,8 @@ export function ProjectListItem({
             )}
             <button
               onClick={() => onShare(project.localId)}
-              title={`Share project ${project.name || 'Untitled Project'}`}
-              aria-label={`Share project ${project.name || 'Untitled Project'}`}
+              title={`Share project ${displayName}`}
+              aria-label={`Share project ${displayName}`}
               className="p-1 rounded text-gray-400 dark:text-gray-500
                 hover:text-blue-600 dark:hover:text-blue-400
                 hover:bg-gray-100 dark:hover:bg-gray-700
@@ -216,8 +218,8 @@ export function ProjectListItem({
             </button>
             <button
               onClick={() => setConfirmingDelete(true)}
-              title={`Delete project ${project.name || 'Untitled Project'}`}
-              aria-label={`Delete project ${project.name || 'Untitled Project'}`}
+              title={`Delete project ${displayName}`}
+              aria-label={`Delete project ${displayName}`}
               className="p-1 rounded text-gray-400 dark:text-gray-500
                 hover:text-red-600 dark:hover:text-red-400
                 hover:bg-gray-100 dark:hover:bg-gray-700

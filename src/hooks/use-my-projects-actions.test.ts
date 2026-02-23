@@ -1,6 +1,7 @@
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { useMyProjectsActions } from './use-my-projects-actions';
+import { DEFAULT_PROJECT_NAME } from '../types/project';
 
 const mockProjects = [
   { localId: 'local-1', name: 'Project A', isCloudSaved: true, cloudId: 'cloud-1' },
@@ -138,7 +139,7 @@ describe('useMyProjectsActions', () => {
         result.current.handleDelete('unknown-id');
       });
 
-      expect(mockAnnounce).toHaveBeenCalledWith('Project "Untitled Project" deleted');
+      expect(mockAnnounce).toHaveBeenCalledWith(`Project "${DEFAULT_PROJECT_NAME}" deleted`);
     });
 
     it('handleRename renames and announces', () => {

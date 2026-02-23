@@ -23,7 +23,7 @@ import { setCloudUrl, clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock } 
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
 import { useDirtyTracking } from '../hooks/use-dirty-tracking';
 import { useProjectCloudOps } from '../hooks/use-project-cloud-ops';
-import type { Visibility } from '../types/project';
+import { DEFAULT_PROJECT_NAME, type Visibility } from '../types/project';
 
 interface CloudSyncState {
   cloudId: string | null;
@@ -168,7 +168,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     // When forking a shared project, no local project exists yet — create one
     if (!currentLocalId) {
       const serialized = serializeState(appStateRef.current);
-      const name = appStateRef.current.project?.title ?? 'Untitled Project';
+      const name = appStateRef.current.project?.title ?? DEFAULT_PROJECT_NAME;
       currentLocalId = createNewProject(name, serialized);
     }
 
