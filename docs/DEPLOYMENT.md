@@ -370,6 +370,69 @@ A: Use `git revert` to create a new commit that undoes changes, or use Cloudflar
 
 ---
 
+## Incident Scenarios
+
+### Storage Abuse (KV Quota Exhaustion)
+
+**Symptoms:** 503 errors from worker, KV writes failing, users unable to save projects.
+
+**Response:**
+1. Check Cloudflare Dashboard → KV → namespace size and key count
+2. Identify abuse patterns: `wrangler kv:key list --namespace-id=<ID> | head -100`
+3. Delete offending keys: `wrangler kv:key delete --namespace-id=<ID> <key>`
+4. If widespread, consider adding rate limiting via Cloudflare WAF rules
+5. Monitor KV quota in Dashboard → Workers & Pages → KV
+
+**Prevention:** Free tier limit is 1 GB total. Set up Cloudflare alerts for KV usage approaching limits.
+
+### Data Corruption (Invalid Project Data in KV)
+
+**Symptoms:** Users see blank projects, JSON parse errors in worker logs, 500 errors on GET.
+
+**Response:**
+1. Identify corrupted key: check worker logs via `wrangler tail` for error details
+2. Read the corrupted value: `wrangler kv:key get --namespace-id=<ID> "project:<id>"`
+3. If recoverable, fix and re-put: `wrangler kv:key put --namespace-id=<ID> "project:<id>" '<fixed-json>'`
+4. If unrecoverable, delete the key and notify the user if possible
+5. Check for root cause: deployment bug, concurrent writes, or malicious input
+
+### API Token Compromise
+
+**Symptoms:** Unauthorized deployments, unexpected worker changes, suspicious KV activity.
+
+**Response:**
+1. **Immediately** revoke the compromised token at [API Tokens](https://dash.cloudflare.com/profile/api-tokens)
+2. Create a new API token with the same permissions
+3. Update GitHub secret `CLOUDFLARE_API_TOKEN` with the new token
+4. Review recent worker deployments in Cloudflare Dashboard for unauthorized changes
+5. If worker code was modified, rollback to last known-good version (see Rollback Procedures)
+6. Review KV data for unauthorized modifications
+7. Rotate any other credentials that may have been exposed
+
+### Worker Outage (Cloudflare Incident)
+
+**Symptoms:** All API calls failing, Cloudflare status page shows incident.
+
+**Response:**
+1. Check [Cloudflare Status](https://www.cloudflarestatus.com/) for ongoing incidents
+2. The frontend SPA continues to work offline (localStorage-only mode)
+3. No action needed — cloud features will resume when Cloudflare recovers
+4. If prolonged, consider posting a notice to users via GitHub Pages
+
+### Owner Token Abuse (Unauthorized Project Access)
+
+**Symptoms:** Users report projects being modified or deleted without their action.
+
+**Response:**
+1. Owner tokens are hashed (SHA-256) before storage — raw tokens never stored server-side
+2. Check worker logs for the affected project ID and the token hash used
+3. If a specific token hash is compromised, delete all projects and owner index entries for that hash:
+   - `wrangler kv:key list --namespace-id=<ID> --prefix="owner:<hash>"` to find affected projects
+   - Delete each project key and owner index key
+4. The affected user will need to re-save their projects (generates new owner token)
+
+---
+
 ## Support & Debugging
 
 ### Enable Debug Logging
