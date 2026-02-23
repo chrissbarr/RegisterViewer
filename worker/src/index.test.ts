@@ -495,6 +495,83 @@ describe('Worker handler integration tests', () => {
   });
 
   // ============================================================
+  // PATCH visibility
+  // ============================================================
+
+  describe('PATCH visibility', () => {
+    it('updates visibility without changing data', async () => {
+      const id = await createProject({
+        body: validProjectBody({ visibility: 'private' }),
+      });
+
+      const patchReq = makeRequest('PATCH', `/api/projects/${id}`, {
+        origin: 'http://localhost:5173',
+        token: VALID_TOKEN_HASH,
+        body: { visibility: 'unlisted' },
+      });
+      const patchRes = await worker.fetch(patchReq, env, ctx);
+      expect(patchRes.status).toBe(200);
+      const patched = (await patchRes.json()) as { id: string; updatedAt: string };
+      expect(patched.id).toBe(id);
+      expect(patched.updatedAt).toBeTruthy();
+
+      // Verify visibility changed by reading as unauthenticated (unlisted is public)
+      const getReq = makeRequest('GET', `/api/projects/${id}`, {
+        origin: 'http://localhost:5173',
+      });
+      const getRes = await worker.fetch(getReq, env, ctx);
+      expect(getRes.status).toBe(200);
+    });
+
+    it('rejects PATCH without auth', async () => {
+      const id = await createProject();
+      const req = makeRequest('PATCH', `/api/projects/${id}`, {
+        origin: 'http://localhost:5173',
+        body: { visibility: 'unlisted' },
+      });
+      const res = await worker.fetch(req, env, ctx);
+      expect(res.status).toBe(401);
+    });
+
+    it('rejects PATCH with wrong token', async () => {
+      const id = await createProject();
+      const req = makeRequest('PATCH', `/api/projects/${id}`, {
+        origin: 'http://localhost:5173',
+        token: 'b'.repeat(64),
+        body: { visibility: 'unlisted' },
+      });
+      const res = await worker.fetch(req, env, ctx);
+      expect(res.status).toBe(404);
+    });
+
+    it('rejects PATCH without visibility field', async () => {
+      const id = await createProject();
+      const req = makeRequest('PATCH', `/api/projects/${id}`, {
+        origin: 'http://localhost:5173',
+        token: VALID_TOKEN_HASH,
+        body: {},
+      });
+      const res = await worker.fetch(req, env, ctx);
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toContain('visibility');
+    });
+
+    it('rejects PATCH with invalid visibility value', async () => {
+      const id = await createProject();
+      const req = makeRequest('PATCH', `/api/projects/${id}`, {
+        origin: 'http://localhost:5173',
+        token: VALID_TOKEN_HASH,
+        body: { visibility: 'public' },
+      });
+      const res = await worker.fetch(req, env, ctx);
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toContain('visibility');
+    });
+  });
+
+  // ============================================================
   // Cache-Control headers
   // ============================================================
 

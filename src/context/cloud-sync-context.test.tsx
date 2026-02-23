@@ -26,6 +26,7 @@ vi.mock('../utils/api-client', () => ({
   },
   createProject: vi.fn(),
   updateProject: vi.fn(),
+  patchProjectVisibility: vi.fn(),
   deleteProject: vi.fn(),
   listProjects: vi.fn(),
 }));
@@ -78,6 +79,7 @@ import {
   isCloudEnabled,
   createProject as apiCreateProject,
   updateProject as apiUpdateProject,
+  patchProjectVisibility as apiPatchVisibility,
   deleteProject as apiDeleteProject,
   listProjects as apiListProjects,
 } from '../utils/api-client';
@@ -577,12 +579,7 @@ describe('CloudSyncProvider', () => {
         version: 1,
         projects: [makeManifestEntry({ cloudId: 'cloud-xyz' })],
       });
-      (loadProject as Mock).mockReturnValue({
-        localId: TEST_LOCAL_ID,
-        state: makeState(),
-      });
-      (deserializeState as Mock).mockReturnValue(makeState());
-      (apiUpdateProject as Mock).mockResolvedValue({
+      (apiPatchVisibility as Mock).mockResolvedValue({
         id: 'cloud-xyz',
         updatedAt: '2024-01-02T00:00:00Z',
       });
@@ -593,11 +590,10 @@ describe('CloudSyncProvider', () => {
         await result.current.actions.setProjectVisibility(TEST_LOCAL_ID, 'unlisted');
       });
 
-      expect(apiUpdateProject).toHaveBeenCalledWith(
+      expect(apiPatchVisibility).toHaveBeenCalledWith(
         'cloud-xyz',
-        expect.anything(),
-        'mock-token-hash',
         'unlisted',
+        'mock-token-hash',
       );
     });
 
@@ -606,12 +602,7 @@ describe('CloudSyncProvider', () => {
         version: 1,
         projects: [makeManifestEntry({ cloudId: 'cloud-xyz' })],
       });
-      (loadProject as Mock).mockReturnValue({
-        localId: TEST_LOCAL_ID,
-        state: makeState(),
-      });
-      (deserializeState as Mock).mockReturnValue(makeState());
-      (apiUpdateProject as Mock).mockRejectedValue(new Error('Server error'));
+      (apiPatchVisibility as Mock).mockRejectedValue(new Error('Server error'));
 
       const { result } = renderCloudSync();
 
@@ -634,7 +625,7 @@ describe('CloudSyncProvider', () => {
         await result.current.actions.setProjectVisibility(TEST_LOCAL_ID, 'unlisted');
       });
 
-      expect(apiUpdateProject).not.toHaveBeenCalled();
+      expect(apiPatchVisibility).not.toHaveBeenCalled();
     });
   });
 

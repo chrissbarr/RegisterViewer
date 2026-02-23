@@ -36,7 +36,7 @@ function corsHeaders(request: Request, env: Env): Record<string, string> {
 
   return {
     'Access-Control-Allow-Origin': matchedOrigin,
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Max-Age': '86400',
   };
@@ -246,6 +246,48 @@ async function handleUpdate(request: Request, env: Env, id: string, cors: Record
   return jsonResponse(response, 200, cors);
 }
 
+async function handlePatch(request: Request, env: Env, id: string, cors: Record<string, string>): Promise<Response> {
+  const tokenHash = extractTokenHash(request);
+  if (!tokenHash) {
+    return errorResponse('Missing or invalid Authorization header', 401, cors);
+  }
+
+  const existing = await getProject(env.PROJECTS, id);
+  if (!existing || !isOwner(tokenHash, existing)) {
+    return errorResponse('Project not found', 404, cors);
+  }
+
+  let body: { visibility?: unknown };
+  try {
+    body = await request.json() as { visibility?: unknown };
+  } catch {
+    return errorResponse('Invalid JSON body', 400, cors);
+  }
+
+  if (body.visibility === undefined) {
+    return errorResponse('PATCH requires a visibility field', 400, cors);
+  }
+  if (!isValidVisibility(body.visibility)) {
+    return errorResponse('visibility must be "private" or "unlisted"', 400, cors);
+  }
+
+  const now = new Date().toISOString();
+  const updated: StoredProject = {
+    ...existing,
+    visibility: body.visibility,
+    updatedAt: now,
+  };
+
+  await putProject(env.PROJECTS, updated);
+
+  const response: UpdateProjectResponse = {
+    id: updated.id,
+    updatedAt: now,
+  };
+
+  return jsonResponse(response, 200, cors);
+}
+
 async function handleDelete(request: Request, env: Env, id: string, cors: Record<string, string>): Promise<Response> {
   const tokenHash = extractTokenHash(request);
   if (!tokenHash) {
@@ -320,6 +362,9 @@ export default {
         }
         if (method === 'PUT') {
           return await handleUpdate(request, env, id, cors);
+        }
+        if (method === 'PATCH') {
+          return await handlePatch(request, env, id, cors);
         }
         if (method === 'DELETE') {
           return await handleDelete(request, env, id, cors);

@@ -108,6 +108,21 @@ export async function updateProject(
   );
 }
 
+export async function patchProjectVisibility(
+  id: string,
+  visibility: 'private' | 'unlisted',
+  tokenHash: string,
+): Promise<UpdateProjectResponse> {
+  return apiFetch<UpdateProjectResponse>(
+    `/api/projects/${encodeURIComponent(id)}`,
+    {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${tokenHash}` },
+      body: JSON.stringify({ visibility }),
+    },
+  );
+}
+
 export async function deleteProject(
   id: string,
   tokenHash: string,

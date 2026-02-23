@@ -4,6 +4,7 @@ import {
   isCloudEnabled,
   createProject,
   updateProject,
+  patchProjectVisibility,
   deleteProject as apiDeleteProject,
 } from '../utils/api-client';
 import {
@@ -130,11 +131,7 @@ export function useProjectCloudOps<T extends CloudSyncInternalSlice>(deps: Proje
 
     try {
       const tokenHash = await hashOwnerToken(ownerToken);
-      const project = loadProject(localId);
-      if (!project) return;
-      const projectState = deserializeState(project.state);
-      const jsonPayload = exportToObject(projectState);
-      await updateProject(entry.cloudId, jsonPayload, tokenHash, v);
+      await patchProjectVisibility(entry.cloudId, v, tokenHash);
 
       updateCloudMetadata(localId, { visibility: v });
 
