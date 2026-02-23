@@ -195,7 +195,10 @@ export function Header() {
           <MyProjectsDialog
             open={myProjectsOpen}
             onClose={() => setMyProjectsOpen(false)}
-            onShareProject={() => setShareDialogOpenFromProjects(true)}
+            onShareProject={() => {
+              setMyProjectsOpen(false);
+              setShareDialogOpenFromProjects(true);
+            }}
           />
           <ShareDialog
             open={shareDialogOpenFromProjects}

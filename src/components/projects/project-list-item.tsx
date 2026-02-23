@@ -15,6 +15,9 @@ interface ProjectListItemProps {
   onRename: (localId: string, name: string) => void;
   onChangeVisibility?: (localId: string, v: Visibility) => void;
   onUnlinkCloud?: (localId: string) => void;
+  onSaveToCloud?: (localId: string) => void;
+  onRemoveFromCloud?: (localId: string) => void;
+  isSavingToCloud?: boolean;
 }
 
 /** Format an ISO date string as a relative timestamp */
@@ -54,6 +57,9 @@ export function ProjectListItem({
   onRename,
   onChangeVisibility,
   onUnlinkCloud,
+  onSaveToCloud,
+  onRemoveFromCloud,
+  isSavingToCloud,
 }: ProjectListItemProps) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
@@ -139,6 +145,46 @@ export function ProjectListItem({
           />
         ) : (
           <>
+            {/* Save to cloud (local-only projects) */}
+            {!project.isCloudSaved && onSaveToCloud && (
+              <button
+                onClick={() => onSaveToCloud(project.localId)}
+                disabled={isSavingToCloud}
+                title="Save to cloud"
+                aria-label={`Save project ${project.name || 'Untitled Project'} to cloud`}
+                className="p-1 rounded text-gray-400 dark:text-gray-500
+                  hover:text-blue-600 dark:hover:text-blue-400
+                  hover:bg-gray-100 dark:hover:bg-gray-700
+                  disabled:opacity-50 disabled:cursor-not-allowed
+                  transition-colors"
+              >
+                {isSavingToCloud ? (
+                  <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" className="animate-pulse" aria-hidden="true">
+                    <path d="M8 2.002a4.998 4.998 0 0 0-4.868 3.862A3.5 3.5 0 0 0 3.5 12.5h9a3.5 3.5 0 0 0 .368-6.636A4.998 4.998 0 0 0 8 2.002ZM7.25 7.25v2.5a.75.75 0 0 0 1.5 0v-2.5l.97.97a.75.75 0 1 0 1.06-1.06l-2.25-2.25a.75.75 0 0 0-1.06 0L5.22 7.16a.75.75 0 1 0 1.06 1.06l.97-.97Z" />
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
+                    <path d="M8 2.002a4.998 4.998 0 0 0-4.868 3.862A3.5 3.5 0 0 0 3.5 12.5h9a3.5 3.5 0 0 0 .368-6.636A4.998 4.998 0 0 0 8 2.002ZM7.25 7.25v2.5a.75.75 0 0 0 1.5 0v-2.5l.97.97a.75.75 0 1 0 1.06-1.06l-2.25-2.25a.75.75 0 0 0-1.06 0L5.22 7.16a.75.75 0 1 0 1.06 1.06l.97-.97Z" />
+                  </svg>
+                )}
+              </button>
+            )}
+            {/* Remove from cloud (cloud projects) */}
+            {project.isCloudSaved && onRemoveFromCloud && (
+              <button
+                onClick={() => onRemoveFromCloud(project.localId)}
+                title="Remove from cloud"
+                aria-label={`Remove project ${project.name || 'Untitled Project'} from cloud`}
+                className="p-1 rounded text-gray-400 dark:text-gray-500
+                  hover:text-amber-600 dark:hover:text-amber-400
+                  hover:bg-gray-100 dark:hover:bg-gray-700
+                  transition-colors"
+              >
+                <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
+                  <path d="M8 2.002a4.998 4.998 0 0 0-4.868 3.862A3.5 3.5 0 0 0 3.5 12.5h9a3.5 3.5 0 0 0 .368-6.636A4.998 4.998 0 0 0 8 2.002ZM5.72 6.72a.75.75 0 0 1 1.06 0L8 7.94l1.22-1.22a.75.75 0 1 1 1.06 1.06L9.06 9l1.22 1.22a.75.75 0 1 1-1.06 1.06L8 10.06l-1.22 1.22a.75.75 0 0 1-1.06-1.06L6.94 9 5.72 7.78a.75.75 0 0 1 0-1.06Z" />
+                </svg>
+              </button>
+            )}
             {!isActive && (
               <button
                 onClick={() => onOpen(project.localId)}

@@ -3,7 +3,7 @@ import { Dialog } from '../common/dialog';
 import { ConfirmationDialog } from '../common/confirmation-dialog';
 import { ProjectListItem } from './project-list-item';
 import { useProjectStorage, useProjectStorageActions } from '../../context/project-storage-context';
-import { useCloudSyncActions } from '../../context/cloud-sync-context';
+import { useCloudSync, useCloudSyncActions } from '../../context/cloud-sync-context';
 import { useAnnounce } from '../common/announcer';
 import { isCloudEnabled } from '../../utils/api-client';
 import { getStorageUsage } from '../../utils/project-storage';
@@ -21,13 +21,15 @@ interface MyProjectsDialogProps {
 export function MyProjectsDialog({ open, onClose, onShareProject }: MyProjectsDialogProps) {
   const { activeLocalId, projects } = useProjectStorage();
   const { createNewProject, switchProject, deleteLocalProject, renameProject, refreshProjectList } = useProjectStorageActions();
-  const { setVisibility, syncCloudProjects, deleteProjectFromCloud, unlinkCloudProject } = useCloudSyncActions();
+  const { setVisibility, syncCloudProjects, deleteProjectFromCloud, unlinkCloudProject, saveToCloud } = useCloudSyncActions();
+  const cloudState = useCloudSync();
   const announce = useAnnounce();
 
   const [filter, setFilter] = useState('');
   const [staleCloudIds, setStaleCloudIds] = useState<string[]>([]);
   const [deleteCloudConfirm, setDeleteCloudConfirm] = useState<{ localId: string; cloudId: string; name: string } | null>(null);
   const [cloudDeleteError, setCloudDeleteError] = useState<string | null>(null);
+  const [showFirstTimeCloudPrompt, setShowFirstTimeCloudPrompt] = useState<string | null>(null); // localId of project to save
 
   // Refresh project list and sync with cloud when dialog opens
   useEffect(() => {
@@ -93,17 +95,6 @@ export function MyProjectsDialog({ open, onClose, onShareProject }: MyProjectsDi
 
   const handleDelete = useCallback((localId: string) => {
     const project = projects.find(p => p.localId === localId);
-
-    // If project is cloud-saved, show the cloud delete confirmation instead
-    if (project?.isCloudSaved && project.cloudId) {
-      setDeleteCloudConfirm({
-        localId,
-        cloudId: project.cloudId,
-        name: project.name || 'Untitled Project',
-      });
-      return;
-    }
-
     deleteLocalProject(localId);
     announce(`Project "${project?.name || 'Untitled Project'}" deleted`);
   }, [deleteLocalProject, announce, projects]);
@@ -144,18 +135,43 @@ export function MyProjectsDialog({ open, onClose, onShareProject }: MyProjectsDi
     if (localId !== activeLocalId) {
       switchProject(localId);
     }
-    onClose();
+    // onShareProject closes My Projects and opens Share in the same render batch
     if (onShareProject) {
-      // Use a short delay to let the dialog close animation complete
-      setTimeout(() => onShareProject(localId), 100);
+      onShareProject(localId);
     }
-  }, [activeLocalId, switchProject, onClose, onShareProject]);
+  }, [activeLocalId, switchProject, onShareProject]);
 
-  const handleChangeVisibility = useCallback((_localId: string, v: Visibility) => {
-    setVisibility(v);
+  const handleChangeVisibility = useCallback(async (_localId: string, v: Visibility) => {
+    await setVisibility(v);
     refreshProjectList();
     announce(`Visibility changed to ${v}`);
   }, [setVisibility, refreshProjectList, announce]);
+
+  const handleSaveToCloud = useCallback((localId: string) => {
+    // Must switch to the project first so saveToCloud operates on it
+    if (localId !== activeLocalId) {
+      switchProject(localId);
+    }
+    setShowFirstTimeCloudPrompt(localId);
+  }, [activeLocalId, switchProject]);
+
+  const handleConfirmSaveToCloud = useCallback(async () => {
+    setShowFirstTimeCloudPrompt(null);
+    await saveToCloud();
+    refreshProjectList();
+    announce('Saved to cloud');
+  }, [saveToCloud, refreshProjectList, announce]);
+
+  const handleRemoveFromCloud = useCallback((localId: string) => {
+    const project = projects.find(p => p.localId === localId);
+    if (project?.isCloudSaved && project.cloudId) {
+      setDeleteCloudConfirm({
+        localId,
+        cloudId: project.cloudId,
+        name: project.name || 'Untitled Project',
+      });
+    }
+  }, [projects]);
 
   const handleDownloadRecoveryKey = useCallback(() => {
     try {
@@ -276,6 +292,9 @@ export function MyProjectsDialog({ open, onClose, onShareProject }: MyProjectsDi
                 onRename={handleRename}
                 onChangeVisibility={handleChangeVisibility}
                 onUnlinkCloud={handleUnlinkCloud}
+                onSaveToCloud={isCloudEnabled() ? handleSaveToCloud : undefined}
+                onRemoveFromCloud={isCloudEnabled() ? handleRemoveFromCloud : undefined}
+                isSavingToCloud={cloudState.status === 'saving'}
               />
             ))}
           </ul>
@@ -298,6 +317,23 @@ export function MyProjectsDialog({ open, onClose, onShareProject }: MyProjectsDi
         )}
       </div>
     </Dialog>
+
+    {/* First-time cloud save confirmation */}
+    <ConfirmationDialog
+      open={showFirstTimeCloudPrompt !== null}
+      onClose={() => setShowFirstTimeCloudPrompt(null)}
+      onConfirm={handleConfirmSaveToCloud}
+      title="Save to Cloud"
+      description="Your project will be uploaded to our servers and you'll get a shareable link."
+      confirmLabel="Save to Cloud"
+      cancelLabel="Cancel"
+    >
+      <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/50 px-4 py-3 mb-2">
+        <p className="text-xs text-blue-700 dark:text-blue-300">
+          Your browser stores an ownership token. Download a recovery key from &ldquo;My Projects&rdquo; to protect against browser data loss.
+        </p>
+      </div>
+    </ConfirmationDialog>
 
     {/* Cloud delete confirmation dialog */}
     <ConfirmationDialog
