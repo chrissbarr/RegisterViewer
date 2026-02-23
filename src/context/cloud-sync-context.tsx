@@ -112,7 +112,8 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!activeLocalId) return;
-    const entry = projects.find(p => p.localId === activeLocalId);
+    const manifest = loadManifest();
+    const entry = manifest.projects.find(p => p.localId === activeLocalId);
     const cloudId = entry?.cloudId ?? null;
     // Skip if cloudId hasn't changed (avoid redundant state updates)
     if (cloudId === internalRef.current.cloudId) return;
@@ -132,7 +133,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
         visibility: entry?.visibility ?? 'private',
       }));
     }
-  }, [activeLocalId, projects, dataVersionRef]);
+  }, [activeLocalId, dataVersionRef]);
 
   // Ref to avoid stale closures in save/fork callbacks
   const appStateRef = useRef(appState);
@@ -337,7 +338,6 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
           status: 'idle',
           error: message,
         }));
-        throw err;
       }
     },
     [dispatch, needsVersionSyncRef],

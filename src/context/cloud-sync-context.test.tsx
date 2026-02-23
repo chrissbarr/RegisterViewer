@@ -50,15 +50,15 @@ vi.mock('../utils/project-storage', () => ({
   createProject: vi.fn(),
   deleteProject: vi.fn(),
   updateProjectMetadata: vi.fn(),
-  toProjectListEntry: vi.fn((e: { localId: string; name: string }) => ({
+  toProjectListEntry: vi.fn((e: Record<string, unknown>) => ({
     localId: e.localId,
-    name: e.name,
-    cloudId: null,
-    visibility: 'private',
-    createdAt: '2024-01-01T00:00:00Z',
-    localSavedAt: '2024-01-01T00:00:00Z',
-    cloudSavedAt: null,
-    isCloudSaved: false,
+    name: e.name ?? 'Test Project',
+    cloudId: e.cloudId ?? null,
+    visibility: e.visibility ?? 'private',
+    createdAt: e.createdAt ?? '2024-01-01T00:00:00Z',
+    localSavedAt: e.localSavedAt ?? '2024-01-01T00:00:00Z',
+    cloudSavedAt: e.cloudSavedAt ?? null,
+    isCloudSaved: e.cloudId != null,
   })),
   getMostRecentProjectId: vi.fn(() => null),
   invalidateManifestCache: vi.fn(),
@@ -813,17 +813,11 @@ describe('CloudSyncProvider', () => {
 
       const { result } = renderCloudSync();
 
-      let thrownError: Error | null = null;
       await act(async () => {
-        try {
-          await result.current.actions.loadCloudProject('cloud-fail');
-        } catch (err) {
-          thrownError = err as Error;
-        }
+        await result.current.actions.loadCloudProject('cloud-fail');
       });
 
-      expect(thrownError).toBeInstanceOf(Error);
-      expect(thrownError!.message).toBe('Network error');
+      // Error is captured in state, not re-thrown (avoids dual error reporting)
       expect(result.current.state.error).toBe('Network error');
       expect(result.current.state.status).toBe('idle');
     });
@@ -1005,7 +999,13 @@ describe('CloudSyncProvider', () => {
     });
 
     it('clears active cloud state when unlinking the active project', async () => {
-      // First save to cloud
+      // Mock manifest to include the cloud entry so provider picks it up
+      // after saveToCloud → updateCloudMetadata → refreshProjectList
+      (loadManifest as Mock).mockReturnValue({
+        version: 1,
+        projects: [makeManifestEntry({ cloudId: 'cloud-active' })],
+      });
+
       (apiCreateProject as Mock).mockResolvedValue({
         id: 'cloud-active',
         shareUrl: 'https://example.com/#/p/cloud-active',
@@ -1019,12 +1019,7 @@ describe('CloudSyncProvider', () => {
       });
       expect(result.current.state.cloudId).toBe('cloud-active');
 
-      // Now unlink
-      (loadManifest as Mock).mockReturnValue({
-        version: 1,
-        projects: [makeManifestEntry({ cloudId: 'cloud-active' })],
-      });
-
+      // Now unlink — projects list already has the cloud entry from provider
       act(() => {
         result.current.actions.unlinkCloudProject(TEST_LOCAL_ID);
       });
