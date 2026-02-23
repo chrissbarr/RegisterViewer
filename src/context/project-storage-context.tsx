@@ -29,7 +29,7 @@ interface CloudMetadataUpdates {
 }
 
 interface ProjectStorageActions {
-  createNewProject: (name?: string) => string;
+  createNewProject: (name?: string, initialState?: SerializedAppState) => string;
   switchProject: (localId: string) => void;
   deleteLocalProject: (localId: string) => void;
   renameProject: (localId: string, name: string) => void;
@@ -83,8 +83,8 @@ export function ProjectStorageProvider({ children, initialLocalId }: ProjectStor
     }
   }, []);
 
-  const createNewProject = useCallback((name?: string) => {
-    const emptyState: SerializedAppState = {
+  const createNewProject = useCallback((name?: string, initialState?: SerializedAppState) => {
+    const state = initialState ?? {
       registers: [],
       activeRegisterId: null,
       registerValues: {},
@@ -93,7 +93,7 @@ export function ProjectStorageProvider({ children, initialLocalId }: ProjectStor
       mapSortDescending: false,
       addressUnitBits: ADDRESS_UNIT_BITS_DEFAULT,
     };
-    const localId = createProjectInStorage(emptyState, name);
+    const localId = createProjectInStorage(state, name);
     setActiveAndPersist(localId);
     refreshProjectList();
     return localId;

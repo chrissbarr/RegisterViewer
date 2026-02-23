@@ -1,7 +1,7 @@
 import { createContext, useContext, useCallback, useState, useMemo, useRef, useEffect, type ReactNode } from 'react';
 import { useAppState, useAppDispatch } from './app-context';
 import { useProjectStorage, useProjectStorageActions } from './project-storage-context';
-import { exportToObject } from '../utils/storage';
+import { exportToObject, serializeState } from '../utils/storage';
 import {
   isCloudEnabled,
   ApiError,
@@ -101,7 +101,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   const appState = useAppState();
   const dispatch = useAppDispatch();
   const { activeLocalId, projects } = useProjectStorage();
-  const { updateCloudMetadata } = useProjectStorageActions();
+  const { updateCloudMetadata, createNewProject } = useProjectStorageActions();
 
   const [internal, setInternal] = useState<InternalCloudSyncState>(initialInternalState);
 
@@ -162,14 +162,20 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   });
 
   const applyCreatedResult = useCallback((result: { cloudId: string; timestamp: string; ownerToken: string }) => {
-    const currentLocalId = activeLocalIdRef.current;
-    if (currentLocalId) {
-      updateCloudMetadata(currentLocalId, {
-        cloudId: result.cloudId,
-        cloudSavedAt: result.timestamp,
-        ownerToken: result.ownerToken,
-      });
+    let currentLocalId = activeLocalIdRef.current;
+
+    // When forking a shared project, no local project exists yet — create one
+    if (!currentLocalId) {
+      const serialized = serializeState(appStateRef.current);
+      const name = appStateRef.current.project?.title ?? 'Untitled Project';
+      currentLocalId = createNewProject(name, serialized);
     }
+
+    updateCloudMetadata(currentLocalId, {
+      cloudId: result.cloudId,
+      cloudSavedAt: result.timestamp,
+      ownerToken: result.ownerToken,
+    });
 
     const shareUrl = buildProjectUrl(result.cloudId);
     setCloudUrl(result.cloudId);
@@ -183,7 +189,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       lastCloudSavedAt: result.timestamp,
       lastSavedVersion: dataVersionRef.current,
     }));
-  }, [updateCloudMetadata, dataVersionRef]);
+  }, [updateCloudMetadata, createNewProject, dataVersionRef]);
 
   const saveToCloud = useCallback(async () => {
     if (!isCloudEnabled()) return;
