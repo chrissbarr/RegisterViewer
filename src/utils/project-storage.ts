@@ -102,12 +102,27 @@ export function saveManifest(manifest: ProjectManifest): void {
   cachedManifest = manifest;
 }
 
+/** Validate that a parsed object has the minimum shape of a StoredLocalProject */
+function isValidStoredProject(obj: unknown): obj is StoredLocalProject {
+  if (typeof obj !== 'object' || obj === null) return false;
+  const p = obj as Record<string, unknown>;
+  return (
+    typeof p.localId === 'string' &&
+    typeof p.name === 'string' &&
+    typeof p.state === 'object' && p.state !== null &&
+    Array.isArray((p.state as Record<string, unknown>).registers) &&
+    typeof (p.state as Record<string, unknown>).registerValues === 'object'
+  );
+}
+
 /** Load a single project by localId */
 export function loadProject(localId: string): StoredLocalProject | null {
   try {
     const raw = localStorage.getItem(projectStorageKey(localId));
     if (!raw) return null;
-    return JSON.parse(raw) as StoredLocalProject;
+    const parsed = JSON.parse(raw);
+    if (!isValidStoredProject(parsed)) return null;
+    return parsed;
   } catch {
     return null;
   }
