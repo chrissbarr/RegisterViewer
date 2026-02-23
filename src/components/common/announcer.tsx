@@ -70,7 +70,6 @@ export function AnnouncerProvider({ children }: { children: ReactNode }) {
   );
 }
 
-// eslint-disable-next-line react-refresh/only-export-components
 export function useAnnounce(): (message: string, options?: AnnounceOptions) => void {
   const ctx = useContext(AnnouncerContext);
   if (!ctx) throw new Error('useAnnounce must be used within AnnouncerProvider');

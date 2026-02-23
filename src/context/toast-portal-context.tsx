@@ -67,12 +67,10 @@ export function ToastPortalProvider({ children }: { children: ReactNode }) {
   );
 }
 
-// eslint-disable-next-line react-refresh/only-export-components
 export function useToastPortalTarget() {
   return useContext(ToastPortalContext).target;
 }
 
-// eslint-disable-next-line react-refresh/only-export-components
 export function useToastPortalRegister() {
   return useContext(ToastPortalContext).register;
 }

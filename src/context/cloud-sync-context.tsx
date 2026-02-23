@@ -453,14 +453,12 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   );
 }
 
-// eslint-disable-next-line react-refresh/only-export-components
 export function useCloudSync(): CloudSyncState {
   const ctx = useContext(CloudSyncStateContext);
   if (!ctx) throw new Error('useCloudSync must be used within CloudSyncProvider');
   return ctx;
 }
 
-// eslint-disable-next-line react-refresh/only-export-components
 export function useCloudSyncActions(): CloudSyncActions {
   const ctx = useContext(CloudSyncActionsContext);
   if (!ctx) throw new Error('useCloudSyncActions must be used within CloudSyncProvider');

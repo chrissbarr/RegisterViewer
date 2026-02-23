@@ -161,14 +161,12 @@ export function ProjectStorageProvider({ children, initialLocalId }: ProjectStor
   );
 }
 
-// eslint-disable-next-line react-refresh/only-export-components
 export function useProjectStorage(): ProjectStorageState {
   const ctx = useContext(ProjectStorageStateContext);
   if (!ctx) throw new Error('useProjectStorage must be used within ProjectStorageProvider');
   return ctx;
 }
 
-// eslint-disable-next-line react-refresh/only-export-components
 export function useProjectStorageActions(): ProjectStorageActions {
   const ctx = useContext(ProjectStorageActionsContext);
   if (!ctx) throw new Error('useProjectStorageActions must be used within ProjectStorageProvider');

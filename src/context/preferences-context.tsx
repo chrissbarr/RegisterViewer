@@ -95,14 +95,12 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   );
 }
 
-// eslint-disable-next-line react-refresh/only-export-components
 export function usePreferences(): PreferencesState {
   const ctx = useContext(PreferencesStateContext);
   if (!ctx) throw new Error('usePreferences must be used within PreferencesProvider');
   return ctx;
 }
 
-// eslint-disable-next-line react-refresh/only-export-components
 export function usePreferencesActions(): PreferencesActions {
   const ctx = useContext(PreferencesActionsContext);
   if (!ctx) throw new Error('usePreferencesActions must be used within PreferencesProvider');
