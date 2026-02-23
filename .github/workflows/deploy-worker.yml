@@ -15,6 +15,9 @@ jobs:
   deploy-worker:
     needs: ci
     runs-on: ubuntu-latest
+    concurrency:
+      group: worker-deploy
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -24,6 +27,11 @@ jobs:
       - name: Install dependencies
         working-directory: worker
         run: npm ci
+      - name: Inject KV namespace IDs
+        working-directory: worker
+        run: |
+          sed -i "s|<production-namespace-id>|${{ vars.KV_NAMESPACE_ID }}|" wrangler.toml
+          sed -i "s|<preview-namespace-id>|${{ vars.KV_PREVIEW_NAMESPACE_ID }}|" wrangler.toml
       - name: Deploy Worker
         uses: cloudflare/wrangler-action@v3
         with:
