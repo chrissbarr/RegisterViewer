@@ -39,6 +39,28 @@ function hexInput(page: Page) {
   return page.locator('label').filter({ hasText: 'HEX' }).locator('input');
 }
 
+/**
+ * Wait for auto-save to flush by checking that any stored project
+ * contains the expected substring (e.g. a hex value or register name).
+ * Scans all project keys in localStorage (prefix: register-viewer-project:).
+ */
+async function waitForAutoSave(page: Page, expectedSubstring: string) {
+  const needle = expectedSubstring.toLowerCase();
+  await expect(async () => {
+    const found = await page.evaluate(({ prefix, search }) => {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key?.startsWith(prefix)) {
+          const val = localStorage.getItem(key);
+          if (val && val.toLowerCase().includes(search)) return true;
+        }
+      }
+      return false;
+    }, { prefix: PROJECT_PREFIX, search: needle });
+    expect(found).toBe(true);
+  }).toPass({ timeout: 5000 });
+}
+
 // ---------------------------------------------------------------------------
 // Scenario 1: Fresh start -> create project -> edit -> auto-save -> refresh
 // ---------------------------------------------------------------------------
@@ -59,8 +81,8 @@ test.describe('Scenario 1: Project auto-save and restore', () => {
     await hexInput(page).blur();
     await expect(hexInput(page)).toHaveValue('AABBCCDD');
 
-    // Wait for auto-save debounce (300ms) + buffer
-    await page.waitForTimeout(500);
+    // Wait for auto-save to flush to localStorage
+    await waitForAutoSave(page, '0xaabbccdd');
 
     // Reload page
     await page.reload();
@@ -97,8 +119,8 @@ test.describe('Scenario 3: Project state isolation', () => {
     await hexInput(page).blur();
     await expect(hexInput(page)).toHaveValue('11223344');
 
-    // Wait for auto-save
-    await page.waitForTimeout(500);
+    // Wait for auto-save to flush to localStorage
+    await waitForAutoSave(page, '0x11223344');
 
     // Switch back to Project 1 via My Projects dialog
     await openMyProjects(page);
@@ -132,8 +154,8 @@ test.describe('Scenario 7: Delete local project', () => {
     await page.getByRole('button', { name: '+ Add Register' }).click();
     await expect(page.getByRole('heading', { name: 'REG_0' })).toBeVisible();
 
-    // Wait for auto-save
-    await page.waitForTimeout(500);
+    // Wait for auto-save to persist the new register
+    await waitForAutoSave(page, 'REG_0');
 
     // Open My Projects
     await openMyProjects(page);
@@ -201,8 +223,8 @@ test.describe('Scenario 8: Multi-tab project isolation', () => {
     await page1.getByRole('button', { name: '+ Add Register' }).click();
     await expect(page1.getByRole('heading', { name: 'REG_0' })).toBeVisible();
 
-    // Wait for auto-save
-    await page1.waitForTimeout(500);
+    // Wait for auto-save to persist the new register
+    await waitForAutoSave(page1, 'REG_0');
 
     // Get the second project's localId
     const project2Id = await page1.evaluate((p1Id) => {
@@ -227,13 +249,13 @@ test.describe('Scenario 8: Multi-tab project isolation', () => {
     await page1.bringToFront();
     await hexInput(page1).fill('FEEDFACE');
     await hexInput(page1).blur();
-    await page1.waitForTimeout(500);
+    await waitForAutoSave(page1, '0xfeedface');
 
     // Edit in Tab 2 (project 1): change STATUS_REG's value
     await page2.bringToFront();
     await hexInput(page2).fill('CAFEBABE');
     await hexInput(page2).blur();
-    await page2.waitForTimeout(500);
+    await waitForAutoSave(page2, '0xcafebabe');
 
     // Verify Tab 1 still has its value
     await page1.bringToFront();
