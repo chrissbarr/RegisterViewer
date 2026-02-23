@@ -34,7 +34,6 @@ vi.mock('../utils/storage', () => ({
 
 import {
   loadManifest,
-  saveManifest,
   loadProject,
   createProject as createProjectInStorage,
   deleteProject as deleteProjectFromStorage,
@@ -394,10 +393,6 @@ describe('ProjectStorageProvider', () => {
 
   describe('updateCloudMetadata', () => {
     it('updates cloudId in manifest and project metadata', () => {
-      const entry = makeManifestEntry();
-      const manifest = { version: 1, projects: [entry] };
-      (loadManifest as Mock).mockReturnValue(manifest);
-
       const { result } = renderProjectStorage();
 
       act(() => {
@@ -407,23 +402,14 @@ describe('ProjectStorageProvider', () => {
         });
       });
 
-      // Manifest entry should be updated directly
-      expect(entry.cloudId).toBe('cloud-123');
-      expect(entry.cloudSavedAt).toBe('2024-06-01T00:00:00Z');
-      expect(saveManifest).toHaveBeenCalledWith(manifest);
-
-      // updateProjectMetadata should also be called
+      // updateProjectMetadata handles both project record and manifest update
       expect(updateProjectMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, {
         cloudId: 'cloud-123',
         cloudSavedAt: '2024-06-01T00:00:00Z',
       });
     });
 
-    it('updates visibility in manifest', () => {
-      const entry = makeManifestEntry();
-      const manifest = { version: 1, projects: [entry] };
-      (loadManifest as Mock).mockReturnValue(manifest);
-
+    it('updates visibility via updateProjectMetadata', () => {
       const { result } = renderProjectStorage();
 
       act(() => {
@@ -432,15 +418,12 @@ describe('ProjectStorageProvider', () => {
         });
       });
 
-      expect(entry.visibility).toBe('unlisted');
-      expect(saveManifest).toHaveBeenCalledWith(manifest);
+      expect(updateProjectMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, {
+        visibility: 'unlisted',
+      });
     });
 
     it('handles clearing cloud metadata (null values)', () => {
-      const entry = makeManifestEntry({ cloudId: 'cloud-123', cloudSavedAt: '2024-01-01T00:00:00Z' });
-      const manifest = { version: 1, projects: [entry] };
-      (loadManifest as Mock).mockReturnValue(manifest);
-
       const { result } = renderProjectStorage();
 
       act(() => {
@@ -450,22 +433,19 @@ describe('ProjectStorageProvider', () => {
         });
       });
 
-      expect(entry.cloudId).toBeNull();
-      expect(entry.cloudSavedAt).toBeNull();
-      expect(saveManifest).toHaveBeenCalled();
+      expect(updateProjectMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, {
+        cloudId: null,
+        cloudSavedAt: null,
+      });
     });
 
-    it('skips manifest update if project not found in manifest', () => {
-      (loadManifest as Mock).mockReturnValue({ version: 1, projects: [] });
-
+    it('delegates to updateProjectMetadata even if project not in manifest', () => {
       const { result } = renderProjectStorage();
 
       act(() => {
         result.current.actions.updateCloudMetadata('nonexistent', { cloudId: 'abc' });
       });
 
-      expect(saveManifest).not.toHaveBeenCalled();
-      // But still calls updateProjectMetadata for the full project record
       expect(updateProjectMetadata).toHaveBeenCalledWith('nonexistent', { cloudId: 'abc' });
     });
 

@@ -2,7 +2,6 @@ import { createContext, useContext, useState, useCallback, useMemo, type ReactNo
 import { useAppState, useAppDispatch } from './app-context';
 import {
   loadManifest,
-  saveManifest,
   loadProject,
   createProject as createProjectInStorage,
   deleteProject,
@@ -129,17 +128,7 @@ export function ProjectStorageProvider({ children, initialLocalId }: ProjectStor
   }, [activeLocalId, appState.project, dispatch, refreshProjectList]);
 
   const updateCloudMetadata = useCallback((localId: string, updates: CloudMetadataUpdates) => {
-    // Update manifest entry
-    const manifest = loadManifest();
-    const entry = manifest.projects.find(p => p.localId === localId);
-    if (entry) {
-      if (updates.cloudId !== undefined) entry.cloudId = updates.cloudId;
-      if (updates.cloudSavedAt !== undefined) entry.cloudSavedAt = updates.cloudSavedAt;
-      if (updates.visibility !== undefined) entry.visibility = updates.visibility;
-      saveManifest(manifest);
-    }
-
-    // Update full project record
+    // updateProjectMetadata saves the project record and updates the manifest in one pass
     updateProjectMetadata(localId, updates);
     refreshProjectList();
   }, [refreshProjectList]);
