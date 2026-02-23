@@ -13,8 +13,8 @@
     "knip": "knip"
   },
   "devDependencies": {
-    "wrangler": "^3.0.0",
-    "@cloudflare/workers-types": "^4.0.0",
+    "wrangler": "~3.114.0",
+    "@cloudflare/workers-types": "~4.20260228.0",
     "@eslint/js": "^9.39.1",
     "eslint": "^9.39.1",
     "knip": "^5.0.0",
