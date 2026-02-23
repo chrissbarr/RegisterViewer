@@ -27,8 +27,8 @@ jobs:
       - name: Dead code check (knip)
         run: npm run knip
         continue-on-error: true
-      - name: Unit tests
-        run: npm test
+      - name: Unit tests with coverage
+        run: npm run test:coverage
       - name: Build
         env:
           VITE_API_URL: ${{ vars.VITE_API_URL }}

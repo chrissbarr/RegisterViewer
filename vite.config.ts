@@ -27,7 +27,13 @@ export default defineConfig({
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     coverage: {
       provider: 'v8',
-      include: ['src/utils/**', 'src/context/**'],
+      include: ['src/utils/**', 'src/context/**', 'src/hooks/**', 'src/components/**'],
+      thresholds: {
+        statements: 40,
+        branches: 40,
+        functions: 40,
+        lines: 40,
+      },
     },
   },
 })
