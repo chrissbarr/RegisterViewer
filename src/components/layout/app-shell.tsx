@@ -6,7 +6,7 @@ import { PreferencesProvider, usePreferences, usePreferencesActions } from '../.
 import { ProjectStorageProvider, useProjectStorage } from '../../context/project-storage-context';
 import { CloudSyncProvider, useCloudSync, useCloudSyncActions } from '../../context/cloud-sync-context';
 import { serializeState } from '../../utils/storage';
-import { saveProject, loadProject } from '../../utils/project-storage';
+import { patchProjectState } from '../../utils/project-storage';
 import { Header } from './header';
 import { Sidebar } from './sidebar';
 import { MainPanel } from '../viewer/main-panel';
@@ -51,15 +51,7 @@ function AppShellInner({ cloudInit }: AppShellProps) {
     const timer = setTimeout(() => {
       const id = activeLocalIdRef.current;
       if (id) {
-        const project = loadProject(id);
-        if (project) {
-          project.state = serializeState(state);
-          // Sync project name from AppState title → StoredLocalProject name
-          if (state.project?.title) {
-            project.name = state.project.title;
-          }
-          saveProject(project);
-        }
+        patchProjectState(id, serializeState(state), state.project?.title);
       }
       pendingStateRef.current = null;
     }, SAVE_DEBOUNCE_MS);
@@ -71,14 +63,7 @@ function AppShellInner({ cloudInit }: AppShellProps) {
     const flush = () => {
       const id = activeLocalIdRef.current;
       if (pendingStateRef.current !== null && id) {
-        const project = loadProject(id);
-        if (project) {
-          project.state = serializeState(pendingStateRef.current);
-          if (pendingStateRef.current.project?.title) {
-            project.name = pendingStateRef.current.project.title;
-          }
-          saveProject(project);
-        }
+        patchProjectState(id, serializeState(pendingStateRef.current), pendingStateRef.current.project?.title);
         pendingStateRef.current = null;
       }
     };

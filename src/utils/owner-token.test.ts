@@ -6,6 +6,34 @@ import {
   checkOwnership,
   getOwnerTokenForProject,
 } from './owner-token';
+import { invalidateManifestCache } from './project-storage';
+
+/** Helper to set up a manifest + project record in localStorage */
+function setupProjectWithCloud(localId: string, cloudId: string, ownerToken: string | null) {
+  const manifest = JSON.parse(localStorage.getItem('register-viewer-manifest') ?? '{"version":1,"projects":[]}');
+  manifest.projects.push({
+    localId,
+    cloudId,
+    name: 'Test',
+    visibility: 'private',
+    createdAt: '2024-01-01T00:00:00Z',
+    localSavedAt: '2024-01-01T00:00:00Z',
+    cloudSavedAt: '2024-01-01T00:00:00Z',
+  });
+  localStorage.setItem('register-viewer-manifest', JSON.stringify(manifest));
+  localStorage.setItem(`register-viewer-project:${localId}`, JSON.stringify({
+    localId,
+    cloudId,
+    name: 'Test',
+    visibility: 'private',
+    createdAt: '2024-01-01T00:00:00Z',
+    localSavedAt: '2024-01-01T00:00:00Z',
+    cloudSavedAt: '2024-01-01T00:00:00Z',
+    ownerToken,
+    state: { registers: [], activeRegisterId: null, registerValues: {} },
+  }));
+  invalidateManifestCache();
+}
 
 describe('generateOwnerToken', () => {
   it('generates a 64-character hex string', () => {
@@ -213,48 +241,30 @@ describe('getOrCreateOwnerToken', () => {
 describe('checkOwnership', () => {
   beforeEach(() => {
     localStorage.clear();
+    invalidateManifestCache();
   });
 
   afterEach(() => {
     localStorage.clear();
+    invalidateManifestCache();
   });
 
-  it('returns true if project is in local storage', () => {
-    const projects = [
-      {
-        id: 'ABC123DEF456',
-        ownerToken: 'a'.repeat(64),
-        name: 'Test Project',
-        savedAt: '2024-01-01T00:00:00Z',
-        shareUrl: 'https://example.com/#/p/ABC123DEF456',
-      },
-    ];
-    localStorage.setItem('register-viewer-cloud-projects', JSON.stringify(projects));
-
+  it('returns true if project has an ownerToken', () => {
+    setupProjectWithCloud('local-1', 'ABC123DEF456', 'a'.repeat(64));
     expect(checkOwnership('ABC123DEF456')).toBe(true);
   });
 
-  it('returns false if project is not in local storage', () => {
-    const projects = [
-      {
-        id: 'ABC123DEF456',
-        ownerToken: 'a'.repeat(64),
-        name: 'Test Project',
-        savedAt: '2024-01-01T00:00:00Z',
-        shareUrl: 'https://example.com/#/p/ABC123DEF456',
-      },
-    ];
-    localStorage.setItem('register-viewer-cloud-projects', JSON.stringify(projects));
+  it('returns false if project has no ownerToken', () => {
+    setupProjectWithCloud('local-1', 'ABC123DEF456', null);
+    expect(checkOwnership('ABC123DEF456')).toBe(false);
+  });
 
+  it('returns false if cloudId is not in manifest', () => {
+    setupProjectWithCloud('local-1', 'ABC123DEF456', 'a'.repeat(64));
     expect(checkOwnership('XYZ789GHI012')).toBe(false);
   });
 
   it('returns false if no projects exist', () => {
-    expect(checkOwnership('ABC123DEF456')).toBe(false);
-  });
-
-  it('handles malformed localStorage gracefully', () => {
-    localStorage.setItem('register-viewer-cloud-projects', 'invalid json');
     expect(checkOwnership('ABC123DEF456')).toBe(false);
   });
 });
@@ -262,40 +272,22 @@ describe('checkOwnership', () => {
 describe('getOwnerTokenForProject', () => {
   beforeEach(() => {
     localStorage.clear();
+    invalidateManifestCache();
   });
 
   afterEach(() => {
     localStorage.clear();
+    invalidateManifestCache();
   });
 
   it('returns token if project exists', () => {
     const token = 'a'.repeat(64);
-    const projects = [
-      {
-        id: 'ABC123DEF456',
-        ownerToken: token,
-        name: 'Test Project',
-        savedAt: '2024-01-01T00:00:00Z',
-        shareUrl: 'https://example.com/#/p/ABC123DEF456',
-      },
-    ];
-    localStorage.setItem('register-viewer-cloud-projects', JSON.stringify(projects));
-
+    setupProjectWithCloud('local-1', 'ABC123DEF456', token);
     expect(getOwnerTokenForProject('ABC123DEF456')).toBe(token);
   });
 
   it('returns null if project does not exist', () => {
-    const projects = [
-      {
-        id: 'ABC123DEF456',
-        ownerToken: 'a'.repeat(64),
-        name: 'Test Project',
-        savedAt: '2024-01-01T00:00:00Z',
-        shareUrl: 'https://example.com/#/p/ABC123DEF456',
-      },
-    ];
-    localStorage.setItem('register-viewer-cloud-projects', JSON.stringify(projects));
-
+    setupProjectWithCloud('local-1', 'ABC123DEF456', 'a'.repeat(64));
     expect(getOwnerTokenForProject('XYZ789GHI012')).toBeNull();
   });
 
@@ -308,38 +300,12 @@ describe('getOwnerTokenForProject', () => {
     const token2 = 'b'.repeat(64);
     const token3 = 'c'.repeat(64);
 
-    const projects = [
-      {
-        id: 'PROJECT1',
-        ownerToken: token1,
-        name: 'Project 1',
-        savedAt: '2024-01-01T00:00:00Z',
-        shareUrl: 'https://example.com/#/p/PROJECT1',
-      },
-      {
-        id: 'PROJECT2',
-        ownerToken: token2,
-        name: 'Project 2',
-        savedAt: '2024-01-02T00:00:00Z',
-        shareUrl: 'https://example.com/#/p/PROJECT2',
-      },
-      {
-        id: 'PROJECT3',
-        ownerToken: token3,
-        name: 'Project 3',
-        savedAt: '2024-01-03T00:00:00Z',
-        shareUrl: 'https://example.com/#/p/PROJECT3',
-      },
-    ];
-    localStorage.setItem('register-viewer-cloud-projects', JSON.stringify(projects));
+    setupProjectWithCloud('local-1', 'PROJECT1', token1);
+    setupProjectWithCloud('local-2', 'PROJECT2', token2);
+    setupProjectWithCloud('local-3', 'PROJECT3', token3);
 
     expect(getOwnerTokenForProject('PROJECT1')).toBe(token1);
     expect(getOwnerTokenForProject('PROJECT2')).toBe(token2);
     expect(getOwnerTokenForProject('PROJECT3')).toBe(token3);
-  });
-
-  it('handles malformed localStorage gracefully', () => {
-    localStorage.setItem('register-viewer-cloud-projects', 'invalid json');
-    expect(getOwnerTokenForProject('ABC123DEF456')).toBeNull();
   });
 });

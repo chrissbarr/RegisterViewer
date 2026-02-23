@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
+    "dev": "wrangler dev --var ENVIRONMENT:development",
     "deploy": "wrangler deploy",
     "tail": "wrangler tail",
     "test": "vitest run",

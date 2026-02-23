@@ -4,6 +4,7 @@ export interface Env {
   PROJECTS: KVNamespace;
   APP_URL: string;
   ALLOWED_ORIGINS?: string; // comma-separated, optional override
+  ENVIRONMENT?: string; // e.g. 'production', 'development'
 }
 
 // ---- Project Data (matches frontend export format) ----

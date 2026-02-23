@@ -88,18 +88,22 @@ export async function listProjectsByOwner(kv: KVNamespace, tokenHash: string): P
   const projects: StoredProject[] = [];
 
   let cursor: string | undefined;
+  const allIds: string[] = [];
 
   for (;;) {
     const listResult = await kv.list({ prefix, cursor });
     for (const key of listResult.keys) {
-      const projectId = key.name.slice(prefix.length);
-      const project = await getProject(kv, projectId);
-      if (project) {
-        projects.push(project);
-      }
+      allIds.push(key.name.slice(prefix.length));
     }
     if (listResult.list_complete) break;
     cursor = (listResult as { cursor: string }).cursor;
+  }
+
+  const results = await Promise.all(allIds.map((id) => getProject(kv, id)));
+  for (const project of results) {
+    if (project) {
+      projects.push(project);
+    }
   }
 
   return projects;

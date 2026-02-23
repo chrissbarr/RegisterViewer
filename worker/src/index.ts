@@ -1,6 +1,6 @@
 import type { Env, StoredProject, CreateProjectResponse, GetProjectResponse, UpdateProjectResponse, ListProjectsResponse } from './types';
 import { LIMITS } from './types';
-import { getProject, putProject, deleteProject, listProjectsByOwner, isValidVisibility } from './data-access';
+import { getProject, putProject, deleteProject, listProjectsByOwner, isValidVisibility, touchLastAccessed } from './data-access';
 import { validateProjectData } from './validation';
 import { extractTokenHash, isOwner } from './auth';
 import { generateId } from './id';
@@ -31,7 +31,8 @@ function isLocalhostOrigin(origin: string): boolean {
 function corsHeaders(request: Request, env: Env): Record<string, string> {
   const origin = request.headers.get('Origin') ?? '';
   const allowed = getAllowedOrigins(env);
-  const matchedOrigin = allowed.includes(origin) || isLocalhostOrigin(origin) ? origin : '';
+  const isDev = env.ENVIRONMENT !== 'production';
+  const matchedOrigin = allowed.includes(origin) || (isDev && isLocalhostOrigin(origin)) ? origin : '';
 
   return {
     'Access-Control-Allow-Origin': matchedOrigin,
@@ -165,15 +166,7 @@ async function handleGet(
   const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
   if (now - lastAccessed > ONE_DAY_MS) {
-    ctx.waitUntil(
-      (async () => {
-        const p = await getProject(env.PROJECTS, id);
-        if (p) {
-          p.lastAccessedAt = new Date(now).toISOString();
-          await env.PROJECTS.put(`project:${id}`, JSON.stringify(p));
-        }
-      })(),
-    );
+    ctx.waitUntil(touchLastAccessed(env.PROJECTS, id, new Date(now).toISOString()));
   }
 
   const response: GetProjectResponse = {

@@ -1,4 +1,4 @@
-import { loadLocalProjects } from './cloud-projects';
+import { loadManifest, loadProject } from './project-storage';
 
 const OWNER_TOKEN_KEY = 'register-viewer-owner-token';
 
@@ -32,13 +32,18 @@ export function getOrCreateOwnerToken(): string {
   }
 }
 
-export function checkOwnership(projectId: string): boolean {
-  const projects = loadLocalProjects();
-  return projects.some((p) => p.id === projectId);
+export function checkOwnership(cloudId: string): boolean {
+  const manifest = loadManifest();
+  const entry = manifest.projects.find(p => p.cloudId === cloudId);
+  if (!entry) return false;
+  const project = loadProject(entry.localId);
+  return project?.ownerToken != null;
 }
 
-export function getOwnerTokenForProject(projectId: string): string | null {
-  const projects = loadLocalProjects();
-  const record = projects.find((p) => p.id === projectId);
-  return record?.ownerToken ?? null;
+export function getOwnerTokenForProject(cloudId: string): string | null {
+  const manifest = loadManifest();
+  const entry = manifest.projects.find(p => p.cloudId === cloudId);
+  if (!entry) return null;
+  const project = loadProject(entry.localId);
+  return project?.ownerToken ?? null;
 }

@@ -12,6 +12,7 @@ import {
   runMigrationIfNeeded,
   toProjectListEntry,
   projectStorageKey,
+  invalidateManifestCache,
 } from './project-storage';
 import type { StoredLocalProject, ProjectManifest, ProjectManifestEntry } from '../types/project';
 import type { SerializedAppState } from '../types/register';
@@ -42,6 +43,7 @@ function makeStoredProject(overrides?: Partial<StoredLocalProject>): StoredLocal
 
 beforeEach(() => {
   localStorage.clear();
+  invalidateManifestCache();
   vi.restoreAllMocks();
 });
 
@@ -76,7 +78,7 @@ describe('loadManifest', () => {
     expect(manifest.projects[0].localId).toBe('id-1');
   });
 
-  it('recovers orphaned projects not in manifest', () => {
+  it('recovers orphaned projects not in manifest (via runMigrationIfNeeded)', () => {
     // Save a manifest with no projects
     saveManifest({ version: 1, projects: [] });
 
@@ -84,6 +86,9 @@ describe('loadManifest', () => {
     const orphan = makeStoredProject({ localId: 'orphan-1', name: 'Orphan' });
     localStorage.setItem('register-viewer-project:orphan-1', JSON.stringify(orphan));
 
+    // Orphan recovery now only runs at startup via runMigrationIfNeeded
+    invalidateManifestCache();
+    runMigrationIfNeeded();
     const manifest = loadManifest();
     expect(manifest.projects).toHaveLength(1);
     expect(manifest.projects[0].localId).toBe('orphan-1');
@@ -138,7 +143,9 @@ describe('loadManifest', () => {
     const orphan = makeStoredProject({ localId: 'crashed-orphan', name: 'Crashed During Save' });
     localStorage.setItem(projectStorageKey('crashed-orphan'), JSON.stringify(orphan));
 
-    // Next loadManifest should recover the orphan
+    // Orphan recovery now only runs at startup via runMigrationIfNeeded
+    invalidateManifestCache();
+    runMigrationIfNeeded();
     const manifest = loadManifest();
     expect(manifest.projects.some(p => p.localId === id1)).toBe(true);
     expect(manifest.projects.some(p => p.localId === 'crashed-orphan')).toBe(true);

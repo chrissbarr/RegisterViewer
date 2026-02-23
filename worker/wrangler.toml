@@ -4,6 +4,7 @@ compatibility_date = "2024-12-01"
 
 [vars]
 APP_URL = "https://register-viewer.app"
+ENVIRONMENT = "production"
 
 [[kv_namespaces]]
 binding = "PROJECTS"

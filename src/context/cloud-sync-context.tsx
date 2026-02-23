@@ -18,16 +18,10 @@ import {
   getOwnerTokenForProject,
 } from '../utils/owner-token';
 import {
-  addLocalProject,
-  buildProjectUrl,
-  removeLocalProject,
-  updateLocalProject,
-} from '../utils/cloud-projects';
-import {
   loadManifest,
   saveManifest,
   loadProject,
-  updateProjectMetadata,
+  buildProjectUrl,
 } from '../utils/project-storage';
 import type { Visibility } from '../types/project';
 
@@ -91,7 +85,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   const appState = useAppState();
   const dispatch = useAppDispatch();
   const { activeLocalId } = useProjectStorage();
-  const { refreshProjectList } = useProjectStorageActions();
+  const { updateCloudMetadata } = useProjectStorageActions();
 
   const [internal, setInternal] = useState<InternalCloudSyncState>(initialInternalState);
 
@@ -104,23 +98,33 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   // Generation counter dirty tracking (same pattern as old CloudProjectProvider)
   const mutationLockRef = useRef(false);
   const dataVersionRef = useRef(0);
-  const [dataVersion, setDataVersion] = useState(0);
   const needsVersionSyncRef = useRef(false);
+  const prevDirtyRef = useRef(false);
 
   useEffect(() => {
     dataVersionRef.current++;
-    setDataVersion(dataVersionRef.current);
 
     if (needsVersionSyncRef.current) {
       needsVersionSyncRef.current = false;
       const capturedVersion = dataVersionRef.current;
       setInternal((prev) => ({ ...prev, lastSavedVersion: capturedVersion }));
+      return;
     }
-  }, [appState.registers, appState.registerValues, appState.project, appState.addressUnitBits]);
+
+    // Only trigger a re-render when isDirty status actually changes (false → true)
+    const nowDirty = internal.cloudId !== null
+      && internal.lastSavedVersion >= 0
+      && dataVersionRef.current !== internal.lastSavedVersion;
+    if (nowDirty !== prevDirtyRef.current) {
+      prevDirtyRef.current = nowDirty;
+      // Force re-render by touching internal state
+      setInternal((prev) => ({ ...prev }));
+    }
+  }, [appState.registers, appState.registerValues, appState.project, appState.addressUnitBits, internal.cloudId, internal.lastSavedVersion]);
 
   const isDirty = internal.cloudId !== null
     && internal.lastSavedVersion >= 0
-    && dataVersion !== internal.lastSavedVersion;
+    && dataVersionRef.current !== internal.lastSavedVersion;
 
   // Sync cloud state when active project changes (handles project switch)
   const internalRef = useRef(internal);
@@ -167,30 +171,14 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       const tokenHash = await hashOwnerToken(ownerToken);
       const result = await createProject(jsonPayload, tokenHash);
 
-      const projectName = appStateRef.current.project?.title ?? 'Untitled';
-      addLocalProject({
-        id: result.id,
-        ownerToken,
-        name: projectName,
-        savedAt: result.createdAt,
-        shareUrl: buildProjectUrl(result.id),
-      });
-
-      // Update manifest and project record with new cloudId
+      // Update manifest and project record with new cloudId + ownerToken
       const currentLocalId = activeLocalIdRef.current;
       if (currentLocalId) {
-        const manifest = loadManifest();
-        const entry = manifest.projects.find(p => p.localId === currentLocalId);
-        if (entry) {
-          entry.cloudId = result.id;
-          entry.cloudSavedAt = result.createdAt;
-          saveManifest(manifest);
-        }
-        updateProjectMetadata(currentLocalId, {
+        updateCloudMetadata(currentLocalId, {
           cloudId: result.id,
           cloudSavedAt: result.createdAt,
+          ownerToken,
         });
-        refreshProjectList();
       }
 
       const shareUrl = buildProjectUrl(result.id);
@@ -209,7 +197,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       const message = err instanceof Error ? err.message : errorLabel;
       setInternal((prev) => ({ ...prev, status: 'idle', error: message }));
     }
-  }, [refreshProjectList]);
+  }, [updateCloudMetadata]);
 
   const saveToCloud = useCallback(async () => {
     if (!isCloudEnabled() || mutationLockRef.current) return;
@@ -228,25 +216,13 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
         const tokenHash = await hashOwnerToken(ownerToken);
         try {
           const result = await updateProject(internal.cloudId, jsonPayload, tokenHash);
-          const projectName = appStateRef.current.project?.title ?? 'Untitled';
-          updateLocalProject(internal.cloudId, {
-            name: projectName,
-            savedAt: result.updatedAt,
-          });
 
           // Update manifest cloudSavedAt
           const currentLocalId = activeLocalIdRef.current;
           if (currentLocalId) {
-            const manifest = loadManifest();
-            const entry = manifest.projects.find(p => p.localId === currentLocalId);
-            if (entry) {
-              entry.cloudSavedAt = result.updatedAt;
-              saveManifest(manifest);
-            }
-            updateProjectMetadata(currentLocalId, {
+            updateCloudMetadata(currentLocalId, {
               cloudSavedAt: result.updatedAt,
             });
-            refreshProjectList();
           }
 
           setInternal((prev) => ({
@@ -259,17 +235,15 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
         } catch (err) {
           if (err instanceof ApiError && err.status === 404) {
             // Cloud project was deleted — clear cloudId and save as new
-            const oldCloudId = internal.cloudId;
-            removeLocalProject(oldCloudId);
-
-            // Clear manifest cloudId
-            const manifest = loadManifest();
-            const entry = manifest.projects.find(p => p.cloudId === oldCloudId);
-            if (entry) {
-              entry.cloudId = null;
-              entry.visibility = 'private';
-              entry.cloudSavedAt = null;
-              saveManifest(manifest);
+            // Clear manifest cloudId and ownerToken
+            const currentLocalId = activeLocalIdRef.current;
+            if (currentLocalId) {
+              updateCloudMetadata(currentLocalId, {
+                cloudId: null,
+                visibility: 'private',
+                cloudSavedAt: null,
+                ownerToken: null,
+              });
             }
 
             history.replaceState(null, '', window.location.pathname + window.location.search);
@@ -297,7 +271,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     } finally {
       mutationLockRef.current = false;
     }
-  }, [internal.cloudId, internal.isOwner, refreshProjectList, createNewCloudProject]);
+  }, [internal.cloudId, internal.isOwner, updateCloudMetadata, createNewCloudProject]);
 
   const fork = useCallback(async () => {
     if (!isCloudEnabled() || mutationLockRef.current) return;
@@ -332,34 +306,14 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       if (!existingOwnerToken) throw new Error('Owner token not found.');
       const existingTokenHash = await hashOwnerToken(existingOwnerToken);
       const result = await updateProject(existingCloudId, jsonPayload, existingTokenHash);
-      updateLocalProject(existingCloudId, {
-        name: projectState.project?.title ?? 'Untitled',
-        savedAt: result.updatedAt,
-      });
-      if (entry) {
-        entry.cloudSavedAt = result.updatedAt;
-        saveManifest(manifest);
-      }
-      updateProjectMetadata(localId, { cloudSavedAt: result.updatedAt });
+      updateCloudMetadata(localId, { cloudSavedAt: result.updatedAt });
     } else {
       // Create new cloud project
       const result = await createProject(jsonPayload, tokenHash);
-      const projectName = projectState.project?.title ?? 'Untitled';
-      addLocalProject({
-        id: result.id,
-        ownerToken,
-        name: projectName,
-        savedAt: result.createdAt,
-        shareUrl: buildProjectUrl(result.id),
-      });
-      if (entry) {
-        entry.cloudId = result.id;
-        entry.cloudSavedAt = result.createdAt;
-        saveManifest(manifest);
-      }
-      updateProjectMetadata(localId, {
+      updateCloudMetadata(localId, {
         cloudId: result.id,
         cloudSavedAt: result.createdAt,
+        ownerToken,
       });
 
       // If this is the active project, update cloud state + URL
@@ -375,9 +329,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
         }));
       }
     }
-
-    refreshProjectList();
-  }, [refreshProjectList]);
+  }, [updateCloudMetadata]);
 
   const deleteFromCloud = useCallback(async () => {
     if (!internal.cloudId || mutationLockRef.current) return;
@@ -392,35 +344,29 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       await apiDeleteProject(internal.cloudId, tokenHash);
 
       // Update manifest: clear cloudId, set visibility to private
-      const manifest = loadManifest();
-      const entry = manifest.projects.find(p => p.cloudId === internal.cloudId);
-      if (entry) {
-        entry.cloudId = null;
-        entry.visibility = 'private';
-        entry.cloudSavedAt = null;
-        saveManifest(manifest);
-        updateProjectMetadata(entry.localId, {
+      const currentLocalId = activeLocalIdRef.current;
+      if (currentLocalId) {
+        updateCloudMetadata(currentLocalId, {
           cloudId: null,
           visibility: 'private',
           cloudSavedAt: null,
+          ownerToken: null,
         });
       }
-
-      removeLocalProject(internal.cloudId);
 
       // Clean up cloud state and URL
       history.replaceState(null, '', window.location.pathname + window.location.search);
       setInternal({ ...initialInternalState });
-      refreshProjectList();
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to delete project.';
       throw new Error(message);
     } finally {
       mutationLockRef.current = false;
     }
-  }, [internal.cloudId, refreshProjectList]);
+  }, [internal.cloudId, updateCloudMetadata]);
 
   const setVisibility = useCallback(async (v: Visibility) => {
+    const previousVisibility = internal.visibility;
     setInternal((prev) => ({ ...prev, visibility: v }));
 
     // If we have a cloud project, update visibility on the server
@@ -434,18 +380,16 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
         await updateProject(internal.cloudId, jsonPayload, tokenHash, v);
 
         // Update the manifest entry's visibility
-        const manifest = loadManifest();
-        const entry = manifest.projects.find(p => p.cloudId === internal.cloudId);
-        if (entry) {
-          entry.visibility = v;
-          saveManifest(manifest);
+        const currentLocalId = activeLocalIdRef.current;
+        if (currentLocalId) {
+          updateCloudMetadata(currentLocalId, { visibility: v });
         }
       } catch {
         // Revert on failure
-        setInternal((prev) => ({ ...prev, visibility: prev.visibility }));
+        setInternal((prev) => ({ ...prev, visibility: previousVisibility }));
       }
     }
-  }, [internal.cloudId, internal.isOwner]);
+  }, [internal.cloudId, internal.isOwner, internal.visibility, updateCloudMetadata]);
 
   // Set visibility for a specific project by localId, without relying on active project state.
   // Used by My Projects dialog for non-active projects.
@@ -466,20 +410,16 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       const jsonPayload = exportToJson(projectState);
       await updateProject(entry.cloudId, jsonPayload, tokenHash, v);
 
-      entry.visibility = v;
-      saveManifest(manifest);
-      updateProjectMetadata(localId, { visibility: v });
+      updateCloudMetadata(localId, { visibility: v });
 
       // If this is the active project, update cloud state too
       if (localId === activeLocalIdRef.current) {
         setInternal((prev) => ({ ...prev, visibility: v }));
       }
-
-      refreshProjectList();
     } catch {
       // Silently fail — the dialog should refresh to show the actual value
     }
-  }, [refreshProjectList]);
+  }, [updateCloudMetadata]);
 
   const initFromProject = useCallback(
     (cloudId: string | null, isOwner: boolean) => {
@@ -612,21 +552,13 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     const manifest = loadManifest();
     const entry = manifest.projects.find(p => p.cloudId === cloudId);
     if (entry) {
-      entry.cloudId = null;
-      entry.visibility = 'private';
-      entry.cloudSavedAt = null;
-      saveManifest(manifest);
-
-      // Also update the full project record
-      updateProjectMetadata(entry.localId, {
+      updateCloudMetadata(entry.localId, {
         cloudId: null,
         visibility: 'private',
         cloudSavedAt: null,
+        ownerToken: null,
       });
     }
-
-    // Remove from cloud-projects local record
-    removeLocalProject(cloudId);
 
     // If the currently active cloud project is this one, clear cloud state
     // Use ref to avoid stale closure — internal.cloudId may be outdated
@@ -634,7 +566,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       history.replaceState(null, '', window.location.pathname + window.location.search);
       setInternal({ ...initialInternalState });
     }
-  }, []);
+  }, [updateCloudMetadata]);
 
   const unlinkCloudProject = useCallback((localId: string) => {
     const manifest = loadManifest();
@@ -642,15 +574,11 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     if (!entry || !entry.cloudId) return;
 
     const cloudId = entry.cloudId;
-    entry.cloudId = null;
-    entry.visibility = 'private';
-    entry.cloudSavedAt = null;
-    saveManifest(manifest);
-
-    updateProjectMetadata(localId, {
+    updateCloudMetadata(localId, {
       cloudId: null,
       visibility: 'private',
       cloudSavedAt: null,
+      ownerToken: null,
     });
 
     // If the currently active cloud project is this one, clear cloud state
@@ -659,7 +587,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       history.replaceState(null, '', window.location.pathname + window.location.search);
       setInternal({ ...initialInternalState });
     }
-  }, []);
+  }, [updateCloudMetadata]);
 
   const actions = useMemo(
     () => ({

@@ -6,9 +6,8 @@ import { useAppState } from '../../context/app-context';
 import { buildSnapshotUrl } from '../../utils/snapshot-url';
 import { isCloudEnabled } from '../../utils/api-client';
 import { useCloudSync, useCloudSyncActions } from '../../context/cloud-sync-context';
-import { loadProject, loadManifest } from '../../utils/project-storage';
+import { loadProject, loadManifest, buildProjectUrl } from '../../utils/project-storage';
 import { deserializeState } from '../../utils/storage';
-import { buildProjectUrl } from '../../utils/cloud-projects';
 import type { AppState } from '../../types/register';
 
 interface ShareDialogProps {

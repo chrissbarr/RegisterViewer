@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useCallback, useMemo, type ReactNo
 import { useAppState, useAppDispatch } from './app-context';
 import {
   loadManifest,
+  saveManifest,
   loadProject,
   createProject as createProjectInStorage,
   deleteProject,
@@ -9,14 +10,22 @@ import {
   toProjectListEntry,
 } from '../utils/project-storage';
 import type { ProjectListEntry, StoredLocalProject } from '../types/project';
-import type { AppState, SerializedAppState } from '../types/register';
+import type { SerializedAppState } from '../types/register';
 import { ADDRESS_UNIT_BITS_DEFAULT } from '../types/register';
+import { deserializeState } from '../utils/storage';
 
 const ACTIVE_PROJECT_SESSION_KEY = 'register-viewer-active-project';
 
 interface ProjectStorageState {
   activeLocalId: string | null;
   projects: ProjectListEntry[];
+}
+
+interface CloudMetadataUpdates {
+  cloudId?: string | null;
+  cloudSavedAt?: string | null;
+  visibility?: 'private' | 'unlisted';
+  ownerToken?: string | null;
 }
 
 interface ProjectStorageActions {
@@ -26,6 +35,7 @@ interface ProjectStorageActions {
   renameProject: (localId: string, name: string) => void;
   refreshProjectList: () => void;
   getActiveProject: () => StoredLocalProject | null;
+  updateCloudMetadata: (localId: string, updates: CloudMetadataUpdates) => void;
 }
 
 const ProjectStorageStateContext = createContext<ProjectStorageState | null>(null);
@@ -93,7 +103,7 @@ export function ProjectStorageProvider({ children, initialLocalId }: ProjectStor
     const project = loadProject(localId);
     if (!project) return;
 
-    dispatch({ type: 'LOAD_STATE', state: deserializeState(project) });
+    dispatch({ type: 'LOAD_STATE', state: deserializeState(project.state) });
     setActiveAndPersist(localId);
   }, [dispatch, setActiveAndPersist]);
 
@@ -126,6 +136,22 @@ export function ProjectStorageProvider({ children, initialLocalId }: ProjectStor
     refreshProjectList();
   }, [activeLocalId, appState.project, dispatch, refreshProjectList]);
 
+  const updateCloudMetadata = useCallback((localId: string, updates: CloudMetadataUpdates) => {
+    // Update manifest entry
+    const manifest = loadManifest();
+    const entry = manifest.projects.find(p => p.localId === localId);
+    if (entry) {
+      if (updates.cloudId !== undefined) entry.cloudId = updates.cloudId;
+      if (updates.cloudSavedAt !== undefined) entry.cloudSavedAt = updates.cloudSavedAt;
+      if (updates.visibility !== undefined) entry.visibility = updates.visibility;
+      saveManifest(manifest);
+    }
+
+    // Update full project record
+    updateProjectMetadata(localId, updates);
+    refreshProjectList();
+  }, [refreshProjectList]);
+
   const getActiveProject = useCallback((): StoredLocalProject | null => {
     if (!activeLocalId) return null;
     return loadProject(activeLocalId);
@@ -137,8 +163,8 @@ export function ProjectStorageProvider({ children, initialLocalId }: ProjectStor
   );
 
   const actions = useMemo<ProjectStorageActions>(
-    () => ({ createNewProject, switchProject, deleteLocalProject, renameProject, refreshProjectList, getActiveProject }),
-    [createNewProject, switchProject, deleteLocalProject, renameProject, refreshProjectList, getActiveProject],
+    () => ({ createNewProject, switchProject, deleteLocalProject, renameProject, refreshProjectList, getActiveProject, updateCloudMetadata }),
+    [createNewProject, switchProject, deleteLocalProject, renameProject, refreshProjectList, getActiveProject, updateCloudMetadata],
   );
 
   return (
@@ -164,25 +190,3 @@ export function useProjectStorageActions(): ProjectStorageActions {
   return ctx;
 }
 
-/** Deserialize a StoredLocalProject's state into an AppState */
-function deserializeState(project: StoredLocalProject): AppState {
-  const s = project.state;
-  const values: Record<string, bigint> = {};
-  for (const [key, hex] of Object.entries(s.registerValues)) {
-    try {
-      values[key] = BigInt(hex);
-    } catch {
-      values[key] = 0n;
-    }
-  }
-  return {
-    registers: s.registers,
-    activeRegisterId: s.activeRegisterId,
-    registerValues: values,
-    mapTableWidth: s.mapTableWidth ?? 32,
-    mapShowGaps: s.mapShowGaps ?? true,
-    mapSortDescending: s.mapSortDescending ?? false,
-    addressUnitBits: s.addressUnitBits ?? 8,
-    project: s.project,
-  };
-}

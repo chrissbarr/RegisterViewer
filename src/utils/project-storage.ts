@@ -6,10 +6,22 @@ import type {
 } from '../types/project';
 import type { SerializedAppState } from '../types/register';
 
+export function buildProjectUrl(cloudId: string): string {
+  return `${window.location.href.split('#')[0]}#/p/${cloudId}`;
+}
+
 const MANIFEST_KEY = 'register-viewer-manifest';
 const PROJECT_PREFIX = 'register-viewer-project:';
 const LEGACY_STATE_KEY = 'register-viewer-state';
 const LEGACY_PROJECTS_KEY = 'register-viewer-projects';
+
+/** In-memory manifest cache to avoid repeated localStorage reads + JSON parses */
+let cachedManifest: ProjectManifest | null = null;
+
+/** Invalidate the in-memory manifest cache (for testing) */
+export function invalidateManifestCache(): void {
+  cachedManifest = null;
+}
 
 export function projectStorageKey(localId: string): string {
   return `${PROJECT_PREFIX}${localId}`;
@@ -61,27 +73,35 @@ function recoverOrphanedProjects(manifest: ProjectManifest): ProjectManifest {
   return manifest;
 }
 
-/** Load the project manifest, running orphan recovery */
+/** Load the project manifest from cache or localStorage */
 export function loadManifest(): ProjectManifest {
+  if (cachedManifest) return cachedManifest;
   try {
     const raw = localStorage.getItem(MANIFEST_KEY);
     if (!raw) {
       const empty: ProjectManifest = { version: 1, projects: [] };
-      return recoverOrphanedProjects(empty);
+      cachedManifest = empty;
+      return empty;
     }
     const parsed = JSON.parse(raw) as ProjectManifest;
     if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.projects)) {
-      return recoverOrphanedProjects({ version: 1, projects: [] });
+      const empty: ProjectManifest = { version: 1, projects: [] };
+      cachedManifest = empty;
+      return empty;
     }
-    return recoverOrphanedProjects(parsed);
+    cachedManifest = parsed;
+    return parsed;
   } catch {
-    return recoverOrphanedProjects({ version: 1, projects: [] });
+    const empty: ProjectManifest = { version: 1, projects: [] };
+    cachedManifest = empty;
+    return empty;
   }
 }
 
-/** Save the manifest to localStorage */
+/** Save the manifest to localStorage and update cache */
 export function saveManifest(manifest: ProjectManifest): void {
   localStorage.setItem(MANIFEST_KEY, JSON.stringify(manifest));
+  cachedManifest = manifest;
 }
 
 /** Load a single project by localId */
@@ -143,6 +163,38 @@ export function deleteProject(localId: string): void {
   const manifest = loadManifest();
   manifest.projects = manifest.projects.filter(p => p.localId !== localId);
   saveManifest(manifest);
+}
+
+/** Patch only the state (and optionally name) of a project without a full read-parse cycle.
+ *  Reads the raw JSON, patches state/name/timestamp, writes back, and updates manifest cache. */
+export function patchProjectState(localId: string, state: SerializedAppState, name?: string): void {
+  const key = projectStorageKey(localId);
+  const raw = localStorage.getItem(key);
+  if (!raw) return;
+
+  try {
+    const project: StoredLocalProject = JSON.parse(raw);
+    project.state = state;
+    if (name !== undefined) {
+      project.name = name;
+    }
+    const now = new Date().toISOString();
+    project.localSavedAt = now;
+    localStorage.setItem(key, JSON.stringify(project));
+
+    // Update manifest timestamp in cache
+    const manifest = loadManifest();
+    const idx = manifest.projects.findIndex(p => p.localId === localId);
+    if (idx >= 0) {
+      manifest.projects[idx].localSavedAt = now;
+      if (name !== undefined) {
+        manifest.projects[idx].name = name;
+      }
+      saveManifest(manifest);
+    }
+  } catch {
+    // Corrupt data — skip
+  }
 }
 
 /** Update metadata fields on a project (name, cloudId, visibility, etc.) */
@@ -230,5 +282,37 @@ export function runMigrationIfNeeded(): void {
   // Ensure a manifest exists even if no migration happened
   if (!localStorage.getItem(MANIFEST_KEY)) {
     saveManifest({ version: 1, projects: [] });
+  }
+
+  // Run orphan recovery once at startup (not on every loadManifest call)
+  const manifest = loadManifest();
+  const before = manifest.projects.length;
+  recoverOrphanedProjects(manifest);
+  if (manifest.projects.length !== before) {
+    saveManifest(manifest);
+  }
+
+  // Migrate ownerTokens from cloud-projects records into StoredLocalProject records
+  const cloudProjectsRaw = localStorage.getItem(CLOUD_PROJECTS_KEY);
+  if (cloudProjectsRaw) {
+    try {
+      const records = JSON.parse(cloudProjectsRaw) as Array<{ id: string; ownerToken: string }>;
+      if (Array.isArray(records)) {
+        const currentManifest = loadManifest();
+        for (const record of records) {
+          if (!record.id || !record.ownerToken) continue;
+          const entry = currentManifest.projects.find(p => p.cloudId === record.id);
+          if (!entry) continue;
+          const project = loadProject(entry.localId);
+          if (project && !project.ownerToken) {
+            project.ownerToken = record.ownerToken;
+            localStorage.setItem(projectStorageKey(project.localId), JSON.stringify(project));
+          }
+        }
+      }
+    } catch {
+      // Corrupt data — skip
+    }
+    localStorage.removeItem(CLOUD_PROJECTS_KEY);
   }
 }

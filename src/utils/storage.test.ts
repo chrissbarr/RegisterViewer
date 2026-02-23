@@ -1,8 +1,6 @@
 import {
   serializeState,
   deserializeState,
-  saveToLocalStorage,
-  loadFromLocalStorage,
   exportToJson,
   importFromJson,
 } from './storage';
@@ -126,47 +124,6 @@ describe('deserializeState', () => {
   });
 });
 
-describe('save/loadFromLocalStorage', () => {
-  beforeEach(() => {
-    localStorage.clear();
-  });
-
-  it('round-trips state through localStorage', () => {
-    const reg = makeRegister({ id: 'reg-1', name: 'TEST' });
-    const state = makeState({
-      registers: [reg],
-      activeRegisterId: 'reg-1',
-      registerValues: { 'reg-1': 0x1234n },
-    });
-    saveToLocalStorage(state);
-    const loaded = loadFromLocalStorage();
-    expect(loaded).not.toBeNull();
-    expect(loaded!.registerValues['reg-1']).toBe(0x1234n);
-    expect(loaded!.activeRegisterId).toBe('reg-1');
-  });
-
-  it('round-trips map view settings through localStorage', () => {
-    const state = makeState({
-      mapTableWidth: 8,
-      mapShowGaps: false,
-    });
-    saveToLocalStorage(state);
-    const loaded = loadFromLocalStorage();
-    expect(loaded).not.toBeNull();
-    expect(loaded!.mapTableWidth).toBe(8);
-    expect(loaded!.mapShowGaps).toBe(false);
-  });
-
-  it('returns null when storage is empty', () => {
-    expect(loadFromLocalStorage()).toBeNull();
-  });
-
-  it('returns null for corrupted JSON', () => {
-    localStorage.setItem('register-viewer-state', '{invalid json!!!');
-    expect(loadFromLocalStorage()).toBeNull();
-  });
-});
-
 describe('offset round-trip', () => {
   it('preserves offset through export/import', () => {
     const reg = makeRegister({ id: 'reg-1', name: 'STATUS', offset: 0x04 });
@@ -192,19 +149,6 @@ describe('offset round-trip', () => {
     expect(result!.registers[0].offset).toBeUndefined();
   });
 
-  it('preserves offset through localStorage round-trip', () => {
-    localStorage.clear();
-    const reg = makeRegister({ id: 'reg-1', name: 'STATUS', offset: 0xFF });
-    const state = makeState({
-      registers: [reg],
-      activeRegisterId: 'reg-1',
-      registerValues: { 'reg-1': 0n },
-    });
-    saveToLocalStorage(state);
-    const loaded = loadFromLocalStorage();
-    expect(loaded).not.toBeNull();
-    expect(loaded!.registers[0].offset).toBe(0xFF);
-  });
 });
 
 describe('exportToJson', () => {
@@ -550,13 +494,11 @@ describe('addressUnitBits round-trip', () => {
     expect(data.addressUnitBits).toBeUndefined();
   });
 
-  it('round-trips addressUnitBits through localStorage', () => {
-    localStorage.clear();
+  it('round-trips addressUnitBits through serialize/deserialize', () => {
     const state = makeState({ addressUnitBits: 32 });
-    saveToLocalStorage(state);
-    const loaded = loadFromLocalStorage();
-    expect(loaded).not.toBeNull();
-    expect(loaded!.addressUnitBits).toBe(32);
+    const serialized = serializeState(state);
+    const loaded = deserializeState(serialized);
+    expect(loaded.addressUnitBits).toBe(32);
   });
 
   it('defaults addressUnitBits to 8 for legacy localStorage data', () => {

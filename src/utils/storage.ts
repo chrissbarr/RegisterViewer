@@ -2,8 +2,6 @@ import { ADDRESS_UNIT_BITS_DEFAULT, ADDRESS_UNIT_BITS_VALUES, MAP_TABLE_WIDTH_VA
 import { sanitizeField, sanitizeRegisterDef } from './sanitize';
 import { validateRegisterDef, MAX_REGISTER_WIDTH, type ValidationError } from './validation';
 
-const STORAGE_KEY = 'register-viewer-state';
-
 export function serializeState(state: AppState): SerializedAppState {
   const serializedValues: Record<string, string> = {};
   for (const [id, value] of Object.entries(state.registerValues)) {
@@ -58,26 +56,6 @@ export function deserializeState(data: SerializedAppState): AppState {
     addressUnitBits: typeof data.addressUnitBits === 'number' && (ADDRESS_UNIT_BITS_VALUES as readonly number[]).includes(data.addressUnitBits)
       ? data.addressUnitBits as AddressUnitBits : ADDRESS_UNIT_BITS_DEFAULT,
   };
-}
-
-export function saveToLocalStorage(state: AppState): void {
-  try {
-    const serialized = serializeState(state);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(serialized));
-  } catch {
-    // Silently fail if localStorage is full or unavailable
-  }
-}
-
-export function loadFromLocalStorage(): AppState | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as SerializedAppState;
-    return deserializeState(parsed);
-  } catch {
-    return null;
-  }
 }
 
 type DistributiveOmit<T, K extends string> = T extends unknown ? Omit<T, K> : never;
