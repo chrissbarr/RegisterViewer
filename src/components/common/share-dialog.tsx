@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useDeferredValue } from 'react';
 import { Dialog } from './dialog';
 import { CopyButton } from './copy-button';
 import { FirstTimeCloudPrompt } from './first-time-cloud-prompt';
@@ -60,14 +60,17 @@ export function ShareDialog({ open, onClose, projectLocalId }: ShareDialogProps)
     };
   }, [projectLocalId, projects, cloud.cloudId, cloud.shareUrl, cloud.visibility, cloud.status, isSavingByLocalId, refreshKey]);
 
+  // Defer targetState so snapshot computation doesn't block dialog open render
+  const deferredTargetState = useDeferredValue(targetState);
+
   const snapshotUrl = useMemo(() => {
-    if (!open || !targetState) return null;
+    if (!open || !deferredTargetState) return null;
     try {
-      return buildSnapshotUrl(targetState);
+      return buildSnapshotUrl(deferredTargetState);
     } catch {
       return null;
     }
-  }, [open, targetState]);
+  }, [open, deferredTargetState]);
 
   const charCount = snapshotUrl?.length ?? 0;
   const isUrlLong = charCount > 2000;
