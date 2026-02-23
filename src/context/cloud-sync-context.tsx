@@ -1,3 +1,26 @@
+/**
+ * CloudSyncProvider — cloud save/load/fork/delete/sync for the active project.
+ *
+ * Cloud operations have two paths:
+ * - **Active-project path** (this provider): operates on the currently-loaded
+ *   project using in-memory `appState` via refs. Exposes `saveToCloud`,
+ *   `deleteFromCloud`, `setVisibility`, `fork`, `loadCloudProject`, and
+ *   `syncCloudProjects`.
+ * - **By-localId path** (`useProjectCloudOps` hook): operates on any project
+ *   by `localId`, reading state from localStorage. Used by the My Projects
+ *   dialog for bulk operations on non-active projects.
+ *
+ * Both paths delegate shared logic to `cloud-operations.ts` to avoid divergence.
+ *
+ * Key patterns:
+ * - **Generation-counter dirty tracking** (`useDirtyTracking`): a ref-based
+ *   version counter increments on data changes; `isDirty` is derived by
+ *   comparing current version vs `lastSavedVersion`.
+ * - **Ref-synced state**: `internalRef` and `appStateRef` are kept in sync
+ *   via useEffect so that useCallback closures always read fresh state
+ *   without needing the state in their dependency arrays.
+ * - **Mutation lock**: `withMutationLock` prevents concurrent cloud operations.
+ */
 import { createContext, useContext, useCallback, useState, useMemo, useRef, useEffect, type ReactNode } from 'react';
 import { useAppState, useAppDispatch } from './app-context';
 import { useProjectStorage, useProjectStorageActions } from './project-storage-context';
