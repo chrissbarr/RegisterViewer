@@ -96,17 +96,18 @@ src/
       save-button.tsx           # Cloud save button with loading state
       share-button.tsx          # Share button (opens share dialog)
       share-dialog.tsx          # Share URL options (snapshot + cloud link)
-      saved-projects-dialog.tsx # List of saved cloud projects
       shared-project-banner.tsx # Banner when viewing a shared project
       ...
+    projects/
+      my-projects-dialog.tsx    # List of saved projects (local + cloud)
     viewer/  editor/  register-list/  # (unchanged)
   context/
     app-context.tsx             # React Context + useReducer state management
-    cloud-context.tsx           # Cloud project state (save/share/dirty tracking)
+    cloud-sync-context.tsx      # Cloud project state (save/share/dirty tracking)
   utils/
     api-client.ts               # Fetch wrapper for cloud API
     owner-token.ts              # Anonymous owner token generation + hashing
-    cloud-projects.ts           # Local project records in localStorage
+    cloud-operations.ts         # Cloud save/delete/visibility operations
     snapshot-url.ts             # Compressed snapshot URL encode/decode
     bitwise.ts  decode.ts  encode.ts  float.ts  fixed-point.ts
     validation.ts  storage.ts  seed-data.ts  ...
