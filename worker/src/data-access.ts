@@ -46,8 +46,10 @@ export async function getProject(kv: KVNamespace, id: string): Promise<StoredPro
  * This ensures the project data is always accessible even if the index write fails.
  */
 export async function putProject(kv: KVNamespace, project: StoredProject): Promise<void> {
-  await kv.put(projectKey(project.id), JSON.stringify(project));
-  await kv.put(ownerIndexKey(project.ownerTokenHash, project.id), '1');
+  await Promise.all([
+    kv.put(projectKey(project.id), JSON.stringify(project)),
+    kv.put(ownerIndexKey(project.ownerTokenHash, project.id), '1'),
+  ]);
 }
 
 /**
@@ -72,8 +74,10 @@ export async function touchLastAccessed(kv: KVNamespace, id: string, isoTimestam
  * This is idempotent — deleting a non-existent key is a no-op in KV.
  */
 export async function deleteProject(kv: KVNamespace, id: string, ownerTokenHash: string): Promise<void> {
-  await kv.delete(ownerIndexKey(ownerTokenHash, id));
-  await kv.delete(projectKey(id));
+  await Promise.all([
+    kv.delete(ownerIndexKey(ownerTokenHash, id)),
+    kv.delete(projectKey(id)),
+  ]);
 }
 
 /**
