@@ -83,15 +83,13 @@ npm run test:watch      # Watch mode
 npm run test:coverage   # Coverage report
 ```
 
-Test files:
-- `src/utils/bitwise.test.ts` — bit extraction, replacement, signed/unsigned conversion
-- `src/utils/float.test.ts` — IEEE 754 half/single/double encode/decode
-- `src/utils/fixed-point.test.ts` — Qm.n fixed-point encode/decode
-- `src/utils/decode.test.ts` — field decoding for all 5 field types
-- `src/utils/encode.test.ts` — field encoding for all 5 field types
-- `src/utils/validation.test.ts` — register/field validation, overlap detection
-- `src/utils/storage.test.ts` — serialization, localStorage, JSON import/export
-- `src/context/app-context.test.ts` — all reducer actions
+Test files live as `.test.ts`/`.test.tsx` siblings next to source files. Key test areas:
+
+- **Utilities** — bitwise, float, fixed-point, decode/encode, validation, storage, format, snapshot-url, owner-token, api-client, project-storage, cloud-project-loader, cloud-operations
+- **Context providers** — app-context (reducer), cloud-sync-context, project-storage-context, preferences-context
+- **Components** — app-loader, share-dialog, my-projects-dialog
+- **Hooks** — use-dirty-tracking, use-my-projects-actions, use-project-cloud-ops
+- **E2E (Playwright)** — project CRUD, cloud save/share/fork/delete, multi-tab, migration
 
 ## Project Structure
 
