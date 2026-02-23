@@ -15,6 +15,7 @@ const MANIFEST_KEY = 'register-viewer-manifest';
 const PROJECT_PREFIX = 'register-viewer-project:';
 const LEGACY_STATE_KEY = 'register-viewer-state';
 const LEGACY_PROJECTS_KEY = 'register-viewer-projects';
+export const ACTIVE_PROJECT_SESSION_KEY = 'register-viewer-active-project';
 
 /**
  * In-memory manifest cache to avoid repeated localStorage reads + JSON parses.

@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 
 // ---------------------------------------------------------------------------
-// Storage keys (must match src/utils/project-storage.ts & app-loader.tsx)
+// Storage keys (must match src/utils/project-storage.ts)
 // ---------------------------------------------------------------------------
 const PROJECT_PREFIX = 'register-viewer-project:';
 const ACTIVE_PROJECT_SESSION_KEY = 'register-viewer-active-project';

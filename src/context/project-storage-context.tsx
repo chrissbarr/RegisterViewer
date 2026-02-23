@@ -8,13 +8,12 @@ import {
   updateProjectMetadata,
   toProjectListEntry,
   getMostRecentProjectId,
+  ACTIVE_PROJECT_SESSION_KEY,
 } from '../utils/project-storage';
 import type { ProjectListEntry, StoredLocalProject } from '../types/project';
 import type { SerializedAppState } from '../types/register';
 import { ADDRESS_UNIT_BITS_DEFAULT } from '../types/register';
 import { deserializeState } from '../utils/storage';
-
-const ACTIVE_PROJECT_SESSION_KEY = 'register-viewer-active-project';
 
 interface ProjectStorageState {
   activeLocalId: string | null;

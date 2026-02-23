@@ -17,9 +17,8 @@ import {
   loadProject,
   createProject,
   getMostRecentProjectId,
+  ACTIVE_PROJECT_SESSION_KEY,
 } from '../utils/project-storage';
-
-const ACTIVE_PROJECT_SESSION_KEY = 'register-viewer-active-project';
 
 type LoaderState =
   | { phase: 'loading' }

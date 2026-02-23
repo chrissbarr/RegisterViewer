@@ -26,6 +26,7 @@ vi.mock('../utils/project-storage', () => ({
     isCloudSaved: e.cloudId !== null,
   })),
   getMostRecentProjectId: vi.fn(() => null),
+  ACTIVE_PROJECT_SESSION_KEY: 'register-viewer-active-project',
 }));
 
 vi.mock('../utils/storage', () => ({

@@ -44,6 +44,7 @@ vi.mock('../utils/project-storage', () => ({
   loadProject: vi.fn(() => null),
   createProject: vi.fn(() => 'new-local-id'),
   getMostRecentProjectId: vi.fn(() => null),
+  ACTIVE_PROJECT_SESSION_KEY: 'register-viewer-active-project',
 }));
 
 vi.mock('../context/app-context', () => ({
