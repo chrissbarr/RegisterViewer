@@ -586,7 +586,7 @@ describe('Worker handler integration tests', () => {
       expect(res.headers.get('Cache-Control')).toBe('private, no-store');
     });
 
-    it('unlisted project returns public, max-age=60', async () => {
+    it('unlisted project returns private, max-age=60', async () => {
       const id = await createProject({
         body: validProjectBody({ visibility: 'unlisted' }),
       });
@@ -594,7 +594,7 @@ describe('Worker handler integration tests', () => {
         origin: 'http://localhost:5173',
       });
       const res = await worker.fetch(req, env, ctx);
-      expect(res.headers.get('Cache-Control')).toBe('public, max-age=60');
+      expect(res.headers.get('Cache-Control')).toBe('private, max-age=60');
     });
 
     it('list endpoint returns private, no-store', async () => {

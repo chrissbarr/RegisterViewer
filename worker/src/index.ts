@@ -178,7 +178,7 @@ async function handleGet(
 
   const cacheControl = project.visibility === 'private'
     ? 'private, no-store'
-    : 'public, max-age=60';
+    : 'private, max-age=60';
 
   return jsonResponse(response, 200, {
     ...cors,
