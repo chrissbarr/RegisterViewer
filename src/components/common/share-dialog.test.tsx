@@ -20,6 +20,13 @@ vi.mock('../../context/app-context', () => ({
   })),
 }));
 
+vi.mock('../../context/project-storage-context', () => ({
+  useProjectStorage: vi.fn(() => ({
+    activeLocalId: null,
+    projects: [],
+  })),
+}));
+
 vi.mock('../../context/cloud-sync-context', () => ({
   useCloudSync: vi.fn(() => ({
     cloudId: null,
@@ -41,7 +48,6 @@ vi.mock('../../context/cloud-sync-context', () => ({
 
 vi.mock('../../utils/project-storage', () => ({
   loadProject: vi.fn(() => null),
-  loadManifest: vi.fn(() => ({ version: 1, projects: [] })),
   buildProjectUrl: vi.fn((id: string) => `https://example.com/#/p/${id}`),
 }));
 
@@ -62,7 +68,8 @@ vi.mock('../common/announcer', () => ({
 import { isCloudEnabled } from '../../utils/api-client';
 import { useAppState } from '../../context/app-context';
 import { useCloudSync, useCloudSyncActions } from '../../context/cloud-sync-context';
-import { loadProject, loadManifest } from '../../utils/project-storage';
+import { useProjectStorage } from '../../context/project-storage-context';
+import { loadProject } from '../../utils/project-storage';
 import { buildSnapshotUrl } from '../../utils/snapshot-url';
 import { deserializeState } from '../../utils/storage';
 
@@ -114,7 +121,7 @@ beforeEach(() => {
     setProjectVisibility: vi.fn(),
   });
   (loadProject as Mock).mockReturnValue(null);
-  (loadManifest as Mock).mockReturnValue({ version: 1, projects: [] });
+  (useProjectStorage as Mock).mockReturnValue({ activeLocalId: null, projects: [] });
   (buildSnapshotUrl as Mock).mockReturnValue('https://example.com/#data=abc123');
   (deserializeState as Mock).mockImplementation((data: unknown) => data);
 });
@@ -457,8 +464,8 @@ describe('ShareDialog', () => {
         setVisibility: vi.fn(),
         setProjectVisibility: vi.fn(),
       });
-      (loadManifest as Mock).mockReturnValue({
-        version: 1,
+      (useProjectStorage as Mock).mockReturnValue({
+        activeLocalId: 'local-123',
         projects: [
           {
             localId: 'local-123',
@@ -528,8 +535,8 @@ describe('ShareDialog', () => {
         setVisibility: vi.fn(),
         setProjectVisibility: vi.fn(),
       });
-      (loadManifest as Mock).mockReturnValue({
-        version: 1,
+      (useProjectStorage as Mock).mockReturnValue({
+        activeLocalId: 'local-123',
         projects: [
           {
             localId: 'local-123',
@@ -587,8 +594,8 @@ describe('ShareDialog', () => {
         setVisibility: vi.fn(),
         setProjectVisibility: vi.fn(),
       });
-      (loadManifest as Mock).mockReturnValue({
-        version: 1,
+      (useProjectStorage as Mock).mockReturnValue({
+        activeLocalId: 'local-123',
         projects: [
           {
             localId: 'local-err',
@@ -648,8 +655,8 @@ describe('ShareDialog', () => {
         setVisibility: vi.fn(),
         setProjectVisibility: mockSetProjectVisibility,
       });
-      (loadManifest as Mock).mockReturnValue({
-        version: 1,
+      (useProjectStorage as Mock).mockReturnValue({
+        activeLocalId: 'local-123',
         projects: [
           {
             localId: 'local-vis',
@@ -707,8 +714,8 @@ describe('ShareDialog', () => {
         setVisibility: vi.fn(),
         setProjectVisibility: vi.fn(),
       });
-      (loadManifest as Mock).mockReturnValue({
-        version: 1,
+      (useProjectStorage as Mock).mockReturnValue({
+        activeLocalId: 'local-123',
         projects: [
           {
             localId: 'local-vis-c',
@@ -867,8 +874,8 @@ describe('ShareDialog', () => {
 
     it('reads cloud info from manifest when projectLocalId is given (no cloud)', () => {
       (isCloudEnabled as Mock).mockReturnValue(true);
-      (loadManifest as Mock).mockReturnValue({
-        version: 1,
+      (useProjectStorage as Mock).mockReturnValue({
+        activeLocalId: 'local-123',
         projects: [
           {
             localId: 'local-789',
@@ -911,8 +918,8 @@ describe('ShareDialog', () => {
 
     it('reads cloud info from manifest when projectLocalId is given (with cloudId, private)', () => {
       (isCloudEnabled as Mock).mockReturnValue(true);
-      (loadManifest as Mock).mockReturnValue({
-        version: 1,
+      (useProjectStorage as Mock).mockReturnValue({
+        activeLocalId: 'local-123',
         projects: [
           {
             localId: 'local-cloud',
@@ -955,8 +962,8 @@ describe('ShareDialog', () => {
 
     it('reads cloud info from manifest when projectLocalId is given (with cloudId, unlisted)', () => {
       (isCloudEnabled as Mock).mockReturnValue(true);
-      (loadManifest as Mock).mockReturnValue({
-        version: 1,
+      (useProjectStorage as Mock).mockReturnValue({
+        activeLocalId: 'local-123',
         projects: [
           {
             localId: 'local-cloud-ul',
@@ -1010,8 +1017,8 @@ describe('ShareDialog', () => {
         setProjectVisibility: vi.fn(),
       });
       (isCloudEnabled as Mock).mockReturnValue(true);
-      (loadManifest as Mock).mockReturnValue({
-        version: 1,
+      (useProjectStorage as Mock).mockReturnValue({
+        activeLocalId: 'local-123',
         projects: [
           {
             localId: 'local-save',
@@ -1071,8 +1078,8 @@ describe('ShareDialog', () => {
         setProjectVisibility: mockSetProjectVisibility,
       });
       (isCloudEnabled as Mock).mockReturnValue(true);
-      (loadManifest as Mock).mockReturnValue({
-        version: 1,
+      (useProjectStorage as Mock).mockReturnValue({
+        activeLocalId: 'local-123',
         projects: [
           {
             localId: 'local-vis',

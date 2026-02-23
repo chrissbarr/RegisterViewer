@@ -6,7 +6,8 @@ import { useAppState } from '../../context/app-context';
 import { buildSnapshotUrl } from '../../utils/snapshot-url';
 import { isCloudEnabled } from '../../utils/api-client';
 import { useCloudSync, useCloudSyncActions } from '../../context/cloud-sync-context';
-import { loadProject, loadManifest, buildProjectUrl } from '../../utils/project-storage';
+import { useProjectStorage } from '../../context/project-storage-context';
+import { loadProject, buildProjectUrl } from '../../utils/project-storage';
 import { deserializeState } from '../../utils/storage';
 import type { AppState } from '../../types/register';
 
@@ -21,6 +22,7 @@ export function ShareDialog({ open, onClose, projectLocalId }: ShareDialogProps)
   const activeState = useAppState();
   const cloud = useCloudSync();
   const cloudActions = useCloudSyncActions();
+  const { projects } = useProjectStorage();
   const [showFirstTimePrompt, setShowFirstTimePrompt] = useState(false);
   const [isSavingByLocalId, setIsSavingByLocalId] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -49,15 +51,14 @@ export function ShareDialog({ open, onClose, projectLocalId }: ShareDialogProps)
     }
     // refreshKey forces re-read after save/visibility mutations
     void refreshKey;
-    const manifest = loadManifest();
-    const entry = manifest.projects.find(p => p.localId === projectLocalId);
+    const entry = projects.find(p => p.localId === projectLocalId);
     return {
       cloudId: entry?.cloudId ?? null,
       shareUrl: entry?.cloudId ? buildProjectUrl(entry.cloudId) : null,
       visibility: (entry?.visibility ?? 'private') as 'private' | 'unlisted',
       isSaving: isSavingByLocalId,
     };
-  }, [projectLocalId, cloud.cloudId, cloud.shareUrl, cloud.visibility, cloud.status, isSavingByLocalId, refreshKey]);
+  }, [projectLocalId, projects, cloud.cloudId, cloud.shareUrl, cloud.visibility, cloud.status, isSavingByLocalId, refreshKey]);
 
   const snapshotUrl = useMemo(() => {
     if (!open || !targetState) return null;
