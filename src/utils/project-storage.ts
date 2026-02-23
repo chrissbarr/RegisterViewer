@@ -275,30 +275,16 @@ function migrateLegacyState(): void {
 }
 
 /**
- * Migrate cloud ownership records from legacy key to new key.
- * The old key 'register-viewer-projects' collided with legacy cleanup,
- * so cloud ownership records now live under 'register-viewer-cloud-projects'.
+ * Migrate ownerTokens from legacy cloud-projects records into StoredLocalProject records.
+ * Reads from either the original key ('register-viewer-projects') or the intermediate
+ * key ('register-viewer-cloud-projects') — whichever exists — then cleans up both.
  */
-function migrateCloudOwnershipRecords(): void {
-  if (localStorage.getItem(CLOUD_PROJECTS_KEY)) return;
-  const legacyProjects = localStorage.getItem(LEGACY_PROJECTS_KEY);
-  if (!legacyProjects) return;
-  try {
-    const parsed = JSON.parse(legacyProjects);
-    if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].ownerToken) {
-      localStorage.setItem(CLOUD_PROJECTS_KEY, legacyProjects);
-    }
-  } catch {
-    // Corrupt data — discard
-  }
-}
-
-/** Migrate ownerTokens from cloud-projects records into StoredLocalProject records. */
 function migrateOwnerTokensToProjects(): void {
-  const cloudProjectsRaw = localStorage.getItem(CLOUD_PROJECTS_KEY);
-  if (!cloudProjectsRaw) return;
+  const raw = localStorage.getItem(LEGACY_PROJECTS_KEY)
+    ?? localStorage.getItem(CLOUD_PROJECTS_KEY);
+  if (!raw) return;
   try {
-    const records = JSON.parse(cloudProjectsRaw) as Array<{ id: string; ownerToken: string }>;
+    const records = JSON.parse(raw) as Array<{ id: string; ownerToken: string }>;
     if (Array.isArray(records)) {
       const manifest = loadManifest();
       for (const record of records) {
@@ -321,7 +307,7 @@ function migrateOwnerTokensToProjects(): void {
 /** Run migration from legacy storage format. Call once on startup. */
 export function runMigrationIfNeeded(): void {
   migrateLegacyState();
-  migrateCloudOwnershipRecords();
+  migrateOwnerTokensToProjects();
 
   // Clean up legacy keys unconditionally.
   // Note: LEGACY_TOKEN_KEY ('register-viewer-owner-token') is NOT removed
@@ -341,6 +327,4 @@ export function runMigrationIfNeeded(): void {
   if (manifest.projects.length !== before) {
     saveManifest(manifest);
   }
-
-  migrateOwnerTokensToProjects();
 }
