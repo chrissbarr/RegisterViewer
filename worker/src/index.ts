@@ -63,6 +63,53 @@ function errorResponse(message: string, status: number, extraHeaders: Record<str
 const ID_PATTERN = /^\/api\/projects\/([A-Za-z0-9]{12})$/;
 const COLLECTION_PATTERN = /^\/api\/projects\/?$/;
 
+// ---- Body reading ----
+
+async function readBodyWithLimit(
+  request: Request,
+  maxBytes: number,
+): Promise<{ ok: true; text: string } | { ok: false }> {
+  // Fast path: Content-Length header present and valid
+  const contentLength = request.headers.get('Content-Length');
+  if (contentLength && parseInt(contentLength, 10) > maxBytes) {
+    return { ok: false };
+  }
+
+  // Streaming read with size cap
+  const body = request.body;
+  if (!body) return { ok: true, text: '' };
+
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > maxBytes) {
+        await reader.cancel();
+        return { ok: false };
+      }
+      chunks.push(value);
+    }
+  } catch (err) {
+    await reader.cancel().catch(() => {});
+    throw err;
+  } finally {
+    reader.releaseLock();
+  }
+
+  const decoder = new TextDecoder();
+  let text = '';
+  for (const chunk of chunks) {
+    text += decoder.decode(chunk, { stream: true });
+  }
+  text += decoder.decode();
+  return { ok: true, text };
+}
+
 // ---- Handlers ----
 
 async function handleCreate(request: Request, env: Env, cors: Record<string, string>): Promise<Response> {
@@ -71,18 +118,14 @@ async function handleCreate(request: Request, env: Env, cors: Record<string, str
     return errorResponse('Missing or invalid Authorization header', 401, cors);
   }
 
-  const contentLength = request.headers.get('Content-Length');
-  if (contentLength && parseInt(contentLength, 10) > LIMITS.MAX_PAYLOAD_SIZE) {
+  const result = await readBodyWithLimit(request, LIMITS.MAX_PAYLOAD_SIZE);
+  if (!result.ok) {
     return errorResponse(`Request body must be at most ${LIMITS.MAX_PAYLOAD_SIZE} bytes`, 400, cors);
   }
 
   let body: { data?: unknown; visibility?: unknown };
   try {
-    const text = await request.text();
-    if (text.length > LIMITS.MAX_PAYLOAD_SIZE) {
-      return errorResponse(`Request body must be at most ${LIMITS.MAX_PAYLOAD_SIZE} bytes`, 400, cors);
-    }
-    body = JSON.parse(text);
+    body = JSON.parse(result.text);
   } catch {
     return errorResponse('Invalid JSON body', 400, cors);
   }
@@ -197,18 +240,14 @@ async function handleUpdate(request: Request, env: Env, id: string, cors: Record
     return errorResponse('Project not found', 404, cors);
   }
 
-  const contentLength = request.headers.get('Content-Length');
-  if (contentLength && parseInt(contentLength, 10) > LIMITS.MAX_PAYLOAD_SIZE) {
+  const result = await readBodyWithLimit(request, LIMITS.MAX_PAYLOAD_SIZE);
+  if (!result.ok) {
     return errorResponse(`Request body must be at most ${LIMITS.MAX_PAYLOAD_SIZE} bytes`, 400, cors);
   }
 
   let body: { data?: unknown; visibility?: unknown };
   try {
-    const text = await request.text();
-    if (text.length > LIMITS.MAX_PAYLOAD_SIZE) {
-      return errorResponse(`Request body must be at most ${LIMITS.MAX_PAYLOAD_SIZE} bytes`, 400, cors);
-    }
-    body = JSON.parse(text);
+    body = JSON.parse(result.text);
   } catch {
     return errorResponse('Invalid JSON body', 400, cors);
   }
@@ -257,18 +296,14 @@ async function handlePatch(request: Request, env: Env, id: string, cors: Record<
     return errorResponse('Project not found', 404, cors);
   }
 
-  const contentLength = request.headers.get('Content-Length');
-  if (contentLength && parseInt(contentLength, 10) > LIMITS.MAX_PAYLOAD_SIZE) {
+  const result = await readBodyWithLimit(request, LIMITS.MAX_PAYLOAD_SIZE);
+  if (!result.ok) {
     return errorResponse(`Request body must be at most ${LIMITS.MAX_PAYLOAD_SIZE} bytes`, 400, cors);
   }
 
   let body: { visibility?: unknown };
   try {
-    const text = await request.text();
-    if (text.length > LIMITS.MAX_PAYLOAD_SIZE) {
-      return errorResponse(`Request body must be at most ${LIMITS.MAX_PAYLOAD_SIZE} bytes`, 400, cors);
-    }
-    body = JSON.parse(text);
+    body = JSON.parse(result.text);
   } catch {
     return errorResponse('Invalid JSON body', 400, cors);
   }

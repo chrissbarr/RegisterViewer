@@ -341,6 +341,22 @@ describe('Worker handler integration tests', () => {
       expect(res.status).toBe(400);
     });
 
+    it('rejects POST with oversized body even without Content-Length header', async () => {
+      const oversizedBody = JSON.stringify({
+        data: validProjectBody().data,
+        padding: 'x'.repeat(LIMITS.MAX_PAYLOAD_SIZE),
+      });
+      const req = makeRequest('POST', '/api/projects', {
+        origin: 'http://localhost:5173',
+        token: VALID_TOKEN_HASH,
+        body: oversizedBody,
+      });
+      const res = await worker.fetch(req, env, ctx);
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toContain(`${LIMITS.MAX_PAYLOAD_SIZE}`);
+    });
+
     it('accepts POST with body within size limit', async () => {
       const req = makeRequest('POST', '/api/projects', {
         origin: 'http://localhost:5173',
