@@ -73,29 +73,27 @@ function recoverOrphanedProjects(manifest: ProjectManifest): ProjectManifest {
   return manifest;
 }
 
-/** Load the project manifest from cache or localStorage */
+/** Load the project manifest from cache or localStorage.
+ *  Returns a shallow copy so callers cannot accidentally mutate the cache. */
 export function loadManifest(): ProjectManifest {
-  if (cachedManifest) return cachedManifest;
-  try {
-    const raw = localStorage.getItem(MANIFEST_KEY);
-    if (!raw) {
-      const empty: ProjectManifest = { version: 1, projects: [] };
-      cachedManifest = empty;
-      return empty;
+  if (!cachedManifest) {
+    try {
+      const raw = localStorage.getItem(MANIFEST_KEY);
+      if (!raw) {
+        cachedManifest = { version: 1, projects: [] };
+      } else {
+        const parsed = JSON.parse(raw) as ProjectManifest;
+        if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.projects)) {
+          cachedManifest = { version: 1, projects: [] };
+        } else {
+          cachedManifest = parsed;
+        }
+      }
+    } catch {
+      cachedManifest = { version: 1, projects: [] };
     }
-    const parsed = JSON.parse(raw) as ProjectManifest;
-    if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.projects)) {
-      const empty: ProjectManifest = { version: 1, projects: [] };
-      cachedManifest = empty;
-      return empty;
-    }
-    cachedManifest = parsed;
-    return parsed;
-  } catch {
-    const empty: ProjectManifest = { version: 1, projects: [] };
-    cachedManifest = empty;
-    return empty;
   }
+  return { ...cachedManifest, projects: [...cachedManifest.projects] };
 }
 
 /** Save the manifest to localStorage and update cache */
