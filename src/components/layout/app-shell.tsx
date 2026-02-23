@@ -10,7 +10,6 @@ import { patchProjectState } from '../../utils/project-storage';
 import { Header } from './header';
 import { Sidebar } from './sidebar';
 import { MainPanel } from '../viewer/main-panel';
-import { SharedProjectBanner } from '../common/shared-project-banner';
 import { Toast } from '../common/toast';
 
 const SAVE_DEBOUNCE_MS = 300;
@@ -122,7 +121,6 @@ function AppShellInner({ cloudInit }: AppShellProps) {
   return (
     <div className="h-screen flex flex-col bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100">
       <Header />
-      <SharedProjectBanner />
       {cloud.error && (
         <Toast
           message={cloud.error}

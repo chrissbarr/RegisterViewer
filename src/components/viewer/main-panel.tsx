@@ -9,6 +9,7 @@ import { RegisterMapView } from './register-map-view';
 import type { RegisterDef } from '../../types/register';
 import { formatOffset } from '../../utils/format';
 import { validateRegisterDef } from '../../utils/validation';
+import { SharedProjectBanner } from '../common/shared-project-banner';
 
 type MainTab = 'register' | 'map';
 
@@ -88,6 +89,9 @@ export function MainPanel() {
   if (isEditing && activeDraft) {
     return (
       <main className="flex-1 overflow-y-auto p-4">
+        <div className="mb-3">
+          <SharedProjectBanner />
+        </div>
         <RegisterEditor
           draft={activeDraft}
           onDraftChange={handleDraftChange}
@@ -120,6 +124,9 @@ export function MainPanel() {
   if (activeTab === 'map' && hasOffsets) {
     return (
       <main className="flex-1 flex flex-col overflow-hidden">
+        <div className="mx-4 mt-3 shrink-0">
+          <SharedProjectBanner />
+        </div>
         {tabBar}
         <RegisterMapView
           registers={registers}
@@ -134,6 +141,9 @@ export function MainPanel() {
   if (!activeRegister) {
     return (
       <main className="flex-1 flex flex-col overflow-hidden">
+        <div className="mx-4 mt-3 shrink-0">
+          <SharedProjectBanner />
+        </div>
         {tabBar}
         <div className="flex-1 flex items-center justify-center text-gray-500 dark:text-gray-500">
           <div className="text-center">
@@ -147,6 +157,9 @@ export function MainPanel() {
 
   return (
     <main className="flex-1 flex flex-col overflow-hidden">
+      <div className="mx-4 mt-3 shrink-0">
+        <SharedProjectBanner />
+      </div>
       {tabBar}
       <div className="flex-1 overflow-y-auto p-4">
         <div className="bg-white dark:bg-gray-900/50 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-4 space-y-3">
