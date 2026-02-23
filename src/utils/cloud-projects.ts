@@ -10,7 +10,7 @@ export interface LocalProjectRecord {
   shareUrl: string;
 }
 
-const PROJECTS_STORAGE_KEY = 'register-viewer-projects';
+const PROJECTS_STORAGE_KEY = 'register-viewer-cloud-projects';
 
 export function loadLocalProjects(): LocalProjectRecord[] {
   try {

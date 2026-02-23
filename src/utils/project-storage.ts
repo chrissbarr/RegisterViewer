@@ -204,6 +204,24 @@ export function runMigrationIfNeeded(): void {
     }
   }
 
+  // Migrate cloud ownership records from legacy key to new key if needed.
+  // The old key 'register-viewer-projects' collided with the legacy cleanup,
+  // so cloud ownership records now live under 'register-viewer-cloud-projects'.
+  const CLOUD_PROJECTS_KEY = 'register-viewer-cloud-projects';
+  if (!localStorage.getItem(CLOUD_PROJECTS_KEY)) {
+    const legacyProjects = localStorage.getItem(LEGACY_PROJECTS_KEY);
+    if (legacyProjects) {
+      try {
+        const parsed = JSON.parse(legacyProjects);
+        if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].ownerToken) {
+          localStorage.setItem(CLOUD_PROJECTS_KEY, legacyProjects);
+        }
+      } catch {
+        // Corrupt data — discard
+      }
+    }
+  }
+
   // Clean up all legacy keys unconditionally (even if manifest already exists)
   localStorage.removeItem(LEGACY_STATE_KEY);
   localStorage.removeItem(LEGACY_PROJECTS_KEY);

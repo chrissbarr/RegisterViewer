@@ -229,7 +229,7 @@ describe('checkOwnership', () => {
         shareUrl: 'https://example.com/#/p/ABC123DEF456',
       },
     ];
-    localStorage.setItem('register-viewer-projects', JSON.stringify(projects));
+    localStorage.setItem('register-viewer-cloud-projects', JSON.stringify(projects));
 
     expect(checkOwnership('ABC123DEF456')).toBe(true);
   });
@@ -244,7 +244,7 @@ describe('checkOwnership', () => {
         shareUrl: 'https://example.com/#/p/ABC123DEF456',
       },
     ];
-    localStorage.setItem('register-viewer-projects', JSON.stringify(projects));
+    localStorage.setItem('register-viewer-cloud-projects', JSON.stringify(projects));
 
     expect(checkOwnership('XYZ789GHI012')).toBe(false);
   });
@@ -254,7 +254,7 @@ describe('checkOwnership', () => {
   });
 
   it('handles malformed localStorage gracefully', () => {
-    localStorage.setItem('register-viewer-projects', 'invalid json');
+    localStorage.setItem('register-viewer-cloud-projects', 'invalid json');
     expect(checkOwnership('ABC123DEF456')).toBe(false);
   });
 });
@@ -279,7 +279,7 @@ describe('getOwnerTokenForProject', () => {
         shareUrl: 'https://example.com/#/p/ABC123DEF456',
       },
     ];
-    localStorage.setItem('register-viewer-projects', JSON.stringify(projects));
+    localStorage.setItem('register-viewer-cloud-projects', JSON.stringify(projects));
 
     expect(getOwnerTokenForProject('ABC123DEF456')).toBe(token);
   });
@@ -294,7 +294,7 @@ describe('getOwnerTokenForProject', () => {
         shareUrl: 'https://example.com/#/p/ABC123DEF456',
       },
     ];
-    localStorage.setItem('register-viewer-projects', JSON.stringify(projects));
+    localStorage.setItem('register-viewer-cloud-projects', JSON.stringify(projects));
 
     expect(getOwnerTokenForProject('XYZ789GHI012')).toBeNull();
   });
@@ -331,7 +331,7 @@ describe('getOwnerTokenForProject', () => {
         shareUrl: 'https://example.com/#/p/PROJECT3',
       },
     ];
-    localStorage.setItem('register-viewer-projects', JSON.stringify(projects));
+    localStorage.setItem('register-viewer-cloud-projects', JSON.stringify(projects));
 
     expect(getOwnerTokenForProject('PROJECT1')).toBe(token1);
     expect(getOwnerTokenForProject('PROJECT2')).toBe(token2);
@@ -339,7 +339,7 @@ describe('getOwnerTokenForProject', () => {
   });
 
   it('handles malformed localStorage gracefully', () => {
-    localStorage.setItem('register-viewer-projects', 'invalid json');
+    localStorage.setItem('register-viewer-cloud-projects', 'invalid json');
     expect(getOwnerTokenForProject('ABC123DEF456')).toBeNull();
   });
 });

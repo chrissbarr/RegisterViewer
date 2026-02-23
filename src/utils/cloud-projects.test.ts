@@ -32,7 +32,7 @@ describe('loadLocalProjects', () => {
         shareUrl: 'https://example.com/#/p/ABC123DEF456',
       },
     ];
-    localStorage.setItem('register-viewer-projects', JSON.stringify(stored));
+    localStorage.setItem('register-viewer-cloud-projects', JSON.stringify(stored));
 
     const projects = loadLocalProjects();
     expect(projects).toEqual(stored);
@@ -55,7 +55,7 @@ describe('loadLocalProjects', () => {
         shareUrl: 'https://example.com/#/p/PROJECT2',
       },
     ];
-    localStorage.setItem('register-viewer-projects', JSON.stringify(stored));
+    localStorage.setItem('register-viewer-cloud-projects', JSON.stringify(stored));
 
     const projects = loadLocalProjects();
     expect(projects).toHaveLength(2);
@@ -63,19 +63,19 @@ describe('loadLocalProjects', () => {
   });
 
   it('returns empty array if localStorage contains invalid JSON', () => {
-    localStorage.setItem('register-viewer-projects', 'invalid json');
+    localStorage.setItem('register-viewer-cloud-projects', 'invalid json');
     const projects = loadLocalProjects();
     expect(projects).toEqual([]);
   });
 
   it('returns empty array if localStorage contains non-array', () => {
-    localStorage.setItem('register-viewer-projects', JSON.stringify({ not: 'array' }));
+    localStorage.setItem('register-viewer-cloud-projects', JSON.stringify({ not: 'array' }));
     const projects = loadLocalProjects();
     expect(projects).toEqual([]);
   });
 
   it('returns empty array if localStorage contains null', () => {
-    localStorage.setItem('register-viewer-projects', JSON.stringify(null));
+    localStorage.setItem('register-viewer-cloud-projects', JSON.stringify(null));
     const projects = loadLocalProjects();
     expect(projects).toEqual([]);
   });
@@ -109,7 +109,7 @@ describe('saveLocalProjects', () => {
 
     saveLocalProjects(projects);
 
-    const stored = localStorage.getItem('register-viewer-projects');
+    const stored = localStorage.getItem('register-viewer-cloud-projects');
     expect(stored).toBe(JSON.stringify(projects));
   });
 
@@ -123,7 +123,7 @@ describe('saveLocalProjects', () => {
         shareUrl: 'https://example.com/#/p/PROJECT1',
       },
     ];
-    localStorage.setItem('register-viewer-projects', JSON.stringify(initial));
+    localStorage.setItem('register-viewer-cloud-projects', JSON.stringify(initial));
 
     const updated: LocalProjectRecord[] = [
       {
@@ -136,14 +136,14 @@ describe('saveLocalProjects', () => {
     ];
     saveLocalProjects(updated);
 
-    const stored = localStorage.getItem('register-viewer-projects');
+    const stored = localStorage.getItem('register-viewer-cloud-projects');
     expect(stored).toBe(JSON.stringify(updated));
   });
 
   it('saves empty array', () => {
     saveLocalProjects([]);
 
-    const stored = localStorage.getItem('register-viewer-projects');
+    const stored = localStorage.getItem('register-viewer-cloud-projects');
     expect(stored).toBe(JSON.stringify([]));
   });
 
@@ -195,7 +195,7 @@ describe('addLocalProject', () => {
       savedAt: '2024-01-01T00:00:00Z',
       shareUrl: 'https://example.com/#/p/PROJECT1',
     };
-    localStorage.setItem('register-viewer-projects', JSON.stringify([existing]));
+    localStorage.setItem('register-viewer-cloud-projects', JSON.stringify([existing]));
 
     const newProject: LocalProjectRecord = {
       id: 'PROJECT2',
@@ -220,7 +220,7 @@ describe('addLocalProject', () => {
       savedAt: '2024-01-01T00:00:00Z',
       shareUrl: 'https://example.com/#/p/ABC123DEF456',
     };
-    localStorage.setItem('register-viewer-projects', JSON.stringify([original]));
+    localStorage.setItem('register-viewer-cloud-projects', JSON.stringify([original]));
 
     const updated: LocalProjectRecord = {
       id: 'ABC123DEF456',
@@ -252,7 +252,7 @@ describe('addLocalProject', () => {
       savedAt: '2024-01-02T00:00:00Z',
       shareUrl: 'https://example.com/#/p/PROJECT2',
     };
-    localStorage.setItem('register-viewer-projects', JSON.stringify([project1, project2]));
+    localStorage.setItem('register-viewer-cloud-projects', JSON.stringify([project1, project2]));
 
     const updated: LocalProjectRecord = {
       id: 'PROJECT1',
@@ -287,7 +287,7 @@ describe('removeLocalProject', () => {
       savedAt: '2024-01-01T00:00:00Z',
       shareUrl: 'https://example.com/#/p/ABC123DEF456',
     };
-    localStorage.setItem('register-viewer-projects', JSON.stringify([project]));
+    localStorage.setItem('register-viewer-cloud-projects', JSON.stringify([project]));
 
     removeLocalProject('ABC123DEF456');
 
@@ -318,7 +318,7 @@ describe('removeLocalProject', () => {
       shareUrl: 'https://example.com/#/p/PROJECT3',
     };
     localStorage.setItem(
-      'register-viewer-projects',
+      'register-viewer-cloud-projects',
       JSON.stringify([project1, project2, project3]),
     );
 
@@ -339,7 +339,7 @@ describe('removeLocalProject', () => {
       savedAt: '2024-01-01T00:00:00Z',
       shareUrl: 'https://example.com/#/p/ABC123DEF456',
     };
-    localStorage.setItem('register-viewer-projects', JSON.stringify([project]));
+    localStorage.setItem('register-viewer-cloud-projects', JSON.stringify([project]));
 
     removeLocalProject('NONEXISTENT');
 
@@ -373,7 +373,7 @@ describe('updateLocalProject', () => {
       savedAt: '2024-01-01T00:00:00Z',
       shareUrl: 'https://example.com/#/p/ABC123DEF456',
     };
-    localStorage.setItem('register-viewer-projects', JSON.stringify([project]));
+    localStorage.setItem('register-viewer-cloud-projects', JSON.stringify([project]));
 
     updateLocalProject('ABC123DEF456', { name: 'Updated Name' });
 
@@ -391,7 +391,7 @@ describe('updateLocalProject', () => {
       savedAt: '2024-01-01T00:00:00Z',
       shareUrl: 'https://example.com/#/p/ABC123DEF456',
     };
-    localStorage.setItem('register-viewer-projects', JSON.stringify([project]));
+    localStorage.setItem('register-viewer-cloud-projects', JSON.stringify([project]));
 
     updateLocalProject('ABC123DEF456', {
       name: 'New Name',
@@ -419,7 +419,7 @@ describe('updateLocalProject', () => {
       savedAt: '2024-01-02T00:00:00Z',
       shareUrl: 'https://example.com/#/p/PROJECT2',
     };
-    localStorage.setItem('register-viewer-projects', JSON.stringify([project1, project2]));
+    localStorage.setItem('register-viewer-cloud-projects', JSON.stringify([project1, project2]));
 
     updateLocalProject('PROJECT2', { name: 'Updated Project 2' });
 
@@ -437,7 +437,7 @@ describe('updateLocalProject', () => {
       savedAt: '2024-01-01T00:00:00Z',
       shareUrl: 'https://example.com/#/p/ABC123DEF456',
     };
-    localStorage.setItem('register-viewer-projects', JSON.stringify([project]));
+    localStorage.setItem('register-viewer-cloud-projects', JSON.stringify([project]));
 
     updateLocalProject('NONEXISTENT', { name: 'New Name' });
 
@@ -477,7 +477,7 @@ describe('updateLocalProject', () => {
         shareUrl: 'https://example.com/#/p/PROJECT3',
       },
     ];
-    localStorage.setItem('register-viewer-projects', JSON.stringify(projects));
+    localStorage.setItem('register-viewer-cloud-projects', JSON.stringify(projects));
 
     updateLocalProject('PROJECT2', { name: 'Updated Project 2' });
 
