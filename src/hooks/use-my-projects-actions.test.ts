@@ -342,6 +342,7 @@ describe('useMyProjectsActions', () => {
 
   describe('recovery key', () => {
     it('handleDownloadRecoveryKey creates download link', () => {
+      vi.useFakeTimers();
       const onClose = vi.fn();
       const { result } = renderHook(() => useMyProjectsActions(true, onClose));
 
@@ -364,10 +365,13 @@ describe('useMyProjectsActions', () => {
       });
 
       expect(mockClick).toHaveBeenCalled();
+      // revokeObjectURL is deferred via setTimeout to ensure the browser initiates the download
+      vi.runAllTimers();
       expect(mockRevokeObjectURL).toHaveBeenCalledWith('blob:url');
       expect(mockAnnounce).toHaveBeenCalledWith('Recovery key downloaded');
 
       mockCreateElement.mockRestore();
+      vi.useRealTimers();
     });
 
     it('announces error when no token available', () => {

@@ -17,6 +17,7 @@ import { useEditContext } from '../../context/edit-context';
 import { usePreferences, usePreferencesActions } from '../../context/preferences-context';
 import { useProjectStorageActions } from '../../context/project-storage-context';
 import { exportToJson, importFromJson, type ImportWarning } from '../../utils/storage';
+import { triggerFileDownload } from '../../utils/file-download';
 import { isCloudEnabled } from '../../utils/api-client';
 
 type ImportFeedback =
@@ -76,16 +77,11 @@ export function Header() {
   function handleExport() {
     const json = exportToJson(state, true);
     const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
     const slug = state.project?.title
       ?.toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-|-$/g, '');
-    a.download = slug ? `${slug}.json` : 'register-definitions.json';
-    a.click();
-    URL.revokeObjectURL(url);
+    triggerFileDownload(blob, slug ? `${slug}.json` : 'register-definitions.json');
   }
 
   function handleImport() {

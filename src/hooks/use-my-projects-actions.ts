@@ -4,6 +4,7 @@ import { useCloudSyncActions } from '../context/cloud-sync-context';
 import { useAnnounce } from '../components/common/announcer';
 import { isCloudEnabled } from '../utils/api-client';
 import { getOrCreateOwnerToken } from '../utils/owner-token';
+import { triggerFileDownload } from '../utils/file-download';
 import { friendlyErrorMessage } from '../utils/friendly-error';
 import type { Visibility } from '../types/project';
 import { projectDisplayName } from '../utils/project-helpers';
@@ -149,12 +150,7 @@ export function useMyProjectsActions(
         ownerToken: token,
       };
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'register-viewer-recovery-key.json';
-      a.click();
-      URL.revokeObjectURL(url);
+      triggerFileDownload(blob, 'register-viewer-recovery-key.json');
       announce('Recovery key downloaded');
     } catch {
       announce('Failed to download recovery key', { politeness: 'assertive' });
