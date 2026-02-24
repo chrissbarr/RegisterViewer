@@ -77,6 +77,12 @@ export type ValidationResult =
   | { valid: true }
   | { valid: false; error: string };
 
+// ---- Error Messages ----
+
+export const ERRORS = {
+  INVALID_VISIBILITY: 'visibility must be "private" or "unlisted"',
+} as const;
+
 // ---- Limits ----
 
 export const LIMITS = {

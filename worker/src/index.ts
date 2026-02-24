@@ -1,5 +1,5 @@
 import type { Env, StoredProject, CreateProjectResponse, GetProjectResponse, UpdateProjectResponse, ListProjectsResponse } from './types';
-import { LIMITS } from './types';
+import { ERRORS, LIMITS } from './types';
 import { getProject, putProject, deleteProject, listProjectsByOwner, isValidVisibility, touchLastAccessed } from './data-access';
 import { validateProjectData } from './validation';
 import { extractTokenHash, isOwner } from './auth';
@@ -148,7 +148,7 @@ async function handleCreate(request: Request, env: Env, cors: Record<string, str
   let visibility: 'private' | 'unlisted' = 'private';
   if (parsed.body.visibility !== undefined) {
     if (!isValidVisibility(parsed.body.visibility)) {
-      return errorResponse('visibility must be "private" or "unlisted"', 400, cors);
+      return errorResponse(ERRORS.INVALID_VISIBILITY, 400, cors);
     }
     visibility = parsed.body.visibility;
   }
@@ -261,7 +261,7 @@ async function handleUpdate(request: Request, env: Env, id: string, cors: Record
   let visibility = existing.visibility;
   if (parsed.body.visibility !== undefined) {
     if (!isValidVisibility(parsed.body.visibility)) {
-      return errorResponse('visibility must be "private" or "unlisted"', 400, cors);
+      return errorResponse(ERRORS.INVALID_VISIBILITY, 400, cors);
     }
     visibility = parsed.body.visibility;
   }
@@ -303,7 +303,7 @@ async function handlePatch(request: Request, env: Env, id: string, cors: Record<
     return errorResponse('PATCH requires a visibility field', 400, cors);
   }
   if (!isValidVisibility(parsed.body.visibility)) {
-    return errorResponse('visibility must be "private" or "unlisted"', 400, cors);
+    return errorResponse(ERRORS.INVALID_VISIBILITY, 400, cors);
   }
 
   const now = new Date().toISOString();
