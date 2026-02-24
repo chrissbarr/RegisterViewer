@@ -12,8 +12,7 @@ import {
 } from '../utils/project-storage';
 import type { ProjectListEntry, StoredLocalProject } from '../types/project';
 import type { SerializedAppState } from '../types/register';
-import { ADDRESS_UNIT_BITS_DEFAULT } from '../types/register';
-import { deserializeState } from '../utils/storage';
+import { deserializeState, EMPTY_SERIALIZED_STATE } from '../utils/storage';
 
 interface ProjectStorageState {
   activeLocalId: string | null;
@@ -83,15 +82,7 @@ export function ProjectStorageProvider({ children, initialLocalId }: ProjectStor
   }, []);
 
   const createNewProject = useCallback((name?: string, initialState?: SerializedAppState) => {
-    const state = initialState ?? {
-      registers: [],
-      activeRegisterId: null,
-      registerValues: {},
-      mapTableWidth: 32,
-      mapShowGaps: true,
-      mapSortDescending: false,
-      addressUnitBits: ADDRESS_UNIT_BITS_DEFAULT,
-    };
+    const state = initialState ?? EMPTY_SERIALIZED_STATE;
     const localId = createProjectInStorage(state, name);
     setActiveAndPersist(localId);
     refreshProjectList();

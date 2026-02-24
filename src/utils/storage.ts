@@ -2,6 +2,17 @@ import { ADDRESS_UNIT_BITS_DEFAULT, ADDRESS_UNIT_BITS_VALUES, MAP_TABLE_WIDTH_VA
 import { sanitizeField, sanitizeRegisterDef } from './sanitize';
 import { validateRegisterDef, MAX_REGISTER_WIDTH, type ValidationError } from './validation';
 
+/** Empty serialized state with all defaults — used when creating a new blank project. */
+export const EMPTY_SERIALIZED_STATE: SerializedAppState = {
+  registers: [],
+  activeRegisterId: null,
+  registerValues: {},
+  mapTableWidth: 32,
+  mapShowGaps: true,
+  mapSortDescending: false,
+  addressUnitBits: ADDRESS_UNIT_BITS_DEFAULT,
+};
+
 export function serializeState(state: AppState): SerializedAppState {
   const serializedValues: Record<string, string> = {};
   for (const [id, value] of Object.entries(state.registerValues)) {

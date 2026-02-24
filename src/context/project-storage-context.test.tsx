@@ -29,9 +29,13 @@ vi.mock('../utils/project-storage', () => ({
   ACTIVE_PROJECT_SESSION_KEY: 'register-viewer-active-project',
 }));
 
-vi.mock('../utils/storage', () => ({
-  deserializeState: vi.fn((data: unknown) => data),
-}));
+vi.mock('../utils/storage', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../utils/storage')>();
+  return {
+    deserializeState: vi.fn((data: unknown) => data),
+    EMPTY_SERIALIZED_STATE: actual.EMPTY_SERIALIZED_STATE,
+  };
+});
 
 import {
   loadManifest,
