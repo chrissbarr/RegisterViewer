@@ -46,6 +46,7 @@ let mockCloudEnabled = false;
 
 vi.mock('../../context/app-context', () => ({
   useAppDispatch: () => vi.fn(),
+  useAppState: () => ({ registers: [], registerValues: {}, activeRegisterId: null, project: null, addressUnitBits: 8 }),
 }));
 
 vi.mock('../../context/project-storage-context', () => ({
@@ -98,10 +99,20 @@ vi.mock('../../utils/project-storage', () => ({
   getStorageUsage: () => ({ percent: 10, used: 100, total: 1000 }),
   loadProject: vi.fn(() => null),
   saveProject: vi.fn(),
+  buildProjectUrl: vi.fn(() => ''),
 }));
 
 vi.mock('../../utils/storage', () => ({
   sanitizeProjectMetadata: vi.fn((m: unknown) => m),
+  deserializeState: vi.fn(() => null),
+}));
+
+vi.mock('../../utils/snapshot-url', () => ({
+  buildSnapshotUrl: vi.fn(() => ''),
+}));
+
+vi.mock('../../utils/friendly-error', () => ({
+  friendlyErrorMessage: vi.fn((err: unknown) => String(err)),
 }));
 
 vi.mock('../../utils/api-client', () => ({

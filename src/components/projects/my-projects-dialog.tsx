@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback } from 'react';
 import { Plus, TriangleAlert } from 'lucide-react';
 import { Dialog } from '../common/dialog';
 import { ProjectSettingsDialog } from '../common/project-settings-dialog';
+import { ShareDialog } from '../common/share-dialog';
 import { ProjectListItem } from './project-list-item';
 import { MyProjectsCloudDialogs } from './my-projects-cloud-dialogs';
 import { useProjectStorage } from '../../context/project-storage-context';
@@ -17,16 +18,15 @@ const STORAGE_WARNING_PERCENT = 80;
 interface MyProjectsDialogProps {
   open: boolean;
   onClose: () => void;
-  onShareProject?: (localId: string) => void;
 }
 
-export function MyProjectsDialog({ open, onClose, onShareProject }: MyProjectsDialogProps) {
+export function MyProjectsDialog({ open, onClose }: MyProjectsDialogProps) {
   const { activeLocalId, projects } = useProjectStorage();
   const cloudState = useCloudSync();
 
   const [filter, setFilter] = useState('');
   const resetFilter = useCallback(() => setFilter(''), []);
-  const actions = useMyProjectsActions(open, onClose, onShareProject, resetFilter);
+  const actions = useMyProjectsActions(open, onClose, resetFilter);
 
   // Compute storage percent when dialog is open (derived, no state needed)
   const storagePercent = useMemo(
@@ -175,6 +175,12 @@ export function MyProjectsDialog({ open, onClose, onShareProject }: MyProjectsDi
       onClose={actions.dismissSettings}
       initialData={actions.settingsInitialData}
       onSave={actions.handleSettingsSave}
+    />
+
+    <ShareDialog
+      open={actions.shareLocalId !== null}
+      projectLocalId={actions.shareLocalId}
+      onClose={actions.dismissShare}
     />
 
     <MyProjectsCloudDialogs

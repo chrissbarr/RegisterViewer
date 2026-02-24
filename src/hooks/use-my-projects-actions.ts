@@ -22,7 +22,6 @@ interface CloudDeleteConfirm {
 export function useMyProjectsActions(
   open: boolean,
   onClose: () => void,
-  onShareProject?: (localId: string) => void,
   onBeforeNewProject?: () => void,
 ) {
   const { activeLocalId, projects } = useProjectStorage();
@@ -37,6 +36,7 @@ export function useMyProjectsActions(
   const [cloudError, setCloudError] = useState<string | null>(null);
   const [saveToCloudLocalId, setSaveToCloudLocalId] = useState<string | null>(null);
   const [settingsLocalId, setSettingsLocalId] = useState<string | null>(null);
+  const [shareLocalId, setShareLocalId] = useState<string | null>(null);
 
   // Refresh project list and sync with cloud when dialog opens;
   // cleanup clears stale IDs when dialog closes.
@@ -50,7 +50,11 @@ export function useMyProjectsActions(
         setCloudError(friendlyErrorMessage(err, 'Failed to sync cloud projects.'));
       });
     }
-    return () => setStaleCloudIds([]);
+    return () => {
+      setStaleCloudIds([]);
+      setSettingsLocalId(null);
+      setShareLocalId(null);
+    };
   }, [open, refreshProjectList, syncCloudProjects]);
 
   const handleNewProject = useCallback(() => {
@@ -79,8 +83,8 @@ export function useMyProjectsActions(
   }, [renameProject, announce]);
 
   const handleShare = useCallback((localId: string) => {
-    onShareProject?.(localId);
-  }, [onShareProject]);
+    setShareLocalId(localId);
+  }, []);
 
   const handleChangeVisibility = useCallback(async (localId: string, v: Visibility) => {
     try {
@@ -207,6 +211,7 @@ export function useMyProjectsActions(
   }, [settingsLocalId, activeLocalId, dispatch, refreshProjectList, announce]);
 
   const dismissSettings = useCallback(() => setSettingsLocalId(null), []);
+  const dismissShare = useCallback(() => setShareLocalId(null), []);
 
   const dismissCloudError = useCallback(() => setCloudError(null), []);
   const dismissSaveToCloud = useCallback(() => setSaveToCloudLocalId(null), []);
@@ -231,6 +236,10 @@ export function useMyProjectsActions(
     settingsInitialData,
     handleSettingsSave,
     dismissSettings,
+
+    // Share
+    shareLocalId,
+    dismissShare,
 
     // Cloud confirmation state + actions
     handleConfirmSaveToCloud,

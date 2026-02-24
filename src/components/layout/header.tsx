@@ -9,7 +9,6 @@ import { Toast } from '../common/toast';
 import { GithubIcon, MenuIcon } from 'lucide-react';
 import { SaveButton } from '../common/save-button';
 import { ShareButton } from '../common/share-button';
-import { ShareDialog } from '../common/share-dialog';
 import { MyProjectsDialog } from '../projects/my-projects-dialog';
 import { GITHUB_URL } from '../../constants';
 import { useAppState, useAppDispatch } from '../../context/app-context';
@@ -37,7 +36,6 @@ export function Header() {
   const [aboutOpen, setAboutOpen] = useState(false);
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   const [myProjectsOpen, setMyProjectsOpen] = useState(false);
-  const [shareProjectLocalId, setShareProjectLocalId] = useState<string | null>(null);
   const [importFeedback, setImportFeedback] = useState<ImportFeedback | null>(null);
   const { createNewProject, switchProject } = useProjectStorageActions();
 
@@ -186,18 +184,6 @@ export function Header() {
           <MyProjectsDialog
             open={myProjectsOpen}
             onClose={() => setMyProjectsOpen(false)}
-            onShareProject={(localId) => {
-              setMyProjectsOpen(false);
-              setShareProjectLocalId(localId);
-            }}
-          />
-          <ShareDialog
-            open={shareProjectLocalId !== null}
-            projectLocalId={shareProjectLocalId}
-            onClose={() => {
-              setShareProjectLocalId(null);
-              setMyProjectsOpen(true);
-            }}
           />
         </div>
       </header>

@@ -116,7 +116,7 @@ describe('useMyProjectsActions', () => {
     it('handleNewProject creates, switches, announces, and closes', () => {
       const onClose = vi.fn();
       const onBeforeNew = vi.fn();
-      const { result } = renderHook(() => useMyProjectsActions(true, onClose, undefined, onBeforeNew));
+      const { result } = renderHook(() => useMyProjectsActions(true, onClose, onBeforeNew));
 
       act(() => {
         result.current.handleNewProject();
@@ -179,16 +179,32 @@ describe('useMyProjectsActions', () => {
   });
 
   describe('share', () => {
-    it('handleShare calls onShareProject callback', () => {
+    it('handleShare sets shareLocalId', () => {
       const onClose = vi.fn();
-      const onShare = vi.fn();
-      const { result } = renderHook(() => useMyProjectsActions(true, onClose, onShare));
+      const { result } = renderHook(() => useMyProjectsActions(true, onClose));
+
+      expect(result.current.shareLocalId).toBeNull();
 
       act(() => {
         result.current.handleShare('local-1');
       });
 
-      expect(onShare).toHaveBeenCalledWith('local-1');
+      expect(result.current.shareLocalId).toBe('local-1');
+    });
+
+    it('dismissShare clears shareLocalId', () => {
+      const onClose = vi.fn();
+      const { result } = renderHook(() => useMyProjectsActions(true, onClose));
+
+      act(() => {
+        result.current.handleShare('local-1');
+      });
+      expect(result.current.shareLocalId).toBe('local-1');
+
+      act(() => {
+        result.current.dismissShare();
+      });
+      expect(result.current.shareLocalId).toBeNull();
     });
   });
 
