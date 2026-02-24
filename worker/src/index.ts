@@ -128,6 +128,34 @@ async function readAndParseJson<T = Record<string, unknown>>(
   }
 }
 
+// ---- Auth + ownership ----
+
+/**
+ * Verify that the request has a valid auth token and that the token
+ * owns the project with the given ID.
+ *
+ * Returns the stored project on success, or an error Response on failure.
+ * Follows the same discriminated-union pattern as `readAndParseJson`.
+ */
+async function requireOwnership(
+  request: Request,
+  env: Env,
+  id: string,
+  cors: Record<string, string>,
+): Promise<{ ok: true; project: StoredProject } | { ok: false; response: Response }> {
+  const tokenHash = extractTokenHash(request);
+  if (!tokenHash) {
+    return { ok: false, response: errorResponse('Missing or invalid Authorization header', 401, cors) };
+  }
+
+  const existing = await getProject(env.PROJECTS, id);
+  if (!existing || !isOwner(tokenHash, existing)) {
+    return { ok: false, response: errorResponse('Project not found', 404, cors) };
+  }
+
+  return { ok: true, project: existing };
+}
+
 // ---- Handlers ----
 
 async function handleCreate(request: Request, env: Env, cors: Record<string, string>): Promise<Response> {
@@ -239,15 +267,9 @@ async function handleGet(
 }
 
 async function handleUpdate(request: Request, env: Env, id: string, cors: Record<string, string>): Promise<Response> {
-  const tokenHash = extractTokenHash(request);
-  if (!tokenHash) {
-    return errorResponse('Missing or invalid Authorization header', 401, cors);
-  }
-
-  const existing = await getProject(env.PROJECTS, id);
-  if (!existing || !isOwner(tokenHash, existing)) {
-    return errorResponse('Project not found', 404, cors);
-  }
+  const auth = await requireOwnership(request, env, id, cors);
+  if (!auth.ok) return auth.response;
+  const existing = auth.project;
 
   const parsed = await readAndParseJson<{ data?: unknown; visibility?: unknown }>(request, cors);
   if (!parsed.ok) return parsed.response;
@@ -286,15 +308,9 @@ async function handleUpdate(request: Request, env: Env, id: string, cors: Record
 }
 
 async function handlePatch(request: Request, env: Env, id: string, cors: Record<string, string>): Promise<Response> {
-  const tokenHash = extractTokenHash(request);
-  if (!tokenHash) {
-    return errorResponse('Missing or invalid Authorization header', 401, cors);
-  }
-
-  const existing = await getProject(env.PROJECTS, id);
-  if (!existing || !isOwner(tokenHash, existing)) {
-    return errorResponse('Project not found', 404, cors);
-  }
+  const auth = await requireOwnership(request, env, id, cors);
+  if (!auth.ok) return auth.response;
+  const existing = auth.project;
 
   const parsed = await readAndParseJson<{ visibility?: unknown }>(request, cors);
   if (!parsed.ok) return parsed.response;
@@ -324,17 +340,10 @@ async function handlePatch(request: Request, env: Env, id: string, cors: Record<
 }
 
 async function handleDelete(request: Request, env: Env, id: string, cors: Record<string, string>): Promise<Response> {
-  const tokenHash = extractTokenHash(request);
-  if (!tokenHash) {
-    return errorResponse('Missing or invalid Authorization header', 401, cors);
-  }
+  const auth = await requireOwnership(request, env, id, cors);
+  if (!auth.ok) return auth.response;
 
-  const existing = await getProject(env.PROJECTS, id);
-  if (!existing || !isOwner(tokenHash, existing)) {
-    return errorResponse('Project not found', 404, cors);
-  }
-
-  await deleteProject(env.PROJECTS, id, existing.ownerTokenHash);
+  await deleteProject(env.PROJECTS, id, auth.project.ownerTokenHash);
 
   return new Response(null, { status: 204, headers: cors });
 }
