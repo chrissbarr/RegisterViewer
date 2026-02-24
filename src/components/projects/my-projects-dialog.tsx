@@ -30,8 +30,7 @@ export function MyProjectsDialog({ open, onClose, onShareProject }: MyProjectsDi
   // Compute storage percent when dialog is open (derived, no state needed)
   const storagePercent = useMemo(
     () => (open ? getStorageUsage().percent : 0),
-    // Recalculate when open changes or projects change (after delete)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `getStorageUsage` is a stable import; `projects` triggers recalc after delete
     [open, projects],
   );
 

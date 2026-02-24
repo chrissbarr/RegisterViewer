@@ -52,7 +52,7 @@ export function RegisterMapView({
     if (scrollTopRef != null && scrollTopRef.current > 0 && scrollRef.current) {
       scrollRef.current.scrollTop = scrollTopRef.current;
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- mount-only: restores scroll position from ref, must not re-run on ref changes
 
   const overlapWarnings = useMemo(
     () => getRegisterOverlapWarnings(registers, addressUnitBits),

@@ -99,7 +99,7 @@ export function RegisterEditor({
     const registersWithDraft = registers.map((r) => (r.id === draft.id ? draft : r));
     return getRegisterOverlapWarnings(registersWithDraft, addressUnitBits)
       .filter((w) => w.registerIds.includes(draft.id));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally omits full `draft` object to only recompute on offset/width changes, not every keystroke
   }, [registers, draft.id, draft.offset, draft.width, addressUnitBits]);
 
   return (
