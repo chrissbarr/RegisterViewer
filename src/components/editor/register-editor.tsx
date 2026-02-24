@@ -7,6 +7,7 @@ import { JsonConfigEditor } from './json-config-editor';
 import { formatOffset } from '../../utils/format';
 import { MAX_REGISTER_WIDTH, getFieldWarnings, getRegisterOverlapWarnings } from '../../utils/validation';
 import { inputClass, inputClassSans } from './editor-styles';
+import { AlertBanner } from '../common/alert-banner';
 
 interface Props {
   draft: RegisterDef;
@@ -126,25 +127,25 @@ export function RegisterEditor({
       </div>
 
       {dirtyCount > 1 && (
-        <div className="mb-3 px-3 py-2 rounded-md bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-sm text-amber-700 dark:text-amber-300">
+        <AlertBanner className="mb-3 px-3 py-2 text-sm">
           {dirtyCount} registers with unsaved changes
-        </div>
+        </AlertBanner>
       )}
 
       {saveErrors && saveErrors.length > 0 && (
-        <div className="mb-3 px-3 py-2 rounded-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-sm text-red-700 dark:text-red-300 space-y-1">
+        <AlertBanner variant="red" className="mb-3 px-3 py-2 text-sm space-y-1">
           {saveErrors.map((err, i) => (
             <p key={i}>{err}</p>
           ))}
-        </div>
+        </AlertBanner>
       )}
 
       {draftOverlapWarnings.length > 0 && (
-        <div className="mb-3 px-3 py-2 rounded-md bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-sm text-amber-700 dark:text-amber-300 space-y-1">
+        <AlertBanner className="mb-3 px-3 py-2 text-sm space-y-1">
           {draftOverlapWarnings.map((w, i) => (
             <p key={i}>{'\u26A0'} {w.message}</p>
           ))}
-        </div>
+        </AlertBanner>
       )}
 
       {/* Register metadata */}
@@ -255,9 +256,9 @@ export function RegisterEditor({
       {tab === 'gui' ? (
         <div>
           {fieldWarnings.length > 0 && (
-            <div className="mb-3 px-3 py-2 rounded-md bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-sm text-amber-700 dark:text-amber-300 space-y-1">
+            <AlertBanner className="mb-3 px-3 py-2 text-sm space-y-1">
               {fieldWarnings.map((w, i) => <p key={i}>⚠ {w.message}</p>)}
-            </div>
+            </AlertBanner>
           )}
           {/* Field list */}
           <div className="space-y-2 mb-3">

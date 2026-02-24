@@ -21,6 +21,7 @@ import { RegisterListItem } from './register-list-item';
 import { RegisterListItemOverlay } from './register-list-item-overlay';
 import { getRegisterOverlapWarnings } from '../../utils/validation';
 import { offsetHexDigits } from '../../utils/format';
+import { AlertBanner } from '../common/alert-banner';
 
 export function RegisterList() {
   const { registers, activeRegisterId, addressUnitBits } = useAppState();
@@ -99,11 +100,11 @@ export function RegisterList() {
         onDragCancel={handleDragCancel}
       >
         {overlapWarnings.length > 0 && (
-          <div className="mx-2 mt-2 px-2 py-1.5 rounded bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 text-xs text-amber-700 dark:text-amber-300 space-y-0.5">
+          <AlertBanner className="mx-2 mt-2 px-2 py-1.5 text-xs space-y-0.5">
             {overlapWarnings.map((w, i) => (
               <p key={i}>{'\u26A0'} {w.message}</p>
             ))}
-          </div>
+          </AlertBanner>
         )}
         <SortableContext items={registers.map((r) => r.id)} strategy={verticalListSortingStrategy}>
           <ul className="p-2 space-y-1">
