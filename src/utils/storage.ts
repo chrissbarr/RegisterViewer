@@ -89,7 +89,12 @@ export function sanitizeProjectMetadata(raw: unknown): ProjectMetadata | undefin
   const result: ProjectMetadata = {};
   if (typeof obj.title === 'string' && obj.title.trim()) result.title = obj.title.trim();
   if (typeof obj.description === 'string' && obj.description.trim()) result.description = obj.description.trim();
-  if (typeof obj.date === 'string' && obj.date.trim()) result.date = obj.date.trim();
+  if (typeof obj.date === 'string' && obj.date.trim()) {
+    const d = obj.date.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(d) && !isNaN(Date.parse(d))) {
+      result.date = d;
+    }
+  }
   if (typeof obj.authorEmail === 'string' && obj.authorEmail.trim()) result.authorEmail = obj.authorEmail.trim();
   if (typeof obj.link === 'string' && obj.link.trim()) result.link = obj.link.trim();
   return Object.keys(result).length > 0 ? result : undefined;

@@ -97,10 +97,9 @@ export function ProjectSettingsDialog({ open, onClose, initialData, onSave }: Pr
             Date
           </span>
           <input
-            type="text"
+            type="date"
             value={draft.date ?? ''}
             onChange={(e) => update({ date: e.target.value })}
-            placeholder="e.g. 2026-02-18"
             className={inputClass}
           />
         </label>

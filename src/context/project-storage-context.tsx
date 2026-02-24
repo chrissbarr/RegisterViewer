@@ -82,7 +82,12 @@ export function ProjectStorageProvider({ children, initialLocalId }: ProjectStor
   }, []);
 
   const createNewProject = useCallback((name?: string, initialState?: SerializedAppState) => {
-    const state = initialState ?? EMPTY_SERIALIZED_STATE;
+    let state = initialState ?? EMPTY_SERIALIZED_STATE;
+    // Autofill date to today if not already set
+    if (!state.project?.date) {
+      const today = new Date().toISOString().slice(0, 10);
+      state = { ...state, project: { ...state.project, date: today } };
+    }
     const localId = createProjectInStorage(state, name);
     setActiveAndPersist(localId);
     refreshProjectList();
