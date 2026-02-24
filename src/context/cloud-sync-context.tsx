@@ -37,16 +37,12 @@ import {
   checkOwnership,
 } from '../utils/owner-token';
 import { friendlyErrorMessage } from '../utils/friendly-error';
-import {
-  loadManifest,
-  saveManifest,
-  buildProjectUrl,
-} from '../utils/project-storage';
+import { buildProjectUrl } from '../utils/project-storage';
 import { setCloudUrl, clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock } from '../utils/cloud-url';
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
 import { useDirtyTracking } from '../hooks/use-dirty-tracking';
 import { useProjectCloudOps } from '../hooks/use-project-cloud-ops';
-import { DEFAULT_PROJECT_NAME, type Visibility } from '../types/project';
+import { DEFAULT_PROJECT_NAME, type ProjectListEntry, type Visibility } from '../types/project';
 
 interface CloudSyncState {
   cloudId: string | null;
@@ -93,6 +89,47 @@ interface InternalCloudSyncState {
   visibility: Visibility;
 }
 
+interface SyncPatch {
+  localId: string;
+  cloudSavedAt?: string;
+  visibility?: Visibility;
+}
+
+function computeSyncPatches(
+  projects: ProjectListEntry[],
+  serverProjects: ReadonlyArray<{ id: string; visibility: Visibility; updatedAt: string }>,
+): { patches: SyncPatch[]; staleCloudIds: string[] } {
+  const serverMap = new Map(serverProjects.map(p => [p.id, p]));
+  const patches: SyncPatch[] = [];
+  const staleCloudIds: string[] = [];
+
+  for (const entry of projects) {
+    if (!entry.cloudId) continue;
+
+    const serverProject = serverMap.get(entry.cloudId);
+    if (serverProject) {
+      const patch: SyncPatch = { localId: entry.localId };
+      let hasUpdate = false;
+
+      const serverTime = new Date(serverProject.updatedAt).getTime();
+      const localCloudTime = entry.cloudSavedAt ? new Date(entry.cloudSavedAt).getTime() : 0;
+      if (serverTime > localCloudTime) {
+        patch.cloudSavedAt = serverProject.updatedAt;
+        hasUpdate = true;
+      }
+      if (serverProject.visibility !== entry.visibility) {
+        patch.visibility = serverProject.visibility;
+        hasUpdate = true;
+      }
+      if (hasUpdate) patches.push(patch);
+    } else {
+      staleCloudIds.push(entry.cloudId);
+    }
+  }
+
+  return { patches, staleCloudIds };
+}
+
 const initialInternalState: InternalCloudSyncState = {
   cloudId: null,
   isOwner: false,
@@ -129,11 +166,16 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
 
   const [internal, setInternal] = useState<InternalCloudSyncState>(initialInternalState);
 
-  // Track activeLocalId in a ref for use in async callbacks
+  // Track activeLocalId and projects in refs for use in async callbacks
   const activeLocalIdRef = useRef(activeLocalId);
   useEffect(() => {
     activeLocalIdRef.current = activeLocalId;
   }, [activeLocalId]);
+
+  const projectsRef = useRef(projects);
+  useEffect(() => {
+    projectsRef.current = projects;
+  });
 
   // Dirty tracking (generation-counter pattern)
   const { isDirty, dataVersionRef, needsVersionSyncRef, mutationLockRef } = useDirtyTracking(
@@ -153,8 +195,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!activeLocalId) return;
-    const manifest = loadManifest();
-    const entry = manifest.projects.find(p => p.localId === activeLocalId);
+    const entry = projectsRef.current.find(p => p.localId === activeLocalId);
     const cloudId = entry?.cloudId ?? null;
     // Skip if cloudId hasn't changed (avoid redundant state updates)
     if (cloudId === internalRef.current.cloudId) return;
@@ -394,33 +435,14 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     const tokenHash = await hashOwnerToken(ownerToken);
     const response = await listProjects(tokenHash);
 
-    const serverMap = new Map(response.projects.map(p => [p.id, p]));
-    const manifest = loadManifest();
-    let updatedCount = 0;
-    const staleCloudIds: string[] = [];
+    const { patches, staleCloudIds } = computeSyncPatches(projectsRef.current, response.projects);
 
-    for (const entry of manifest.projects) {
-      if (!entry.cloudId) continue;
-
-      const serverProject = serverMap.get(entry.cloudId);
-      if (serverProject) {
-        const serverTime = new Date(serverProject.updatedAt).getTime();
-        const localCloudTime = entry.cloudSavedAt ? new Date(entry.cloudSavedAt).getTime() : 0;
-        if (serverTime > localCloudTime) {
-          entry.cloudSavedAt = serverProject.updatedAt;
-          updatedCount++;
-        }
-        if (serverProject.visibility !== entry.visibility) {
-          entry.visibility = serverProject.visibility;
-        }
-      } else {
-        staleCloudIds.push(entry.cloudId);
-      }
+    for (const { localId, ...updates } of patches) {
+      updateCloudMetadata(localId, updates);
     }
 
-    saveManifest(manifest);
-    return { updatedCount, staleCloudIds };
-  }, []);
+    return { updatedCount: patches.length, staleCloudIds };
+  }, [updateCloudMetadata]);
 
   // By-localId cloud operations (used by My Projects dialog)
   const projectOps = useProjectCloudOps({

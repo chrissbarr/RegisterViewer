@@ -38,9 +38,6 @@ export function useMyProjectsActions(
     if (isCloudEnabled()) {
       syncCloudProjects().then((result) => {
         setStaleCloudIds(result.staleCloudIds);
-        if (result.updatedCount > 0 || result.staleCloudIds.length > 0) {
-          refreshProjectList();
-        }
       }).catch((err) => {
         setCloudError(friendlyErrorMessage(err, 'Failed to sync cloud projects.'));
       });

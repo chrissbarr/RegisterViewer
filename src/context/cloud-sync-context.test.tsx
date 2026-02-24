@@ -92,7 +92,6 @@ import {
 } from '../utils/owner-token';
 import {
   loadManifest,
-  saveManifest,
   loadProject,
   updateProjectMetadata,
 } from '../utils/project-storage';
@@ -907,7 +906,11 @@ describe('CloudSyncProvider', () => {
 
       expect(syncResult!.updatedCount).toBe(1);
       expect(syncResult!.staleCloudIds).toHaveLength(0);
-      expect(saveManifest).toHaveBeenCalled();
+      // Patches are routed through updateCloudMetadata → updateProjectMetadata
+      expect(updateProjectMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, {
+        cloudSavedAt: '2024-02-01T00:00:00Z',
+        visibility: 'unlisted',
+      });
     });
 
     it('detects stale cloud IDs not present on server', async () => {
