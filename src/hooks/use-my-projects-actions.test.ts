@@ -71,31 +71,33 @@ beforeEach(() => {
   mockCloudActions.syncCloudProjects.mockResolvedValue({ staleCloudIds: [], updatedCount: 0 });
 });
 
+/** Render the hook with open=true and flush the async cloud-sync useEffect. */
+async function renderWithOpen(onClose: ReturnType<typeof vi.fn>, onBeforeNew?: () => void) {
+  const result = renderHook(() => useMyProjectsActions(true, onClose, onBeforeNew));
+  await act(async () => {}); // flush async useEffect (syncCloudProjects promise)
+  return result;
+}
+
 describe('useMyProjectsActions', () => {
   describe('dialog lifecycle', () => {
-    it('refreshes project list when dialog opens', () => {
+    it('refreshes project list when dialog opens', async () => {
       const onClose = vi.fn();
-      renderHook(() => useMyProjectsActions(true, onClose));
+      await renderWithOpen(onClose);
       expect(mockStorageActions.refreshProjectList).toHaveBeenCalled();
     });
 
     it('syncs cloud projects when open and cloud enabled', async () => {
       const onClose = vi.fn();
-      renderHook(() => useMyProjectsActions(true, onClose));
-      // syncCloudProjects is called in useEffect
-      await vi.waitFor(() => {
-        expect(mockCloudActions.syncCloudProjects).toHaveBeenCalled();
-      });
+      await renderWithOpen(onClose);
+      expect(mockCloudActions.syncCloudProjects).toHaveBeenCalled();
     });
 
     it('sets cloudError when syncCloudProjects fails', async () => {
       mockCloudActions.syncCloudProjects.mockRejectedValue(new Error('Network error'));
       const onClose = vi.fn();
-      const { result } = renderHook(() => useMyProjectsActions(true, onClose));
+      const { result } = await renderWithOpen(onClose);
 
-      await vi.waitFor(() => {
-        expect(result.current.cloudError).toBe('Network error');
-      });
+      expect(result.current.cloudError).toBe('Network error');
     });
 
     it('does not sync cloud when cloud is disabled', () => {
@@ -113,10 +115,10 @@ describe('useMyProjectsActions', () => {
   });
 
   describe('project CRUD', () => {
-    it('handleNewProject creates, switches, announces, and closes', () => {
+    it('handleNewProject creates, switches, announces, and closes', async () => {
       const onClose = vi.fn();
       const onBeforeNew = vi.fn();
-      const { result } = renderHook(() => useMyProjectsActions(true, onClose, onBeforeNew));
+      const { result } = await renderWithOpen(onClose, onBeforeNew);
 
       act(() => {
         result.current.handleNewProject();
@@ -129,9 +131,9 @@ describe('useMyProjectsActions', () => {
       expect(onClose).toHaveBeenCalled();
     });
 
-    it('handleOpen switches project and closes dialog', () => {
+    it('handleOpen switches project and closes dialog', async () => {
       const onClose = vi.fn();
-      const { result } = renderHook(() => useMyProjectsActions(true, onClose));
+      const { result } = await renderWithOpen(onClose);
 
       act(() => {
         result.current.handleOpen('local-1');
@@ -142,9 +144,9 @@ describe('useMyProjectsActions', () => {
       expect(onClose).toHaveBeenCalled();
     });
 
-    it('handleDelete removes project and announces with name', () => {
+    it('handleDelete removes project and announces with name', async () => {
       const onClose = vi.fn();
-      const { result } = renderHook(() => useMyProjectsActions(true, onClose));
+      const { result } = await renderWithOpen(onClose);
 
       act(() => {
         result.current.handleDelete('local-1');
@@ -154,9 +156,9 @@ describe('useMyProjectsActions', () => {
       expect(mockAnnounce).toHaveBeenCalledWith('Project "Project A" deleted');
     });
 
-    it('handleDelete uses fallback name for unknown project', () => {
+    it('handleDelete uses fallback name for unknown project', async () => {
       const onClose = vi.fn();
-      const { result } = renderHook(() => useMyProjectsActions(true, onClose));
+      const { result } = await renderWithOpen(onClose);
 
       act(() => {
         result.current.handleDelete('unknown-id');
@@ -165,9 +167,9 @@ describe('useMyProjectsActions', () => {
       expect(mockAnnounce).toHaveBeenCalledWith(`Project "${DEFAULT_PROJECT_NAME}" deleted`);
     });
 
-    it('handleRename renames and announces', () => {
+    it('handleRename renames and announces', async () => {
       const onClose = vi.fn();
-      const { result } = renderHook(() => useMyProjectsActions(true, onClose));
+      const { result } = await renderWithOpen(onClose);
 
       act(() => {
         result.current.handleRename('local-1', 'New Name');
@@ -179,9 +181,9 @@ describe('useMyProjectsActions', () => {
   });
 
   describe('share', () => {
-    it('handleShare sets shareLocalId', () => {
+    it('handleShare sets shareLocalId', async () => {
       const onClose = vi.fn();
-      const { result } = renderHook(() => useMyProjectsActions(true, onClose));
+      const { result } = await renderWithOpen(onClose);
 
       expect(result.current.shareLocalId).toBeNull();
 
@@ -192,9 +194,9 @@ describe('useMyProjectsActions', () => {
       expect(result.current.shareLocalId).toBe('local-1');
     });
 
-    it('dismissShare clears shareLocalId', () => {
+    it('dismissShare clears shareLocalId', async () => {
       const onClose = vi.fn();
-      const { result } = renderHook(() => useMyProjectsActions(true, onClose));
+      const { result } = await renderWithOpen(onClose);
 
       act(() => {
         result.current.handleShare('local-1');
@@ -212,7 +214,7 @@ describe('useMyProjectsActions', () => {
     it('handleChangeVisibility sets visibility and announces', async () => {
       const onClose = vi.fn();
       mockCloudActions.setProjectVisibility.mockResolvedValue(undefined);
-      const { result } = renderHook(() => useMyProjectsActions(true, onClose));
+      const { result } = await renderWithOpen(onClose);
 
       await act(async () => {
         await result.current.handleChangeVisibility('local-1', 'unlisted');
@@ -225,7 +227,7 @@ describe('useMyProjectsActions', () => {
     it('handleChangeVisibility sets cloudError on failure', async () => {
       const onClose = vi.fn();
       mockCloudActions.setProjectVisibility.mockRejectedValue(new Error('Network fail'));
-      const { result } = renderHook(() => useMyProjectsActions(true, onClose));
+      const { result } = await renderWithOpen(onClose);
 
       await act(async () => {
         await result.current.handleChangeVisibility('local-1', 'unlisted');
@@ -236,9 +238,9 @@ describe('useMyProjectsActions', () => {
   });
 
   describe('save to cloud flow', () => {
-    it('handleSaveToCloud opens confirmation', () => {
+    it('handleSaveToCloud opens confirmation', async () => {
       const onClose = vi.fn();
-      const { result } = renderHook(() => useMyProjectsActions(true, onClose));
+      const { result } = await renderWithOpen(onClose);
 
       act(() => {
         result.current.handleSaveToCloud('local-1');
@@ -250,7 +252,7 @@ describe('useMyProjectsActions', () => {
     it('handleConfirmSaveToCloud saves and announces', async () => {
       const onClose = vi.fn();
       mockCloudActions.saveProjectToCloud.mockResolvedValue(undefined);
-      const { result } = renderHook(() => useMyProjectsActions(true, onClose));
+      const { result } = await renderWithOpen(onClose);
 
       act(() => {
         result.current.handleSaveToCloud('local-1');
@@ -268,7 +270,7 @@ describe('useMyProjectsActions', () => {
     it('handleConfirmSaveToCloud sets cloudError on failure', async () => {
       const onClose = vi.fn();
       mockCloudActions.saveProjectToCloud.mockRejectedValue(new Error('Save failed'));
-      const { result } = renderHook(() => useMyProjectsActions(true, onClose));
+      const { result } = await renderWithOpen(onClose);
 
       act(() => {
         result.current.handleSaveToCloud('local-1');
@@ -281,9 +283,9 @@ describe('useMyProjectsActions', () => {
       expect(result.current.cloudError).toBe('Save failed');
     });
 
-    it('dismissSaveToCloud clears confirmation', () => {
+    it('dismissSaveToCloud clears confirmation', async () => {
       const onClose = vi.fn();
-      const { result } = renderHook(() => useMyProjectsActions(true, onClose));
+      const { result } = await renderWithOpen(onClose);
 
       act(() => {
         result.current.handleSaveToCloud('local-1');
@@ -298,9 +300,9 @@ describe('useMyProjectsActions', () => {
   });
 
   describe('cloud delete flow', () => {
-    it('handleRemoveFromCloud opens delete confirmation for cloud projects', () => {
+    it('handleRemoveFromCloud opens delete confirmation for cloud projects', async () => {
       const onClose = vi.fn();
-      const { result } = renderHook(() => useMyProjectsActions(true, onClose));
+      const { result } = await renderWithOpen(onClose);
 
       act(() => {
         result.current.handleRemoveFromCloud('local-1');
@@ -309,9 +311,9 @@ describe('useMyProjectsActions', () => {
       expect(result.current.isDeleteCloudConfirmOpen).toBe(true);
     });
 
-    it('handleRemoveFromCloud does nothing for non-cloud projects', () => {
+    it('handleRemoveFromCloud does nothing for non-cloud projects', async () => {
       const onClose = vi.fn();
-      const { result } = renderHook(() => useMyProjectsActions(true, onClose));
+      const { result } = await renderWithOpen(onClose);
 
       act(() => {
         result.current.handleRemoveFromCloud('local-2');
@@ -323,7 +325,7 @@ describe('useMyProjectsActions', () => {
     it('handleConfirmCloudDelete deletes and announces', async () => {
       const onClose = vi.fn();
       mockCloudActions.deleteProjectFromCloud.mockResolvedValue(undefined);
-      const { result } = renderHook(() => useMyProjectsActions(true, onClose));
+      const { result } = await renderWithOpen(onClose);
 
       act(() => {
         result.current.handleRemoveFromCloud('local-1');
@@ -338,9 +340,9 @@ describe('useMyProjectsActions', () => {
       expect(result.current.isDeleteCloudConfirmOpen).toBe(false);
     });
 
-    it('dismissDeleteCloudConfirm clears confirmation', () => {
+    it('dismissDeleteCloudConfirm clears confirmation', async () => {
       const onClose = vi.fn();
-      const { result } = renderHook(() => useMyProjectsActions(true, onClose));
+      const { result } = await renderWithOpen(onClose);
 
       act(() => {
         result.current.handleRemoveFromCloud('local-1');
@@ -355,9 +357,9 @@ describe('useMyProjectsActions', () => {
   });
 
   describe('unlink cloud', () => {
-    it('handleUnlinkCloud unlinks and announces', () => {
+    it('handleUnlinkCloud unlinks and announces', async () => {
       const onClose = vi.fn();
-      const { result } = renderHook(() => useMyProjectsActions(true, onClose));
+      const { result } = await renderWithOpen(onClose);
 
       act(() => {
         result.current.handleUnlinkCloud('local-1');
@@ -370,10 +372,10 @@ describe('useMyProjectsActions', () => {
   });
 
   describe('recovery key', () => {
-    it('handleDownloadRecoveryKey creates download link', () => {
+    it('handleDownloadRecoveryKey creates download link', async () => {
       vi.useFakeTimers();
       const onClose = vi.fn();
-      const { result } = renderHook(() => useMyProjectsActions(true, onClose));
+      const { result } = await renderWithOpen(onClose);
 
       // Mock createElement AFTER renderHook so jsdom can set up the test component
       const mockClick = vi.fn();
@@ -403,10 +405,10 @@ describe('useMyProjectsActions', () => {
       vi.useRealTimers();
     });
 
-    it('announces error when no token available', () => {
+    it('announces error when no token available', async () => {
       (getOrCreateOwnerToken as Mock).mockReturnValue(null);
       const onClose = vi.fn();
-      const { result } = renderHook(() => useMyProjectsActions(true, onClose));
+      const { result } = await renderWithOpen(onClose);
 
       act(() => {
         result.current.handleDownloadRecoveryKey();
@@ -420,7 +422,7 @@ describe('useMyProjectsActions', () => {
     it('dismissCloudError clears error', async () => {
       const onClose = vi.fn();
       mockCloudActions.setProjectVisibility.mockRejectedValue(new Error('err'));
-      const { result } = renderHook(() => useMyProjectsActions(true, onClose));
+      const { result } = await renderWithOpen(onClose);
 
       await act(async () => {
         await result.current.handleChangeVisibility('local-1', 'unlisted');
