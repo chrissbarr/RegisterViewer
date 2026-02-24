@@ -13,8 +13,7 @@ import { Sidebar } from './sidebar';
 import { MainPanel } from '../viewer/main-panel';
 import { Toast } from '../common/toast';
 import { ToastPortalProvider } from '../../context/toast-portal-context';
-
-const SAVE_DEBOUNCE_MS = 300;
+import { SAVE_DEBOUNCE_MS } from '../../constants';
 
 interface AppShellProps {
   cloudInit?: { projectId: string; isOwner: boolean };

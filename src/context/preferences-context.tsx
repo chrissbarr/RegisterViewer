@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo, type ReactNode } from 'react';
 import { loadPreferences, savePreferences } from '../utils/global-preferences';
 import { SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MAX } from '../types/register';
+import { SAVE_DEBOUNCE_MS } from '../constants';
 
 interface PreferencesState {
   theme: 'light' | 'dark';
@@ -17,8 +18,6 @@ interface PreferencesActions {
 
 const PreferencesStateContext = createContext<PreferencesState | null>(null);
 const PreferencesActionsContext = createContext<PreferencesActions | null>(null);
-
-const SAVE_DEBOUNCE_MS = 300;
 
 export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [prefs, setPrefs] = useState<PreferencesState>(() => {
