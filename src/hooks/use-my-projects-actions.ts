@@ -1,11 +1,15 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useProjectStorage, useProjectStorageActions } from '../context/project-storage-context';
+import { useAppDispatch } from '../context/app-context';
 import { useCloudSyncActions } from '../context/cloud-sync-context';
 import { useAnnounce } from '../components/common/announcer';
 import { isCloudEnabled } from '../utils/api-client';
 import { getOrCreateOwnerToken } from '../utils/owner-token';
 import { triggerFileDownload } from '../utils/file-download';
 import { friendlyErrorMessage } from '../utils/friendly-error';
+import { loadProject, saveProject } from '../utils/project-storage';
+import { sanitizeProjectMetadata } from '../utils/storage';
+import type { ProjectSettingsData } from '../components/common/project-settings-dialog';
 import type { Visibility } from '../types/project';
 import { projectDisplayName } from '../utils/project-helpers';
 
@@ -21,15 +25,18 @@ export function useMyProjectsActions(
   onShareProject?: (localId: string) => void,
   onBeforeNewProject?: () => void,
 ) {
-  const { projects } = useProjectStorage();
+  const { activeLocalId, projects } = useProjectStorage();
   const { createNewProject, switchProject, deleteLocalProject, renameProject, refreshProjectList } = useProjectStorageActions();
   const { setProjectVisibility, syncCloudProjects, deleteProjectFromCloud, unlinkCloudProject, saveProjectToCloud } = useCloudSyncActions();
   const announce = useAnnounce();
+
+  const dispatch = useAppDispatch();
 
   const [staleCloudIds, setStaleCloudIds] = useState<string[]>([]);
   const [deleteCloudConfirm, setDeleteCloudConfirm] = useState<CloudDeleteConfirm | null>(null);
   const [cloudError, setCloudError] = useState<string | null>(null);
   const [saveToCloudLocalId, setSaveToCloudLocalId] = useState<string | null>(null);
+  const [settingsLocalId, setSettingsLocalId] = useState<string | null>(null);
 
   // Refresh project list and sync with cloud when dialog opens;
   // cleanup clears stale IDs when dialog closes.
@@ -157,6 +164,50 @@ export function useMyProjectsActions(
     }
   }, [announce]);
 
+  const handleSettings = useCallback((localId: string) => {
+    setSettingsLocalId(localId);
+  }, []);
+
+  const settingsInitialData = useMemo((): ProjectSettingsData => {
+    if (!settingsLocalId) return { metadata: {}, addressUnitBits: 8 };
+    const project = loadProject(settingsLocalId);
+    if (!project) return { metadata: {}, addressUnitBits: 8 };
+    return {
+      metadata: project.state.project ?? {},
+      addressUnitBits: project.state.addressUnitBits ?? 8,
+    };
+  }, [settingsLocalId]);
+
+  const handleSettingsSave = useCallback((data: ProjectSettingsData) => {
+    if (!settingsLocalId) return;
+    const project = loadProject(settingsLocalId);
+    if (!project) return;
+
+    const sanitized = sanitizeProjectMetadata(data.metadata);
+    // Title from settings overrides the manifest name; if cleared, keep existing name
+    saveProject({
+      ...project,
+      name: sanitized?.title ?? project.name,
+      state: {
+        ...project.state,
+        project: sanitized,
+        addressUnitBits: data.addressUnitBits,
+      },
+    });
+
+    // If editing the active project, also update AppState
+    if (settingsLocalId === activeLocalId) {
+      dispatch({ type: 'SET_PROJECT_METADATA', project: sanitized });
+      dispatch({ type: 'SET_ADDRESS_UNIT_BITS', addressUnitBits: data.addressUnitBits });
+    }
+
+    refreshProjectList();
+    announce('Project settings saved');
+    setSettingsLocalId(null);
+  }, [settingsLocalId, activeLocalId, dispatch, refreshProjectList, announce]);
+
+  const dismissSettings = useCallback(() => setSettingsLocalId(null), []);
+
   const dismissCloudError = useCallback(() => setCloudError(null), []);
   const dismissSaveToCloud = useCallback(() => setSaveToCloudLocalId(null), []);
   const dismissDeleteCloudConfirm = useCallback(() => setDeleteCloudConfirm(null), []);
@@ -173,6 +224,13 @@ export function useMyProjectsActions(
     handleRemoveFromCloud,
     handleUnlinkCloud,
     handleDownloadRecoveryKey,
+
+    // Settings
+    handleSettings,
+    settingsLocalId,
+    settingsInitialData,
+    handleSettingsSave,
+    dismissSettings,
 
     // Cloud confirmation state + actions
     handleConfirmSaveToCloud,

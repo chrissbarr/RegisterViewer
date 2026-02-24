@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import { Plus, TriangleAlert } from 'lucide-react';
 import { Dialog } from '../common/dialog';
+import { ProjectSettingsDialog } from '../common/project-settings-dialog';
 import { ProjectListItem } from './project-list-item';
 import { MyProjectsCloudDialogs } from './my-projects-cloud-dialogs';
 import { useProjectStorage } from '../../context/project-storage-context';
@@ -137,6 +138,7 @@ export function MyProjectsDialog({ open, onClose, onShareProject }: MyProjectsDi
                 isActive={project.localId === activeLocalId}
                 isStaleCloud={project.cloudId !== null && actions.staleCloudIds.includes(project.cloudId)}
                 onOpen={actions.handleOpen}
+                onSettings={actions.handleSettings}
                 onShare={actions.handleShare}
                 onDelete={actions.handleDelete}
                 onRename={actions.handleRename}
@@ -167,6 +169,13 @@ export function MyProjectsDialog({ open, onClose, onShareProject }: MyProjectsDi
         )}
       </div>
     </Dialog>
+
+    <ProjectSettingsDialog
+      open={actions.settingsLocalId !== null}
+      onClose={actions.dismissSettings}
+      initialData={actions.settingsInitialData}
+      onSave={actions.handleSettingsSave}
+    />
 
     <MyProjectsCloudDialogs
       isSaveToCloudOpen={actions.isSaveToCloudOpen}

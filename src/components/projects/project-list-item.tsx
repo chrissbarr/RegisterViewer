@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { TriangleAlert, CloudUpload, CloudOff, FolderOpen, Link, Trash2 } from 'lucide-react';
+import { TriangleAlert, CloudUpload, CloudOff, FolderOpen, Settings, Link, Trash2 } from 'lucide-react';
 import type { ProjectListEntry, Visibility } from '../../types/project';
 import { formatRelativeTime } from '../../utils/format';
 import { projectDisplayName } from '../../utils/project-helpers';
@@ -18,6 +18,7 @@ interface ProjectListItemProps {
   onRename: (localId: string, name: string) => void;
   onChangeVisibility?: (localId: string, v: Visibility) => void;
   onUnlinkCloud?: (localId: string) => void;
+  onSettings: (localId: string) => void;
   onSaveToCloud?: (localId: string) => void;
   onRemoveFromCloud?: (localId: string) => void;
   isSavingToCloud?: boolean;
@@ -33,6 +34,7 @@ export function ProjectListItem({
   onRename,
   onChangeVisibility,
   onUnlinkCloud,
+  onSettings,
   onSaveToCloud,
   onRemoveFromCloud,
   isSavingToCloud,
@@ -163,6 +165,17 @@ export function ProjectListItem({
                 <FolderOpen size={16} aria-hidden="true" />
               </button>
             )}
+            <button
+              onClick={() => onSettings(project.localId)}
+              title={`Project settings for ${displayName}`}
+              aria-label={`Project settings for ${displayName}`}
+              className="p-1 rounded text-gray-400 dark:text-gray-500
+                hover:text-blue-600 dark:hover:text-blue-400
+                hover:bg-gray-100 dark:hover:bg-gray-700
+                transition-colors"
+            >
+              <Settings size={16} aria-hidden="true" />
+            </button>
             <button
               onClick={() => onShare(project.localId)}
               title={`Share project ${displayName}`}

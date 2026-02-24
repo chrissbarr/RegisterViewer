@@ -44,6 +44,10 @@ let mockProjects: ProjectListEntry[] = [];
 let mockActiveLocalId: string | null = null;
 let mockCloudEnabled = false;
 
+vi.mock('../../context/app-context', () => ({
+  useAppDispatch: () => vi.fn(),
+}));
+
 vi.mock('../../context/project-storage-context', () => ({
   useProjectStorage: () => ({
     activeLocalId: mockActiveLocalId,
@@ -92,6 +96,12 @@ vi.mock('../common/announcer', () => ({
 
 vi.mock('../../utils/project-storage', () => ({
   getStorageUsage: () => ({ percent: 10, used: 100, total: 1000 }),
+  loadProject: vi.fn(() => null),
+  saveProject: vi.fn(),
+}));
+
+vi.mock('../../utils/storage', () => ({
+  sanitizeProjectMetadata: vi.fn((m: unknown) => m),
 }));
 
 vi.mock('../../utils/api-client', () => ({

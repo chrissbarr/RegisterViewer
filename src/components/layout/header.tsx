@@ -160,6 +160,11 @@ export function Header() {
           <ProjectSettingsDialog
             open={projectSettingsOpen}
             onClose={() => setProjectSettingsOpen(false)}
+            initialData={{ metadata: state.project ?? {}, addressUnitBits: state.addressUnitBits }}
+            onSave={(data) => {
+              dispatch({ type: 'SET_PROJECT_METADATA', project: data.metadata });
+              dispatch({ type: 'SET_ADDRESS_UNIT_BITS', addressUnitBits: data.addressUnitBits });
+            }}
           />
           <ExamplesDialog
             open={examplesOpen}

@@ -27,8 +27,12 @@ const mockCloudActions = {
 const mockAnnounce = vi.fn();
 
 vi.mock('../context/project-storage-context', () => ({
-  useProjectStorage: vi.fn(() => ({ projects: mockProjects })),
+  useProjectStorage: vi.fn(() => ({ activeLocalId: 'local-1', projects: mockProjects })),
   useProjectStorageActions: vi.fn(() => mockStorageActions),
+}));
+
+vi.mock('../context/app-context', () => ({
+  useAppDispatch: vi.fn(() => vi.fn()),
 }));
 
 vi.mock('../context/cloud-sync-context', () => ({
@@ -45,6 +49,15 @@ vi.mock('../utils/api-client', () => ({
 
 vi.mock('../utils/owner-token', () => ({
   getOrCreateOwnerToken: vi.fn(() => 'mock-token'),
+}));
+
+vi.mock('../utils/project-storage', () => ({
+  loadProject: vi.fn(() => null),
+  saveProject: vi.fn(),
+}));
+
+vi.mock('../utils/storage', () => ({
+  sanitizeProjectMetadata: vi.fn((m: unknown) => m),
 }));
 
 import { isCloudEnabled } from '../utils/api-client';
