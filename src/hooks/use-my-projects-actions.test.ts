@@ -72,7 +72,7 @@ beforeEach(() => {
 });
 
 /** Render the hook with open=true and flush the async cloud-sync useEffect. */
-async function renderWithOpen(onClose: ReturnType<typeof vi.fn>, onBeforeNew?: () => void) {
+async function renderWithOpen(onClose: () => void, onBeforeNew?: () => void) {
   const result = renderHook(() => useMyProjectsActions(true, onClose, onBeforeNew));
   await act(async () => {}); // flush async useEffect (syncCloudProjects promise)
   return result;
