@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { TriangleAlert, CloudUpload, CloudOff, ChevronsDown, Link, Trash2 } from 'lucide-react';
+import { TriangleAlert, CloudUpload, CloudOff, FolderOpen, Link, Trash2 } from 'lucide-react';
 import type { ProjectListEntry, Visibility } from '../../types/project';
 import { formatRelativeTime } from '../../utils/format';
 import { projectDisplayName } from '../../utils/project-helpers';
@@ -52,14 +52,14 @@ export function ProjectListItem({
   return (
     <li
       aria-current={isActive ? 'true' : undefined}
-      className={`flex items-start gap-3 px-3 py-2.5 rounded-lg border transition-colors
+      className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-colors
         ${isActive
           ? 'border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30'
           : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900'
         }`}
     >
       {/* Left: cloud status + info */}
-      <div className="flex items-start gap-2 flex-1 min-w-0 pt-0.5">
+      <div className="flex items-center gap-2 flex-1 min-w-0">
         <CloudStatusIndicator isCloudSaved={project.isCloudSaved} />
         <div className="flex-1 min-w-0">
           {/* Line 1: Name + Active badge */}
@@ -110,7 +110,7 @@ export function ProjectListItem({
       </div>
 
       {/* Right: Action buttons */}
-      <div className="flex items-center gap-1 shrink-0 pt-0.5">
+      <div className="flex items-center gap-1 shrink-0">
         {confirmingDelete ? (
           <DeleteConfirmation
             projectName={displayName}
@@ -133,7 +133,7 @@ export function ProjectListItem({
                   disabled:opacity-50 disabled:cursor-not-allowed
                   transition-colors"
               >
-                <CloudUpload size={14} className={isSavingToCloud ? 'animate-pulse' : undefined} aria-hidden="true" />
+                <CloudUpload size={16} className={isSavingToCloud ? 'animate-pulse' : undefined} aria-hidden="true" />
               </button>
             )}
             {/* Remove from cloud (cloud projects) */}
@@ -147,7 +147,7 @@ export function ProjectListItem({
                   hover:bg-gray-100 dark:hover:bg-gray-700
                   transition-colors"
               >
-                <CloudOff size={14} aria-hidden="true" />
+                <CloudOff size={16} aria-hidden="true" />
               </button>
             )}
             {!isActive && (
@@ -160,7 +160,7 @@ export function ProjectListItem({
                   hover:bg-gray-100 dark:hover:bg-gray-700
                   transition-colors"
               >
-                <ChevronsDown size={14} aria-hidden="true" />
+                <FolderOpen size={16} aria-hidden="true" />
               </button>
             )}
             <button
@@ -172,7 +172,7 @@ export function ProjectListItem({
                 hover:bg-gray-100 dark:hover:bg-gray-700
                 transition-colors"
             >
-              <Link size={14} aria-hidden="true" />
+              <Link size={16} aria-hidden="true" />
             </button>
             <button
               onClick={() => setConfirmingDelete(true)}
@@ -183,7 +183,7 @@ export function ProjectListItem({
                 hover:bg-gray-100 dark:hover:bg-gray-700
                 transition-colors"
             >
-              <Trash2 size={14} aria-hidden="true" />
+              <Trash2 size={16} aria-hidden="true" />
             </button>
           </>
         )}

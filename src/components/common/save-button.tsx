@@ -1,4 +1,4 @@
-import { CloudDownload, Loader2 } from 'lucide-react';
+import { CloudUpload, Loader2 } from 'lucide-react';
 import { useCloudSync, useCloudSyncActions } from '../../context/cloud-sync-context';
 
 export function SaveButton() {
@@ -42,7 +42,7 @@ export function SaveButton() {
         disabled:opacity-50 disabled:cursor-not-allowed
         transition-colors"
     >
-      {isSaving ? <Loader2 size={16} className="animate-spin" /> : <CloudDownload size={16} className="block" />}
+      {isSaving ? <Loader2 size={16} className="animate-spin" /> : <CloudUpload size={16} className="block" />}
     </button>
   );
 }
