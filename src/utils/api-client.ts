@@ -74,7 +74,7 @@ export async function createProject(
   visibility?: Visibility,
 ): Promise<CreateProjectResponse> {
   const body: { data: unknown; visibility?: string } = { data };
-  if (visibility) {
+  if (visibility !== undefined) {
     body.visibility = visibility;
   }
   return apiFetch<CreateProjectResponse>('/api/projects', {
