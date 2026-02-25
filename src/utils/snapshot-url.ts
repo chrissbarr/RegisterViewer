@@ -47,18 +47,24 @@ export function decompressSnapshot(encoded: string): string {
   }
 
   let totalSize = 0;
+  let exceeded = false;
   const chunks: Uint8Array[] = [];
   const inflator = new Inflate();
 
   inflator.onData = (chunk: Uint8Array) => {
     totalSize += chunk.length;
     if (totalSize > MAX_DECOMPRESSED_SIZE) {
-      throw new Error('Decompressed snapshot exceeds maximum allowed size');
+      exceeded = true;
+      return; // stop collecting chunks; checked after push() completes
     }
     chunks.push(chunk);
   };
 
   inflator.push(compressed, true);
+
+  if (exceeded) {
+    throw new Error('Decompressed snapshot exceeds maximum allowed size');
+  }
 
   if (inflator.err) {
     throw new Error(`Decompression failed: ${inflator.msg}`);
