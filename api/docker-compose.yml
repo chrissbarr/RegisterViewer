@@ -23,7 +23,7 @@ services:
       MYSQL_PASSWORD: regapi_dev
       MYSQL_ROOT_PASSWORD: root_dev
     ports:
-      - "3307:3306"
+      - "127.0.0.1:3307:3306"
     volumes:
       - ./database/migrations/001_create_projects_table.sql:/docker-entrypoint-initdb.d/001.sql:ro
       - db_data:/var/lib/mysql
