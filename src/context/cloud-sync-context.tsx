@@ -354,9 +354,13 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
         if (currentLocalId) {
           updateCloudMetadata(currentLocalId, { visibility: v });
         }
-      } catch {
-        // Revert on failure
-        setInternal((prev) => ({ ...prev, visibility: previousVisibility }));
+      } catch (err) {
+        // Revert on failure and show error
+        setInternal((prev) => ({
+          ...prev,
+          visibility: previousVisibility,
+          error: friendlyErrorMessage(err, 'Failed to update visibility.'),
+        }));
       }
     }
   }, [updateCloudMetadata]);

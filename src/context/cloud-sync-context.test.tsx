@@ -621,8 +621,9 @@ describe('CloudSyncProvider', () => {
         await result.current.actions.setVisibility('unlisted');
       });
 
-      // Should revert to 'private' (the default)
+      // Should revert to 'private' (the default) and set error
       expect(result.current.state.visibility).toBe('private');
+      expect(result.current.state.error).toBe('Server error');
     });
   });
 
