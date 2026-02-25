@@ -1,0 +1,4 @@
+config.production.php
+vendor/
+composer.lock
+.phpunit.cache/

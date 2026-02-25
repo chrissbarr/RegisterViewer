@@ -1,0 +1,35 @@
+name: Deploy API to cPanel
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'api/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: api-deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Deploy via SFTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.CPANEL_HOST }}
+          username: ${{ secrets.CPANEL_SFTP_USERNAME }}
+          password: ${{ secrets.CPANEL_SFTP_PASSWORD }}
+          protocol: ftps
+          local-dir: ./api/
+          server-dir: ${{ vars.CPANEL_API_PATH || './public_html/api/' }}
+          exclude: |
+            **/.git*
+            **/.github/**
+            **/database/migrations/**
+            **/config.production.php
