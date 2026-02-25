@@ -22,7 +22,7 @@ export class ApiError extends Error {
 
 const API_TIMEOUT_MS = 15_000;
 
-async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+async function apiRequest(path: string, options?: RequestInit): Promise<Response> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
   try {
@@ -45,14 +45,19 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
       throw new ApiError(res.status, errorBody);
     }
 
-    if (res.status === 204 || res.headers.get('content-length') === '0') {
-      return undefined as T;
-    }
-
-    return res.json();
+    return res;
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  const res = await apiRequest(path, options);
+  return res.json();
+}
+
+async function apiFetchVoid(path: string, options?: RequestInit): Promise<void> {
+  await apiRequest(path, options);
 }
 
 interface CreateProjectResponse {
@@ -138,7 +143,7 @@ export async function deleteProject(
   id: string,
   tokenHash: string,
 ): Promise<void> {
-  await apiFetch<unknown>(
+  await apiFetchVoid(
     `/api/projects/${encodeURIComponent(id)}`,
     {
       method: 'DELETE',
