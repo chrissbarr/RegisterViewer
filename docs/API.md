@@ -110,7 +110,7 @@ Retrieves a project by its 12-character base62 ID.
 
 **Cache-Control:**
 - Private projects: `private, no-store`
-- Unlisted projects: `public, max-age=60`
+- Unlisted projects: `private, max-age=60`
 
 **Side effect:** Updates `lastAccessedAt` if stale >24 hours (async, non-blocking).
 
