@@ -1,3 +1,5 @@
+Options -Indexes
+
 RewriteEngine On
 
 # Pass Authorization header to PHP (cPanel/Apache strips it by default)
@@ -17,13 +19,19 @@ RewriteRule ^(.*)$ index.php [QSA,L]
     Require all granted
 </Files>
 
-# Block access to SQL files, hidden files, and config
+# Block access to SQL files, hidden files, config, and dependency metadata
 <FilesMatch "\.(sql|gitignore)$">
     Require all denied
 </FilesMatch>
 <FilesMatch "^\.">
     Require all denied
 </FilesMatch>
+<FilesMatch "(composer\.(json|lock)|phpunit\.xml|Dockerfile|docker-compose\.yml)$">
+    Require all denied
+</FilesMatch>
+
+# Block access to internal directories
+RedirectMatch 403 ^/(database|vendor|src|tests)(/.*)?$
 
 # Enable gzip compression for JSON responses
 <IfModule mod_deflate.c>
