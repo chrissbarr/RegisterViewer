@@ -186,7 +186,7 @@ try {
         if ($method === 'GET') {
             handleListProjects($db);
         }
-        sendError('Not found', 404);
+        sendError('Method not allowed', 405, ['Allow' => 'GET, POST, OPTIONS']);
     }
 
     // Resource routes: /api/projects/:id (12-char alphanumeric)
@@ -198,7 +198,7 @@ try {
             'PUT'    => handleUpdateProject($db, $id, $config),
             'PATCH'  => handlePatchProject($db, $id),
             'DELETE' => handleDeleteProject($db, $id),
-            default  => sendError('Not found', 404),
+            default  => sendError('Method not allowed', 405, ['Allow' => 'GET, PUT, PATCH, DELETE, OPTIONS']),
         };
     }
 
