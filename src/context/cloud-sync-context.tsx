@@ -215,7 +215,8 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
         visibility: entry?.visibility ?? 'private',
       }));
     }
-  }, [activeLocalId, dataVersionRef]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- dataVersionRef is a ref (stable), not a reactive value
+  }, [activeLocalId]);
 
   // Ref to avoid stale closures in save/fork callbacks
   const appStateRef = useRef(appState);
