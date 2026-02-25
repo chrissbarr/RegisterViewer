@@ -145,6 +145,12 @@ function extractRawDataJson(array $body): string
     return json_encode($asObject->data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 }
 
+// ---- HSTS (production only) ----
+
+if ($config['environment'] === 'production') {
+    header('Strict-Transport-Security: max-age=31536000; includeSubDomains');
+}
+
 // ---- CORS ----
 
 $corsHeaders = computeCorsHeaders($config);
