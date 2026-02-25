@@ -4,8 +4,8 @@
  * Each browser gets a random 256-bit token stored in localStorage. This token
  * proves ownership of cloud projects without requiring user accounts.
  *
- * - The raw token is sent to the worker only for write operations (create,
- *   update, delete, patch visibility). The worker hashes it with SHA-256 and
+ * - The raw token is sent to the server only for write operations (create,
+ *   update, delete, patch visibility). The server hashes it with SHA-256 and
  *   compares against the stored hash using constant-time comparison.
  * - The raw token is NEVER stored server-side; only the SHA-256 hash is persisted.
  * - Per-project ownerToken copies are stored in StoredLocalProject records

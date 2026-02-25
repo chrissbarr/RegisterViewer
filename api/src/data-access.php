@@ -81,7 +81,7 @@ function dbCreateProject(
 
 /**
  * Full update of a project's data, visibility, and title.
- * Explicitly sets updated_at and last_accessed_at to match Worker behavior.
+ * Explicitly sets updated_at and last_accessed_at to match previous API behavior.
  */
 function dbUpdateProject(
     PDO $db,
@@ -106,7 +106,7 @@ function dbUpdateProject(
 
 /**
  * Patch only the visibility of a project.
- * Explicitly sets updated_at to match Worker behavior.
+ * Explicitly sets updated_at to match previous API behavior.
  */
 function dbPatchVisibility(PDO $db, string $publicId, string $visibility): void
 {

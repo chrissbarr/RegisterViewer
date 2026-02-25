@@ -16,7 +16,7 @@ const LIMITS = [
 
 /**
  * Validate incoming project data from a create or update request.
- * Port of worker/src/validation.ts — identical error messages.
+ * Ported from original TypeScript implementation — identical error messages.
  *
  * @return array{valid: true}|array{valid: false, error: string}
  */

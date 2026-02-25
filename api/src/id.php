@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 /**
  * Generate a 12-character base62 ID using random_bytes().
- * Uses rejection sampling to avoid modulo bias (same algorithm as worker/src/id.ts).
+ * Uses rejection sampling to avoid modulo bias (same algorithm as the original TypeScript implementation).
  */
 function generatePublicId(): string
 {
