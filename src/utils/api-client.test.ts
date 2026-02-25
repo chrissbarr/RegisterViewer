@@ -103,6 +103,7 @@ describe('createProject', () => {
     expect(mockFetch).toHaveBeenCalledOnce();
     expect(mockFetch).toHaveBeenCalledWith('https://api.example.com/api/projects', {
       method: 'POST',
+      signal: expect.any(AbortSignal),
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${'a'.repeat(64)}`,
@@ -193,6 +194,7 @@ describe('getProject', () => {
     expect(mockFetch).toHaveBeenCalledWith(
       'https://api.example.com/api/projects/ABC123DEF456',
       {
+        signal: expect.any(AbortSignal),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -220,6 +222,7 @@ describe('getProject', () => {
     expect(mockFetch).toHaveBeenCalledWith(
       'https://api.example.com/api/projects/ABC123DEF456',
       {
+        signal: expect.any(AbortSignal),
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${tokenHash}`,
@@ -292,6 +295,7 @@ describe('updateProject', () => {
       'https://api.example.com/api/projects/ABC123DEF456',
       {
         method: 'PUT',
+        signal: expect.any(AbortSignal),
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${'a'.repeat(64)}`,
@@ -367,6 +371,7 @@ describe('deleteProject', () => {
       'https://api.example.com/api/projects/ABC123DEF456',
       {
         method: 'DELETE',
+        signal: expect.any(AbortSignal),
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${'a'.repeat(64)}`,
@@ -522,6 +527,7 @@ describe('listProjects', () => {
     expect(mockFetch).toHaveBeenCalledWith(
       'https://api.example.com/api/projects',
       {
+        signal: expect.any(AbortSignal),
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${tokenHash}`,
@@ -535,6 +541,79 @@ describe('listProjects', () => {
     mockFetch.mockResolvedValue(mockErrorResponse(401, { error: 'Unauthorized' }));
 
     await expect(listProjects('bad'.repeat(16))).rejects.toThrow(ApiError);
+  });
+});
+
+describe('request timeout', () => {
+  beforeEach(() => {
+    mockFetch.mockClear();
+    import.meta.env.VITE_API_URL = 'https://api.example.com';
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('passes an AbortSignal to fetch', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => ({ id: 'TEST', data: '{}', createdAt: '', updatedAt: '' }),
+    });
+
+    await getProject('TEST');
+
+    const callArgs = mockFetch.mock.calls[0];
+    expect(callArgs[1].signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('aborts the request after 15 seconds', async () => {
+    // Make fetch hang until aborted
+    mockFetch.mockImplementationOnce((_url: string, init: RequestInit) => {
+      return new Promise((_resolve, reject) => {
+        init.signal?.addEventListener('abort', () => {
+          reject(new DOMException('The operation was aborted.', 'AbortError'));
+        });
+      });
+    });
+
+    const promise = getProject('TEST');
+
+    // Advance past the 15s timeout
+    vi.advanceTimersByTime(15_000);
+
+    await expect(promise).rejects.toThrow(
+      expect.objectContaining({ name: 'AbortError' }),
+    );
+  });
+
+  it('clears the timeout after an error response', async () => {
+    const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
+
+    mockFetch.mockResolvedValueOnce(mockErrorResponse(500, { error: 'Server error' }));
+
+    await expect(getProject('TEST')).rejects.toThrow(ApiError);
+
+    expect(clearTimeoutSpy).toHaveBeenCalled();
+    clearTimeoutSpy.mockRestore();
+  });
+
+  it('clears the timeout after a successful response', async () => {
+    const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => ({ id: 'TEST', data: '{}', createdAt: '', updatedAt: '' }),
+    });
+
+    await getProject('TEST');
+
+    expect(clearTimeoutSpy).toHaveBeenCalled();
+    clearTimeoutSpy.mockRestore();
   });
 });
 

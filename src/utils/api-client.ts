@@ -20,30 +20,39 @@ export class ApiError extends Error {
   }
 }
 
+const API_TIMEOUT_MS = 15_000;
+
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${getApiBase()}${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers,
-    },
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${getApiBase()}${path}`, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers,
+      },
+    });
 
-  if (!res.ok) {
-    let errorBody: { error: string };
-    try {
-      errorBody = await res.json();
-    } catch {
-      errorBody = { error: res.statusText || 'Unknown error' };
+    if (!res.ok) {
+      let errorBody: { error: string };
+      try {
+        errorBody = await res.json();
+      } catch {
+        errorBody = { error: res.statusText || 'Unknown error' };
+      }
+      throw new ApiError(res.status, errorBody);
     }
-    throw new ApiError(res.status, errorBody);
-  }
 
-  if (res.status === 204 || res.headers.get('content-length') === '0') {
-    return undefined as T;
-  }
+    if (res.status === 204 || res.headers.get('content-length') === '0') {
+      return undefined as T;
+    }
 
-  return res.json();
+    return res.json();
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 interface CreateProjectResponse {
