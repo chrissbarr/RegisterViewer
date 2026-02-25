@@ -30,7 +30,7 @@ Enter a raw register value (hex, binary, or decimal) and instantly see how it br
 - **Vite** for builds and dev server
 - **Tailwind CSS v4** for styling
 - **@dnd-kit** for drag-and-drop register reordering
-- **Cloudflare Workers + KV** for the cloud save/share backend (optional, see [DEPLOYMENT.md](docs/DEPLOYMENT.md))
+- **PHP + MySQL** for the cloud save/share backend (deployed on cPanel, see [DEPLOYMENT.md](docs/DEPLOYMENT.md))
 
 ## Getting Started
 
@@ -54,24 +54,15 @@ Open http://localhost:5173 in your browser. On first launch, an example 32-bit S
 | `npm run test:coverage` | Run tests with V8 coverage report |
 | `npm run test:e2e` | Run Playwright end-to-end tests |
 
-### Worker (cloud backend)
+### API (cloud backend)
+
+Requires Docker for local development. See [DEPLOYMENT.md](docs/DEPLOYMENT.md) for full setup.
 
 | Command | Description |
 |---------|-------------|
-| `cd worker && npm run dev` | Start local Worker dev server (localhost:8787) |
-| `cd worker && npm test` | Run Worker unit tests |
-| `cd worker && npm run deploy` | Deploy Worker to Cloudflare |
-
-### Worker Environment Variables
-
-Configured in `worker/wrangler.toml` (see [DEPLOYMENT.md](docs/DEPLOYMENT.md) for full setup):
-
-| Variable | Description |
-|----------|-------------|
-| `PROJECTS` | KV namespace binding for project storage |
-| `APP_URL` | Frontend origin for CORS (`https://register-viewer.app`) |
-| `ALLOWED_ORIGINS` | Optional comma-separated override for CORS origins |
-| `ENVIRONMENT` | `production` or `development` |
+| `cd api && docker compose up -d` | Start local API + MySQL |
+| `cd api && docker compose run --rm test bash -c "composer install -q && vendor/bin/phpunit"` | Run API tests |
+| `cd api && docker compose down` | Stop containers |
 
 ## Testing
 
@@ -123,13 +114,17 @@ src/
   types/
     register.ts                 # Core TypeScript interfaces
 
-worker/                         # Cloudflare Worker backend (optional)
+api/                            # PHP API backend (cPanel)
+  index.php                     # Entry point: routing, CORS, response helpers
+  config.php                    # Configuration with getenv() fallbacks
   src/
-    index.ts                    # Entry point: CORS, routing, CRUD handlers
-    types.ts                    # StoredProject, Env, API response types
-    data-access.ts              # KV read/write with schema migration
-    validation.ts               # Payload structural validation
-    auth.ts                     # Token extraction + constant-time comparison
-    id.ts                       # 12-char base62 ID generation
-  wrangler.toml                 # Worker configuration
+    database.php                # PDO singleton factory
+    data-access.php             # All DB queries
+    validation.php              # Payload structural validation
+    auth.php                    # Token extraction + ownership check
+    cors.php                    # CORS header computation
+    id.php                      # 12-char base62 ID generation
+    handlers/*.php              # One file per endpoint
+  tests/                        # PHPUnit tests (Unit + Integration)
+  docker-compose.yml            # Local dev: API + MySQL + test runner
 ```

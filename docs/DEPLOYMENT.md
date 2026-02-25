@@ -5,8 +5,8 @@ This document provides step-by-step instructions for deploying the Register View
 ## Architecture Overview
 
 - **Frontend**: React SPA deployed to GitHub Pages (chrissbarr.github.io)
-- **Backend**: Cloudflare Worker deployed to Cloudflare Workers platform
-- **Data Store**: Cloudflare KV (key-value storage)
+- **Backend**: PHP API deployed to cPanel via SFTP
+- **Data Store**: MySQL database
 - **CI/CD**: GitHub Actions workflows
 
 ### Key Components
@@ -14,9 +14,9 @@ This document provides step-by-step instructions for deploying the Register View
 | Component | Technology | Deployment Target | Status Check |
 |-----------|-----------|-------------------|--------------|
 | Frontend | React + TypeScript | GitHub Pages | .github/workflows/deploy.yml |
-| Worker API | TypeScript | Cloudflare Workers | .github/workflows/deploy-worker.yml |
-| Tests | Vitest + Playwright | GitHub Actions | .github/workflows/ci.yml |
-| KV Store | Cloudflare KV | N/A (provisioned with worker) | N/A |
+| API | PHP 8.3 | cPanel (Apache) | .github/workflows/deploy-api.yml |
+| Tests | Vitest + Playwright + PHPUnit | GitHub Actions | .github/workflows/ci.yml |
+| Database | MySQL 8.0 | cPanel MySQL | N/A |
 
 ---
 
@@ -25,33 +25,40 @@ This document provides step-by-step instructions for deploying the Register View
 ### Prerequisites
 
 - GitHub account with admin access to the repository
-- Cloudflare account with billing enabled
+- cPanel hosting account with PHP 8.3+ and MySQL 8.0+
 - Node.js 22 or later installed locally
-- `wrangler` CLI installed globally (`npm install -g wrangler@latest`)
+- Docker installed locally (for running API tests)
 
-### Step 1: Create Cloudflare KV Namespaces
+### Step 1: Create MySQL Database
 
-1. Log in to [Cloudflare Dashboard](https://dash.cloudflare.com/)
-2. Navigate to **Workers & Pages** → **KV**
-3. Create two KV namespaces:
-   - **Production namespace** (e.g., `registerviewer-projects`)
-   - **Preview namespace** (e.g., `registerviewer-projects-preview`)
+1. Log in to cPanel
+2. Navigate to **MySQL Databases**
+3. Create a new database (e.g., `register_viewer`)
+4. Create a database user with a strong password
+5. Add the user to the database with **All Privileges**
+6. Run the migration script to create tables:
+   - Upload `api/database/migrations/001_create_projects_table.sql` and import via phpMyAdmin
+   - Or run via command line: `mysql -u <user> -p <database> < api/database/migrations/001_create_projects_table.sql`
 
-4. Note down both namespace IDs (they look like: `abcd1234efgh5678ijkl9012mnop3456`)
+### Step 2: Deploy API Files
 
-### Step 2: Update Worker Configuration
+1. Upload the contents of `api/` to your cPanel hosting (e.g., `public_html/api/`)
+2. Create `config.production.php` on the server with your production database credentials:
 
-1. Open `worker/wrangler.toml`
-2. Replace placeholder IDs with actual namespace IDs:
-
-```toml
-[[kv_namespaces]]
-binding = "PROJECTS"
-id = "YOUR_PRODUCTION_NAMESPACE_ID"
-preview_id = "YOUR_PREVIEW_NAMESPACE_ID"
+```php
+<?php
+return [
+    'environment' => 'production',
+    'db' => [
+        'host'     => '127.0.0.1',
+        'database' => 'your_database_name',
+        'username' => 'your_database_user',
+        'password' => 'your_database_password',
+    ],
+];
 ```
 
-3. Save the file
+3. Ensure `.htaccess` is active (Apache `mod_rewrite` must be enabled)
 
 ### Step 3: Configure GitHub Secrets and Variables
 
@@ -59,51 +66,41 @@ preview_id = "YOUR_PREVIEW_NAMESPACE_ID"
 
 #### Secrets (encrypted environment variables)
 
-Create these secrets:
-
 | Secret Name | Value | Source |
 |-------------|-------|--------|
-| `CLOUDFLARE_ACCOUNT_ID` | Your Cloudflare account ID (find at dash.cloudflare.com or `wrangler whoami`) | Cloudflare Dashboard |
-| `CLOUDFLARE_API_TOKEN` | API token with Workers AI permissions | See Step 3a below |
-
-**Step 3a: Create Cloudflare API Token**
-
-1. Go to [Cloudflare API Tokens](https://dash.cloudflare.com/profile/api-tokens)
-2. Click **Create Token** → Use template **Edit Cloudflare Workers**
-3. Copy the token
-4. Create a GitHub secret named `CLOUDFLARE_API_TOKEN` with this value
+| `CPANEL_HOST` | Your cPanel server hostname | cPanel hosting provider |
+| `CPANEL_SFTP_USERNAME` | SFTP username | cPanel account |
+| `CPANEL_SFTP_PASSWORD` | SFTP password | cPanel account |
 
 #### Variables (plaintext configuration)
 
-Create this variable:
-
 | Variable Name | Value | Notes |
 |---------------|-------|-------|
-| `VITE_API_URL` | `https://register-viewer-api.workers.dev` | Update domain if you use a custom domain |
+| `VITE_API_URL` | `https://your-domain.com/api` | Your API base URL |
+| `CPANEL_API_PATH` | `./public_html/api/` | Server-side path for API files (optional, defaults to `./public_html/api/`) |
 
 ### Step 4: Verify GitHub Pages Configuration
 
 1. Go to repository **Settings** → **Pages**
 2. Ensure **Build and deployment** is set to:
    - **Source**: GitHub Actions
-   - (The deploy workflow will handle the deployment)
 
 ### Step 5: First Deployment
 
 1. Create a new branch and make a small change (e.g., update README)
 2. Open a pull request to `master`
-3. Verify CI workflow passes (run: `frontend` job and `worker` job)
+3. Verify CI workflow passes (both `frontend` and `api` jobs)
 4. Merge to `master`
 5. Automatically triggers:
    - **GitHub Pages Deploy**: Frontend builds and deploys to GitHub Pages
-   - **Worker Deploy**: Backend deploys to Cloudflare Workers
+   - **API Deploy**: Backend deploys to cPanel via SFTP
 
 ### Verification
 
 After first deployment:
 
 1. Visit `https://chrissbarr.github.io/register-viewer/` and verify the SPA loads
-2. Open browser DevTools and check Network tab for calls to `https://register-viewer-api.workers.dev/api/*`
+2. Open browser DevTools and check Network tab for calls to your API URL
 3. Test save functionality: create a project and share the link
 4. Verify project data persists by opening the shared link in a new tab
 
@@ -117,11 +114,11 @@ Every push to `master` automatically:
 
 1. Runs CI checks (.github/workflows/ci.yml):
    - Frontend: lint → unit tests → build → E2E tests
-   - Worker: install → unit tests
+   - API: PHPUnit tests (unit + integration) via Docker
 
 2. On CI success:
    - GitHub Pages Deploy job: builds frontend and deploys to GitHub Pages
-   - Worker Deploy job: deploys updated worker code to Cloudflare
+   - API Deploy job: deploys updated API code to cPanel (only if `api/` files changed)
 
 ### Manual Trigger
 
@@ -130,7 +127,7 @@ To manually trigger a deployment without code changes:
 1. Go to repository **Actions** tab
 2. Select either:
    - **Deploy to GitHub Pages** workflow → click **Run workflow** → **Run workflow**
-   - **Deploy Worker** workflow → click **Run workflow** → **Run workflow**
+   - **Deploy API to cPanel** workflow → click **Run workflow** → **Run workflow**
 
 ### Monitoring Deployments
 
@@ -159,21 +156,23 @@ To manually trigger a deployment without code changes:
 - Fix the test failures or app bugs
 - Commit and push again
 
-### Worker Deployment Fails
+### API Deployment Fails
 
-**Error: "Invalid API token"**
-- Verify GitHub secret `CLOUDFLARE_API_TOKEN` is correct
-- Regenerate token if needed at [API Tokens](https://dash.cloudflare.com/profile/api-tokens)
-- Update the GitHub secret with new token
+**Error: "SFTP connection failed"**
+- Verify GitHub secrets `CPANEL_HOST`, `CPANEL_SFTP_USERNAME`, and `CPANEL_SFTP_PASSWORD` are correct
+- Ensure SFTP/FTPS is enabled on your cPanel hosting
+- Check that the server hostname is correct (may need to use the IP address)
 
-**Error: "KV namespace not found"**
-- Verify namespace IDs in `worker/wrangler.toml` match your Cloudflare account
-- Check that both production and preview namespaces exist
-- Update wrangler.toml with correct IDs
+**Error: "Database connection failed" (in API tests)**
+- Ensure Docker is available in the CI environment
+- Check `api/docker-compose.yml` for correct MySQL configuration
+- Run tests locally: `cd api && docker compose run --rm test bash -c "composer install -q && vendor/bin/phpunit"`
 
-**Error: "Wrangler command not found"**
-- Ensure worker/package.json includes `"wrangler"` in devDependencies
-- Run `npm install` in worker directory to fetch dependency
+**Error: "500 Internal Server Error" on API endpoints**
+- Check PHP error logs in cPanel → **Error Log**
+- Verify `config.production.php` exists on the server with correct database credentials
+- Ensure PHP 8.3+ is enabled and `mod_rewrite` is active
+- Verify database tables exist (run migration SQL)
 
 ### API URL Not Set in Frontend
 
@@ -206,22 +205,19 @@ To manually trigger a deployment without code changes:
    - Click the last successful run
    - Click **Re-run all jobs** button
 
-### Rollback Worker (Cloudflare)
+### Rollback API (cPanel)
 
-1. **Via Cloudflare Dashboard** (Fastest):
-   - Go to [Cloudflare Dashboard](https://dash.cloudflare.com/) → **Workers & Pages**
-   - Select your worker script
-   - Go to **Deployments** tab
-   - Click the ⋯ menu on a previous version
-   - Select **Rollback to this version**
-
-2. **Via Git Revert** (Recommended for audit):
+1. **Via Git Revert (Recommended)**:
    ```bash
    git revert <bad-commit-hash>
    git push
    ```
-   - GitHub Actions automatically re-deploys via deploy-worker.yml
+   - GitHub Actions automatically re-deploys via deploy-api.yml
    - Creates a clean commit history
+
+2. **Via cPanel File Manager**:
+   - If you have backups, restore the previous version of `api/` files via cPanel File Manager
+   - Database schema changes may need manual rollback
 
 ### Emergency: Disable Deployments
 
@@ -253,34 +249,38 @@ npm run test:watch
 npm run test:e2e
 ```
 
-### Worker Development
+### API Development
 
 ```bash
-cd worker
+cd api
 
-# Start local worker dev server (runs on localhost:8787)
-npm run dev
+# Start local API + MySQL (runs on localhost:8080)
+docker compose up -d
 
-# Run tests
-npm test
+# Run all tests
+docker compose run --rm test bash -c "composer install -q && vendor/bin/phpunit"
 
-# Deploy to Cloudflare (requires CLOUDFLARE_API_TOKEN)
-npm run deploy
+# Run unit tests only
+docker compose run --rm test bash -c "composer install -q && vendor/bin/phpunit --testsuite Unit"
 
-# Tail live logs from worker
-npm run tail
+# Run integration tests only
+docker compose run --rm test bash -c "composer install -q && vendor/bin/phpunit --testsuite Integration"
+
+# Stop containers
+docker compose down
+
+# Stop containers and reset database
+docker compose down -v
 ```
 
 ### Local Environment Variables
 
-To test with a local frontend + worker:
+To test with a local frontend + API:
 
-1. Start worker: `cd worker && npm run dev`
-2. In another terminal, set environment variable:
-   - **Linux/macOS**: `export VITE_API_URL=http://localhost:8787`
-   - **Windows**: `set VITE_API_URL=http://localhost:8787`
+1. Start API: `cd api && docker compose up -d`
+2. The `.env.development` file already sets `VITE_API_URL=http://localhost:8080`
 3. Start frontend: `npm run dev`
-4. Frontend will use local worker for API calls
+4. Frontend will use local API for all cloud operations
 
 ---
 
@@ -289,32 +289,31 @@ To test with a local frontend + worker:
 ### GitHub Actions Secrets Required
 
 ```
-CLOUDFLARE_ACCOUNT_ID    # From: wrangler whoami or Cloudflare Dashboard
-CLOUDFLARE_API_TOKEN     # From: Cloudflare API Tokens page
+CPANEL_HOST              # cPanel server hostname
+CPANEL_SFTP_USERNAME     # SFTP username for deployment
+CPANEL_SFTP_PASSWORD     # SFTP password for deployment
 ```
 
 ### GitHub Actions Variables Required
 
 ```
-VITE_API_URL             # Default: https://register-viewer-api.workers.dev
-                         # For custom domain, update to your domain
+VITE_API_URL             # API base URL (e.g., https://your-domain.com/api)
+CPANEL_API_PATH          # Optional: server path for API files (default: ./public_html/api/)
 ```
 
 ### Environment Variables in Workflows
 
 - **VITE_API_URL**: Passed to frontend build, used in api-client.ts
-- **CLOUDFLARE_ACCOUNT_ID**: Used by wrangler-action for authentication
-- **CLOUDFLARE_API_TOKEN**: Used by wrangler-action for authentication
 
 ### Key Files
 
 | File | Purpose |
 |------|---------|
-| `.github/workflows/ci.yml` | Frontend + Worker CI checks |
+| `.github/workflows/ci.yml` | Frontend + API CI checks |
 | `.github/workflows/deploy.yml` | Frontend deployment to GitHub Pages |
-| `.github/workflows/deploy-worker.yml` | Worker deployment to Cloudflare |
-| `worker/wrangler.toml` | Worker configuration (KV namespaces, env vars) |
-| `worker/package.json` | Worker dependencies and scripts |
+| `.github/workflows/deploy-api.yml` | API deployment to cPanel via SFTP |
+| `api/config.php` | API configuration (env var fallbacks) |
+| `api/docker-compose.yml` | Local dev: API + MySQL + test runner |
 | `vite.config.ts` | Frontend build configuration |
 
 ---
@@ -334,90 +333,70 @@ VITE_API_URL             # Default: https://register-viewer-api.workers.dev
 - Check browser console for errors
 - Expected response time: <1s
 
-### Worker Health
+### API Health
 
-- Check [Cloudflare Dashboard](https://dash.cloudflare.com/) → **Workers & Pages** → **Analytics**
-- View requests, response times, errors
-- Check uptime/availability metrics
-
-### KV Store Status
-
-- Navigate to **Workers & Pages** → **KV** in Cloudflare Dashboard
-- View namespace sizes and keys
-- Monitor for quota limits (free tier: 1 GB total)
+- Test the API endpoint directly: `curl https://your-domain.com/api/projects` (should return 401)
+- Check cPanel → **Error Log** for PHP errors
+- Monitor MySQL usage in cPanel → **MySQL Databases**
 
 ---
 
 ## FAQ
 
-**Q: How do I add a custom domain to the worker?**
-A: In Cloudflare Dashboard, go to Workers & Pages → your worker → **Settings** → **Routes**. Add a route like `api.register-viewer.app/*` pointing to your worker.
-
-**Q: Can I test the worker locally before deploying?**
-A: Yes! Run `cd worker && npm run dev` to start a local server on `localhost:8787`. Use `VITE_API_URL=http://localhost:8787` in the frontend dev environment.
+**Q: Can I test the API locally before deploying?**
+A: Yes! Run `cd api && docker compose up -d` to start a local server on `localhost:8080`. The `.env.development` file already points `VITE_API_URL` to `http://localhost:8080`.
 
 **Q: What if deployment succeeds but the app doesn't work?**
-A: Check: (1) `VITE_API_URL` is correct in GitHub variables, (2) worker KV namespace IDs in wrangler.toml are valid, (3) browser console for errors.
+A: Check: (1) `VITE_API_URL` is correct in GitHub variables, (2) `config.production.php` exists on the server with valid DB credentials, (3) browser console for errors.
 
-**Q: How do I see worker logs in production?**
-A: Run `wrangler tail` in the worker directory to stream live logs. Requires `CLOUDFLARE_API_TOKEN` environment variable.
+**Q: How do I see API logs in production?**
+A: Check cPanel → **Error Log** for PHP errors. You can also enable custom logging in `config.production.php`.
 
 **Q: Can I deploy manually without pushing code?**
 A: Yes! Go to **Actions** → select a workflow → **Run workflow** → **Run workflow** button.
 
 **Q: How do I revert a broken deployment?**
-A: Use `git revert` to create a new commit that undoes changes, or use Cloudflare's rollback feature. See "Rollback Procedures" section above.
+A: Use `git revert` to create a new commit that undoes changes. See "Rollback Procedures" section above.
+
+**Q: How do I run database migrations?**
+A: Import the SQL files from `api/database/migrations/` via phpMyAdmin or the MySQL command line. Migrations are not run automatically during deployment.
 
 ---
 
 ## Incident Scenarios
 
-### Storage Abuse (KV Quota Exhaustion)
+### Database Connection Issues
 
-**Symptoms:** 503 errors from worker, KV writes failing, users unable to save projects.
-
-**Response:**
-1. Check Cloudflare Dashboard → KV → namespace size and key count
-2. Identify abuse patterns: `wrangler kv:key list --namespace-id=<ID> | head -100`
-3. Delete offending keys: `wrangler kv:key delete --namespace-id=<ID> <key>`
-4. If widespread, consider adding rate limiting via Cloudflare WAF rules
-5. Monitor KV quota in Dashboard → Workers & Pages → KV
-
-**Prevention:** Free tier limit is 1 GB total. Set up Cloudflare alerts for KV usage approaching limits.
-
-### Data Corruption (Invalid Project Data in KV)
-
-**Symptoms:** Users see blank projects, JSON parse errors in worker logs, 500 errors on GET.
+**Symptoms:** 500 errors from API, users unable to save/load projects.
 
 **Response:**
-1. Identify corrupted key: check worker logs via `wrangler tail` for error details
-2. Read the corrupted value: `wrangler kv:key get --namespace-id=<ID> "project:<id>"`
-3. If recoverable, fix and re-put: `wrangler kv:key put --namespace-id=<ID> "project:<id>" '<fixed-json>'`
-4. If unrecoverable, delete the key and notify the user if possible
+1. Check cPanel → **Error Log** for PHP connection errors
+2. Verify MySQL service is running in cPanel
+3. Check `config.production.php` credentials match the database user
+4. Test connection: log into phpMyAdmin with the same credentials
+5. If the database server is down, contact your hosting provider
+
+### Storage Abuse (Database Growth)
+
+**Symptoms:** Slow queries, disk quota warnings from hosting provider.
+
+**Response:**
+1. Check database size in cPanel → **MySQL Databases**
+2. Identify large or suspicious projects via phpMyAdmin
+3. Delete offending rows from the `projects` table
+4. Consider adding rate limiting at the Apache/cPanel level
+5. Monitor database size growth over time
+
+### Data Corruption (Invalid Project Data)
+
+**Symptoms:** Users see blank projects, JSON parse errors, 500 errors on GET.
+
+**Response:**
+1. Check cPanel error log for details on the affected project
+2. Query the corrupted row: `SELECT * FROM projects WHERE id = '<id>'`
+3. If recoverable, fix the data and update the row
+4. If unrecoverable, delete the row
 5. Check for root cause: deployment bug, concurrent writes, or malicious input
-
-### API Token Compromise
-
-**Symptoms:** Unauthorized deployments, unexpected worker changes, suspicious KV activity.
-
-**Response:**
-1. **Immediately** revoke the compromised token at [API Tokens](https://dash.cloudflare.com/profile/api-tokens)
-2. Create a new API token with the same permissions
-3. Update GitHub secret `CLOUDFLARE_API_TOKEN` with the new token
-4. Review recent worker deployments in Cloudflare Dashboard for unauthorized changes
-5. If worker code was modified, rollback to last known-good version (see Rollback Procedures)
-6. Review KV data for unauthorized modifications
-7. Rotate any other credentials that may have been exposed
-
-### Worker Outage (Cloudflare Incident)
-
-**Symptoms:** All API calls failing, Cloudflare status page shows incident.
-
-**Response:**
-1. Check [Cloudflare Status](https://www.cloudflarestatus.com/) for ongoing incidents
-2. The frontend SPA continues to work offline (localStorage-only mode)
-3. No action needed — cloud features will resume when Cloudflare recovers
-4. If prolonged, consider posting a notice to users via GitHub Pages
 
 ### Owner Token Abuse (Unauthorized Project Access)
 
@@ -425,35 +404,24 @@ A: Use `git revert` to create a new commit that undoes changes, or use Cloudflar
 
 **Response:**
 1. Owner tokens are hashed (SHA-256) before storage — raw tokens never stored server-side
-2. Check worker logs for the affected project ID and the token hash used
-3. If a specific token hash is compromised, delete all projects and owner index entries for that hash:
-   - `wrangler kv:key list --namespace-id=<ID> --prefix="owner:<hash>"` to find affected projects
-   - Delete each project key and owner index key
+2. Check error logs for the affected project ID and the token hash used
+3. If a specific token hash is compromised, delete all projects for that owner hash
 4. The affected user will need to re-save their projects (generates new owner token)
 
 ---
 
 ## Support & Debugging
 
-### Enable Debug Logging
-
-In GitHub Actions workflows, add:
-```yaml
-- name: Debug Info
-  run: |
-    node --version
-    npm --version
-    cd worker && npm ls wrangler
-```
-
 ### Common Issues Checklist
 
 - [ ] All GitHub secrets are set (run `gh secret list` to verify)
 - [ ] GitHub variables are set (run `gh variable list` to verify)
-- [ ] wrangler.toml has correct KV namespace IDs
-- [ ] Cloudflare API token has correct permissions
+- [ ] `config.production.php` exists on server with correct DB credentials
+- [ ] Database tables exist (migration SQL has been run)
+- [ ] PHP 8.3+ is enabled on the server
+- [ ] Apache `mod_rewrite` is enabled
 - [ ] Node.js version matches workflow config (22)
-- [ ] All dependencies installed (`npm ci` in both directories)
+- [ ] All dependencies installed (`npm ci`)
 - [ ] TypeScript compiles without errors (`npm run build`)
 - [ ] Tests pass locally (`npm test`, `npm run test:e2e`)
 
@@ -461,6 +429,5 @@ In GitHub Actions workflows, add:
 
 1. Check workflow logs: **Actions** tab → click run → view step details
 2. Run tests locally to reproduce failures
-3. Check Cloudflare Dashboard for worker/KV status
+3. Check cPanel error logs for API issues
 4. Verify GitHub secrets and variables are correct
-

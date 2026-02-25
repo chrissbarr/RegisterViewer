@@ -1,6 +1,6 @@
 # Register Viewer API Reference
 
-Base URL: `https://register-viewer-api.<your-subdomain>.workers.dev`
+Base URL: `https://<your-domain>/api`
 
 ## Authentication
 
@@ -10,7 +10,7 @@ All mutating endpoints require a Bearer token in the `Authorization` header:
 Authorization: Bearer <token_hash>
 ```
 
-The token hash is a 64-character lowercase hex string representing the SHA-256 hash of the client's owner token. The Worker never sees or stores the raw token.
+The token hash is a 64-character lowercase hex string representing the SHA-256 hash of the client's owner token. The server never sees or stores the raw token.
 
 **Constant-time comparison** is used for ownership checks to prevent timing side-channel attacks.
 
@@ -298,7 +298,10 @@ Referrer-Policy: no-referrer
 
 | Variable | Required | Description |
 |---|---|---|
-| `PROJECTS` | Yes | KV namespace binding for project storage |
-| `APP_URL` | Yes | Frontend URL for share link generation (e.g., `https://register-viewer.app`) |
-| `ENVIRONMENT` | No | Set to `production` to restrict CORS. Default allows localhost. |
-| `ALLOWED_ORIGINS` | No | Comma-separated origin override list |
+| `DB_HOST` | Yes | MySQL database host (default: `127.0.0.1`) |
+| `DB_PORT` | No | MySQL port (default: `3306`) |
+| `DB_DATABASE` | Yes | MySQL database name (default: `register_viewer`) |
+| `DB_USERNAME` | Yes | MySQL database user |
+| `DB_PASSWORD` | Yes | MySQL database password |
+| `APP_ENV` | No | Set to `production` to restrict CORS. Default: `production`. |
+| `ALLOWED_ORIGINS` | No | Configured in `config.php` `allowed_origins` array |

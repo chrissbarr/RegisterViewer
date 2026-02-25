@@ -43,29 +43,15 @@ jobs:
       - name: E2E tests
         run: npm run test:e2e
 
-  worker:
+  api:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: npm
-      - name: Install dependencies
-        working-directory: worker
-        run: npm ci
-      - name: Audit dependencies
-        working-directory: worker
-        run: npm audit --audit-level=high --omit=dev
-      - name: Lint
-        working-directory: worker
-        run: npm run lint
-      - name: Type check
-        working-directory: worker
-        run: npx tsc --noEmit
-      - name: Dead code check (knip)
-        working-directory: worker
-        run: npm run knip
-      - name: Run tests
-        working-directory: worker
-        run: npm test
+      - name: Build and run tests
+        run: docker compose run --rm test bash -c "composer install -q && vendor/bin/phpunit"
+      - name: Stop containers
+        if: always()
+        run: docker compose down -v
