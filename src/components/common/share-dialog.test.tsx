@@ -1129,4 +1129,81 @@ describe('ShareDialog', () => {
       expect(loadProject).not.toHaveBeenCalled();
     });
   });
+
+  // ── Error state reset on reopen ──────────────────────────────────
+
+  describe('error state reset on reopen', () => {
+    it('clears save error when dialog is reopened', async () => {
+      // State C (no cloudId) — error is visible in this state
+      const mockSaveProjectToCloud = vi.fn().mockRejectedValue(new Error('Upload failed'));
+      (isCloudEnabled as Mock).mockReturnValue(true);
+      (useCloudSyncActions as Mock).mockReturnValue({
+        saveToCloud: vi.fn(),
+        saveProjectToCloud: mockSaveProjectToCloud,
+        setVisibility: vi.fn(),
+        setProjectVisibility: vi.fn(),
+      });
+      (useProjectStorage as Mock).mockReturnValue({
+        activeLocalId: 'local-reset',
+        projects: [
+          {
+            localId: 'local-reset',
+            cloudId: null,
+            name: 'Test',
+            visibility: 'private',
+            createdAt: '2024-01-01T00:00:00Z',
+            localSavedAt: '2024-01-01T00:00:00Z',
+            cloudSavedAt: null,
+          },
+        ],
+      });
+      (loadProject as Mock).mockReturnValue({
+        localId: 'local-reset',
+        state: {
+          registers: [],
+          activeRegisterId: null,
+          registerValues: {},
+          mapTableWidth: 32,
+          mapShowGaps: true,
+          mapSortDescending: false,
+          addressUnitBits: 8,
+        },
+      });
+      (deserializeState as Mock).mockReturnValue({
+        registers: [],
+        activeRegisterId: null,
+        registerValues: {},
+        mapTableWidth: 32,
+        mapShowGaps: true,
+        mapSortDescending: false,
+        addressUnitBits: 8,
+      });
+
+      const onClose = vi.fn();
+      const { rerender } = renderShareDialog({ projectLocalId: 'local-reset' });
+
+      // Click "Save to Cloud" → first-time prompt → confirm → triggers error
+      fireEvent.click(screen.getByRole('button', { name: 'Save to Cloud' }));
+      const confirmButtons = screen.getAllByRole('button', { name: 'Save to Cloud' });
+      const confirmBtn = confirmButtons[confirmButtons.length - 1];
+      await act(async () => {
+        fireEvent.click(confirmBtn);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText('Upload failed')).toBeInTheDocument();
+      });
+
+      // Close and reopen dialog
+      rerender(
+        <ShareDialog open={false} onClose={onClose} projectLocalId="local-reset" />,
+      );
+      rerender(
+        <ShareDialog open={true} onClose={onClose} projectLocalId="local-reset" />,
+      );
+
+      // Error should be cleared after reopen
+      expect(screen.queryByText('Upload failed')).not.toBeInTheDocument();
+    });
+  });
 });

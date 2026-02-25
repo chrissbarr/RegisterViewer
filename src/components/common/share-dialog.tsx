@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback, useDeferredValue } from 'react';
+import { useMemo, useState, useCallback, useDeferredValue, useEffect } from 'react';
 import { Dialog } from './dialog';
 import { CopyButton } from './copy-button';
 import { FirstTimeCloudPrompt } from './first-time-cloud-prompt';
@@ -29,6 +29,14 @@ export function ShareDialog({ open, onClose, projectLocalId }: ShareDialogProps)
   const [saveError, setSaveError] = useState<string | null>(null);
   // Bumped after save/visibility mutations to force cloudInfo memo to re-read manifest
   const [refreshKey, setRefreshKey] = useState(0);
+
+  // Reset transient state when dialog opens
+  useEffect(() => {
+    if (open) {
+      setSaveError(null);
+      setShowFirstTimePrompt(false);
+    }
+  }, [open]);
 
   // When projectLocalId is provided, load that project's state from localStorage.
   // Otherwise fall back to the active project's state from context.
