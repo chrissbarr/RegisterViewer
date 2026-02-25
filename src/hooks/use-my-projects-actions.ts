@@ -99,15 +99,20 @@ export function useMyProjectsActions(
     setSaveToCloudLocalId(localId);
   }, []);
 
+  const [savingCloudLocalId, setSavingCloudLocalId] = useState<string | null>(null);
+
   const handleConfirmSaveToCloud = useCallback(async () => {
     const localId = saveToCloudLocalId;
     setSaveToCloudLocalId(null);
     if (!localId) return;
+    setSavingCloudLocalId(localId);
     try {
       await saveProjectToCloud(localId);
       announce('Saved to cloud');
     } catch (err) {
       setCloudError(friendlyErrorMessage(err, 'Failed to save to cloud.'));
+    } finally {
+      setSavingCloudLocalId(null);
     }
   }, [saveToCloudLocalId, saveProjectToCloud, announce]);
 
@@ -247,6 +252,7 @@ export function useMyProjectsActions(
     isSaveToCloudOpen: saveToCloudLocalId !== null,
     isDeleteCloudConfirmOpen: deleteCloudConfirm !== null,
     cloudError,
+    savingCloudLocalId,
     staleCloudIds,
     dismissCloudError,
     dismissSaveToCloud,

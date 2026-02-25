@@ -6,7 +6,6 @@ import { ShareDialog } from '../common/share-dialog';
 import { ProjectListItem } from './project-list-item';
 import { MyProjectsCloudDialogs } from './my-projects-cloud-dialogs';
 import { useProjectStorage } from '../../context/project-storage-context';
-import { useCloudSync } from '../../context/cloud-sync-context';
 import { useMyProjectsActions } from '../../hooks/use-my-projects-actions';
 import { isCloudEnabled } from '../../utils/api-client';
 import { getStorageUsage } from '../../utils/project-storage';
@@ -22,7 +21,6 @@ interface MyProjectsDialogProps {
 
 export function MyProjectsDialog({ open, onClose }: MyProjectsDialogProps) {
   const { activeLocalId, projects } = useProjectStorage();
-  const cloudState = useCloudSync();
 
   const [filter, setFilter] = useState('');
   const resetFilter = useCallback(() => setFilter(''), []);
@@ -146,7 +144,7 @@ export function MyProjectsDialog({ open, onClose }: MyProjectsDialogProps) {
                 onUnlinkCloud={actions.handleUnlinkCloud}
                 onSaveToCloud={isCloudEnabled() ? actions.handleSaveToCloud : undefined}
                 onRemoveFromCloud={isCloudEnabled() ? actions.handleRemoveFromCloud : undefined}
-                isSavingToCloud={cloudState.status === 'saving'}
+                isSavingToCloud={project.localId === actions.savingCloudLocalId}
               />
             ))}
           </ul>
