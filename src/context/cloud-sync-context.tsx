@@ -325,15 +325,20 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     const { cloudId } = internalRef.current;
     if (!cloudId) return;
     await withMutationLock(mutationLockRef, async () => {
-      await deleteProjectFromCloudImpl(cloudId);
+      setInternal((prev) => ({ ...prev, status: 'deleting', error: null }));
+      try {
+        await deleteProjectFromCloudImpl(cloudId);
 
-      const currentLocalId = activeLocalIdRef.current;
-      if (currentLocalId) {
-        updateCloudMetadata(currentLocalId, CLEARED_CLOUD_METADATA);
+        const currentLocalId = activeLocalIdRef.current;
+        if (currentLocalId) {
+          updateCloudMetadata(currentLocalId, CLEARED_CLOUD_METADATA);
+        }
+
+        clearCloudUrl();
+        setInternal({ ...initialInternalState });
+      } catch (err) {
+        setInternal((prev) => ({ ...prev, status: 'idle', error: friendlyErrorMessage(err, 'Failed to delete project.') }));
       }
-
-      clearCloudUrl();
-      setInternal({ ...initialInternalState });
     });
   }, [updateCloudMetadata, mutationLockRef]);
 

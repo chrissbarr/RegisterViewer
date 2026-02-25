@@ -498,7 +498,7 @@ describe('CloudSyncProvider', () => {
       expect(apiDeleteProject).not.toHaveBeenCalled();
     });
 
-    it('throws on failure', async () => {
+    it('sets error on failure instead of throwing', async () => {
       (apiCreateProject as Mock).mockResolvedValue({
         id: 'cloud-abc',
         shareUrl: 'https://example.com/#/p/cloud-abc',
@@ -513,11 +513,64 @@ describe('CloudSyncProvider', () => {
 
       (getOwnerTokenForProject as Mock).mockReturnValue(null);
 
-      await expect(
-        act(async () => {
-          await result.current.actions.deleteFromCloud();
-        }),
-      ).rejects.toThrow('Owner token not found.');
+      await act(async () => {
+        await result.current.actions.deleteFromCloud();
+      });
+
+      expect(result.current.state.status).toBe('idle');
+      expect(result.current.state.error).toBe('Authentication error. Your owner token may be missing or corrupted.');
+      // Cloud state should NOT be cleared on failure
+      expect(result.current.state.cloudId).toBe('cloud-abc');
+    });
+
+    it('sets error on network failure', async () => {
+      (apiCreateProject as Mock).mockResolvedValue({
+        id: 'cloud-abc',
+        shareUrl: 'https://example.com/#/p/cloud-abc',
+        createdAt: '2024-01-01T12:00:00Z',
+      });
+
+      const { result } = renderCloudSync();
+
+      await act(async () => {
+        await result.current.actions.saveToCloud();
+      });
+
+      (apiDeleteProject as Mock).mockRejectedValue(new Error('Network error'));
+
+      await act(async () => {
+        await result.current.actions.deleteFromCloud();
+      });
+
+      expect(result.current.state.status).toBe('idle');
+      expect(result.current.state.error).toBe('Network error');
+      expect(result.current.state.cloudId).toBe('cloud-abc');
+    });
+
+    it('sets friendly error on 404 (already deleted server-side)', async () => {
+      (apiCreateProject as Mock).mockResolvedValue({
+        id: 'cloud-abc',
+        shareUrl: 'https://example.com/#/p/cloud-abc',
+        createdAt: '2024-01-01T12:00:00Z',
+      });
+
+      const { result } = renderCloudSync();
+
+      await act(async () => {
+        await result.current.actions.saveToCloud();
+      });
+
+      (apiDeleteProject as Mock).mockRejectedValue(
+        new ApiError(404, { error: 'Not found' }),
+      );
+
+      await act(async () => {
+        await result.current.actions.deleteFromCloud();
+      });
+
+      expect(result.current.state.status).toBe('idle');
+      expect(result.current.state.error).toContain('may have been deleted');
+      expect(result.current.state.cloudId).toBe('cloud-abc');
     });
   });
 
