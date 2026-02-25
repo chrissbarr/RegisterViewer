@@ -138,10 +138,13 @@ function readJsonBody(): array
  * json_decode($raw, true) turns {} into [], losing the distinction.
  * Decoding without true preserves stdClass for {}, which json_encode writes as {}.
  */
-function extractRawDataJson(array $body): string
+function extractRawDataJson(): string
 {
     $raw = readBody();
     $asObject = json_decode($raw); // decode to stdClass (preserves {} vs [])
+    if (!is_object($asObject) || !property_exists($asObject, 'data')) {
+        sendError('Invalid JSON body', 400);
+    }
     return json_encode($asObject->data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 }
 

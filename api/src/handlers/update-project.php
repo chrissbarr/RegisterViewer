@@ -30,7 +30,7 @@ function handleUpdateProject(PDO $db, string $id, array $config): never
     dbUpdateProject(
         $db,
         $id,
-        extractRawDataJson($body),
+        extractRawDataJson(),
         $visibility,
         $title,
     );

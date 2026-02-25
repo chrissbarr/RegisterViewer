@@ -37,7 +37,7 @@ function handleCreateProject(PDO $db, array $config): never
         $title = mb_substr($title, 0, 500);
     }
 
-    $dataJson = extractRawDataJson($body);
+    $dataJson = extractRawDataJson();
 
     // Optimistic insert with retry on duplicate key (eliminates TOCTOU race)
     $id = null;
