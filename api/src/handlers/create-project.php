@@ -9,6 +9,12 @@ function handleCreateProject(PDO $db, array $config): never
         sendError('Missing or invalid Authorization header', 401);
     }
 
+    // Per-owner project limit to prevent storage abuse
+    $ownerProjectCount = dbCountProjectsByOwner($db, $tokenHash);
+    if ($ownerProjectCount >= LIMITS['MAX_PROJECTS_PER_OWNER']) {
+        sendError('Project limit reached. Delete existing projects before creating new ones.', 429);
+    }
+
     $body = readJsonBody();
 
     $validation = validateProjectData($body['data'] ?? null);

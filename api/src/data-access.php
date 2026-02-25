@@ -149,6 +149,18 @@ function dbListProjectsByOwner(PDO $db, string $tokenHash): array
 }
 
 /**
+ * Count projects owned by a given token hash.
+ */
+function dbCountProjectsByOwner(PDO $db, string $tokenHash): int
+{
+    $stmt = $db->prepare(
+        'SELECT COUNT(*) FROM projects WHERE owner_token_hash = :token_hash'
+    );
+    $stmt->execute(['token_hash' => $tokenHash]);
+    return (int) $stmt->fetchColumn();
+}
+
+/**
  * Touch last_accessed_at if it is more than 24 hours stale.
  * The WHERE clause makes this a no-op if recently accessed.
  */
