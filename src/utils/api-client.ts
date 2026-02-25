@@ -26,13 +26,15 @@ async function apiRequest(path: string, options?: RequestInit): Promise<Response
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
   try {
+    const headers: Record<string, string> = { ...(options?.headers as Record<string, string>) };
+    if (options?.body) {
+      headers['Content-Type'] ??= 'application/json';
+    }
+
     const res = await fetch(`${getApiBase()}${path}`, {
       ...options,
       signal: controller.signal,
-      headers: {
-        'Content-Type': 'application/json',
-        ...options?.headers,
-      },
+      headers,
     });
 
     if (!res.ok) {

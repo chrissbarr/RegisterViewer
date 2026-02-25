@@ -195,9 +195,7 @@ describe('getProject', () => {
       'https://api.example.com/api/projects/ABC123DEF456',
       {
         signal: expect.any(AbortSignal),
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: {},
       },
     );
     expect(result).toEqual(responseData);
@@ -224,7 +222,6 @@ describe('getProject', () => {
       {
         signal: expect.any(AbortSignal),
         headers: {
-          'Content-Type': 'application/json',
           Authorization: `Bearer ${tokenHash}`,
         },
       },
@@ -373,7 +370,6 @@ describe('deleteProject', () => {
         method: 'DELETE',
         signal: expect.any(AbortSignal),
         headers: {
-          'Content-Type': 'application/json',
           Authorization: `Bearer ${'a'.repeat(64)}`,
         },
       },
@@ -529,7 +525,6 @@ describe('listProjects', () => {
       {
         signal: expect.any(AbortSignal),
         headers: {
-          'Content-Type': 'application/json',
           Authorization: `Bearer ${tokenHash}`,
         },
       },
