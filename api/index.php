@@ -34,7 +34,7 @@ const SECURITY_HEADERS = [
 
 // ---- Response helpers ----
 
-function sendJson(mixed $body, int $status = 200, array $extraHeaders = []): never
+function sendJson(array|object $body, int $status = 200, array $extraHeaders = []): never
 {
     http_response_code($status);
     header('Content-Type: application/json');
@@ -44,11 +44,9 @@ function sendJson(mixed $body, int $status = 200, array $extraHeaders = []): nev
     foreach ($extraHeaders as $k => $v) {
         header("$k: $v");
     }
-    if ($body !== null) {
-        $output = json_encode($body, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-        header('Content-Length: ' . strlen($output));
-        echo $output;
-    }
+    $output = json_encode($body, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    header('Content-Length: ' . strlen($output));
+    echo $output;
     exit;
 }
 
