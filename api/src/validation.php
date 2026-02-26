@@ -120,8 +120,13 @@ function validateRegister(mixed $reg, int $index): array
     }
 
     // description (optional)
-    if (isset($reg['description']) && !is_string($reg['description'])) {
-        return ['valid' => false, 'error' => "registers[$index].description must be a string"];
+    if (isset($reg['description'])) {
+        if (!is_string($reg['description'])) {
+            return ['valid' => false, 'error' => "registers[$index].description must be a string"];
+        }
+        if (strlen($reg['description']) > LIMITS['MAX_METADATA_STRING_LENGTH']) {
+            return ['valid' => false, 'error' => "registers[$index].description must be at most " . LIMITS['MAX_METADATA_STRING_LENGTH'] . " characters"];
+        }
     }
 
     // offset (optional)
@@ -184,6 +189,9 @@ function validateField(mixed $field, int $regIndex, int $fieldIndex): array
             }
             if (!isset($entry['name']) || !is_string($entry['name']) || strlen($entry['name']) < 1) {
                 return ['valid' => false, 'error' => "$prefix.enumEntries[$k].name must be a non-empty string"];
+            }
+            if (strlen($entry['name']) > LIMITS['MAX_NAME_LENGTH']) {
+                return ['valid' => false, 'error' => "$prefix.enumEntries[$k].name must be at most " . LIMITS['MAX_NAME_LENGTH'] . " characters"];
             }
         }
     }
