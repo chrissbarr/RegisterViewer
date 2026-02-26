@@ -10,7 +10,7 @@ export interface QFormat {
   n: number; // fractional bits
 }
 
-export interface BaseField {
+interface BaseField {
   id: string;
   name: string;
   description?: string;
@@ -123,10 +123,7 @@ export interface AppState {
   registers: RegisterDef[];
   activeRegisterId: string | null;
   registerValues: Record<string, bigint>; // defId -> current value
-  theme: 'light' | 'dark';
   project?: ProjectMetadata;
-  sidebarWidth: number;
-  sidebarCollapsed: boolean;
   mapTableWidth: MapTableWidth;
   mapShowGaps: boolean;
   mapSortDescending: boolean;
@@ -138,10 +135,7 @@ export interface SerializedAppState {
   registers: RegisterDef[];
   activeRegisterId: string | null;
   registerValues: Record<string, string>; // defId -> hex string
-  theme: 'light' | 'dark';
   project?: ProjectMetadata;
-  sidebarWidth: number;
-  sidebarCollapsed: boolean;
   mapTableWidth?: MapTableWidth;
   mapShowGaps?: boolean;
   mapSortDescending?: boolean;

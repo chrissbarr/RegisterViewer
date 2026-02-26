@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, type RefObject } from 'react';
+import { ArrowDown, ArrowUp } from 'lucide-react';
 import { MAP_TABLE_WIDTH_VALUES, type MapTableWidth, type RegisterDef } from '../../types/register';
 import { useAppState, useAppDispatch } from '../../context/app-context';
 import {
@@ -51,7 +52,7 @@ export function RegisterMapView({
     if (scrollTopRef != null && scrollTopRef.current > 0 && scrollRef.current) {
       scrollRef.current.scrollTop = scrollTopRef.current;
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- mount-only: restores scroll position from ref, must not re-run on ref changes
 
   const overlapWarnings = useMemo(
     () => getRegisterOverlapWarnings(registers, addressUnitBits),
@@ -129,13 +130,7 @@ export function RegisterMapView({
           title={sortDescending ? 'Sorted descending — click for ascending' : 'Sorted ascending — click for descending'}
           className="flex items-center gap-1.5 px-2 py-1 rounded-md text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
         >
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
-            {sortDescending ? (
-              <path d="M8 1a.5.5 0 0 1 .5.5v11.793l3.146-3.147a.5.5 0 0 1 .708.708l-4 4a.5.5 0 0 1-.708 0l-4-4a.5.5 0 0 1 .708-.708L7.5 13.293V1.5A.5.5 0 0 1 8 1z" />
-            ) : (
-              <path d="M8 15a.5.5 0 0 0 .5-.5V2.707l3.146 3.147a.5.5 0 0 0 .708-.708l-4-4a.5.5 0 0 0-.708 0l-4 4a.5.5 0 0 0 .708.708L7.5 2.707V14.5A.5.5 0 0 0 8 15z" />
-            )}
-          </svg>
+          {sortDescending ? <ArrowDown size={14} /> : <ArrowUp size={14} />}
           <span className="text-xs">{sortDescending ? 'Desc' : 'Asc'}</span>
         </button>
       </div>

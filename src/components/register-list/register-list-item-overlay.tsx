@@ -1,5 +1,5 @@
+import { GripVertical } from 'lucide-react';
 import type { RegisterDef } from '../../types/register';
-import { GripIcon } from './register-list-item';
 import { formatOffset } from '../../utils/format';
 
 interface Props {
@@ -20,7 +20,7 @@ export function RegisterListItemOverlay({ register, isActive, hasPendingEdit, of
     >
       {/* Grip handle — spans full item height */}
       <span className="self-stretch flex items-center text-gray-400 dark:text-gray-500 shrink-0">
-        <GripIcon />
+        <GripVertical size={12} />
       </span>
 
       {/* Content column */}

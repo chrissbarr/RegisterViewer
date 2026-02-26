@@ -18,6 +18,7 @@ test-results/
 playwright-report/
 blob-report/
 
+
 # Claude Code
 .claude
 

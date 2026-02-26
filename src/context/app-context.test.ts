@@ -178,20 +178,6 @@ describe('SET_ACTIVE_REGISTER', () => {
   });
 });
 
-describe('TOGGLE_THEME', () => {
-  it('toggles dark to light', () => {
-    const state = makeState({ theme: 'dark' });
-    const next = appReducer(state, { type: 'TOGGLE_THEME' });
-    expect(next.theme).toBe('light');
-  });
-
-  it('toggles light to dark', () => {
-    const state = makeState({ theme: 'light' });
-    const next = appReducer(state, { type: 'TOGGLE_THEME' });
-    expect(next.theme).toBe('dark');
-  });
-});
-
 describe('IMPORT_STATE', () => {
   it('replaces all registers', () => {
     const r1 = makeRegister({ id: 'reg-old' });
@@ -249,13 +235,6 @@ describe('IMPORT_STATE', () => {
     expect(next.activeRegisterId).toBeNull();
   });
 
-  it('preserves theme from existing state', () => {
-    const reg = makeRegister({ id: 'reg-1' });
-    const state = makeState({ theme: 'light' });
-    const next = appReducer(state, { type: 'IMPORT_STATE', registers: [reg], values: {} });
-    expect(next.theme).toBe('light');
-  });
-
   it('auto-sets mapTableWidth to fit the widest register', () => {
     const r1 = makeRegister({ id: 'a', width: 8 });
     const r2 = makeRegister({ id: 'b', width: 16 });
@@ -287,9 +266,8 @@ describe('IMPORT_STATE', () => {
 
 describe('LOAD_STATE', () => {
   it('completely replaces the state', () => {
-    const original = makeState({ theme: 'dark', activeRegisterId: 'old' });
+    const original = makeState({ activeRegisterId: 'old' });
     const replacement = makeState({
-      theme: 'light',
       activeRegisterId: 'new',
       registers: [makeRegister({ id: 'new' })],
       registerValues: { 'new': 99n },
@@ -350,16 +328,6 @@ describe('CLEAR_WORKSPACE', () => {
     expect(next.activeRegisterId).toBeNull();
   });
 
-  it('preserves theme', () => {
-    const state = makeState({
-      registers: [makeRegister({ id: 'reg-1' })],
-      registerValues: { 'reg-1': 0xAAn },
-      theme: 'light',
-    });
-    const next = appReducer(state, { type: 'CLEAR_WORKSPACE' });
-    expect(next.theme).toBe('light');
-  });
-
   it('is a no-op on an already empty workspace', () => {
     const state = makeState();
     const next = appReducer(state, { type: 'CLEAR_WORKSPACE' });
@@ -371,7 +339,7 @@ describe('CLEAR_WORKSPACE', () => {
 
 describe('default case', () => {
   it('returns state unchanged for an unknown action type', () => {
-    const state = makeState({ theme: 'dark' });
+    const state = makeState();
     const next = appReducer(state, { type: 'UNKNOWN_ACTION' } as never);
     expect(next).toBe(state);
   });

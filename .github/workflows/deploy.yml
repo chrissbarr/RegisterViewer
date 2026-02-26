@@ -1,4 +1,4 @@
-name: Deploy to GitHub Pages
+name: Deploy to cPanel
 
 on:
   push:
@@ -7,12 +7,6 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: pages
-  cancel-in-progress: false
 
 jobs:
   ci:
@@ -21,21 +15,16 @@ jobs:
   deploy:
     needs: ci
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: cpanel-deploy
+      cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - name: Deploy via cPanel API
+        uses: pinkasey/cpanel-deploy-action@b61fa4690c5c978610c131b26a6705273365b368 # v1.2.3
         with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - name: Build
-        run: npm run build
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v4
-        with:
-          path: dist
-      - id: deployment
-        uses: actions/deploy-pages@v4
+          hostname: ${{ secrets.CPANEL_HOSTNAME }}
+          cpanel_username: ${{ secrets.CPANEL_USERNAME }}
+          cpanel_token: ${{ secrets.CPANEL_TOKEN }}
+          repository_root: ${{ vars.CPANEL_REPO_PATH }}
+          branch: master
+          updateRepository: true

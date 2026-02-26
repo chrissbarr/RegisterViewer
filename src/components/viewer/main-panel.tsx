@@ -9,6 +9,7 @@ import { RegisterMapView } from './register-map-view';
 import type { RegisterDef } from '../../types/register';
 import { formatOffset } from '../../utils/format';
 import { validateRegisterDef } from '../../utils/validation';
+import { SharedProjectBanner } from '../common/shared-project-banner';
 
 type MainTab = 'register' | 'map';
 
@@ -88,6 +89,9 @@ export function MainPanel() {
   if (isEditing && activeDraft) {
     return (
       <main className="flex-1 overflow-y-auto p-4">
+        <div className="mb-3">
+          <SharedProjectBanner />
+        </div>
         <RegisterEditor
           draft={activeDraft}
           onDraftChange={handleDraftChange}
@@ -117,37 +121,28 @@ export function MainPanel() {
     </div>
   );
 
+  // Non-editor content — banner and tab bar are shared across all branches
+  let content;
   if (activeTab === 'map' && hasOffsets) {
-    return (
-      <main className="flex-1 flex flex-col overflow-hidden">
-        {tabBar}
-        <RegisterMapView
-          registers={registers}
-          onNavigateToRegister={handleNavigateToRegister}
-          scrollTopRef={mapScrollTopRef}
-          onScrollChange={handleMapScroll}
-        />
-      </main>
+    content = (
+      <RegisterMapView
+        registers={registers}
+        onNavigateToRegister={handleNavigateToRegister}
+        scrollTopRef={mapScrollTopRef}
+        onScrollChange={handleMapScroll}
+      />
     );
-  }
-
-  if (!activeRegister) {
-    return (
-      <main className="flex-1 flex flex-col overflow-hidden">
-        {tabBar}
-        <div className="flex-1 flex items-center justify-center text-gray-500 dark:text-gray-500">
-          <div className="text-center">
-            <p className="text-lg mb-2">No register selected</p>
-            <p className="text-sm">Add a register from the sidebar to get started.</p>
-          </div>
+  } else if (!activeRegister) {
+    content = (
+      <div className="flex-1 flex items-center justify-center text-gray-500 dark:text-gray-500">
+        <div className="text-center">
+          <p className="text-lg mb-2">No register selected</p>
+          <p className="text-sm">Add a register from the sidebar to get started.</p>
         </div>
-      </main>
+      </div>
     );
-  }
-
-  return (
-    <main className="flex-1 flex flex-col overflow-hidden">
-      {tabBar}
+  } else {
+    content = (
       <div className="flex-1 overflow-y-auto p-4">
         <div className="bg-white dark:bg-gray-900/50 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-4 space-y-3">
           <div className="flex items-start justify-between">
@@ -176,6 +171,16 @@ export function MainPanel() {
         </h3>
         <FieldTable register={activeRegister} hoveredFieldIndices={hoveredFieldIndices} onFieldHover={setHoveredFieldIndices} fieldHoverSets={fieldHoverSets} />
       </div>
+    );
+  }
+
+  return (
+    <main className="flex-1 flex flex-col overflow-hidden">
+      <div className="mx-4 mt-3 shrink-0">
+        <SharedProjectBanner />
+      </div>
+      {tabBar}
+      {content}
     </main>
   );
 }

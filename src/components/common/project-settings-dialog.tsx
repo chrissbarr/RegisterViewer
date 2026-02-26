@@ -1,26 +1,31 @@
 import { useState } from 'react';
-import type { ProjectMetadata } from '../../types/register';
-import { useAppState, useAppDispatch } from '../../context/app-context';
+import type { AddressUnitBits, ProjectMetadata } from '../../types/register';
 import { sanitizeProjectMetadata } from '../../utils/storage';
 import { Dialog } from './dialog';
+
+export interface ProjectSettingsData {
+  metadata: ProjectMetadata;
+  addressUnitBits: AddressUnitBits;
+}
 
 interface ProjectSettingsDialogProps {
   open: boolean;
   onClose: () => void;
+  initialData: ProjectSettingsData;
+  onSave: (data: ProjectSettingsData) => void;
 }
 
 const inputClass =
   'w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500';
 
-export function ProjectSettingsDialog({ open, onClose }: ProjectSettingsDialogProps) {
-  const state = useAppState();
-  const dispatch = useAppDispatch();
-
+export function ProjectSettingsDialog({ open, onClose, initialData, onSave }: ProjectSettingsDialogProps) {
   const [draft, setDraft] = useState<ProjectMetadata>({});
+  const [draftAddressUnitBits, setDraftAddressUnitBits] = useState<AddressUnitBits>(8);
   const [wasOpen, setWasOpen] = useState(false);
 
   if (open && !wasOpen) {
-    setDraft(state.project ?? {});
+    setDraft(initialData.metadata);
+    setDraftAddressUnitBits(initialData.addressUnitBits);
     setWasOpen(true);
   } else if (!open && wasOpen) {
     setWasOpen(false);
@@ -31,9 +36,9 @@ export function ProjectSettingsDialog({ open, onClose }: ProjectSettingsDialogPr
   }
 
   function handleSave() {
-    dispatch({
-      type: 'SET_PROJECT_METADATA',
-      project: sanitizeProjectMetadata(draft),
+    onSave({
+      metadata: sanitizeProjectMetadata(draft) ?? {},
+      addressUnitBits: draftAddressUnitBits,
     });
     onClose();
   }
@@ -72,10 +77,8 @@ export function ProjectSettingsDialog({ open, onClose }: ProjectSettingsDialogPr
             Address unit size
           </span>
           <select
-            value={state.addressUnitBits}
-            onChange={(e) =>
-              dispatch({ type: 'SET_ADDRESS_UNIT_BITS', addressUnitBits: Number(e.target.value) })
-            }
+            value={draftAddressUnitBits}
+            onChange={(e) => setDraftAddressUnitBits(Number(e.target.value) as AddressUnitBits)}
             className={inputClass}
           >
             <option value={8}>8-bit</option>
@@ -94,10 +97,9 @@ export function ProjectSettingsDialog({ open, onClose }: ProjectSettingsDialogPr
             Date
           </span>
           <input
-            type="text"
+            type="date"
             value={draft.date ?? ''}
             onChange={(e) => update({ date: e.target.value })}
-            placeholder="e.g. 2026-02-18"
             className={inputClass}
           />
         </label>

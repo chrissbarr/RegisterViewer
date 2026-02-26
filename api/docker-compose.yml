@@ -1,0 +1,53 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8080:80"
+    volumes:
+      - .:/var/www/html
+    environment:
+      APP_ENV: development
+      DB_HOST: db
+      DB_DATABASE: register_viewer
+      DB_USERNAME: regapi
+      DB_PASSWORD: regapi_dev
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: register_viewer
+      MYSQL_USER: regapi
+      MYSQL_PASSWORD: regapi_dev
+      MYSQL_ROOT_PASSWORD: root_dev
+    ports:
+      - "127.0.0.1:3307:3306"
+    volumes:
+      - ./database/migrations/001_create_projects_table.sql:/docker-entrypoint-initdb.d/001.sql:ro
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  test:
+    build:
+      context: .
+      target: test
+    volumes:
+      - .:/var/www/html
+    environment:
+      APP_ENV: testing
+      DB_HOST: db
+      DB_DATABASE: register_viewer
+      DB_USERNAME: regapi
+      DB_PASSWORD: regapi_dev
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db_data:

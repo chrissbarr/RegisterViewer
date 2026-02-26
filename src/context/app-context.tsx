@@ -1,6 +1,6 @@
 import { createContext, useContext, useReducer, type ReactNode, type Dispatch } from 'react';
 import { arrayMove } from '@dnd-kit/sortable';
-import { SIDEBAR_WIDTH_DEFAULT, ADDRESS_UNIT_BITS_DEFAULT, ADDRESS_UNIT_BITS_VALUES, MAP_TABLE_WIDTH_VALUES, type AddressUnitBits, type AppState, type MapTableWidth, type RegisterDef, type Field, type ProjectMetadata } from '../types/register';
+import { ADDRESS_UNIT_BITS_DEFAULT, ADDRESS_UNIT_BITS_VALUES, MAP_TABLE_WIDTH_VALUES, type AddressUnitBits, type AppState, type MapTableWidth, type RegisterDef, type Field, type ProjectMetadata } from '../types/register';
 import { replaceBits, toggleBit } from '../utils/bitwise';
 
 function isValidAddressUnitBits(n: number): n is AddressUnitBits {
@@ -9,7 +9,7 @@ function isValidAddressUnitBits(n: number): n is AddressUnitBits {
 
 // --- Actions ---
 
-export type Action =
+type Action =
   | { type: 'SET_REGISTER_VALUE'; registerId: string; value: bigint }
   | { type: 'TOGGLE_BIT'; registerId: string; bit: number }
   | { type: 'SET_FIELD_VALUE'; registerId: string; field: Field; rawBits: bigint }
@@ -17,15 +17,12 @@ export type Action =
   | { type: 'UPDATE_REGISTER'; register: RegisterDef }
   | { type: 'DELETE_REGISTER'; registerId: string }
   | { type: 'SET_ACTIVE_REGISTER'; registerId: string }
-  | { type: 'TOGGLE_THEME' }
   | { type: 'IMPORT_STATE'; registers: RegisterDef[]; values: Record<string, bigint>; project?: ProjectMetadata; addressUnitBits?: AddressUnitBits }
   | { type: 'LOAD_STATE'; state: AppState }
   | { type: 'REORDER_REGISTERS'; oldIndex: number; newIndex: number }
   | { type: 'SORT_REGISTERS_BY_OFFSET' }
   | { type: 'CLEAR_WORKSPACE' }
   | { type: 'SET_PROJECT_METADATA'; project: ProjectMetadata | undefined }
-  | { type: 'SET_SIDEBAR_WIDTH'; width: number }
-  | { type: 'SET_SIDEBAR_COLLAPSED'; collapsed: boolean }
   | { type: 'SET_MAP_TABLE_WIDTH'; width: MapTableWidth }
   | { type: 'SET_MAP_SHOW_GAPS'; showGaps: boolean }
   | { type: 'SET_MAP_SORT_DESCENDING'; descending: boolean }
@@ -40,7 +37,6 @@ function clampMapTableWidth(minBits: number): MapTableWidth {
   return MAP_TABLE_WIDTHS.find((w) => w >= minBits) ?? 128;
 }
 
-// eslint-disable-next-line react-refresh/only-export-components
 export function appReducer(state: AppState, action: Action): AppState {
   switch (action.type) {
     case 'SET_REGISTER_VALUE': {
@@ -100,10 +96,6 @@ export function appReducer(state: AppState, action: Action): AppState {
     case 'SET_ACTIVE_REGISTER': {
       return { ...state, activeRegisterId: action.registerId };
     }
-    case 'TOGGLE_THEME': {
-      const next = state.theme === 'dark' ? 'light' : 'dark';
-      return { ...state, theme: next };
-    }
     case 'IMPORT_STATE': {
       const newValues: Record<string, bigint> = {};
       for (const r of action.registers) {
@@ -150,12 +142,6 @@ export function appReducer(state: AppState, action: Action): AppState {
     case 'SET_PROJECT_METADATA': {
       return { ...state, project: action.project };
     }
-    case 'SET_SIDEBAR_WIDTH': {
-      return { ...state, sidebarWidth: action.width };
-    }
-    case 'SET_SIDEBAR_COLLAPSED': {
-      return { ...state, sidebarCollapsed: action.collapsed };
-    }
     case 'SET_MAP_TABLE_WIDTH': {
       return { ...state, mapTableWidth: action.width };
     }
@@ -184,9 +170,6 @@ const initialState: AppState = {
   registers: [],
   activeRegisterId: null,
   registerValues: {},
-  theme: 'dark',
-  sidebarWidth: SIDEBAR_WIDTH_DEFAULT,
-  sidebarCollapsed: false,
   mapTableWidth: 32,
   mapShowGaps: true,
   mapSortDescending: false,
@@ -207,14 +190,12 @@ export function AppProvider({ children, savedState }: { children: ReactNode; sav
   );
 }
 
-// eslint-disable-next-line react-refresh/only-export-components
 export function useAppState() {
   const ctx = useContext(AppStateContext);
   if (!ctx) throw new Error('useAppState must be used within AppProvider');
   return ctx;
 }
 
-// eslint-disable-next-line react-refresh/only-export-components
 export function useAppDispatch() {
   const ctx = useContext(AppDispatchContext);
   if (!ctx) throw new Error('useAppDispatch must be used within AppProvider');

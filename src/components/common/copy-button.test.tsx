@@ -1,5 +1,14 @@
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { CopyButton } from './copy-button';
+import { AnnouncerProvider } from './announcer';
+
+function renderCopyButton(props: { value: string; label: string }) {
+  return render(
+    <AnnouncerProvider>
+      <CopyButton {...props} />
+    </AnnouncerProvider>,
+  );
+}
 
 describe('CopyButton', () => {
   beforeEach(() => {
@@ -14,12 +23,12 @@ describe('CopyButton', () => {
   });
 
   it('renders a button with the given aria-label', () => {
-    render(<CopyButton value="0xFF" label="Copy hex value" />);
+    renderCopyButton({ value: '0xFF', label: 'Copy hex value' });
     expect(screen.getByRole('button', { name: 'Copy hex value' })).toBeInTheDocument();
   });
 
   it('copies the value to clipboard on click', async () => {
-    render(<CopyButton value="0xDEADBEEF" label="Copy hex" />);
+    renderCopyButton({ value: '0xDEADBEEF', label: 'Copy hex' });
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Copy hex' }));
     });
@@ -27,30 +36,30 @@ describe('CopyButton', () => {
   });
 
   it('shows checkmark icon after copying', async () => {
-    const { container } = render(<CopyButton value="42" label="Copy dec" />);
+    renderCopyButton({ value: '42', label: 'Copy dec' });
 
-    // Before click: clipboard icon (has <rect> element)
-    expect(container.querySelector('rect')).toBeInTheDocument();
-    expect(container.querySelector('polyline')).not.toBeInTheDocument();
+    const button = screen.getByRole('button', { name: 'Copy dec' });
+    expect(button).toHaveAttribute('title', 'Copy dec');
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Copy dec' }));
+      fireEvent.click(button);
     });
 
-    // After click: checkmark icon (has <polyline> element, no <rect>)
-    expect(container.querySelector('polyline')).toBeInTheDocument();
-    expect(container.querySelector('rect')).not.toBeInTheDocument();
+    // After click: title changes to "Copied!"
+    expect(button).toHaveAttribute('title', 'Copied!');
   });
 
   it('reverts to clipboard icon after 1500ms', async () => {
-    const { container } = render(<CopyButton value="0b101" label="Copy bin" />);
+    renderCopyButton({ value: '0b101', label: 'Copy bin' });
+
+    const button = screen.getByRole('button', { name: 'Copy bin' });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Copy bin' }));
+      fireEvent.click(button);
     });
 
     // Checkmark visible
-    expect(container.querySelector('polyline')).toBeInTheDocument();
+    expect(button).toHaveAttribute('title', 'Copied!');
 
     // Advance past the timeout
     act(() => {
@@ -58,13 +67,12 @@ describe('CopyButton', () => {
     });
 
     // Back to clipboard icon
-    expect(container.querySelector('rect')).toBeInTheDocument();
-    expect(container.querySelector('polyline')).not.toBeInTheDocument();
+    expect(button).toHaveAttribute('title', 'Copy bin');
   });
 
   it('cleans up timer on unmount', async () => {
     const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
-    const { unmount } = render(<CopyButton value="0xAB" label="Copy" />);
+    const { unmount } = renderCopyButton({ value: '0xAB', label: 'Copy' });
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
@@ -78,10 +86,12 @@ describe('CopyButton', () => {
   });
 
   it('resets timer on rapid clicks', async () => {
-    const { container } = render(<CopyButton value="0xCD" label="Copy" />);
+    renderCopyButton({ value: '0xCD', label: 'Copy' });
+
+    const button = screen.getByRole('button', { name: 'Copy' });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
+      fireEvent.click(button);
     });
 
     // Advance partway
@@ -91,7 +101,7 @@ describe('CopyButton', () => {
 
     // Click again — should reset the timer
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
+      fireEvent.click(button);
     });
 
     // Advance past original timeout but not the new one
@@ -100,7 +110,7 @@ describe('CopyButton', () => {
     });
 
     // Should still show checkmark (new timer hasn't expired)
-    expect(container.querySelector('polyline')).toBeInTheDocument();
+    expect(button).toHaveAttribute('title', 'Copied!');
 
     // Advance past the new timer
     act(() => {
@@ -108,7 +118,7 @@ describe('CopyButton', () => {
     });
 
     // Now should revert
-    expect(container.querySelector('rect')).toBeInTheDocument();
+    expect(button).toHaveAttribute('title', 'Copy');
   });
 
   it('does not throw when clipboard API fails', async () => {
@@ -116,13 +126,14 @@ describe('CopyButton', () => {
       clipboard: { writeText: vi.fn().mockRejectedValue(new Error('denied')) },
     });
 
-    const { container } = render(<CopyButton value="test" label="Copy" />);
+    renderCopyButton({ value: 'test', label: 'Copy' });
+    const button = screen.getByRole('button', { name: 'Copy' });
+
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
+      fireEvent.click(button);
     });
 
-    // Should not show checkmark (copy failed)
-    expect(container.querySelector('rect')).toBeInTheDocument();
-    expect(container.querySelector('polyline')).not.toBeInTheDocument();
+    // Should not show checkmark (copy failed) — title stays as label
+    expect(button).toHaveAttribute('title', 'Copy');
   });
 });

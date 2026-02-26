@@ -13,7 +13,7 @@ function git(cmd: string): string {
 }
 
 export default defineConfig({
-  base: '/RegisterViewer/',
+  base: process.env.BASE_PATH || '/',
   plugins: [react(), tailwindcss()],
   define: {
     __GIT_HASH__: JSON.stringify(git('rev-parse --short HEAD')),
@@ -27,7 +27,13 @@ export default defineConfig({
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     coverage: {
       provider: 'v8',
-      include: ['src/utils/**', 'src/context/**'],
+      include: ['src/utils/**', 'src/context/**', 'src/hooks/**', 'src/components/**'],
+      thresholds: {
+        statements: 60,
+        branches: 52,
+        functions: 54,
+        lines: 60,
+      },
     },
   },
 })

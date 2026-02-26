@@ -1,8 +1,17 @@
-import { SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MAX, SIDEBAR_WIDTH_DEFAULT, ADDRESS_UNIT_BITS_DEFAULT, ADDRESS_UNIT_BITS_VALUES, MAP_TABLE_WIDTH_VALUES, type AddressUnitBits, type AppState, type Field, type MapTableWidth, type ProjectMetadata, type RegisterDef, type SerializedAppState } from '../types/register';
+import { ADDRESS_UNIT_BITS_DEFAULT, ADDRESS_UNIT_BITS_VALUES, MAP_TABLE_WIDTH_VALUES, type AddressUnitBits, type AppState, type Field, type MapTableWidth, type ProjectMetadata, type RegisterDef, type SerializedAppState } from '../types/register';
 import { sanitizeField, sanitizeRegisterDef } from './sanitize';
 import { validateRegisterDef, MAX_REGISTER_WIDTH, type ValidationError } from './validation';
 
-const STORAGE_KEY = 'register-viewer-state';
+/** Empty serialized state with all defaults — used when creating a new blank project. */
+export const EMPTY_SERIALIZED_STATE: SerializedAppState = {
+  registers: [],
+  activeRegisterId: null,
+  registerValues: {},
+  mapTableWidth: 32,
+  mapShowGaps: true,
+  mapSortDescending: false,
+  addressUnitBits: ADDRESS_UNIT_BITS_DEFAULT,
+};
 
 export function serializeState(state: AppState): SerializedAppState {
   const serializedValues: Record<string, string> = {};
@@ -13,10 +22,7 @@ export function serializeState(state: AppState): SerializedAppState {
     registers: state.registers,
     activeRegisterId: state.activeRegisterId,
     registerValues: serializedValues,
-    theme: state.theme,
     project: state.project,
-    sidebarWidth: state.sidebarWidth,
-    sidebarCollapsed: state.sidebarCollapsed,
     mapTableWidth: state.mapTableWidth,
     mapShowGaps: state.mapShowGaps,
     mapSortDescending: state.mapSortDescending,
@@ -53,12 +59,7 @@ export function deserializeState(data: SerializedAppState): AppState {
     registers,
     activeRegisterId: data.activeRegisterId,
     registerValues: values,
-    theme: data.theme,
     project: sanitizeProjectMetadata(data.project),
-    sidebarWidth: typeof data.sidebarWidth === 'number'
-      ? Math.max(SIDEBAR_WIDTH_MIN, Math.min(SIDEBAR_WIDTH_MAX, data.sidebarWidth))
-      : SIDEBAR_WIDTH_DEFAULT,
-    sidebarCollapsed: data.sidebarCollapsed === true,
     mapTableWidth: (MAP_TABLE_WIDTH_VALUES as readonly number[]).includes(data.mapTableWidth as number)
       ? data.mapTableWidth as MapTableWidth : 32,
     mapShowGaps: data.mapShowGaps !== false,
@@ -66,26 +67,6 @@ export function deserializeState(data: SerializedAppState): AppState {
     addressUnitBits: typeof data.addressUnitBits === 'number' && (ADDRESS_UNIT_BITS_VALUES as readonly number[]).includes(data.addressUnitBits)
       ? data.addressUnitBits as AddressUnitBits : ADDRESS_UNIT_BITS_DEFAULT,
   };
-}
-
-export function saveToLocalStorage(state: AppState): void {
-  try {
-    const serialized = serializeState(state);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(serialized));
-  } catch {
-    // Silently fail if localStorage is full or unavailable
-  }
-}
-
-export function loadFromLocalStorage(): AppState | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as SerializedAppState;
-    return deserializeState(parsed);
-  } catch {
-    return null;
-  }
 }
 
 type DistributiveOmit<T, K extends string> = T extends unknown ? Omit<T, K> : never;
@@ -108,13 +89,19 @@ export function sanitizeProjectMetadata(raw: unknown): ProjectMetadata | undefin
   const result: ProjectMetadata = {};
   if (typeof obj.title === 'string' && obj.title.trim()) result.title = obj.title.trim();
   if (typeof obj.description === 'string' && obj.description.trim()) result.description = obj.description.trim();
-  if (typeof obj.date === 'string' && obj.date.trim()) result.date = obj.date.trim();
+  if (typeof obj.date === 'string' && obj.date.trim()) {
+    const d = obj.date.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(d) && !isNaN(Date.parse(d))) {
+      result.date = d;
+    }
+  }
   if (typeof obj.authorEmail === 'string' && obj.authorEmail.trim()) result.authorEmail = obj.authorEmail.trim();
   if (typeof obj.link === 'string' && obj.link.trim()) result.link = obj.link.trim();
   return Object.keys(result).length > 0 ? result : undefined;
 }
 
-export function exportToJson(state: AppState): string {
+/** Build the export payload as a plain object (no serialization). */
+export function exportToObject(state: AppState): Record<string, unknown> {
   const cleanRegisters = state.registers.map(stripIds);
   const registerValues: Record<string, string> = {};
   for (const reg of state.registers) {
@@ -134,7 +121,12 @@ export function exportToJson(state: AppState): string {
   if (state.addressUnitBits !== ADDRESS_UNIT_BITS_DEFAULT) {
     data.addressUnitBits = state.addressUnitBits;
   }
-  return JSON.stringify(data, null, 2);
+  return data;
+}
+
+export function exportToJson(state: AppState, pretty = false): string {
+  const data = exportToObject(state);
+  return pretty ? JSON.stringify(data, null, 2) : JSON.stringify(data);
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -153,9 +145,8 @@ export interface ImportResult {
   addressUnitBits?: AddressUnitBits;
 }
 
-export function importFromJson(json: string): ImportResult | null {
+export function importFromObject(data: Record<string, unknown>): ImportResult | null {
   try {
-    const data = JSON.parse(json);
     if (!data.registers || !Array.isArray(data.registers)) return null;
 
     const warnings: ImportWarning[] = [];
@@ -188,7 +179,7 @@ export function importFromJson(json: string): ImportResult | null {
 
     const values: Record<string, bigint> = {};
     if (data.registerValues) {
-      for (const [key, hex] of Object.entries(data.registerValues)) {
+      for (const [key, hex] of Object.entries(data.registerValues as Record<string, string>)) {
         // Resolve key: if it's a UUID matching a register id, use as-is;
         // otherwise treat it as a register name and map to the generated id
         let resolvedId: string | undefined;
@@ -199,7 +190,7 @@ export function importFromJson(json: string): ImportResult | null {
         }
         if (resolvedId) {
           try {
-            values[resolvedId] = BigInt(hex as string);
+            values[resolvedId] = BigInt(hex);
           } catch {
             values[resolvedId] = 0n;
           }
@@ -210,6 +201,14 @@ export function importFromJson(json: string): ImportResult | null {
     const addressUnitBits: AddressUnitBits | undefined = typeof data.addressUnitBits === 'number' && (ADDRESS_UNIT_BITS_VALUES as readonly number[]).includes(data.addressUnitBits)
       ? data.addressUnitBits as AddressUnitBits : undefined;
     return { registers: validRegisters, values, warnings, project, addressUnitBits };
+  } catch {
+    return null;
+  }
+}
+
+export function importFromJson(json: string): ImportResult | null {
+  try {
+    return importFromObject(JSON.parse(json));
   } catch {
     return null;
   }

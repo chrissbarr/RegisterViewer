@@ -6,21 +6,18 @@ import { ExamplesDialog } from '../common/examples-dialog';
 import { ProjectSettingsDialog } from '../common/project-settings-dialog';
 import { ImportResultDialog } from '../common/import-result-dialog';
 import { Toast } from '../common/toast';
-import { GitHubIcon } from '../common/github-icon';
+import { GithubIcon, MenuIcon } from 'lucide-react';
+import { SaveButton } from '../common/save-button';
+import { ShareButton } from '../common/share-button';
+import { MyProjectsDialog } from '../projects/my-projects-dialog';
 import { GITHUB_URL } from '../../constants';
 import { useAppState, useAppDispatch } from '../../context/app-context';
 import { useEditContext } from '../../context/edit-context';
+import { usePreferences, usePreferencesActions } from '../../context/preferences-context';
+import { useProjectStorageActions } from '../../context/project-storage-context';
 import { exportToJson, importFromJson, type ImportWarning } from '../../utils/storage';
-
-function MenuIcon() {
-  return (
-    <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" className="block">
-      <rect x="1" y="2" width="14" height="2" rx="0.5" />
-      <rect x="1" y="7" width="14" height="2" rx="0.5" />
-      <rect x="1" y="12" width="14" height="2" rx="0.5" />
-    </svg>
-  );
-}
+import { triggerFileDownload } from '../../utils/file-download';
+import { isCloudEnabled } from '../../utils/api-client';
 
 type ImportFeedback =
   | { kind: 'success'; message: string }
@@ -31,12 +28,16 @@ export function Header() {
   const state = useAppState();
   const dispatch = useAppDispatch();
   const { exitEditMode } = useEditContext();
+  const preferences = usePreferences();
+  const preferencesActions = usePreferencesActions();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [examplesOpen, setExamplesOpen] = useState(false);
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
+  const [myProjectsOpen, setMyProjectsOpen] = useState(false);
   const [importFeedback, setImportFeedback] = useState<ImportFeedback | null>(null);
+  const { createNewProject, switchProject } = useProjectStorageActions();
 
   function applyImportedData(json: string, showSuccessToast = true) {
     const result = importFromJson(json);
@@ -72,18 +73,13 @@ export function Header() {
   }
 
   function handleExport() {
-    const json = exportToJson(state);
+    const json = exportToJson(state, true);
     const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
     const slug = state.project?.title
       ?.toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-|-$/g, '');
-    a.download = slug ? `${slug}.json` : 'register-definitions.json';
-    a.click();
-    URL.revokeObjectURL(url);
+    triggerFileDownload(blob, slug ? `${slug}.json` : 'register-definitions.json');
   }
 
   function handleImport() {
@@ -106,6 +102,8 @@ export function Header() {
     setImportFeedback(null);
   }
 
+  const cloudEnabled = isCloudEnabled();
+
   const menuItems: MenuItem[] = [
     { kind: 'action', label: 'Project settings', onAction: () => setProjectSettingsOpen(true) },
     { kind: 'separator' },
@@ -114,15 +112,21 @@ export function Header() {
     { kind: 'action', label: 'Examples', onAction: () => setExamplesOpen(true) },
     { kind: 'action', label: 'Clear workspace', onAction: () => setClearDialogOpen(true) },
     { kind: 'separator' },
+    { kind: 'action', label: 'New project', onAction: () => {
+      const localId = createNewProject();
+      switchProject(localId);
+    }},
+    { kind: 'action', label: 'My Projects', onAction: () => setMyProjectsOpen(true) },
+    { kind: 'separator' },
     {
       kind: 'toggle',
       label: 'Dark mode',
-      checked: state.theme === 'dark',
-      onToggle: () => dispatch({ type: 'TOGGLE_THEME' }),
+      checked: preferences.theme === 'dark',
+      onToggle: () => preferencesActions.toggleTheme(),
     },
     { kind: 'separator' },
     { kind: 'action', label: 'About', onAction: () => setAboutOpen(true) },
-    { kind: 'link', label: 'GitHub', href: GITHUB_URL, icon: <GitHubIcon /> },
+    { kind: 'link', label: 'GitHub', href: GITHUB_URL, icon: <GithubIcon size={14} /> },
   ];
 
   return (
@@ -137,10 +141,12 @@ export function Header() {
           )}
         </h1>
         <div className="flex items-center gap-2">
+          <ShareButton />
+          {cloudEnabled && <SaveButton />}
           <DropdownMenu
             items={menuItems}
             triggerLabel="Application menu"
-            triggerContent={<MenuIcon />}
+            triggerContent={<MenuIcon size={16} className="block" />}
           />
           <input
             ref={fileInputRef}
@@ -152,6 +158,11 @@ export function Header() {
           <ProjectSettingsDialog
             open={projectSettingsOpen}
             onClose={() => setProjectSettingsOpen(false)}
+            initialData={{ metadata: state.project ?? {}, addressUnitBits: state.addressUnitBits }}
+            onSave={(data) => {
+              dispatch({ type: 'SET_PROJECT_METADATA', project: data.metadata });
+              dispatch({ type: 'SET_ADDRESS_UNIT_BITS', addressUnitBits: data.addressUnitBits });
+            }}
           />
           <ExamplesDialog
             open={examplesOpen}
@@ -169,6 +180,10 @@ export function Header() {
               exitEditMode();
               dispatch({ type: 'CLEAR_WORKSPACE' });
             }}
+          />
+          <MyProjectsDialog
+            open={myProjectsOpen}
+            onClose={() => setMyProjectsOpen(false)}
           />
         </div>
       </header>

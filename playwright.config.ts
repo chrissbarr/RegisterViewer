@@ -23,5 +23,12 @@ export default defineConfig({
     url: 'http://localhost:5173',
     reuseExistingServer: !process.env.CI,
     timeout: 30_000,
+    env: {
+      ...process.env,
+      // Enable cloud features for all E2E tests. Only cloud-projects.spec.ts
+      // intercepts requests via page.route(); other tests simply ignore the
+      // extra cloud UI elements (Save button, etc.) and are unaffected.
+      VITE_API_URL: 'https://mock-cloud-api.test',
+    },
   },
 });

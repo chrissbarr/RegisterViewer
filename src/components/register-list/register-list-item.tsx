@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { GripVertical, TriangleAlert } from 'lucide-react';
 import type { RegisterDef } from '../../types/register';
 import { formatOffset } from '../../utils/format';
 
@@ -12,25 +13,6 @@ interface Props {
   offsetDigits?: number;
   onSelect: () => void;
   onDelete: () => void;
-}
-
-export function GripIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 16 16"
-      width="12"
-      height="12"
-      fill="currentColor"
-      className={className}
-    >
-      <circle cx="5" cy="3" r="1.5" />
-      <circle cx="11" cy="3" r="1.5" />
-      <circle cx="5" cy="8" r="1.5" />
-      <circle cx="11" cy="8" r="1.5" />
-      <circle cx="5" cy="13" r="1.5" />
-      <circle cx="11" cy="13" r="1.5" />
-    </svg>
-  );
 }
 
 export function RegisterListItem({ register, isActive, hasPendingEdit, hasOverlapWarning = false, offsetDigits, onSelect, onDelete }: Props) {
@@ -66,7 +48,7 @@ export function RegisterListItem({ register, isActive, hasPendingEdit, hasOverla
             className="cursor-grab touch-none text-gray-400 dark:text-gray-500"
             tabIndex={-1}
           >
-            <GripIcon />
+            <GripVertical size={12} />
           </button>
           <span className="text-red-700 dark:text-red-300 truncate">Delete?</span>
         </div>
@@ -108,7 +90,7 @@ export function RegisterListItem({ register, isActive, hasPendingEdit, hasOverla
         title="Drag to reorder"
         tabIndex={-1}
       >
-        <GripIcon />
+        <GripVertical size={12} />
       </button>
 
       {/* Content column */}
@@ -128,17 +110,7 @@ export function RegisterListItem({ register, isActive, hasPendingEdit, hasOverla
               <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" title="Unsaved changes" />
             )}
             {hasOverlapWarning && (
-              <svg
-                viewBox="0 0 16 16"
-                width="12"
-                height="12"
-                fill="currentColor"
-                className="text-amber-500 shrink-0"
-                role="img"
-                aria-label="Overlap warning"
-              >
-                <path d="M8.94 1.5a1.09 1.09 0 0 0-1.88 0L1.18 13.04A1.09 1.09 0 0 0 2.12 14.5h11.76a1.09 1.09 0 0 0 .94-1.46L8.94 1.5zM7.25 6h1.5v3.5h-1.5V6zm0 4.5h1.5V12h-1.5v-1.5z" />
-              </svg>
+              <TriangleAlert size={12} className="text-amber-500 shrink-0" role="img" aria-label="Overlap warning" />
             )}
           </div>
           <span className="text-xs font-mono text-gray-500 dark:text-gray-500 shrink-0">

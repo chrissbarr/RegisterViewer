@@ -20,4 +20,10 @@ export default defineConfig([
       globals: globals.browser,
     },
   },
+  {
+    files: ['src/context/**/*.{ts,tsx}', 'src/components/common/announcer.tsx'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
 ])

@@ -1,0 +1,39 @@
+Options -Indexes
+
+RewriteEngine On
+
+# Pass Authorization header to PHP (cPanel/Apache strips it by default)
+RewriteCond %{HTTP:Authorization} .
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+# Route all requests to index.php (unless they match a real file or directory)
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ index.php [QSA,L]
+
+# Block direct access to all PHP files except index.php
+<FilesMatch "\.php$">
+    Require all denied
+</FilesMatch>
+<Files "index.php">
+    Require all granted
+</Files>
+
+# Block access to SQL files, hidden files, config, and dependency metadata
+<FilesMatch "\.(sql|gitignore)$">
+    Require all denied
+</FilesMatch>
+<FilesMatch "^\.">
+    Require all denied
+</FilesMatch>
+<FilesMatch "(composer\.(json|lock)|phpunit\.xml|Dockerfile|docker-compose\.yml)$">
+    Require all denied
+</FilesMatch>
+
+# Block access to internal directories
+RedirectMatch 403 ^/(database|vendor|src|tests)(/.*)?$
+
+# Enable gzip compression for JSON responses
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE application/json
+</IfModule>
