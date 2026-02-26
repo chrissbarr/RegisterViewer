@@ -105,7 +105,7 @@ Every push to `master` automatically:
    - API: PHPUnit tests (unit + integration) via Docker
 
 2. On CI success:
-   - Frontend is built in GitHub Actions with `VITE_API_URL=/api`
+   - Frontend is built in GitHub Actions with `VITE_API_URL=https://www.registerviewer.com`
    - Built files + API source files are assembled into a deploy payload
    - Payload is uploaded to cPanel via FTPS (incremental sync)
 
@@ -272,7 +272,7 @@ FTP_PASSWORD             # FTP password
 
 ### Environment Variables in Workflows
 
-- **VITE_API_URL**: Set to `/api` in deploy workflow, passed to frontend build
+- **VITE_API_URL**: Set to `https://www.registerviewer.com` in deploy workflow, passed to frontend build
 
 ### Key Files
 
