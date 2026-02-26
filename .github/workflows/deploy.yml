@@ -30,7 +30,7 @@ jobs:
 
       - run: npm run build
         env:
-          VITE_API_URL: /api
+          VITE_API_URL: ""
 
       - name: Assemble deploy payload
         run: |
