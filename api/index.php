@@ -25,8 +25,6 @@ require __DIR__ . '/src/handlers/list-projects.php';
 
 // ---- Constants ----
 
-const MAX_PAYLOAD_SIZE = 512 * 1024; // 512 KB
-
 const SECURITY_HEADERS = [
     'X-Content-Type-Options'    => 'nosniff',
     'Referrer-Policy'           => 'no-referrer',
@@ -103,16 +101,16 @@ function readBody(): string
 
     // Check Content-Length header first (fast path)
     $contentLength = $_SERVER['HTTP_CONTENT_LENGTH'] ?? $_SERVER['CONTENT_LENGTH'] ?? null;
-    if ($contentLength !== null && (int) $contentLength > MAX_PAYLOAD_SIZE) {
-        sendError('Request body must be at most ' . MAX_PAYLOAD_SIZE . ' bytes', 400);
+    if ($contentLength !== null && (int) $contentLength > LIMITS['MAX_PAYLOAD_SIZE']) {
+        sendError('Request body must be at most ' . LIMITS['MAX_PAYLOAD_SIZE'] . ' bytes', 400);
     }
 
-    $rawBody = file_get_contents('php://input', false, null, 0, MAX_PAYLOAD_SIZE + 1);
+    $rawBody = file_get_contents('php://input', false, null, 0, LIMITS['MAX_PAYLOAD_SIZE'] + 1);
     if ($rawBody === false) {
         $rawBody = '';
     }
-    if (strlen($rawBody) > MAX_PAYLOAD_SIZE) {
-        sendError('Request body must be at most ' . MAX_PAYLOAD_SIZE . ' bytes', 400);
+    if (strlen($rawBody) > LIMITS['MAX_PAYLOAD_SIZE']) {
+        sendError('Request body must be at most ' . LIMITS['MAX_PAYLOAD_SIZE'] . ' bytes', 400);
     }
 
     return $rawBody;
