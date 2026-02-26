@@ -4,17 +4,17 @@ This document provides step-by-step instructions for deploying the Register View
 
 ## Architecture Overview
 
-- **Frontend**: React SPA deployed to GitHub Pages (chrissbarr.github.io)
-- **Backend**: PHP API deployed to cPanel via SFTP
+- **Frontend**: React SPA deployed to cPanel via Git Version Control
+- **Backend**: PHP API deployed to cPanel via Git Version Control
 - **Data Store**: MySQL database
-- **CI/CD**: GitHub Actions workflows
+- **CI/CD**: GitHub Actions triggers cPanel deployment via API token
 
 ### Key Components
 
 | Component | Technology | Deployment Target | Status Check |
 |-----------|-----------|-------------------|--------------|
-| Frontend | React + TypeScript | GitHub Pages | .github/workflows/deploy.yml |
-| API | PHP 8.3 | cPanel (Apache) | .github/workflows/deploy-api.yml |
+| Frontend | React + TypeScript | cPanel (www.registerviewer.com) | .github/workflows/deploy.yml |
+| API | PHP 8.3 | cPanel (www.registerviewer.com/api) | .github/workflows/deploy.yml |
 | Tests | Vitest + Playwright + PHPUnit | GitHub Actions | .github/workflows/ci.yml |
 | Database | MySQL 8.0 | cPanel MySQL | N/A |
 
@@ -25,7 +25,7 @@ This document provides step-by-step instructions for deploying the Register View
 ### Prerequisites
 
 - GitHub account with admin access to the repository
-- cPanel hosting account with PHP 8.3+ and MySQL 8.0+
+- cPanel hosting account with PHP 8.3+, MySQL 8.0+, and Node.js
 - Node.js 22 or later installed locally
 - Docker installed locally (for running API tests)
 
@@ -40,10 +40,28 @@ This document provides step-by-step instructions for deploying the Register View
    - Upload `api/database/migrations/001_create_projects_table.sql` and import via phpMyAdmin
    - Or run via command line: `mysql -u <user> -p <database> < api/database/migrations/001_create_projects_table.sql`
 
-### Step 2: Deploy API Files
+### Step 2: Set Up cPanel Git Version Control
 
-1. Upload the contents of `api/` to your cPanel hosting (e.g., `public_html/api/`)
-2. Create `config.production.php` on the server with your production database credentials:
+1. Log in to cPanel
+2. Navigate to **Files** → **Git Version Control**
+3. Click **Create** to clone the repository:
+   - **Clone URL**: Your GitHub repository URL
+   - **Repository Path**: Choose a path outside `public_html` (e.g., `/home/<user>/repositories/RegisterAppTest`)
+   - **Repository Name**: `RegisterAppTest`
+4. Ensure the `.cpanel.yml` file in the repo root defines the deployment tasks
+
+### Step 3: Generate cPanel API Token
+
+1. In cPanel, navigate to **Security** → **Manage API Tokens**
+2. Click **Create** to generate a new token
+3. Give it a descriptive name (e.g., `github-actions-deploy`)
+4. Copy the token — it is shown only once
+5. Store it securely; you will add it as a GitHub secret
+
+### Step 4: Deploy API Files
+
+1. The initial deployment happens via cPanel Git Version Control (pull + deploy)
+2. Create `config.production.php` on the server at the API deploy path with your production database credentials:
 
 ```php
 <?php
@@ -60,7 +78,7 @@ return [
 
 3. Ensure `.htaccess` is active (Apache `mod_rewrite` must be enabled)
 
-### Step 3: Configure GitHub Secrets and Variables
+### Step 5: Configure GitHub Secrets and Variables
 
 1. Go to repository **Settings** → **Secrets and variables** → **Actions**
 
@@ -68,39 +86,32 @@ return [
 
 | Secret Name | Value | Source |
 |-------------|-------|--------|
-| `CPANEL_HOST` | Your cPanel server hostname | cPanel hosting provider |
-| `CPANEL_SFTP_USERNAME` | SFTP username | cPanel account |
-| `CPANEL_SFTP_PASSWORD` | SFTP password | cPanel account |
+| `CPANEL_HOSTNAME` | Your cPanel URL (e.g., `https://cpanel.example.com`) | cPanel hosting provider |
+| `CPANEL_USERNAME` | cPanel account username | cPanel account |
+| `CPANEL_TOKEN` | API token generated in Step 3 | cPanel > Security > Manage API Tokens |
 
 #### Variables (plaintext configuration)
 
 | Variable Name | Value | Notes |
 |---------------|-------|-------|
-| `VITE_API_URL` | `https://your-domain.com/api` | Your API base URL |
-| `CPANEL_API_PATH` | `./public_html/api/` | Server-side path for API files (optional, defaults to `./public_html/api/`) |
+| `VITE_API_URL` | `/api` or `https://www.registerviewer.com/api` | API base URL used during frontend build |
+| `CPANEL_REPO_PATH` | Path where repo is cloned on cPanel | e.g., `/home/<user>/repositories/RegisterAppTest` |
 
-### Step 4: Verify GitHub Pages Configuration
-
-1. Go to repository **Settings** → **Pages**
-2. Ensure **Build and deployment** is set to:
-   - **Source**: GitHub Actions
-
-### Step 5: First Deployment
+### Step 6: First Deployment
 
 1. Create a new branch and make a small change (e.g., update README)
 2. Open a pull request to `master`
 3. Verify CI workflow passes (both `frontend` and `api` jobs)
 4. Merge to `master`
 5. Automatically triggers:
-   - **GitHub Pages Deploy**: Frontend builds and deploys to GitHub Pages
-   - **API Deploy**: Backend deploys to cPanel via SFTP
+   - **Deploy to cPanel**: CI passes → cPanel pulls latest code → `.cpanel.yml` builds frontend and copies all files to serve paths
 
 ### Verification
 
 After first deployment:
 
-1. Visit `https://chrissbarr.github.io/register-viewer/` and verify the SPA loads
-2. Open browser DevTools and check Network tab for calls to your API URL
+1. Visit `https://www.registerviewer.com/` and verify the SPA loads
+2. Open browser DevTools and check Network tab for calls to the API URL
 3. Test save functionality: create a project and share the link
 4. Verify project data persists by opening the shared link in a new tab
 
@@ -117,17 +128,16 @@ Every push to `master` automatically:
    - API: PHPUnit tests (unit + integration) via Docker
 
 2. On CI success:
-   - GitHub Pages Deploy job: builds frontend and deploys to GitHub Pages
-   - API Deploy job: deploys updated API code to cPanel (only if `api/` files changed)
+   - cPanel deployment triggers via API token
+   - cPanel pulls latest code from repository
+   - `.cpanel.yml` tasks execute: build frontend, copy files to serve paths
 
 ### Manual Trigger
 
 To manually trigger a deployment without code changes:
 
 1. Go to repository **Actions** tab
-2. Select either:
-   - **Deploy to GitHub Pages** workflow → click **Run workflow** → **Run workflow**
-   - **Deploy API to cPanel** workflow → click **Run workflow** → **Run workflow**
+2. Select **Deploy to cPanel** workflow → click **Run workflow** → **Run workflow**
 
 ### Monitoring Deployments
 
@@ -142,9 +152,6 @@ To manually trigger a deployment without code changes:
 
 ### Frontend Deployment Fails
 
-**Error: "GitHub Pages Environment Not Found"**
-- Fix: Go to **Settings** → **Pages** and ensure source is set to "GitHub Actions"
-
 **Error: "Build failed with tsc errors"**
 - Check CI logs for TypeScript compilation errors
 - Fix types locally: `npm run build`
@@ -156,12 +163,22 @@ To manually trigger a deployment without code changes:
 - Fix the test failures or app bugs
 - Commit and push again
 
-### API Deployment Fails
+### API / cPanel Deployment Fails
 
-**Error: "SFTP connection failed"**
-- Verify GitHub secrets `CPANEL_HOST`, `CPANEL_SFTP_USERNAME`, and `CPANEL_SFTP_PASSWORD` are correct
-- Ensure SFTP/FTPS is enabled on your cPanel hosting
-- Check that the server hostname is correct (may need to use the IP address)
+**Error: "cPanel API connection failed"**
+- Verify GitHub secrets `CPANEL_HOSTNAME`, `CPANEL_USERNAME`, and `CPANEL_TOKEN` are correct
+- Ensure the API token has not been revoked in cPanel > Security > Manage API Tokens
+- Check that the cPanel hostname URL is correct (include `https://`)
+- Verify `CPANEL_REPO_PATH` variable matches the actual repo path on the server
+
+**Error: "Repository not found on cPanel"**
+- Ensure the repository is set up in cPanel > Files > Git Version Control
+- Verify the `repository_root` path matches `CPANEL_REPO_PATH`
+
+**Error: "Deployment tasks failed" (`.cpanel.yml`)**
+- Check cPanel deployment logs for the specific task that failed
+- Verify Node.js is available on the server for the frontend build step
+- Ensure the `DEPLOYPATH` in `.cpanel.yml` matches the actual server directory structure
 
 **Error: "Database connection failed" (in API tests)**
 - Ensure Docker is available in the CI environment
@@ -174,50 +191,34 @@ To manually trigger a deployment without code changes:
 - Ensure PHP 8.3+ is enabled and `mod_rewrite` is active
 - Verify database tables exist (run migration SQL)
 
-### API URL Not Set in Frontend
-
-**Symptom: API calls fail with undefined URL**
-- Verify `vars.VITE_API_URL` is set in repository variables
-- Rebuild frontend: manually trigger **Deploy to GitHub Pages** workflow
-- Check that build step receives the environment variable
-
 ---
 
 ## Rollback Procedures
 
-### Rollback Frontend (GitHub Pages)
+### Rollback (Git Revert — Recommended)
 
 1. **Identify last good commit**:
-   - Go to **Actions** → **Deploy to GitHub Pages**
+   - Go to **Actions** → **Deploy to cPanel**
    - Find the last successful deployment
    - Note the commit hash
 
-2. **Option A: Revert via Git (Recommended)**:
+2. **Revert via Git**:
    ```bash
    git revert <bad-commit-hash>
    git push
    ```
-   - GitHub Actions automatically re-deploys
+   - GitHub Actions automatically re-deploys via cPanel
    - Creates a clean audit trail
 
-3. **Option B: Manual Trigger**:
-   - Go to Actions → Deploy to GitHub Pages
+3. **Manual Re-run**:
+   - Go to Actions → Deploy to cPanel
    - Click the last successful run
    - Click **Re-run all jobs** button
 
-### Rollback API (cPanel)
+### Rollback API via cPanel
 
-1. **Via Git Revert (Recommended)**:
-   ```bash
-   git revert <bad-commit-hash>
-   git push
-   ```
-   - GitHub Actions automatically re-deploys via deploy-api.yml
-   - Creates a clean commit history
-
-2. **Via cPanel File Manager**:
-   - If you have backups, restore the previous version of `api/` files via cPanel File Manager
-   - Database schema changes may need manual rollback
+- If you have backups, restore the previous version of API files via cPanel File Manager
+- Database schema changes may need manual rollback
 
 ### Emergency: Disable Deployments
 
@@ -289,16 +290,16 @@ To test with a local frontend + API:
 ### GitHub Actions Secrets Required
 
 ```
-CPANEL_HOST              # cPanel server hostname
-CPANEL_SFTP_USERNAME     # SFTP username for deployment
-CPANEL_SFTP_PASSWORD     # SFTP password for deployment
+CPANEL_HOSTNAME          # cPanel URL (e.g., https://cpanel.example.com)
+CPANEL_USERNAME          # cPanel account username
+CPANEL_TOKEN             # cPanel API token (Security > Manage API Tokens)
 ```
 
 ### GitHub Actions Variables Required
 
 ```
-VITE_API_URL             # API base URL (e.g., https://your-domain.com/api)
-CPANEL_API_PATH          # Optional: server path for API files (default: ./public_html/api/)
+VITE_API_URL             # API base URL (e.g., /api or https://www.registerviewer.com/api)
+CPANEL_REPO_PATH         # Server path where repo is cloned (e.g., /home/<user>/repositories/RegisterAppTest)
 ```
 
 ### Environment Variables in Workflows
@@ -310,8 +311,8 @@ CPANEL_API_PATH          # Optional: server path for API files (default: ./publi
 | File | Purpose |
 |------|---------|
 | `.github/workflows/ci.yml` | Frontend + API CI checks |
-| `.github/workflows/deploy.yml` | Frontend deployment to GitHub Pages |
-| `.github/workflows/deploy-api.yml` | API deployment to cPanel via SFTP |
+| `.github/workflows/deploy.yml` | Deployment to cPanel via API token |
+| `.cpanel.yml` | cPanel deployment tasks (build frontend, copy files) |
 | `api/config.php` | API configuration (env var fallbacks) |
 | `api/docker-compose.yml` | Local dev: API + MySQL + test runner |
 | `vite.config.ts` | Frontend build configuration |
@@ -329,13 +330,13 @@ CPANEL_API_PATH          # Optional: server path for API files (default: ./publi
 
 ### Frontend Availability
 
-- Visit https://chrissbarr.github.io/register-viewer/
+- Visit https://www.registerviewer.com/
 - Check browser console for errors
 - Expected response time: <1s
 
 ### API Health
 
-- Test the API endpoint directly: `curl https://your-domain.com/api/projects` (should return 401)
+- Test the API endpoint directly: `curl https://www.registerviewer.com/api/projects` (should return 401)
 - Check cPanel → **Error Log** for PHP errors
 - Monitor MySQL usage in cPanel → **MySQL Databases**
 
@@ -353,13 +354,16 @@ A: Check: (1) `VITE_API_URL` is correct in GitHub variables, (2) `config.product
 A: Check cPanel → **Error Log** for PHP errors. You can also enable custom logging in `config.production.php`.
 
 **Q: Can I deploy manually without pushing code?**
-A: Yes! Go to **Actions** → select a workflow → **Run workflow** → **Run workflow** button.
+A: Yes! Go to **Actions** → select the Deploy workflow → **Run workflow** → **Run workflow** button.
 
 **Q: How do I revert a broken deployment?**
 A: Use `git revert` to create a new commit that undoes changes. See "Rollback Procedures" section above.
 
 **Q: How do I run database migrations?**
 A: Import the SQL files from `api/database/migrations/` via phpMyAdmin or the MySQL command line. Migrations are not run automatically during deployment.
+
+**Q: How do I rotate the cPanel API token?**
+A: Go to cPanel > Security > Manage API Tokens. Revoke the old token, create a new one, then update the `CPANEL_TOKEN` GitHub secret.
 
 ---
 
@@ -416,9 +420,12 @@ A: Import the SQL files from `api/database/migrations/` via phpMyAdmin or the My
 
 - [ ] All GitHub secrets are set (run `gh secret list` to verify)
 - [ ] GitHub variables are set (run `gh variable list` to verify)
+- [ ] cPanel API token is valid (not revoked)
+- [ ] Repository is set up in cPanel Git Version Control
 - [ ] `config.production.php` exists on server with correct DB credentials
 - [ ] Database tables exist (migration SQL has been run)
 - [ ] PHP 8.3+ is enabled on the server
+- [ ] Node.js is available on the server (for frontend build)
 - [ ] Apache `mod_rewrite` is enabled
 - [ ] Node.js version matches workflow config (22)
 - [ ] All dependencies installed (`npm ci`)

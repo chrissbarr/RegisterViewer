@@ -1,0 +1,27 @@
+---
+# cPanel Git Version Control deployment tasks.
+# These run on the cPanel server after it pulls the latest code.
+#
+# DEPLOYPATH must match the actual server directory for www.registerviewer.com.
+# Update this value if the cPanel subdomain path changes.
+#
+# If you add new top-level files to api/ (beyond index.php, config.php,
+# .htaccess), you must add a corresponding cp line below.
+deployment:
+  tasks:
+    - set -e
+    - export DEPLOYPATH=/subdomains/registerviewer
+    # Build frontend
+    - npm ci --ignore-scripts
+    - VITE_API_URL=/api npm run build
+    # Clean stale frontend assets, then copy fresh build
+    - /bin/rm -rf $DEPLOYPATH/assets/
+    - /bin/cp -R dist/* $DEPLOYPATH/
+    # Deploy API source files (config.production.php lives only on server)
+    - /bin/mkdir -p $DEPLOYPATH/api/src
+    - /bin/mkdir -p $DEPLOYPATH/api/database
+    - /bin/cp -R api/src/* $DEPLOYPATH/api/src/
+    - /bin/cp -R api/database/* $DEPLOYPATH/api/database/
+    - /bin/cp api/index.php $DEPLOYPATH/api/
+    - /bin/cp api/config.php $DEPLOYPATH/api/
+    - /bin/cp api/.htaccess $DEPLOYPATH/api/
