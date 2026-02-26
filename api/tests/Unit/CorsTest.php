@@ -12,8 +12,7 @@ final class CorsTest extends TestCase
         return [
             'environment' => 'production',
             'allowed_origins' => [
-                'https://register-viewer.app',
-                'https://chrissbarr.github.io',
+                'https://www.registerviewer.com',
             ],
         ];
     }
@@ -23,7 +22,7 @@ final class CorsTest extends TestCase
         return [
             'environment' => 'development',
             'allowed_origins' => [
-                'https://register-viewer.app',
+                'https://www.registerviewer.com',
             ],
         ];
     }
@@ -36,10 +35,10 @@ final class CorsTest extends TestCase
     #[Test]
     public function allowedOriginReturnsCorsHeaders(): void
     {
-        $_SERVER['HTTP_ORIGIN'] = 'https://register-viewer.app';
+        $_SERVER['HTTP_ORIGIN'] = 'https://www.registerviewer.com';
         $headers = computeCorsHeaders($this->productionConfig());
 
-        $this->assertSame('https://register-viewer.app', $headers['Access-Control-Allow-Origin']);
+        $this->assertSame('https://www.registerviewer.com', $headers['Access-Control-Allow-Origin']);
         $this->assertArrayHasKey('Access-Control-Allow-Methods', $headers);
         $this->assertArrayHasKey('Access-Control-Allow-Headers', $headers);
         $this->assertSame('Origin', $headers['Vary']);

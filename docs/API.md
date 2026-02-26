@@ -72,7 +72,7 @@ Creates a new project and returns a share URL.
 ```json
 {
   "id": "AbCdEfGhIjKl",
-  "shareUrl": "https://register-viewer.app/#/p/AbCdEfGhIjKl",
+  "shareUrl": "https://www.registerviewer.com/#/p/AbCdEfGhIjKl",
   "createdAt": "2026-02-23T09:00:00.000Z"
 }
 ```
@@ -255,8 +255,7 @@ Lists all projects owned by the authenticated user.
 ## CORS
 
 **Production origins:**
-- `https://register-viewer.app`
-- `https://chrissbarr.github.io`
+- `https://www.registerviewer.com`
 
 **Development:** Any `localhost` or `127.0.0.1` origin is allowed when `ENVIRONMENT !== 'production'`.
 

@@ -5,11 +5,10 @@ declare(strict_types=1);
 return [
     'environment' => getenv('APP_ENV') ?: 'production',
 
-    'app_url' => 'https://register-viewer.app',
+    'app_url' => 'https://www.registerviewer.com',
 
     'allowed_origins' => [
-        'https://register-viewer.app',
-        'https://chrissbarr.github.io',
+        'https://www.registerviewer.com',
     ],
 
     'db' => [

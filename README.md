@@ -2,7 +2,7 @@
 
 An interactive web tool for embedded and hardware developers to decode and encode register values based on user-defined field mappings.
 
-**[Try it live](https://chrissbarr.github.io/RegisterViewer/)**
+**[Try it live](https://www.registerviewer.com/)**
 
 Enter a raw register value (hex, binary, or decimal) and instantly see how it breaks down into named fields — or edit individual fields and watch the raw value update in real-time.
 
