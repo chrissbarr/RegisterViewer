@@ -4,10 +4,10 @@ This document provides step-by-step instructions for deploying the Register View
 
 ## Architecture Overview
 
-- **Frontend**: React SPA deployed to cPanel via Git Version Control
-- **Backend**: PHP API deployed to cPanel via Git Version Control
+- **Frontend**: React SPA built in CI and deployed to cPanel via FTPS
+- **Backend**: PHP API deployed to cPanel via FTPS
 - **Data Store**: MySQL database
-- **CI/CD**: GitHub Actions triggers cPanel deployment via API token
+- **CI/CD**: GitHub Actions builds frontend, then uploads all files via FTPS
 
 ### Key Components
 
@@ -25,7 +25,7 @@ This document provides step-by-step instructions for deploying the Register View
 ### Prerequisites
 
 - GitHub account with admin access to the repository
-- cPanel hosting account with PHP 8.3+, MySQL 8.0+, and Node.js
+- cPanel hosting account with PHP 8.3+, MySQL 8.0+, and FTP/FTPS access
 - Node.js 22 or later installed locally
 - Docker installed locally (for running API tests)
 
@@ -40,28 +40,11 @@ This document provides step-by-step instructions for deploying the Register View
    - Upload `api/database/migrations/001_create_projects_table.sql` and import via phpMyAdmin
    - Or run via command line: `mysql -u <user> -p <database> < api/database/migrations/001_create_projects_table.sql`
 
-### Step 2: Set Up cPanel Git Version Control
+### Step 2: Create Production API Config
 
-1. Log in to cPanel
-2. Navigate to **Files** → **Git Version Control**
-3. Click **Create** to clone the repository:
-   - **Clone URL**: Your GitHub repository URL
-   - **Repository Path**: Choose a path outside `public_html` (e.g., `/home/<user>/repositories/RegisterAppTest`)
-   - **Repository Name**: `RegisterAppTest`
-4. Ensure the `.cpanel.yml` file in the repo root defines the deployment tasks
-
-### Step 3: Generate cPanel API Token
-
-1. In cPanel, navigate to **Security** → **Manage API Tokens**
-2. Click **Create** to generate a new token
-3. Give it a descriptive name (e.g., `github-actions-deploy`)
-4. Copy the token — it is shown only once
-5. Store it securely; you will add it as a GitHub secret
-
-### Step 4: Deploy API Files
-
-1. The initial deployment happens via cPanel Git Version Control (pull + deploy)
-2. Create `config.production.php` on the server at the API deploy path with your production database credentials:
+1. Log in to cPanel → **File Manager**
+2. Navigate to the API deploy path (e.g., `/subdomains/registerviewer/api/`)
+3. Create `config.production.php` with your production database credentials:
 
 ```php
 <?php
@@ -77,8 +60,9 @@ return [
 ```
 
 3. Ensure `.htaccess` is active (Apache `mod_rewrite` must be enabled)
+4. This file is never overwritten by deployment — it lives only on the server
 
-### Step 5: Configure GitHub Secrets and Variables
+### Step 3: Configure GitHub Secrets and Variables
 
 1. Go to repository **Settings** → **Secrets and variables** → **Actions**
 
@@ -86,25 +70,18 @@ return [
 
 | Secret Name | Value | Source |
 |-------------|-------|--------|
-| `CPANEL_HOSTNAME` | Your cPanel URL (e.g., `https://cpanel.example.com`) | cPanel hosting provider |
-| `CPANEL_USERNAME` | cPanel account username | cPanel account |
-| `CPANEL_TOKEN` | API token generated in Step 3 | cPanel > Security > Manage API Tokens |
+| `FTP_HOST` | FTP server hostname (e.g., `ftp.example.com`) | cPanel hosting provider |
+| `FTP_USERNAME` | FTP username (usually same as cPanel username) | cPanel account |
+| `FTP_PASSWORD` | FTP password | cPanel account |
 
-#### Variables (plaintext configuration)
-
-| Variable Name | Value | Notes |
-|---------------|-------|-------|
-| `VITE_API_URL` | `/api` or `https://www.registerviewer.com/api` | API base URL used during frontend build |
-| `CPANEL_REPO_PATH` | Path where repo is cloned on cPanel | e.g., `/home/<user>/repositories/RegisterAppTest` |
-
-### Step 6: First Deployment
+### Step 4: First Deployment
 
 1. Create a new branch and make a small change (e.g., update README)
 2. Open a pull request to `master`
 3. Verify CI workflow passes (both `frontend` and `api` jobs)
 4. Merge to `master`
 5. Automatically triggers:
-   - **Deploy to cPanel**: CI passes → cPanel pulls latest code → `.cpanel.yml` builds frontend and copies all files to serve paths
+   - **Deploy to cPanel**: CI passes → frontend builds in GitHub Actions → all files uploaded via FTPS
 
 ### Verification
 
@@ -128,9 +105,9 @@ Every push to `master` automatically:
    - API: PHPUnit tests (unit + integration) via Docker
 
 2. On CI success:
-   - cPanel deployment triggers via API token
-   - cPanel pulls latest code from repository
-   - `.cpanel.yml` tasks execute: build frontend, copy files to serve paths
+   - Frontend is built in GitHub Actions with `VITE_API_URL=/api`
+   - Built files + API source files are assembled into a deploy payload
+   - Payload is uploaded to cPanel via FTPS (incremental sync)
 
 ### Manual Trigger
 
@@ -163,22 +140,20 @@ To manually trigger a deployment without code changes:
 - Fix the test failures or app bugs
 - Commit and push again
 
-### API / cPanel Deployment Fails
+### FTPS Deployment Fails
 
-**Error: "cPanel API connection failed"**
-- Verify GitHub secrets `CPANEL_HOSTNAME`, `CPANEL_USERNAME`, and `CPANEL_TOKEN` are correct
-- Ensure the API token has not been revoked in cPanel > Security > Manage API Tokens
-- Check that the cPanel hostname URL is correct (include `https://`)
-- Verify `CPANEL_REPO_PATH` variable matches the actual repo path on the server
+**Error: "Connection refused" or "Connection timed out"**
+- Verify `FTP_HOST` secret is correct (hostname only, no protocol prefix)
+- Ensure FTP/FTPS is enabled on your cPanel hosting account
+- Check that port 21 is not blocked by the hosting provider
 
-**Error: "Repository not found on cPanel"**
-- Ensure the repository is set up in cPanel > Files > Git Version Control
-- Verify the `repository_root` path matches `CPANEL_REPO_PATH`
+**Error: "Authentication failed"**
+- Verify `FTP_USERNAME` and `FTP_PASSWORD` secrets are correct
+- Test credentials by connecting via an FTP client (e.g., FileZilla) using FTPS on port 21
 
-**Error: "Deployment tasks failed" (`.cpanel.yml`)**
-- Check cPanel deployment logs for the specific task that failed
-- Verify Node.js is available on the server for the frontend build step
-- Ensure the `DEPLOYPATH` in `.cpanel.yml` matches the actual server directory structure
+**Error: "Upload failed" or "Permission denied"**
+- Verify the `server-dir` path in `deploy.yml` matches the actual server directory
+- Ensure the FTP user has write permissions to the deploy directory
 
 **Error: "Database connection failed" (in API tests)**
 - Ensure Docker is available in the CI environment
@@ -207,7 +182,7 @@ To manually trigger a deployment without code changes:
    git revert <bad-commit-hash>
    git push
    ```
-   - GitHub Actions automatically re-deploys via cPanel
+   - GitHub Actions automatically rebuilds and re-deploys via FTPS
    - Creates a clean audit trail
 
 3. **Manual Re-run**:
@@ -290,29 +265,21 @@ To test with a local frontend + API:
 ### GitHub Actions Secrets Required
 
 ```
-CPANEL_HOSTNAME          # cPanel URL (e.g., https://cpanel.example.com)
-CPANEL_USERNAME          # cPanel account username
-CPANEL_TOKEN             # cPanel API token (Security > Manage API Tokens)
-```
-
-### GitHub Actions Variables Required
-
-```
-VITE_API_URL             # API base URL (e.g., /api or https://www.registerviewer.com/api)
-CPANEL_REPO_PATH         # Server path where repo is cloned (e.g., /home/<user>/repositories/RegisterAppTest)
+FTP_HOST                 # FTP server hostname (e.g., ftp.example.com)
+FTP_USERNAME             # FTP username (usually same as cPanel username)
+FTP_PASSWORD             # FTP password
 ```
 
 ### Environment Variables in Workflows
 
-- **VITE_API_URL**: Passed to frontend build, used in api-client.ts
+- **VITE_API_URL**: Set to `/api` in deploy workflow, passed to frontend build
 
 ### Key Files
 
 | File | Purpose |
 |------|---------|
 | `.github/workflows/ci.yml` | Frontend + API CI checks |
-| `.github/workflows/deploy.yml` | Deployment to cPanel via API token |
-| `.cpanel.yml` | cPanel deployment tasks (build frontend, copy files) |
+| `.github/workflows/deploy.yml` | Build frontend + deploy via FTPS |
 | `api/config.php` | API configuration (env var fallbacks) |
 | `api/docker-compose.yml` | Local dev: API + MySQL + test runner |
 | `vite.config.ts` | Frontend build configuration |
@@ -362,8 +329,8 @@ A: Use `git revert` to create a new commit that undoes changes. See "Rollback Pr
 **Q: How do I run database migrations?**
 A: Import the SQL files from `api/database/migrations/` via phpMyAdmin or the MySQL command line. Migrations are not run automatically during deployment.
 
-**Q: How do I rotate the cPanel API token?**
-A: Go to cPanel > Security > Manage API Tokens. Revoke the old token, create a new one, then update the `CPANEL_TOKEN` GitHub secret.
+**Q: How do I update FTP credentials?**
+A: Update the `FTP_HOST`, `FTP_USERNAME`, or `FTP_PASSWORD` secrets in GitHub → Settings → Secrets and variables → Actions.
 
 ---
 
@@ -418,16 +385,13 @@ A: Go to cPanel > Security > Manage API Tokens. Revoke the old token, create a n
 
 ### Common Issues Checklist
 
-- [ ] All GitHub secrets are set (run `gh secret list` to verify)
-- [ ] GitHub variables are set (run `gh variable list` to verify)
-- [ ] cPanel API token is valid (not revoked)
-- [ ] Repository is set up in cPanel Git Version Control
+- [ ] All GitHub secrets are set: `FTP_HOST`, `FTP_USERNAME`, `FTP_PASSWORD` (run `gh secret list` to verify)
+- [ ] FTP credentials work (test with FileZilla or similar FTP client)
 - [ ] `config.production.php` exists on server with correct DB credentials
 - [ ] Database tables exist (migration SQL has been run)
 - [ ] PHP 8.3+ is enabled on the server
-- [ ] Node.js is available on the server (for frontend build)
 - [ ] Apache `mod_rewrite` is enabled
-- [ ] Node.js version matches workflow config (22)
+- [ ] Node.js version matches workflow config (22) — locally
 - [ ] All dependencies installed (`npm ci`)
 - [ ] TypeScript compiles without errors (`npm run build`)
 - [ ] Tests pass locally (`npm test`, `npm run test:e2e`)
