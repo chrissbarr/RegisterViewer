@@ -15,7 +15,8 @@ function handleCreateProject(PDO $db, array $config): never
         sendError('Project limit reached. Delete existing projects before creating new ones.', 429);
     }
 
-    $body = readJsonBody();
+    $parsed = readParsedBody();
+    $body = $parsed['assoc'];
 
     $validation = validateProjectData($body['data'] ?? null);
     if (!$validation['valid']) {
@@ -37,7 +38,7 @@ function handleCreateProject(PDO $db, array $config): never
         $title = mb_substr($title, 0, 500);
     }
 
-    $dataJson = extractRawDataJson();
+    $dataJson = extractDataJson($parsed['object']);
 
     // Optimistic insert with retry on duplicate key (eliminates TOCTOU race)
     $id = null;

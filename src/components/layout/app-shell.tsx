@@ -15,6 +15,14 @@ import { Toast } from '../common/toast';
 import { ToastPortalProvider } from '../../context/toast-portal-context';
 import { SAVE_DEBOUNCE_MS } from '../../constants';
 
+/**
+ * Props for the AppShell component.
+ *
+ * Note: While both `cloudInit` and `initialLocalId` are defined here,
+ * they flow to different destinations:
+ * - `cloudInit` is consumed by `AppShellInner` to initialize cloud sync state
+ * - `initialLocalId` is consumed by the outer `AppShell` and passed to `ProjectStorageProvider`
+ */
 interface AppShellProps {
   cloudInit?: { projectId: string; isOwner: boolean };
   initialLocalId?: string | null;

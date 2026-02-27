@@ -51,7 +51,10 @@ export function deserializeState(data: SerializedAppState): AppState {
         val = val & mask;
       }
       values[id] = val;
-    } catch {
+    } catch (err) {
+      if (import.meta.env.DEV) {
+        console.warn('[storage] Failed to parse register value for id:', id, err);
+      }
       values[id] = 0n;
     }
   }
@@ -74,10 +77,8 @@ type ExportField = DistributiveOmit<Field, 'id'>;
 type ExportRegister = Omit<RegisterDef, 'id' | 'fields'> & { fields: ExportField[] };
 
 export function stripIds(register: RegisterDef): ExportRegister {
-  const { id: _regId, fields, ...rest } = register;
-  void _regId;
+  const { id: _registerId, fields, ...rest } = register;
   const cleanFields = fields.map(({ id: _fieldId, ...fieldRest }) => {
-    void _fieldId;
     return fieldRest;
   });
   return { ...rest, fields: cleanFields };
@@ -191,7 +192,10 @@ export function importFromObject(data: Record<string, unknown>): ImportResult | 
         if (resolvedId) {
           try {
             values[resolvedId] = BigInt(hex);
-          } catch {
+          } catch (err) {
+            if (import.meta.env.DEV) {
+              console.warn('[storage] Failed to parse imported register value for key:', key, err);
+            }
             values[resolvedId] = 0n;
           }
         }
@@ -201,7 +205,10 @@ export function importFromObject(data: Record<string, unknown>): ImportResult | 
     const addressUnitBits: AddressUnitBits | undefined = typeof data.addressUnitBits === 'number' && (ADDRESS_UNIT_BITS_VALUES as readonly number[]).includes(data.addressUnitBits)
       ? data.addressUnitBits as AddressUnitBits : undefined;
     return { registers: validRegisters, values, warnings, project, addressUnitBits };
-  } catch {
+  } catch (err) {
+    if (import.meta.env.DEV) {
+      console.warn('[storage] Failed to import from object:', err);
+    }
     return null;
   }
 }
@@ -209,7 +216,10 @@ export function importFromObject(data: Record<string, unknown>): ImportResult | 
 export function importFromJson(json: string): ImportResult | null {
   try {
     return importFromObject(JSON.parse(json));
-  } catch {
+  } catch (err) {
+    if (import.meta.env.DEV) {
+      console.warn('[storage] Failed to parse JSON for import:', err);
+    }
     return null;
   }
 }

@@ -1,5 +1,5 @@
 import { renderHook, act } from '@testing-library/react';
-import { EditProvider, useEditContext } from './edit-context';
+import { EditProvider, useEditState, useEditActions } from './edit-context';
 import { makeRegister } from '../test/helpers';
 import type { ReactNode } from 'react';
 
@@ -7,16 +7,28 @@ function wrapper({ children }: { children: ReactNode }) {
   return <EditProvider>{children}</EditProvider>;
 }
 
-function renderEditContext() {
-  return renderHook(() => useEditContext(), { wrapper });
+function renderEditHooks() {
+  return renderHook(
+    () => ({ ...useEditState(), ...useEditActions() }),
+    { wrapper },
+  );
 }
 
-describe('useEditContext outside provider', () => {
+describe('useEditState outside provider', () => {
   it('throws when used outside EditProvider', () => {
-    // Suppress console.error from the expected throw
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    expect(() => renderHook(() => useEditContext())).toThrow(
-      'useEditContext must be used within EditProvider',
+    expect(() => renderHook(() => useEditState())).toThrow(
+      'useEditState must be used within EditProvider',
+    );
+    spy.mockRestore();
+  });
+});
+
+describe('useEditActions outside provider', () => {
+  it('throws when used outside EditProvider', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(() => renderHook(() => useEditActions())).toThrow(
+      'useEditActions must be used within EditProvider',
     );
     spy.mockRestore();
   });
@@ -24,7 +36,7 @@ describe('useEditContext outside provider', () => {
 
 describe('initial state', () => {
   it('starts with empty drafts and not editing', () => {
-    const { result } = renderEditContext();
+    const { result } = renderEditHooks();
     expect(result.current.drafts).toEqual({});
     expect(result.current.dirtyDraftIds.size).toBe(0);
     expect(result.current.dirtyCount).toBe(0);
@@ -34,7 +46,7 @@ describe('initial state', () => {
 
 describe('enterEditMode / exitEditMode', () => {
   it('sets isEditing to true and populates the draft', () => {
-    const { result } = renderEditContext();
+    const { result } = renderEditHooks();
     const reg = makeRegister({ id: 'reg-1', name: 'REG' });
 
     act(() => result.current.enterEditMode(reg));
@@ -45,7 +57,7 @@ describe('enterEditMode / exitEditMode', () => {
   });
 
   it('does not overwrite an existing draft for the same register', () => {
-    const { result } = renderEditContext();
+    const { result } = renderEditHooks();
     const reg = makeRegister({ id: 'reg-1', name: 'REG' });
 
     act(() => result.current.enterEditMode(reg));
@@ -59,7 +71,7 @@ describe('enterEditMode / exitEditMode', () => {
   });
 
   it('exitEditMode clears all drafts and sets isEditing to false', () => {
-    const { result } = renderEditContext();
+    const { result } = renderEditHooks();
     const reg = makeRegister({ id: 'reg-1' });
 
     act(() => result.current.enterEditMode(reg));
@@ -73,12 +85,12 @@ describe('enterEditMode / exitEditMode', () => {
 
 describe('getDraft / setDraft', () => {
   it('returns undefined for a non-existent draft', () => {
-    const { result } = renderEditContext();
+    const { result } = renderEditHooks();
     expect(result.current.getDraft('nonexistent')).toBeUndefined();
   });
 
   it('setDraft updates the draft in state', () => {
-    const { result } = renderEditContext();
+    const { result } = renderEditHooks();
     const reg = makeRegister({ id: 'reg-1', name: 'ORIGINAL' });
 
     act(() => result.current.enterEditMode(reg));
@@ -92,7 +104,7 @@ describe('getDraft / setDraft', () => {
 
 describe('dirtyDraftIds / dirtyCount', () => {
   it('draft is not dirty when unchanged from original', () => {
-    const { result } = renderEditContext();
+    const { result } = renderEditHooks();
     const reg = makeRegister({ id: 'reg-1', name: 'REG' });
 
     act(() => result.current.enterEditMode(reg));
@@ -102,7 +114,7 @@ describe('dirtyDraftIds / dirtyCount', () => {
   });
 
   it('draft becomes dirty after modification', () => {
-    const { result } = renderEditContext();
+    const { result } = renderEditHooks();
     const reg = makeRegister({ id: 'reg-1', name: 'REG' });
 
     act(() => result.current.enterEditMode(reg));
@@ -117,7 +129,7 @@ describe('dirtyDraftIds / dirtyCount', () => {
 
 describe('saveAllDrafts', () => {
   it('returns all drafts and clears state', () => {
-    const { result } = renderEditContext();
+    const { result } = renderEditHooks();
     const reg1 = makeRegister({ id: 'reg-1', name: 'A' });
     const reg2 = makeRegister({ id: 'reg-2', name: 'B' });
 
@@ -134,4 +146,3 @@ describe('saveAllDrafts', () => {
     expect(result.current.drafts).toEqual({});
   });
 });
-

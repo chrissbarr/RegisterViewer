@@ -87,12 +87,9 @@ function sendNoContent(array $extraHeaders = []): never
 
 // ---- Body reading ----
 
-/** @var string|null */
-$rawBody = null;
-
 function readBody(): string
 {
-    global $rawBody;
+    static $rawBody = null;
     if ($rawBody !== null) {
         return $rawBody;
     }
@@ -114,34 +111,71 @@ function readBody(): string
     return $rawBody;
 }
 
-function readJsonBody(): array
+/**
+ * Parse the request body as JSON, returning both associative-array and stdClass views.
+ *
+ * The body is parsed once as stdClass (to preserve the {} vs [] distinction,
+ * since json_decode with assoc=true turns {} into [], losing the difference).
+ * The assoc view is derived by recursively converting the stdClass tree,
+ * avoiding a second json_decode call.
+ *
+ * The assoc view is used for validation and reading scalar fields.
+ * The object view is used for faithful JSON storage.
+ *
+ * @return array{assoc: array, object: object}
+ */
+function readParsedBody(): array
 {
+    static $cached = null;
+    if ($cached !== null) {
+        return $cached;
+    }
+
     $text = readBody();
     if ($text === '') {
         sendError('Invalid JSON body', 400);
     }
-    $data = json_decode($text, true);
-    if (json_last_error() !== JSON_ERROR_NONE || !is_array($data)) {
+
+    $object = json_decode($text);
+    if (json_last_error() !== JSON_ERROR_NONE || !is_object($object)) {
         sendError('Invalid JSON body', 400);
     }
-    return $data;
+
+    $assoc = objectToAssoc($object);
+
+    $cached = ['assoc' => $assoc, 'object' => $object];
+    return $cached;
 }
 
 /**
- * Extract the "data" field from the raw request body as a JSON string,
- * preserving {} vs [] distinction for empty objects like registerValues: {}.
- *
- * json_decode($raw, true) turns {} into [], losing the distinction.
- * Decoding without true preserves stdClass for {}, which json_encode writes as {}.
+ * Recursively convert a stdClass tree to associative arrays.
+ * Arrays are preserved as arrays; stdClass objects become associative arrays.
  */
-function extractRawDataJson(): string
+function objectToAssoc(mixed $value): mixed
 {
-    $raw = readBody();
-    $asObject = json_decode($raw); // decode to stdClass (preserves {} vs [])
-    if (!is_object($asObject) || !property_exists($asObject, 'data')) {
+    if ($value instanceof \stdClass) {
+        $result = [];
+        foreach ($value as $k => $v) {
+            $result[$k] = objectToAssoc($v);
+        }
+        return $result;
+    }
+    if (is_array($value)) {
+        return array_map('objectToAssoc', $value);
+    }
+    return $value;
+}
+
+/**
+ * Extract the "data" field from the parsed request body as a JSON string,
+ * using the stdClass view to preserve {} vs [] distinction.
+ */
+function extractDataJson(object $parsedObject): string
+{
+    if (!property_exists($parsedObject, 'data')) {
         sendError('Invalid JSON body', 400);
     }
-    return json_encode($asObject->data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    return json_encode($parsedObject->data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 }
 
 // ---- HSTS (production only) ----
@@ -176,17 +210,13 @@ try {
 
     // Collection routes: /api/projects
     if (preg_match('#^/api/projects/?$#', $path)) {
-        if ($method === 'POST') {
-            handleCreateProject($db, $config);
-        }
-        if ($method === 'GET') {
-            handleListProjects($db);
-        }
-        sendError('Method not allowed', 405, ['Allow' => 'GET, POST, OPTIONS']);
-    }
-
+        match ($method) {
+            'POST' => handleCreateProject($db, $config),
+            'GET'  => handleListProjects($db),
+            default => sendError('Method not allowed', 405, ['Allow' => 'GET, POST, OPTIONS']),
+        };
     // Resource routes: /api/projects/:id (12-char alphanumeric)
-    if (preg_match('#^/api/projects/([A-Za-z0-9]{12})$#', $path, $matches)) {
+    } elseif (preg_match('#^/api/projects/([A-Za-z0-9]{12})$#', $path, $matches)) {
         $id = $matches[1];
 
         match ($method) {
@@ -196,9 +226,9 @@ try {
             'DELETE' => handleDeleteProject($db, $id),
             default  => sendError('Method not allowed', 405, ['Allow' => 'GET, PUT, PATCH, DELETE, OPTIONS']),
         };
+    } else {
+        sendError('Not found', 404);
     }
-
-    sendError('Not found', 404);
 } catch (\Throwable $e) {
     error_log('API error [' . get_class($e) . ']: ' . substr($e->getMessage(), 0, 500));
     sendError('Internal server error', 500);

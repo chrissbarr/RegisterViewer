@@ -30,7 +30,7 @@ jobs:
 
       - run: npm run build
         env:
-          VITE_API_URL: https://www.registerviewer.com
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
 
       - name: Assemble deploy payload
         run: |

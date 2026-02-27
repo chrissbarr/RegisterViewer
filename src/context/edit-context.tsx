@@ -2,11 +2,14 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
 import type { RegisterDef } from '../types/register';
 import { registersEqual } from '../utils/register-equality';
 
-interface EditContextValue {
+interface EditState {
   drafts: Record<string, RegisterDef>;
   dirtyDraftIds: Set<string>;
   dirtyCount: number;
   isEditing: boolean;
+}
+
+interface EditActions {
   enterEditMode: (register: RegisterDef) => void;
   exitEditMode: () => void;
   getDraft: (id: string) => RegisterDef | undefined;
@@ -14,7 +17,8 @@ interface EditContextValue {
   saveAllDrafts: () => RegisterDef[];
 }
 
-const EditContext = createContext<EditContextValue | null>(null);
+const EditStateContext = createContext<EditState | null>(null);
+const EditActionsContext = createContext<EditActions | null>(null);
 
 export function EditProvider({ children }: { children: ReactNode }) {
   const [drafts, setDrafts] = useState<Record<string, RegisterDef>>({});
@@ -68,27 +72,33 @@ export function EditProvider({ children }: { children: ReactNode }) {
     return all;
   }, [drafts]);
 
+  const state = useMemo<EditState>(
+    () => ({ drafts, dirtyDraftIds, dirtyCount, isEditing }),
+    [drafts, dirtyDraftIds, dirtyCount, isEditing],
+  );
+
+  const actions = useMemo<EditActions>(
+    () => ({ enterEditMode, exitEditMode, getDraft, setDraft, saveAllDrafts }),
+    [enterEditMode, exitEditMode, getDraft, setDraft, saveAllDrafts],
+  );
+
   return (
-    <EditContext.Provider
-      value={{
-        drafts,
-        dirtyDraftIds,
-        dirtyCount,
-        isEditing,
-        enterEditMode,
-        exitEditMode,
-        getDraft,
-        setDraft,
-        saveAllDrafts,
-      }}
-    >
-      {children}
-    </EditContext.Provider>
+    <EditStateContext.Provider value={state}>
+      <EditActionsContext.Provider value={actions}>
+        {children}
+      </EditActionsContext.Provider>
+    </EditStateContext.Provider>
   );
 }
 
-export function useEditContext() {
-  const ctx = useContext(EditContext);
-  if (!ctx) throw new Error('useEditContext must be used within EditProvider');
+export function useEditState(): EditState {
+  const ctx = useContext(EditStateContext);
+  if (!ctx) throw new Error('useEditState must be used within EditProvider');
+  return ctx;
+}
+
+export function useEditActions(): EditActions {
+  const ctx = useContext(EditActionsContext);
+  if (!ctx) throw new Error('useEditActions must be used within EditProvider');
   return ctx;
 }

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { RegisterDef, Field, FlagField } from '../../types/register';
 import { useAppState } from '../../context/app-context';
-import { useEditContext } from '../../context/edit-context';
+import { useEditState } from '../../context/edit-context';
 import { FieldDefinitionForm } from './field-definition-form';
 import { JsonConfigEditor } from './json-config-editor';
 import { formatOffset } from '../../utils/format';
@@ -27,7 +27,7 @@ export function RegisterEditor({
   saveErrors,
 }: Props) {
   const { registers, addressUnitBits } = useAppState();
-  const { dirtyCount } = useEditContext();
+  const { dirtyCount } = useEditState();
   const [tab, setTab] = useState<EditorTab>('gui');
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
   const [confirmingDeleteFieldId, setConfirmingDeleteFieldId] = useState<string | null>(null);
@@ -318,6 +318,7 @@ export function RegisterEditor({
                     </div>
                     <button
                       onClick={(e) => { e.stopPropagation(); setConfirmingDeleteFieldId(field.id); }}
+                      aria-label={`Delete field ${field.name}`}
                       className="text-gray-400 hover:text-red-500 dark:hover:text-red-400"
                     >
                       &times;

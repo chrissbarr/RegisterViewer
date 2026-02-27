@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 const LIMITS = [
     'MAX_REGISTERS'             => 256,
-    'MAX_REGISTER_WIDTH'        => 1024,
+    'MAX_REGISTER_WIDTH'        => 128,
     'MAX_FIELDS_PER_REGISTER'   => 64,
     'MAX_ENUM_ENTRIES'          => 256,
     'MAX_NAME_LENGTH'           => 200,
@@ -235,11 +235,5 @@ function isValidVisibility(mixed $value): bool
  */
 function isSequentialArray(mixed $arr): bool
 {
-    if (!is_array($arr)) {
-        return false;
-    }
-    if (count($arr) === 0) {
-        return true;
-    }
-    return array_is_list($arr);
+    return is_array($arr) && array_is_list($arr);
 }

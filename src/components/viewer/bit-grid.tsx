@@ -177,7 +177,16 @@ export function BitGrid({ register, hoveredFieldIndices, onFieldHover, fieldHove
                 return (
                   <div
                     key={bitIdx}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={match ? `Toggle bit ${bitIdx} (${match.field.name})` : `Toggle bit ${bitIdx} (reserved)`}
                     onClick={() => dispatch({ type: 'TOGGLE_BIT', registerId: register.id, bit: bitIdx })}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        dispatch({ type: 'TOGGLE_BIT', registerId: register.id, bit: bitIdx });
+                      }
+                    }}
                     onMouseEnter={() => match && onFieldHover(fieldHoverSets[match.index])}
                     onMouseLeave={() => onFieldHover(null)}
                     title={match ? `Bit ${bitIdx} (${match.field.name})` : `Bit ${bitIdx} (reserved)`}

@@ -58,8 +58,10 @@ export function FieldRow({ field, fieldIndex, registerId, registerValue, registe
     try {
       const newBits = encodeField(input, field);
       dispatch({ type: 'SET_FIELD_VALUE', registerId, field, rawBits: newBits });
-    } catch {
-      // Silently discard (flag/enum paths — these don't throw in practice)
+    } catch (err) {
+      if (import.meta.env.DEV) {
+        console.warn('[field-row] Failed to encode field value:', field.name, err);
+      }
     }
   }
 
@@ -80,7 +82,10 @@ export function FieldRow({ field, fieldIndex, registerId, registerValue, registe
     try {
       const newBits = encodeField(inputText, field);
       dispatch({ type: 'SET_FIELD_VALUE', registerId, field, rawBits: newBits });
-    } catch {
+    } catch (err) {
+      if (import.meta.env.DEV) {
+        console.warn('[field-row] Failed to encode field input on blur:', field.name, err);
+      }
       setInputText(displayStr);
     }
     setError(null);

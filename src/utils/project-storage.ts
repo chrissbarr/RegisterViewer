@@ -75,8 +75,10 @@ function recoverOrphanedProjects(manifest: ProjectManifest): ProjectManifest {
     try {
       const record: StoredLocalProject = JSON.parse(raw);
       manifest.projects.push(toManifestEntry(record));
-    } catch {
-      /* corrupt data, skip */
+    } catch (err) {
+      if (import.meta.env.DEV) {
+        console.warn('[project-storage] Failed to recover orphaned project:', localId, err);
+      }
     }
   }
   return manifest;
@@ -98,7 +100,10 @@ export function loadManifest(): ProjectManifest {
           cachedManifest = parsed;
         }
       }
-    } catch {
+    } catch (err) {
+      if (import.meta.env.DEV) {
+        console.warn('[project-storage] Failed to parse manifest from localStorage:', err);
+      }
       cachedManifest = { version: 1, projects: [] };
     }
   }
@@ -132,7 +137,10 @@ export function loadProject(localId: string): StoredLocalProject | null {
     const parsed = JSON.parse(raw);
     if (!isValidStoredProject(parsed)) return null;
     return parsed;
-  } catch {
+  } catch (err) {
+    if (import.meta.env.DEV) {
+      console.warn('[project-storage] Failed to load project:', localId, err);
+    }
     return null;
   }
 }
@@ -196,13 +204,14 @@ export function patchProjectState(localId: string, state: SerializedAppState, na
 
   try {
     const project: StoredLocalProject = JSON.parse(raw);
-    project.state = state;
-    if (name !== undefined) {
-      project.name = name;
-    }
     const now = new Date().toISOString();
-    project.localSavedAt = now;
-    localStorage.setItem(key, JSON.stringify(project));
+    const updated: StoredLocalProject = {
+      ...project,
+      state,
+      localSavedAt: now,
+      ...(name !== undefined ? { name } : {}),
+    };
+    localStorage.setItem(key, JSON.stringify(updated));
 
     // Update manifest timestamp in cache
     const manifest = loadManifest();
@@ -214,8 +223,10 @@ export function patchProjectState(localId: string, state: SerializedAppState, na
       }
       saveManifest(manifest);
     }
-  } catch {
-    // Corrupt data — skip
+  } catch (err) {
+    if (import.meta.env.DEV) {
+      console.warn('[project-storage] Failed to patch project state:', localId, err);
+    }
   }
 }
 
@@ -230,11 +241,12 @@ export function updateProjectMetadata(
   saveProject(project);
 }
 
-/** Get the most recently saved project's localId */
-export function getMostRecentProjectId(): string | null {
-  const manifest = loadManifest();
-  if (manifest.projects.length === 0) return null;
-  const sorted = [...manifest.projects].sort(
+/** Get the most recently saved project's localId.
+ *  Accepts an optional manifest to avoid redundant loads when the caller already has one. */
+export function getMostRecentProjectId(manifest?: ProjectManifest): string | null {
+  const m = manifest ?? loadManifest();
+  if (m.projects.length === 0) return null;
+  const sorted = [...m.projects].sort(
     (a, b) => new Date(b.localSavedAt).getTime() - new Date(a.localSavedAt).getTime(),
   );
   return sorted[0].localId;
@@ -269,8 +281,10 @@ function migrateLegacyState(): void {
   try {
     const parsed = JSON.parse(legacyState) as SerializedAppState;
     createProject(parsed, parsed.project?.title ?? DEFAULT_PROJECT_NAME);
-  } catch {
-    // Corrupt legacy data — start fresh
+  } catch (err) {
+    if (import.meta.env.DEV) {
+      console.warn('[project-storage] Failed to migrate legacy state:', err);
+    }
   }
 }
 
@@ -298,8 +312,10 @@ function migrateOwnerTokensToProjects(): void {
         }
       }
     }
-  } catch {
-    // Corrupt data — skip
+  } catch (err) {
+    if (import.meta.env.DEV) {
+      console.warn('[project-storage] Failed to migrate owner tokens:', err);
+    }
   }
   localStorage.removeItem(CLOUD_PROJECTS_KEY);
 }

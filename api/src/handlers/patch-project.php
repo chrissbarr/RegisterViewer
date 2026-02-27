@@ -6,7 +6,7 @@ function handlePatchProject(PDO $db, string $id): never
 {
     requireOwnership($db, $id);
 
-    $body = readJsonBody();
+    $body = readParsedBody()['assoc'];
 
     if (!isset($body['visibility'])) {
         sendError('PATCH requires a visibility field', 400);

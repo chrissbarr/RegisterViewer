@@ -15,9 +15,9 @@ interface FieldInRow {
   isPartial: boolean;
 }
 
-/** Default cell width in pixels (matches the 2rem = 32px bit cell). */
+// Must stay in sync with CSS grid template in BitGrid component:
+// CELL_PX = 2rem (32px at default font size), GAP_PX = 0.5rem (8px)
 const CELL_PX = 32;
-/** Default byte-gap width in pixels (matches 0.5rem = 8px gap). */
 const GAP_PX = 8;
 
 /**
@@ -41,7 +41,9 @@ export function computeBitsPerRow(
   if (widthNeeded(registerWidth) <= containerPx) return registerWidth;
 
   // Step down by 8 until it fits
-  for (let n = registerWidth - (registerWidth % 8 || 8); n >= 8; n -= 8) {
+  // Largest multiple of 8 that is strictly less than registerWidth
+  const firstCandidate = registerWidth - (registerWidth % 8 || 8);
+  for (let n = firstCandidate; n >= 8; n -= 8) {
     if (widthNeeded(n) <= containerPx) return n;
   }
 

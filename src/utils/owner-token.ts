@@ -47,18 +47,17 @@ export function getOrCreateOwnerToken(): string {
   }
 }
 
-export function checkOwnership(cloudId: string): boolean {
-  const manifest = loadManifest();
-  const entry = manifest.projects.find(p => p.cloudId === cloudId);
-  if (!entry) return false;
-  const project = loadProject(entry.localId);
-  return project?.ownerToken != null;
-}
-
-export function getOwnerTokenForProject(cloudId: string): string | null {
+function findProjectByCloudId(cloudId: string) {
   const manifest = loadManifest();
   const entry = manifest.projects.find(p => p.cloudId === cloudId);
   if (!entry) return null;
-  const project = loadProject(entry.localId);
-  return project?.ownerToken ?? null;
+  return loadProject(entry.localId);
+}
+
+export function checkOwnership(cloudId: string): boolean {
+  return findProjectByCloudId(cloudId)?.ownerToken != null;
+}
+
+export function getOwnerTokenForProject(cloudId: string): string | null {
+  return findProjectByCloudId(cloudId)?.ownerToken ?? null;
 }

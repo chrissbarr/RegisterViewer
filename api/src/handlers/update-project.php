@@ -6,7 +6,8 @@ function handleUpdateProject(PDO $db, string $id, array $config): never
 {
     $existing = requireOwnership($db, $id);
 
-    $body = readJsonBody();
+    $parsed = readParsedBody();
+    $body = $parsed['assoc'];
 
     $validation = validateProjectData($body['data'] ?? null);
     if (!$validation['valid']) {
@@ -30,7 +31,7 @@ function handleUpdateProject(PDO $db, string $id, array $config): never
     dbUpdateProject(
         $db,
         $id,
-        extractRawDataJson(),
+        extractDataJson($parsed['object']),
         $visibility,
         $title,
     );

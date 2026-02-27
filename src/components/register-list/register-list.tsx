@@ -16,7 +16,7 @@ import {
   sortableKeyboardCoordinates,
 } from '@dnd-kit/sortable';
 import { useAppState, useAppDispatch } from '../../context/app-context';
-import { useEditContext } from '../../context/edit-context';
+import { useEditState, useEditActions } from '../../context/edit-context';
 import { RegisterListItem } from './register-list-item';
 import { RegisterListItemOverlay } from './register-list-item-overlay';
 import { getRegisterOverlapWarnings } from '../../utils/validation';
@@ -26,7 +26,8 @@ import { AlertBanner } from '../common/alert-banner';
 export function RegisterList() {
   const { registers, activeRegisterId, addressUnitBits } = useAppState();
   const dispatch = useAppDispatch();
-  const { isEditing, enterEditMode, dirtyDraftIds } = useEditContext();
+  const { isEditing, dirtyDraftIds } = useEditState();
+  const { enterEditMode } = useEditActions();
   const [activeId, setActiveId] = useState<string | null>(null);
 
   const overlapWarnings = useMemo(

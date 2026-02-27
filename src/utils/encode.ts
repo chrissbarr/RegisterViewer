@@ -22,18 +22,22 @@ export function encodeField(input: string | number | boolean, field: Field): big
     }
 
     case 'integer': {
-      const strInput = typeof input === 'string' ? input.trim() : '';
-      const numVal = typeof input === 'string' ? parseBigInt(input) : BigInt(Math.round(Number(input)));
-      switch (field.signedness) {
-        case 'twos-complement':
-          return toUnsigned(numVal, bitWidth);
-        case 'sign-magnitude':
-          if (strInput === '-0') return toSignMagnitudeBits('-0', bitWidth);
-          return toSignMagnitudeBits(numVal, bitWidth);
-        default: {
-          const mask = (1n << BigInt(bitWidth)) - 1n;
-          return numVal & mask;
+      try {
+        const strInput = typeof input === 'string' ? input.trim() : '';
+        const numVal = typeof input === 'string' ? parseBigInt(input) : BigInt(Math.round(Number(input)));
+        switch (field.signedness) {
+          case 'twos-complement':
+            return toUnsigned(numVal, bitWidth);
+          case 'sign-magnitude':
+            if (strInput === '-0') return toSignMagnitudeBits('-0', bitWidth);
+            return toSignMagnitudeBits(numVal, bitWidth);
+          default: {
+            const mask = (1n << BigInt(bitWidth)) - 1n;
+            return numVal & mask;
+          }
         }
+      } catch {
+        return 0n;
       }
     }
 
@@ -49,8 +53,12 @@ export function encodeField(input: string | number | boolean, field: Field): big
     }
 
     case 'fixed-point': {
-      const numVal = typeof input === 'string' ? parseFloat(input) : Number(input);
-      return encodeFixedPoint(numVal, field.qFormat);
+      try {
+        const numVal = typeof input === 'string' ? parseFloat(input) : Number(input);
+        return encodeFixedPoint(numVal, field.qFormat);
+      } catch {
+        return 0n;
+      }
     }
   }
 }
