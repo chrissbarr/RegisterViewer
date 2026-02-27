@@ -318,6 +318,7 @@ export function RegisterEditor({
                     </div>
                     <button
                       onClick={(e) => { e.stopPropagation(); setConfirmingDeleteFieldId(field.id); }}
+                      aria-label={`Delete field ${field.name}`}
                       className="text-gray-400 hover:text-red-500 dark:hover:text-red-400"
                     >
                       &times;
