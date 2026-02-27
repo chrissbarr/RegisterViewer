@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useAppState, useAppDispatch } from '../../context/app-context';
-import { useEditContext } from '../../context/edit-context';
+import { useEditState, useEditActions } from '../../context/edit-context';
 import { ValueInputBar } from './value-input-bar';
 import { BitGrid } from './bit-grid';
 import { FieldTable } from './field-table';
@@ -18,15 +18,8 @@ export function MainPanel() {
   const dispatch = useAppDispatch();
   const [activeTab, setActiveTab] = useState<MainTab>('register');
   const [hoveredFieldIndices, setHoveredFieldIndices] = useState<ReadonlySet<number> | null>(null);
-  const {
-    dirtyDraftIds,
-    isEditing,
-    enterEditMode,
-    exitEditMode,
-    getDraft,
-    setDraft,
-    saveAllDrafts,
-  } = useEditContext();
+  const { dirtyDraftIds, isEditing } = useEditState();
+  const { enterEditMode, exitEditMode, getDraft, setDraft, saveAllDrafts } = useEditActions();
 
   const [saveErrors, setSaveErrors] = useState<string[] | null>(null);
 

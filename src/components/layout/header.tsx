@@ -12,7 +12,7 @@ import { ShareButton } from '../common/share-button';
 import { MyProjectsDialog } from '../projects/my-projects-dialog';
 import { GITHUB_URL } from '../../constants';
 import { useAppState, useAppDispatch } from '../../context/app-context';
-import { useEditContext } from '../../context/edit-context';
+import { useEditActions } from '../../context/edit-context';
 import { usePreferences, usePreferencesActions } from '../../context/preferences-context';
 import { useProjectStorageActions } from '../../context/project-storage-context';
 import { exportToJson, importFromJson, type ImportWarning } from '../../utils/storage';
@@ -27,7 +27,7 @@ type ImportFeedback =
 export function Header() {
   const state = useAppState();
   const dispatch = useAppDispatch();
-  const { exitEditMode } = useEditContext();
+  const { exitEditMode } = useEditActions();
   const preferences = usePreferences();
   const preferencesActions = usePreferencesActions();
   const fileInputRef = useRef<HTMLInputElement>(null);
