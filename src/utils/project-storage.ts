@@ -230,11 +230,12 @@ export function updateProjectMetadata(
   saveProject(project);
 }
 
-/** Get the most recently saved project's localId */
-export function getMostRecentProjectId(): string | null {
-  const manifest = loadManifest();
-  if (manifest.projects.length === 0) return null;
-  const sorted = [...manifest.projects].sort(
+/** Get the most recently saved project's localId.
+ *  Accepts an optional manifest to avoid redundant loads when the caller already has one. */
+export function getMostRecentProjectId(manifest?: ProjectManifest): string | null {
+  const m = manifest ?? loadManifest();
+  if (m.projects.length === 0) return null;
+  const sorted = [...m.projects].sort(
     (a, b) => new Date(b.localSavedAt).getTime() - new Date(a.localSavedAt).getTime(),
   );
   return sorted[0].localId;

@@ -1,4 +1,5 @@
 import type { ProjectManifest } from '../types/project';
+import { getMostRecentProjectId } from './project-storage';
 
 type ProjectResolution =
   | { type: 'cloud'; cloudId: string }
@@ -45,11 +46,9 @@ export function resolveInitialProject(
   }
 
   // 4. Most recent project from manifest
-  if (manifest.projects.length > 0) {
-    const sorted = [...manifest.projects].sort(
-      (a, b) => new Date(b.localSavedAt).getTime() - new Date(a.localSavedAt).getTime(),
-    );
-    return { type: 'local', localId: sorted[0].localId };
+  const mostRecentId = getMostRecentProjectId(manifest);
+  if (mostRecentId) {
+    return { type: 'local', localId: mostRecentId };
   }
 
   // 5. No projects exist — create default
