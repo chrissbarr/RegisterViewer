@@ -111,34 +111,48 @@ function readBody(): string
     return $rawBody;
 }
 
-function readJsonBody(): array
+/**
+ * Parse the request body as JSON, returning both associative-array and stdClass views.
+ *
+ * The assoc view is used for validation and reading scalar fields.
+ * The object view preserves the {} vs [] distinction (json_decode with true
+ * turns {} into [], losing the difference) so that stored JSON is faithful.
+ *
+ * @return array{assoc: array, object: object}
+ */
+function readParsedBody(): array
 {
+    static $cached = null;
+    if ($cached !== null) {
+        return $cached;
+    }
+
     $text = readBody();
     if ($text === '') {
         sendError('Invalid JSON body', 400);
     }
-    $data = json_decode($text, true);
-    if (json_last_error() !== JSON_ERROR_NONE || !is_array($data)) {
+
+    $object = json_decode($text);
+    if (json_last_error() !== JSON_ERROR_NONE || !is_object($object)) {
         sendError('Invalid JSON body', 400);
     }
-    return $data;
+
+    $assoc = json_decode($text, true);
+
+    $cached = ['assoc' => $assoc, 'object' => $object];
+    return $cached;
 }
 
 /**
- * Extract the "data" field from the raw request body as a JSON string,
- * preserving {} vs [] distinction for empty objects like registerValues: {}.
- *
- * json_decode($raw, true) turns {} into [], losing the distinction.
- * Decoding without true preserves stdClass for {}, which json_encode writes as {}.
+ * Extract the "data" field from the parsed request body as a JSON string,
+ * using the stdClass view to preserve {} vs [] distinction.
  */
-function extractRawDataJson(): string
+function extractDataJson(object $parsedObject): string
 {
-    $raw = readBody();
-    $asObject = json_decode($raw); // decode to stdClass (preserves {} vs [])
-    if (!is_object($asObject) || !property_exists($asObject, 'data')) {
+    if (!property_exists($parsedObject, 'data')) {
         sendError('Invalid JSON body', 400);
     }
-    return json_encode($asObject->data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    return json_encode($parsedObject->data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 }
 
 // ---- HSTS (production only) ----
