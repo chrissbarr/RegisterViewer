@@ -16,7 +16,7 @@
     "test:e2e:headed": "playwright test --headed",
     "prepare": "husky || true",
     "knip": "knip",
-    "screenshots": "playwright test --config playwright.screenshots.config.ts && npx tsx scripts/revert-unchanged-screenshots.ts"
+    "screenshots": "playwright test --config playwright.screenshots.config.ts && npx tsx scripts/add-screenshot-borders.ts && npx tsx scripts/revert-unchanged-screenshots.ts"
   },
   "lint-staged": {
     "*.{ts,tsx}": "eslint --max-warnings=0"
