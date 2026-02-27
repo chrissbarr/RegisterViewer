@@ -140,7 +140,10 @@ export function ValueInputBar({ register }: Props) {
     try {
       const v = BigInt(decInput || '0');
       commitValue(v);
-    } catch {
+    } catch (err) {
+      if (import.meta.env.DEV) {
+        console.warn('[value-input-bar] Failed to parse decimal input:', decInput, err);
+      }
       setDecInput(value.toString(10));
     }
   }
@@ -314,7 +317,7 @@ export function ValueInputBar({ register }: Props) {
                 dec.posRef.current = validBeforeCursor;
                 dec.pendingRef.current = true;
                 setDecInput(filtered);
-                try { commitValue(BigInt(filtered || '0')); } catch { /* partial input */ }
+                try { commitValue(BigInt(filtered || '0')); } catch (err) { if (import.meta.env.DEV) console.warn('[value-input-bar] Failed to parse decimal during input:', filtered, err); }
               }}
               onBlur={() => { focusedField.current = null; handleDecBlur(); }}
               onKeyDown={(e) => handleKeyDown(e, handleDecBlur)}
