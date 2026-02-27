@@ -114,9 +114,13 @@ function readBody(): string
 /**
  * Parse the request body as JSON, returning both associative-array and stdClass views.
  *
+ * The body is parsed once as stdClass (to preserve the {} vs [] distinction,
+ * since json_decode with assoc=true turns {} into [], losing the difference).
+ * The assoc view is derived by recursively converting the stdClass tree,
+ * avoiding a second json_decode call.
+ *
  * The assoc view is used for validation and reading scalar fields.
- * The object view preserves the {} vs [] distinction (json_decode with true
- * turns {} into [], losing the difference) so that stored JSON is faithful.
+ * The object view is used for faithful JSON storage.
  *
  * @return array{assoc: array, object: object}
  */
@@ -137,10 +141,29 @@ function readParsedBody(): array
         sendError('Invalid JSON body', 400);
     }
 
-    $assoc = json_decode($text, true);
+    $assoc = objectToAssoc($object);
 
     $cached = ['assoc' => $assoc, 'object' => $object];
     return $cached;
+}
+
+/**
+ * Recursively convert a stdClass tree to associative arrays.
+ * Arrays are preserved as arrays; stdClass objects become associative arrays.
+ */
+function objectToAssoc(mixed $value): mixed
+{
+    if ($value instanceof \stdClass) {
+        $result = [];
+        foreach ($value as $k => $v) {
+            $result[$k] = objectToAssoc($v);
+        }
+        return $result;
+    }
+    if (is_array($value)) {
+        return array_map('objectToAssoc', $value);
+    }
+    return $value;
 }
 
 /**
