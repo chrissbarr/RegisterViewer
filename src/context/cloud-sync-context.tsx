@@ -175,7 +175,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   const projectsRef = useRef(projects);
   useEffect(() => {
     projectsRef.current = projects;
-  });
+  }, [projects]);
 
   // Dirty tracking (generation-counter pattern)
   const { isDirty, dataVersionRef, needsVersionSyncRef, mutationLockRef } = useDirtyTracking(
@@ -186,12 +186,9 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
 
   // Sync cloud state when active project changes (handles project switch)
   const internalRef = useRef(internal);
-  // No dependency array: intentionally runs every render so callbacks
-  // reading internalRef.current always see the latest state without
-  // needing `internal` in their dependency arrays (avoids re-creating callbacks).
   useEffect(() => {
     internalRef.current = internal;
-  });
+  }, [internal]);
 
   useEffect(() => {
     if (!activeLocalId) return;
@@ -220,12 +217,9 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
 
   // Ref to avoid stale closures in save/fork callbacks
   const appStateRef = useRef(appState);
-  // No dependency array: intentionally runs every render so callbacks
-  // reading appStateRef.current always see the latest state without
-  // needing `appState` in their dependency arrays (avoids re-creating callbacks).
   useEffect(() => {
     appStateRef.current = appState;
-  });
+  }, [appState]);
 
   const applyCreatedResult = useCallback((result: { cloudId: string; timestamp: string; ownerToken: string }) => {
     let currentLocalId = activeLocalIdRef.current;

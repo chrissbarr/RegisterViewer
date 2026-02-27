@@ -116,7 +116,7 @@ export function ProjectStorageProvider({ children, initialLocalId }: ProjectStor
   const projectRef = useRef(appState.project);
   useEffect(() => {
     projectRef.current = appState.project;
-  });
+  }, [appState.project]);
 
   const renameProject = useCallback((localId: string, name: string) => {
     updateProjectMetadata(localId, { name });
