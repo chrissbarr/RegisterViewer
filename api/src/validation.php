@@ -235,11 +235,5 @@ function isValidVisibility(mixed $value): bool
  */
 function isSequentialArray(mixed $arr): bool
 {
-    if (!is_array($arr)) {
-        return false;
-    }
-    if (count($arr) === 0) {
-        return true;
-    }
-    return array_is_list($arr);
+    return is_array($arr) && array_is_list($arr);
 }
