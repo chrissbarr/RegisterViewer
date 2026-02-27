@@ -204,13 +204,14 @@ export function patchProjectState(localId: string, state: SerializedAppState, na
 
   try {
     const project: StoredLocalProject = JSON.parse(raw);
-    project.state = state;
-    if (name !== undefined) {
-      project.name = name;
-    }
     const now = new Date().toISOString();
-    project.localSavedAt = now;
-    localStorage.setItem(key, JSON.stringify(project));
+    const updated: StoredLocalProject = {
+      ...project,
+      state,
+      localSavedAt: now,
+      ...(name !== undefined ? { name } : {}),
+    };
+    localStorage.setItem(key, JSON.stringify(updated));
 
     // Update manifest timestamp in cache
     const manifest = loadManifest();
