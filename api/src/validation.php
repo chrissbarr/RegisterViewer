@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 const LIMITS = [
     'MAX_REGISTERS'             => 256,
-    'MAX_REGISTER_WIDTH'        => 1024,
+    'MAX_REGISTER_WIDTH'        => 128,
     'MAX_FIELDS_PER_REGISTER'   => 64,
     'MAX_ENUM_ENTRIES'          => 256,
     'MAX_NAME_LENGTH'           => 200,
