@@ -15,10 +15,11 @@ interface FieldInRow {
   isPartial: boolean;
 }
 
-// Must stay in sync with CSS grid template in BitGrid component:
-// CELL_PX = 2rem (32px at default font size), GAP_PX = 0.5rem (8px)
+// Minimum cell size and fixed gap size. computeCellSize() may widen cells
+// up to MAX_CELL_PX when the container has room. Gap columns stay fixed.
 const CELL_PX = 32;
 const GAP_PX = 8;
+const MAX_CELL_PX = 64;
 
 /**
  * Compute how many bits fit in one row.
@@ -48,6 +49,27 @@ export function computeBitsPerRow(
   }
 
   return 8;
+}
+
+/**
+ * Compute the cell size (in px) to fill available container width.
+ * After `computeBitsPerRow` decides how many bits fit at the minimum cell
+ * size (32px), this function distributes leftover space by widening cells
+ * up to MAX_CELL_PX (64px). Gaps stay fixed at GAP_PX.
+ */
+export function computeCellSize(
+  containerPx: number,
+  bitsInRow: number,
+  maxCellPx = MAX_CELL_PX,
+  gapPx = GAP_PX,
+): number {
+  if (containerPx <= 0 || bitsInRow <= 0) return CELL_PX;
+
+  const gaps = Math.max(0, Math.ceil(bitsInRow / 8) - 1);
+  const availableForCells = containerPx - gaps * gapPx;
+  const cellSize = Math.floor(availableForCells / bitsInRow);
+
+  return Math.max(CELL_PX, Math.min(maxCellPx, cellSize));
 }
 
 /**
@@ -84,24 +106,28 @@ export function bitToGridColumn(bitIndex: number, rowStartBit: number, bitsInRow
 
 /**
  * Build the CSS `grid-template-columns` value.
- * Inserts a gap column (0.5rem) after every 8 bit columns.
+ * Inserts a gap column (GAP_PX px) after every 8 bit columns.
  * Handles partial first byte for non-multiple-of-8 widths.
+ * All units are px for consistency with the layout math in computeBitsPerRow/computeCellSize.
+ *
+ * @param cellPx — cell width in pixels (default 32, max 64 via computeCellSize).
  */
-export function gridTemplateColumns(bitsInRow: number): string {
+export function gridTemplateColumns(bitsInRow: number, cellPx = CELL_PX): string {
   if (bitsInRow <= 0) return '';
 
+  const cellUnit = `${cellPx}px`;
   const parts: string[] = [];
   let remaining = bitsInRow;
 
   // First group may be partial (for non-multiple-of-8 widths)
   const firstGroup = remaining % 8 || 8;
-  parts.push(firstGroup === 1 ? '2rem' : `repeat(${firstGroup}, 2rem)`);
+  parts.push(firstGroup === 1 ? cellUnit : `repeat(${firstGroup}, ${cellUnit})`);
   remaining -= firstGroup;
 
   while (remaining > 0) {
-    parts.push('0.5rem'); // gap column
+    parts.push(`${GAP_PX}px`); // gap column
     // remaining is always a multiple of 8 here (firstGroup absorbed the partial)
-    parts.push(`repeat(${Math.min(remaining, 8)}, 2rem)`);
+    parts.push(`repeat(${Math.min(remaining, 8)}, ${cellUnit})`);
     remaining -= 8;
   }
 
