@@ -145,6 +145,6 @@ export interface SerializedAppState {
 export type DecodedValue =
   | { type: 'flag'; value: boolean }
   | { type: 'enum'; value: number; name: string | null }
-  | { type: 'integer'; value: number | bigint | '-0' }
+  | { type: 'integer'; value: bigint | '-0' }
   | { type: 'float'; value: number }
   | { type: 'fixed-point'; value: number };

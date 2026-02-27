@@ -195,7 +195,7 @@ describe('formatDecodedValue', () => {
   });
 
   it('formats integer (number) via toString', () => {
-    expect(formatDecodedValue({ type: 'integer', value: 42 })).toBe('42');
+    expect(formatDecodedValue({ type: 'integer', value: 42n })).toBe('42');
   });
 
   it('formats integer -0 as "-0"', () => {
