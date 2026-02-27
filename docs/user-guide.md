@@ -372,7 +372,7 @@ This means the current raw bit value doesn't match any of the enum entries you'v
 
 ### I lost my cloud projects
 
-Cloud project ownership is tied to an anonymous token in your browser. If you cleared browser data, you can download a **recovery key** from the My Projects dialog footer. Keep this key safe — it's the only way to prove ownership.
+Cloud project ownership is tied to an anonymous token in your browser. You can download a **recovery key** from the My Projects dialog footer. Keep this key safe — it's the only way to prove ownership if you've cleared your browser's data.
 
 ### Field validation errors
 
