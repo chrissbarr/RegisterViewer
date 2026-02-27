@@ -15,7 +15,8 @@
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed",
     "prepare": "husky || true",
-    "knip": "knip"
+    "knip": "knip",
+    "screenshots": "playwright test --config playwright.screenshots.config.ts && npx tsx scripts/add-screenshot-borders.ts && npx tsx scripts/revert-unchanged-screenshots.ts"
   },
   "lint-staged": {
     "*.{ts,tsx}": "eslint --max-warnings=0"
@@ -37,6 +38,7 @@
     "@testing-library/react": "^16.3.2",
     "@types/node": "^25.3.1",
     "@types/pako": "^2.0.4",
+    "@types/pngjs": "^6.0.5",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
@@ -49,7 +51,10 @@
     "jsdom": "^28.1.0",
     "knip": "^5.85.0",
     "lint-staged": "^16.2.7",
+    "pixelmatch": "^7.1.0",
+    "pngjs": "^7.0.0",
     "tailwindcss": "^4.2.1",
+    "tsx": "^4.21.0",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.56.1",
     "vite": "^7.3.1",

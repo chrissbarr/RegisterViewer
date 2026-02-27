@@ -1,7 +1,9 @@
 name: Deploy to cPanel
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches: [master]
   workflow_dispatch:
 
@@ -9,11 +11,10 @@ permissions:
   contents: read
 
 jobs:
-  ci:
-    uses: ./.github/workflows/ci.yml
-
   deploy:
-    needs: ci
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     concurrency:
       group: cpanel-deploy

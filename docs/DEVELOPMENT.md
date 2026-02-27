@@ -1,0 +1,138 @@
+# Developer Guide
+
+This document covers local development setup, build commands, testing, and project structure for contributors to Register Viewer.
+
+## Tech Stack
+
+- **React 19** + **TypeScript** (strict mode)
+- **Vite** for builds and dev server
+- **Tailwind CSS v4** for styling
+- **@dnd-kit** for drag-and-drop register reordering
+- **Vitest** for unit tests, **Playwright** for E2E tests
+- **PHP 8.3 + MySQL 8.0** for the cloud save/share backend (deployed on cPanel)
+
+## Getting Started
+
+```bash
+npm install
+npm run dev
+```
+
+Open http://localhost:5173 in your browser. On first launch, an example 32-bit STATUS_REG is pre-loaded with `0xDEADBEEF`.
+
+## Scripts
+
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start development server with HMR |
+| `npm run build` | Type-check and build for production |
+| `npm run preview` | Preview the production build locally |
+| `npm run lint` | Run ESLint |
+| `npm run knip` | Dead code detection (unused exports, files, types, dependencies) |
+| `npm test` | Run all unit tests |
+| `npm run test:watch` | Run tests in watch mode (re-runs on file changes) |
+| `npm run test:coverage` | Run tests with V8 coverage report |
+| `npm run test:e2e` | Run Playwright end-to-end tests |
+
+### API Backend (requires Docker)
+
+| Command | Description |
+|---------|-------------|
+| `cd api && docker compose up -d` | Start local API + MySQL (port 8080) |
+| `cd api && docker compose run --rm test bash -c "composer install -q && vendor/bin/phpunit"` | Run all API tests |
+| `cd api && docker compose run --rm test bash -c "composer install -q && vendor/bin/phpunit --testsuite Unit"` | Unit tests only |
+| `cd api && docker compose run --rm test bash -c "composer install -q && vendor/bin/phpunit --testsuite Integration"` | Integration tests only |
+| `cd api && docker compose down` | Stop containers |
+| `cd api && docker compose down -v` | Stop containers and reset database |
+
+### Local Frontend + API
+
+To test cloud features locally:
+
+1. Start the API: `cd api && docker compose up -d`
+2. The `.env.development` file already sets `VITE_API_URL=http://localhost:8080`
+3. Start the frontend: `npm run dev`
+
+## Architecture
+
+Register Viewer is a React SPA with a PHP API backend for cloud save/share. The frontend handles all register decoding/encoding client-side; the API provides REST endpoints for persistent cloud storage.
+
+- **State management**: `useReducer` + split React Contexts (state/dispatch) to avoid unnecessary re-renders
+- **Register values**: Stored as `bigint` at runtime to support registers wider than 53 bits. Serialized as hex strings (`"0xDEADBEEF"`) in localStorage and JSON exports.
+- **Bit indexing**: Fields use `[msb, lsb]` inclusive, 0-indexed from LSB
+- **Persistence**: Multi-project localStorage with per-project keys, debounced auto-save (300ms)
+
+See [API Reference](API.md) for the REST API and [Deployment Guide](DEPLOYMENT.md) for production setup.
+
+## Testing
+
+Unit tests use [Vitest](https://vitest.dev/) and live alongside source files as `.test.ts` siblings.
+
+```bash
+npm test                # Run once
+npm run test:watch      # Watch mode
+npm run test:coverage   # Coverage report
+npm run test:e2e        # Playwright E2E tests
+```
+
+Key test areas:
+
+- **Utilities** — bitwise, float, fixed-point, decode/encode, validation, storage, format, snapshot-url, owner-token, api-client, project-storage, cloud-project-loader, cloud-operations
+- **Context providers** — app-context (reducer), cloud-sync-context, project-storage-context, preferences-context
+- **Components** — app-loader, share-dialog, my-projects-dialog
+- **Hooks** — use-dirty-tracking, use-my-projects-actions, use-project-cloud-ops
+- **E2E (Playwright)** — project CRUD, cloud save/share/fork/delete, multi-tab, migration
+
+### Dead Code Detection
+
+Run `npm run knip` after adding or removing exports, renaming functions, or deleting files. Config lives in `knip.config.ts`.
+
+## Project Structure
+
+```
+src/
+  components/
+    app-loader.tsx              # Hash fragment routing (cloud links, snapshot URLs)
+    layout/
+      app-shell.tsx             # Top-level layout, theme sync, auto-save
+      header.tsx                # Title bar, save/share/import/export, theme toggle
+      sidebar.tsx               # Register list panel
+    common/
+      save-button.tsx           # Cloud save button with loading state
+      share-button.tsx          # Share button (opens share dialog)
+      share-dialog.tsx          # Share URL options (snapshot + cloud link)
+      shared-project-banner.tsx # Banner when viewing a shared project
+      ...
+    projects/
+      my-projects-dialog.tsx    # List of saved projects (local + cloud)
+    viewer/  editor/  register-list/
+  context/
+    app-context.tsx             # React Context + useReducer state management
+    cloud-sync-context.tsx      # Cloud project state (save/share/dirty tracking)
+    preferences-context.tsx     # Theme + sidebar preferences
+    edit-context.tsx            # Register draft management
+    project-storage-context.tsx # Multi-project localStorage manifest
+  utils/
+    api-client.ts               # Fetch wrapper for cloud API
+    owner-token.ts              # Anonymous owner token generation + hashing
+    cloud-operations.ts         # Cloud save/delete/visibility operations
+    snapshot-url.ts             # Compressed snapshot URL encode/decode
+    bitwise.ts  decode.ts  encode.ts  float.ts  fixed-point.ts
+    validation.ts  storage.ts  seed-data.ts  ...
+  types/
+    register.ts                 # Core TypeScript interfaces
+
+api/                            # PHP API backend (cPanel)
+  index.php                     # Entry point: routing, CORS, response helpers
+  config.php                    # Configuration with getenv() fallbacks
+  src/
+    database.php                # PDO singleton factory
+    data-access.php             # All DB queries
+    validation.php              # Payload structural validation
+    auth.php                    # Token extraction + ownership check
+    cors.php                    # CORS header computation
+    id.php                      # 12-char base62 ID generation
+    handlers/*.php              # One file per endpoint
+  tests/                        # PHPUnit tests (Unit + Integration)
+  docker-compose.yml            # Local dev: API + MySQL + test runner
+```
