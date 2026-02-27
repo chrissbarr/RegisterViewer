@@ -150,26 +150,24 @@ export function getRegisterOverlapWarnings(
   addressUnitBits: number = 8,
 ): RegisterOverlapWarning[] {
   const warnings: RegisterOverlapWarning[] = [];
-  const withOffsets = registers.filter(
-    (r): r is RegisterDef & { offset: number } => r.offset != null,
-  );
+  const withOffsets = registers
+    .filter((r): r is RegisterDef & { offset: number } => r.offset != null)
+    .sort((a, b) => a.offset - b.offset);
 
   const unitLabel = addressUnitBits === 8 ? 'B' : `×${addressUnitBits}b`;
 
   for (let i = 0; i < withOffsets.length; i++) {
+    const a = withOffsets[i];
+    const aUnits = Math.ceil(a.width / addressUnitBits);
+    const aEnd = a.offset + aUnits - 1;
     for (let j = i + 1; j < withOffsets.length; j++) {
-      const a = withOffsets[i];
       const b = withOffsets[j];
-      const aUnits = Math.ceil(a.width / addressUnitBits);
+      if (b.offset > aEnd) break; // sorted: no further overlaps possible
       const bUnits = Math.ceil(b.width / addressUnitBits);
-      const aEnd = a.offset + aUnits - 1;
-      const bEnd = b.offset + bUnits - 1;
-      if (a.offset <= bEnd && b.offset <= aEnd) {
-        warnings.push({
-          registerIds: [a.id, b.id],
-          message: `"${a.name}" (${formatOffset(a.offset)}, ${aUnits}${unitLabel}) overlaps "${b.name}" (${formatOffset(b.offset)}, ${bUnits}${unitLabel})`,
-        });
-      }
+      warnings.push({
+        registerIds: [a.id, b.id],
+        message: `"${a.name}" (${formatOffset(a.offset)}, ${aUnits}${unitLabel}) overlaps "${b.name}" (${formatOffset(b.offset)}, ${bUnits}${unitLabel})`,
+      });
     }
   }
   return warnings;
