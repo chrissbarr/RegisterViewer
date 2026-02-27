@@ -77,10 +77,8 @@ type ExportField = DistributiveOmit<Field, 'id'>;
 type ExportRegister = Omit<RegisterDef, 'id' | 'fields'> & { fields: ExportField[] };
 
 export function stripIds(register: RegisterDef): ExportRegister {
-  const { id: _regId, fields, ...rest } = register;
-  void _regId;
+  const { id: _registerId, fields, ...rest } = register;
   const cleanFields = fields.map(({ id: _fieldId, ...fieldRest }) => {
-    void _fieldId;
     return fieldRest;
   });
   return { ...rest, fields: cleanFields };

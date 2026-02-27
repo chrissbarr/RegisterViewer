@@ -81,8 +81,7 @@ export function appReducer(state: AppState, action: Action): AppState {
     }
     case 'DELETE_REGISTER': {
       const remaining = state.registers.filter((r) => r.id !== action.registerId);
-      const { [action.registerId]: _, ...remainingValues } = state.registerValues;
-      void _;
+      const { [action.registerId]: _removed, ...remainingValues } = state.registerValues;
       return {
         ...state,
         registers: remaining,
