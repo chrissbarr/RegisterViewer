@@ -87,12 +87,9 @@ function sendNoContent(array $extraHeaders = []): never
 
 // ---- Body reading ----
 
-/** @var string|null */
-$rawBody = null;
-
 function readBody(): string
 {
-    global $rawBody;
+    static $rawBody = null;
     if ($rawBody !== null) {
         return $rawBody;
     }
