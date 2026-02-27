@@ -1,5 +1,6 @@
 import {
   computeBitsPerRow,
+  computeCellSize,
   buildRowBits,
   bitToGridColumn,
   gridTemplateColumns,
@@ -39,6 +40,53 @@ describe('computeBitsPerRow', () => {
   it('handles 8-bit register', () => {
     // 8 bits = 8*32 = 256px, no gaps
     expect(computeBitsPerRow(256, 8)).toBe(8);
+  });
+});
+
+describe('computeCellSize', () => {
+  it('returns default 32px when container exactly fits at minimum cell size', () => {
+    // 8 bits at 32px = 256px, no gaps
+    expect(computeCellSize(256, 8)).toBe(32);
+  });
+
+  it('scales up when container has extra space', () => {
+    // 8 bits, 512px container, no gaps → 512/8 = 64px (capped at max)
+    expect(computeCellSize(512, 8)).toBe(64);
+  });
+
+  it('caps at max cell size (64px)', () => {
+    // 8 bits, 1000px container → 1000/8 = 125, capped at 64
+    expect(computeCellSize(1000, 8)).toBe(64);
+  });
+
+  it('accounts for gap columns', () => {
+    // 16 bits, 1 gap (8px), container 600px → (600-8)/16 = 37px
+    expect(computeCellSize(600, 16)).toBe(37);
+  });
+
+  it('returns 32px minimum when container is very small', () => {
+    expect(computeCellSize(100, 8)).toBe(32);
+  });
+
+  it('returns 32px for zero or negative container', () => {
+    expect(computeCellSize(0, 8)).toBe(32);
+    expect(computeCellSize(-100, 8)).toBe(32);
+  });
+
+  it('returns 32px for zero bits', () => {
+    expect(computeCellSize(500, 0)).toBe(32);
+  });
+
+  it('does not grow cells for 32-bit register at typical width', () => {
+    // 32 bits, 3 gaps (24px), container 1100px → (1100-24)/32 = 33px
+    expect(computeCellSize(1100, 32)).toBe(33);
+  });
+
+  it('accounts for gap columns with non-multiple-of-8 bit count', () => {
+    // 12 bits, 1 gap (8px): (500-8)/12 = 41
+    expect(computeCellSize(500, 12)).toBe(41);
+    // 12 bits, exactly fits at minimum: (392-8)/12 = 32
+    expect(computeCellSize(392, 12)).toBe(32);
   });
 });
 
@@ -124,27 +172,27 @@ describe('bitToGridColumn', () => {
 });
 
 describe('gridTemplateColumns', () => {
-  it('generates for 8-bit row (no gap)', () => {
-    expect(gridTemplateColumns(8)).toBe('repeat(8, 2rem)');
+  it('generates for 8-bit row (no gap) at default cell size', () => {
+    expect(gridTemplateColumns(8)).toBe('repeat(8, 32px)');
   });
 
   it('generates for 16-bit row (one gap)', () => {
-    expect(gridTemplateColumns(16)).toBe('repeat(8, 2rem) 0.5rem repeat(8, 2rem)');
+    expect(gridTemplateColumns(16)).toBe('repeat(8, 32px) 8px repeat(8, 32px)');
   });
 
   it('generates for 12-bit row (partial first byte)', () => {
     // 12 % 8 = 4, so first group is 4, then gap + 8
-    expect(gridTemplateColumns(12)).toBe('repeat(4, 2rem) 0.5rem repeat(8, 2rem)');
+    expect(gridTemplateColumns(12)).toBe('repeat(4, 32px) 8px repeat(8, 32px)');
   });
 
   it('generates for 32-bit row', () => {
     expect(gridTemplateColumns(32)).toBe(
-      'repeat(8, 2rem) 0.5rem repeat(8, 2rem) 0.5rem repeat(8, 2rem) 0.5rem repeat(8, 2rem)'
+      'repeat(8, 32px) 8px repeat(8, 32px) 8px repeat(8, 32px) 8px repeat(8, 32px)'
     );
   });
 
   it('generates for 1-bit row', () => {
-    expect(gridTemplateColumns(1)).toBe('2rem');
+    expect(gridTemplateColumns(1)).toBe('32px');
   });
 
   it('returns empty string for 0-bit row', () => {
@@ -153,7 +201,12 @@ describe('gridTemplateColumns', () => {
 
   it('generates for 9-bit row (1-bit partial first + gap + 8)', () => {
     // 9 % 8 = 1, so first group is a single column, then gap + 8
-    expect(gridTemplateColumns(9)).toBe('2rem 0.5rem repeat(8, 2rem)');
+    expect(gridTemplateColumns(9)).toBe('32px 8px repeat(8, 32px)');
+  });
+
+  it('accepts custom cell size in pixels', () => {
+    expect(gridTemplateColumns(8, 48)).toBe('repeat(8, 48px)');
+    expect(gridTemplateColumns(16, 64)).toBe('repeat(8, 64px) 8px repeat(8, 64px)');
   });
 });
 
@@ -166,11 +219,11 @@ describe('bitToGridColumn + gridTemplateColumns consistency', () => {
       const repeatMatch = token.match(/^repeat\((\d+),$/);
       if (repeatMatch) {
         col += Number(repeatMatch[1]);
-      } else if (token === '2rem)') {
-        // end of repeat — already counted
-      } else if (token === '2rem') {
+      } else if (token.match(/^\d+px\)$/)) {
+        // end of repeat (e.g. "32px)") — already counted
+      } else if (token.match(/^\d+px$/)) {
         col += 1;
-      } else if (token === '0.5rem') {
+      } else if (token === '8px') {
         gaps.add(col);
         col += 1;
       }
@@ -180,6 +233,16 @@ describe('bitToGridColumn + gridTemplateColumns consistency', () => {
 
   it.each([8, 12, 16, 20, 24, 32])('no bit lands on a gap column for %d-bit row', (bitsInRow) => {
     const gtc = gridTemplateColumns(bitsInRow);
+    const gaps = gapColumns(gtc);
+    const rowStartBit = bitsInRow - 1;
+    for (let bitIdx = rowStartBit; bitIdx >= 0; bitIdx--) {
+      const col = bitToGridColumn(bitIdx, rowStartBit, bitsInRow);
+      expect(gaps.has(col), `bit ${bitIdx} mapped to gap column ${col} in "${gtc}"`).toBe(false);
+    }
+  });
+
+  it.each([8, 12, 16, 20, 24, 32])('no bit lands on a gap column for %d-bit row with custom cell size', (bitsInRow) => {
+    const gtc = gridTemplateColumns(bitsInRow, 48);
     const gaps = gapColumns(gtc);
     const rowStartBit = bitsInRow - 1;
     for (let bitIdx = rowStartBit; bitIdx >= 0; bitIdx--) {

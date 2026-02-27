@@ -5,6 +5,7 @@ import { getBit } from '../../utils/bitwise';
 import { useContainerWidth } from '../../hooks/use-container-width';
 import {
   computeBitsPerRow,
+  computeCellSize,
   buildRowBits,
   bitToGridColumn,
   gridTemplateColumns,
@@ -78,9 +79,12 @@ export function BitGrid({ register, hoveredFieldIndices, onFieldHover, fieldHove
   const [hoveredNibbleIndex, setHoveredNibbleIndex] = useState<number | null>(null);
 
   // Layout: depends only on container width and register width
-  const rows = useMemo(() => {
+  const { rows, cellSize } = useMemo(() => {
     const bitsPerRow = computeBitsPerRow(containerWidth, register.width);
-    return buildRowBits(register.width, bitsPerRow);
+    return {
+      rows: buildRowBits(register.width, bitsPerRow),
+      cellSize: computeCellSize(containerWidth, bitsPerRow),
+    };
   }, [containerWidth, register.width]);
 
   // O(1) bit-to-field lookup map + per-field-index color array
@@ -89,14 +93,14 @@ export function BitGrid({ register, hoveredFieldIndices, onFieldHover, fieldHove
     [register.fields],
   );
 
-  // Per-row layout data: depends on rows and fields, NOT on value or hover
+  // Per-row layout data: depends on rows, fields, and cell size, NOT on value or hover
   const rowLayoutData = useMemo(
     () => rows.map((row) => ({
       rowFields: fieldsForRow(row, register.fields),
       rowUnassigned: unassignedRangesForRow(row, register.fields),
-      gtc: gridTemplateColumns(row.bits.length),
+      gtc: gridTemplateColumns(row.bits.length, cellSize),
     })),
-    [rows, register.fields],
+    [rows, register.fields, cellSize],
   );
 
   // Per-row nibbles: depends on value (hex digits change) but NOT on hover
