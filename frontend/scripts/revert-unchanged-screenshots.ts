@@ -15,10 +15,10 @@ import pixelmatch from 'pixelmatch';
 const DIFF_THRESHOLD = 0.001; // 0.1%
 
 const SCREENSHOTS = [
-  'docs/images/screenshot-light.png',
-  'docs/images/screenshot-dark.png',
-  'docs/images/map-view-light.png',
-  'docs/images/map-view-dark.png',
+  '../docs/images/screenshot-light.png',
+  '../docs/images/screenshot-dark.png',
+  '../docs/images/map-view-light.png',
+  '../docs/images/map-view-dark.png',
 ];
 
 function getGitVersion(filePath: string): Buffer | null {

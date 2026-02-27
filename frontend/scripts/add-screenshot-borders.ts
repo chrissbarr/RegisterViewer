@@ -10,10 +10,10 @@ import { readFileSync, writeFileSync } from 'fs';
 import { PNG } from 'pngjs';
 
 const SCREENSHOTS = [
-  'docs/images/screenshot-light.png',
-  'docs/images/screenshot-dark.png',
-  'docs/images/map-view-light.png',
-  'docs/images/map-view-dark.png',
+  '../docs/images/screenshot-light.png',
+  '../docs/images/screenshot-dark.png',
+  '../docs/images/map-view-light.png',
+  '../docs/images/map-view-dark.png',
 ];
 
 // Shadow parameters

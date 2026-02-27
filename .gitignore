@@ -7,17 +7,17 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
-coverage
+# Frontend build artifacts
+frontend/node_modules
+frontend/dist
+frontend/dist-ssr
+frontend/*.local
+frontend/coverage
 
 # Playwright
-test-results/
-playwright-report/
-blob-report/
-
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/
 
 # Claude Code
 .claude

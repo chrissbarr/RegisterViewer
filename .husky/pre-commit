@@ -1,1 +1,1 @@
-npx --no -- lint-staged
+cd frontend && npx --no -- lint-staged

@@ -14,6 +14,7 @@ This document covers local development setup, build commands, testing, and proje
 ## Getting Started
 
 ```bash
+cd frontend
 npm install
 npm run dev
 ```
@@ -21,6 +22,8 @@ npm run dev
 Open http://localhost:5173 in your browser. On first launch, an example 32-bit STATUS_REG is pre-loaded with `0xDEADBEEF`.
 
 ## Scripts
+
+All frontend commands run from the `frontend/` directory:
 
 | Command | Description |
 |---------|-------------|
@@ -50,8 +53,8 @@ Open http://localhost:5173 in your browser. On first launch, an example 32-bit S
 To test cloud features locally:
 
 1. Start the API: `cd api && docker compose up -d`
-2. The `.env.development` file already sets `VITE_API_URL=http://localhost:8080`
-3. Start the frontend: `npm run dev`
+2. The `frontend/.env.development` file already sets `VITE_API_URL=http://localhost:8080`
+3. Start the frontend: `cd frontend && npm run dev`
 
 ## Architecture
 
@@ -69,6 +72,7 @@ See [API Reference](API.md) for the REST API and [Deployment Guide](DEPLOYMENT.m
 Unit tests use [Vitest](https://vitest.dev/) and live alongside source files as `.test.ts` siblings.
 
 ```bash
+cd frontend
 npm test                # Run once
 npm run test:watch      # Watch mode
 npm run test:coverage   # Coverage report
@@ -85,54 +89,57 @@ Key test areas:
 
 ### Dead Code Detection
 
-Run `npm run knip` after adding or removing exports, renaming functions, or deleting files. Config lives in `knip.config.ts`.
+Run `npm run knip` from the `frontend/` directory after adding or removing exports, renaming functions, or deleting files. Config lives in `frontend/knip.config.ts`.
 
 ## Project Structure
 
 ```
-src/
-  components/
-    app-loader.tsx              # Hash fragment routing (cloud links, snapshot URLs)
-    layout/
-      app-shell.tsx             # Top-level layout, theme sync, auto-save
-      header.tsx                # Title bar, save/share/import/export, theme toggle
-      sidebar.tsx               # Register list panel
-    common/
-      save-button.tsx           # Cloud save button with loading state
-      share-button.tsx          # Share button (opens share dialog)
-      share-dialog.tsx          # Share URL options (snapshot + cloud link)
-      shared-project-banner.tsx # Banner when viewing a shared project
-      ...
-    projects/
-      my-projects-dialog.tsx    # List of saved projects (local + cloud)
-    viewer/  editor/  register-list/
-  context/
-    app-context.tsx             # React Context + useReducer state management
-    cloud-sync-context.tsx      # Cloud project state (save/share/dirty tracking)
-    preferences-context.tsx     # Theme + sidebar preferences
-    edit-context.tsx            # Register draft management
-    project-storage-context.tsx # Multi-project localStorage manifest
-  utils/
-    api-client.ts               # Fetch wrapper for cloud API
-    owner-token.ts              # Anonymous owner token generation + hashing
-    cloud-operations.ts         # Cloud save/delete/visibility operations
-    snapshot-url.ts             # Compressed snapshot URL encode/decode
-    bitwise.ts  decode.ts  encode.ts  float.ts  fixed-point.ts
-    validation.ts  storage.ts  seed-data.ts  ...
-  types/
-    register.ts                 # Core TypeScript interfaces
-
-api/                            # PHP API backend (cPanel)
-  index.php                     # Entry point: routing, CORS, response helpers
-  config.php                    # Configuration with getenv() fallbacks
+frontend/                           # React SPA
   src/
-    database.php                # PDO singleton factory
-    data-access.php             # All DB queries
-    validation.php              # Payload structural validation
-    auth.php                    # Token extraction + ownership check
-    cors.php                    # CORS header computation
-    id.php                      # 12-char base62 ID generation
-    handlers/*.php              # One file per endpoint
-  tests/                        # PHPUnit tests (Unit + Integration)
-  docker-compose.yml            # Local dev: API + MySQL + test runner
+    components/
+      app-loader.tsx              # Hash fragment routing (cloud links, snapshot URLs)
+      layout/
+        app-shell.tsx             # Top-level layout, theme sync, auto-save
+        header.tsx                # Title bar, save/share/import/export, theme toggle
+        sidebar.tsx               # Register list panel
+      common/
+        save-button.tsx           # Cloud save button with loading state
+        share-button.tsx          # Share button (opens share dialog)
+        share-dialog.tsx          # Share URL options (snapshot + cloud link)
+        shared-project-banner.tsx # Banner when viewing a shared project
+        ...
+      projects/
+        my-projects-dialog.tsx    # List of saved projects (local + cloud)
+      viewer/  editor/  register-list/
+    context/
+      app-context.tsx             # React Context + useReducer state management
+      cloud-sync-context.tsx      # Cloud project state (save/share/dirty tracking)
+      preferences-context.tsx     # Theme + sidebar preferences
+      edit-context.tsx            # Register draft management
+      project-storage-context.tsx # Multi-project localStorage manifest
+    utils/
+      api-client.ts               # Fetch wrapper for cloud API
+      owner-token.ts              # Anonymous owner token generation + hashing
+      cloud-operations.ts         # Cloud save/delete/visibility operations
+      snapshot-url.ts             # Compressed snapshot URL encode/decode
+      bitwise.ts  decode.ts  encode.ts  float.ts  fixed-point.ts
+      validation.ts  storage.ts  seed-data.ts  ...
+    types/
+      register.ts                 # Core TypeScript interfaces
+  test_e2e/                       # Playwright E2E tests
+  scripts/                        # Screenshot generation helpers
+
+api/                              # PHP API backend (cPanel)
+  index.php                       # Entry point: routing, CORS, response helpers
+  config.php                      # Configuration with getenv() fallbacks
+  src/
+    database.php                  # PDO singleton factory
+    data-access.php               # All DB queries
+    validation.php                # Payload structural validation
+    auth.php                      # Token extraction + ownership check
+    cors.php                      # CORS header computation
+    id.php                        # 12-char base62 ID generation
+    handlers/*.php                # One file per endpoint
+  tests/                          # PHPUnit tests (Unit + Integration)
+  docker-compose.yml              # Local dev: API + MySQL + test runner
 ```

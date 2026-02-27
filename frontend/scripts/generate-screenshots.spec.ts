@@ -2,10 +2,10 @@
  * Automated README screenshot generator.
  *
  * Produces the four images referenced by README.md:
- *   docs/images/screenshot-light.png   — Register view, light theme
- *   docs/images/screenshot-dark.png    — Register view, dark theme
- *   docs/images/map-view-light.png     — Map view, light theme
- *   docs/images/map-view-dark.png      — Map view, dark theme
+ *   ../docs/images/screenshot-light.png   — Register view, light theme
+ *   ../docs/images/screenshot-dark.png    — Register view, dark theme
+ *   ../docs/images/map-view-light.png     — Map view, light theme
+ *   ../docs/images/map-view-dark.png      — Map view, dark theme
  *
  * Run:  npm run screenshots
  */
@@ -85,7 +85,7 @@ test.describe('Generate README screenshots', () => {
     // Small pause to let transitions settle
     await page.waitForTimeout(300);
 
-    await page.screenshot({ path: 'docs/images/screenshot-light.png' });
+    await page.screenshot({ path: '../docs/images/screenshot-light.png' });
   });
 
   test('screenshot-dark — Register view, dark theme', async ({ page }) => {
@@ -101,7 +101,7 @@ test.describe('Generate README screenshots', () => {
 
     await page.waitForTimeout(300);
 
-    await page.screenshot({ path: 'docs/images/screenshot-dark.png' });
+    await page.screenshot({ path: '../docs/images/screenshot-dark.png' });
   });
 
   test('map-view-light — Map view, light theme', async ({ page }) => {
@@ -122,7 +122,7 @@ test.describe('Generate README screenshots', () => {
 
     await page.waitForTimeout(300);
 
-    await page.screenshot({ path: 'docs/images/map-view-light.png' });
+    await page.screenshot({ path: '../docs/images/map-view-light.png' });
   });
 
   test('map-view-dark — Map view, dark theme', async ({ page }) => {
@@ -140,6 +140,6 @@ test.describe('Generate README screenshots', () => {
 
     await page.waitForTimeout(300);
 
-    await page.screenshot({ path: 'docs/images/map-view-dark.png' });
+    await page.screenshot({ path: '../docs/images/map-view-dark.png' });
   });
 });
