@@ -206,7 +206,7 @@ $path   = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 $path = '/' . trim($path, '/');
 
 // Health check — lightweight, unauthenticated, before main routing
-if ($path === '/api/health' && $method === 'GET') {
+if ($path === '/api/health' && ($method === 'GET' || $method === 'HEAD')) {
     try {
         $db = getDatabase($config);
         $db->query('SELECT 1');
