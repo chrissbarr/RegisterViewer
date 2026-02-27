@@ -53,3 +53,14 @@ jobs:
           local-dir: ./deploy/
           server-dir: ./
           dangerous-clean-slate: false
+
+      - name: Post-deploy smoke test
+        run: |
+          sleep 15
+          echo "Checking frontend..."
+          curl -sf --retry 3 --retry-delay 5 ${{ vars.VITE_API_URL }}/ > /dev/null
+          echo "Frontend OK"
+          echo "Checking API health..."
+          curl -sf --retry 3 --retry-delay 5 ${{ vars.VITE_API_URL }}/api/health
+          echo ""
+          echo "API OK"
