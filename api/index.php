@@ -205,6 +205,18 @@ $path   = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 // Normalize: strip trailing slash, ensure leading slash
 $path = '/' . trim($path, '/');
 
+// Health check — lightweight, unauthenticated, before main routing
+if ($path === '/api/health' && $method === 'GET') {
+    try {
+        $db = getDatabase($config);
+        $db->query('SELECT 1');
+        sendJson(['status' => 'ok', 'timestamp' => gmdate('c')]);
+    } catch (\Throwable $e) {
+        error_log('Health check failed: ' . substr($e->getMessage(), 0, 200));
+        sendError('Database connection failed', 503);
+    }
+}
+
 try {
     $db = getDatabase($config);
 
