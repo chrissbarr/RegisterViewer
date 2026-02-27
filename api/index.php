@@ -187,17 +187,13 @@ try {
 
     // Collection routes: /api/projects
     if (preg_match('#^/api/projects/?$#', $path)) {
-        if ($method === 'POST') {
-            handleCreateProject($db, $config);
-        }
-        if ($method === 'GET') {
-            handleListProjects($db);
-        }
-        sendError('Method not allowed', 405, ['Allow' => 'GET, POST, OPTIONS']);
-    }
-
+        match ($method) {
+            'POST' => handleCreateProject($db, $config),
+            'GET'  => handleListProjects($db),
+            default => sendError('Method not allowed', 405, ['Allow' => 'GET, POST, OPTIONS']),
+        };
     // Resource routes: /api/projects/:id (12-char alphanumeric)
-    if (preg_match('#^/api/projects/([A-Za-z0-9]{12})$#', $path, $matches)) {
+    } elseif (preg_match('#^/api/projects/([A-Za-z0-9]{12})$#', $path, $matches)) {
         $id = $matches[1];
 
         match ($method) {
@@ -207,9 +203,9 @@ try {
             'DELETE' => handleDeleteProject($db, $id),
             default  => sendError('Method not allowed', 405, ['Allow' => 'GET, PUT, PATCH, DELETE, OPTIONS']),
         };
+    } else {
+        sendError('Not found', 404);
     }
-
-    sendError('Not found', 404);
 } catch (\Throwable $e) {
     error_log('API error [' . get_class($e) . ']: ' . substr($e->getMessage(), 0, 500));
     sendError('Internal server error', 500);
