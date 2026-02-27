@@ -14,7 +14,7 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed",
-    "prepare": "husky || true",
+    "prepare": "cd .. && husky || true",
     "knip": "knip",
     "screenshots": "playwright test --config playwright.screenshots.config.ts && npx tsx scripts/add-screenshot-borders.ts && npx tsx scripts/revert-unchanged-screenshots.ts"
   },
