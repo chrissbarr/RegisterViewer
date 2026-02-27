@@ -41,7 +41,9 @@ export function computeBitsPerRow(
   if (widthNeeded(registerWidth) <= containerPx) return registerWidth;
 
   // Step down by 8 until it fits
-  for (let n = registerWidth - (registerWidth % 8 || 8); n >= 8; n -= 8) {
+  // Largest multiple of 8 that is strictly less than registerWidth
+  const firstCandidate = registerWidth - (registerWidth % 8 || 8);
+  for (let n = firstCandidate; n >= 8; n -= 8) {
     if (widthNeeded(n) <= containerPx) return n;
   }
 
