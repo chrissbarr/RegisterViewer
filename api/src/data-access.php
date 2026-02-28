@@ -226,6 +226,20 @@ function dbCreateUser(PDO $db, string $email): int
 }
 
 /**
+ * Find an existing user by email, or create one if none exists.
+ * Returns an associative array with 'id' (int) and 'email' (string).
+ */
+function dbFindOrCreateUser(PDO $db, string $email): array
+{
+    $user = dbGetUserByEmail($db, $email);
+    if ($user === null) {
+        $userId = dbCreateUser($db, $email);
+        return ['id' => $userId, 'email' => $email];
+    }
+    return $user;
+}
+
+/**
  * Store a login OTP code.
  *
  * @param string $code SHA-256 hex digest of the OTP code (64 chars)

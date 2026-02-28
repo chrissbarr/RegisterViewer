@@ -55,11 +55,7 @@ function handleAuthVerifyCode(PDO $db, array $config, array $body): ApiResponse
     dbMarkLoginCodeUsed($db, (int) $codeRow['id']);
 
     // Find or create user
-    $user = dbGetUserByEmail($db, $email);
-    if ($user === null) {
-        $userId = dbCreateUser($db, $email);
-        $user = ['id' => $userId, 'email' => $email];
-    }
+    $user = dbFindOrCreateUser($db, $email);
     $userId = (int) $user['id'];
 
     // Auto-link anonymous projects to this user account
