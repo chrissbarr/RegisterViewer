@@ -3,6 +3,21 @@
 declare(strict_types=1);
 
 /**
+ * Parse the HTTP status code from a $http_response_header array.
+ *
+ * @param list<string> $responseHeaders The $http_response_header magic variable.
+ * @return int|null The status code, or null if unparseable.
+ */
+function parseHttpStatusCode(array $responseHeaders): ?int
+{
+    $statusLine = $responseHeaders[0] ?? '';
+    if (preg_match('/\s(\d{3})\s/', $statusLine, $matches)) {
+        return (int) $matches[1];
+    }
+    return null;
+}
+
+/**
  * Send a login OTP code via the Resend API.
  *
  * Uses file_get_contents with a stream context (no curl dependency).
@@ -48,16 +63,14 @@ function sendLoginCode(array $config, string $email, string $code): bool
     }
 
     // Check HTTP status from response headers
-    $statusLine = $http_response_header[0] ?? '';
-    if (preg_match('/\s(\d{3})\s/', $statusLine, $matches)) {
-        $status = (int) $matches[1];
-        if ($status >= 200 && $status < 300) {
-            return true;
-        }
-        error_log("sendLoginCode: Resend API returned HTTP $status: " . substr($response, 0, 200));
-        return false;
+    $status = parseHttpStatusCode($http_response_header ?? []);
+    if ($status !== null && $status >= 200 && $status < 300) {
+        return true;
     }
-
-    error_log('sendLoginCode: Could not determine HTTP status');
+    if ($status !== null) {
+        error_log("sendLoginCode: Resend API returned HTTP $status: " . substr($response, 0, 200));
+    } else {
+        error_log('sendLoginCode: Could not determine HTTP status');
+    }
     return false;
 }
