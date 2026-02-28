@@ -1,6 +1,5 @@
 config.production.php
 vendor/
-composer.lock
 .phpunit.cache/
 database/.migrate.lock
 database/.migrate.done
