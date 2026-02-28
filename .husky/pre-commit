@@ -1,1 +1,2 @@
+#!/usr/bin/env sh
 cd frontend && npx --no -- lint-staged
