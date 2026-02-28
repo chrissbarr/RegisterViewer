@@ -126,7 +126,7 @@ function emitResponse(ApiResponse $response): never
 
 // ---- Body reading ----
 
-function readBody(): string
+function readBody(): string|ApiResponse
 {
     static $rawBody = null;
     if ($rawBody !== null) {
@@ -136,7 +136,10 @@ function readBody(): string
     // Check Content-Length header first (fast path)
     $contentLength = $_SERVER['HTTP_CONTENT_LENGTH'] ?? $_SERVER['CONTENT_LENGTH'] ?? null;
     if ($contentLength !== null && (int) $contentLength > LIMITS['MAX_PAYLOAD_SIZE']) {
-        sendError('Request body must be at most ' . LIMITS['MAX_PAYLOAD_SIZE'] . ' bytes', 400);
+        return new ApiResponse(
+            ['error' => 'Request body must be at most ' . LIMITS['MAX_PAYLOAD_SIZE'] . ' bytes'],
+            400
+        );
     }
 
     $rawBody = file_get_contents('php://input', false, null, 0, LIMITS['MAX_PAYLOAD_SIZE'] + 1);
@@ -144,46 +147,14 @@ function readBody(): string
         $rawBody = '';
     }
     if (strlen($rawBody) > LIMITS['MAX_PAYLOAD_SIZE']) {
-        sendError('Request body must be at most ' . LIMITS['MAX_PAYLOAD_SIZE'] . ' bytes', 400);
+        $rawBody = null; // Don't cache the oversized body
+        return new ApiResponse(
+            ['error' => 'Request body must be at most ' . LIMITS['MAX_PAYLOAD_SIZE'] . ' bytes'],
+            400
+        );
     }
 
     return $rawBody;
-}
-
-/**
- * Parse the request body as JSON, returning both associative-array and stdClass views.
- *
- * The body is parsed once as stdClass (to preserve the {} vs [] distinction,
- * since json_decode with assoc=true turns {} into [], losing the difference).
- * The assoc view is derived by recursively converting the stdClass tree,
- * avoiding a second json_decode call.
- *
- * The assoc view is used for validation and reading scalar fields.
- * The object view is used for faithful JSON storage.
- *
- * @return array{assoc: array, object: object}
- */
-function readParsedBody(): array
-{
-    static $cached = null;
-    if ($cached !== null) {
-        return $cached;
-    }
-
-    $text = readBody();
-    if ($text === '') {
-        sendError('Invalid JSON body', 400);
-    }
-
-    $object = json_decode($text);
-    if (json_last_error() !== JSON_ERROR_NONE || !is_object($object)) {
-        sendError('Invalid JSON body', 400);
-    }
-
-    $assoc = objectToAssoc($object);
-
-    $cached = ['assoc' => $assoc, 'object' => $object];
-    return $cached;
 }
 
 /**
@@ -285,7 +256,11 @@ try {
     $parsed = null;
     $body = null;
     if (in_array($method, ['POST', 'PUT', 'PATCH'], true)) {
-        $parsed = parseBody(readBody());
+        $raw = readBody();
+        if ($raw instanceof ApiResponse) {
+            emitResponse($raw);
+        }
+        $parsed = parseBody($raw);
         if ($parsed instanceof ApiResponse) {
             emitResponse($parsed);
         }
