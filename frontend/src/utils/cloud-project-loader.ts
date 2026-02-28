@@ -1,4 +1,4 @@
-import { getProject } from './api-client';
+import { getProject, type AuthCredentials } from './api-client';
 import { importFromObject, type ImportResult } from './storage';
 
 interface CloudProjectLoadResult extends ImportResult {
@@ -12,8 +12,8 @@ interface CloudProjectLoadResult extends ImportResult {
  * navigation path (CloudProjectProvider.loadProject) call this,
  * ensuring consistent data handling.
  */
-export async function fetchAndParseCloudProject(id: string, tokenHash?: string, jwt?: string): Promise<CloudProjectLoadResult> {
-  const result = await getProject(id, tokenHash, jwt);
+export async function fetchAndParseCloudProject(id: string, auth?: AuthCredentials): Promise<CloudProjectLoadResult> {
+  const result = await getProject(id, auth);
 
   // The API returns `data` as a parsed object (from res.json()).
   // Use importFromObject directly to avoid re-serializing then re-parsing.

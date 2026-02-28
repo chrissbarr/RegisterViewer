@@ -291,7 +291,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     if (!jwt) return;
 
     let cancelled = false;
-    getProject(internal.cloudId, undefined, jwt)
+    getProject(internal.cloudId, { tokenHash: '', jwt })
       .then((res) => {
         if (!cancelled && res.isOwner) {
           setInternal((prev) => prev.cloudId === internal.cloudId ? { ...prev, isOwner: true } : prev);
@@ -450,7 +450,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       setInternal((prev) => ({ ...prev, status: 'loading', error: null, cloudId }));
       try {
         const jwt = getJwt();
-        const importResult = await fetchAndParseCloudProject(cloudId, undefined, jwt ?? undefined);
+        const importResult = await fetchAndParseCloudProject(cloudId, jwt ? { tokenHash: '', jwt } : undefined);
 
         dispatch({
           type: 'IMPORT_STATE',

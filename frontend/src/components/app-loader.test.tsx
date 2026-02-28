@@ -297,7 +297,7 @@ describe('AppLoader', () => {
         expect(screen.getByTestId('app-shell')).toBeInTheDocument();
       });
 
-      expect(fetchAndParseCloudProject).toHaveBeenCalledWith('cloud-abc123', undefined, undefined);
+      expect(fetchAndParseCloudProject).toHaveBeenCalledWith('cloud-abc123', undefined);
     });
 
     it('passes isOwner=true when ownership is confirmed', async () => {
@@ -331,7 +331,7 @@ describe('AppLoader', () => {
       });
 
       expect(hashOwnerToken).toHaveBeenCalledWith('owner-secret');
-      expect(fetchAndParseCloudProject).toHaveBeenCalledWith('cloud-abc123', 'hashed-token', undefined);
+      expect(fetchAndParseCloudProject).toHaveBeenCalledWith('cloud-abc123', { tokenHash: 'hashed-token', jwt: undefined });
     });
 
     it('sends JWT when available in localStorage (cross-device path)', async () => {
@@ -349,7 +349,7 @@ describe('AppLoader', () => {
           expect(screen.getByTestId('app-shell')).toBeInTheDocument();
         });
 
-        expect(fetchAndParseCloudProject).toHaveBeenCalledWith('cloud-abc123', undefined, 'test-jwt-token');
+        expect(fetchAndParseCloudProject).toHaveBeenCalledWith('cloud-abc123', { tokenHash: '', jwt: 'test-jwt-token' });
         // isOwner should be true from server response despite local checkOwnership returning false
         expect(screen.getByTestId('app-shell').dataset.isOwner).toBe('true');
       } finally {

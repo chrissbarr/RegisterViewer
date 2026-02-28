@@ -62,6 +62,16 @@ async function apiFetchVoid(path: string, options?: RequestInit): Promise<void> 
   await apiRequest(path, options);
 }
 
+/** Credentials for authenticated API calls (JWT-preferred, token-hash fallback). */
+export interface AuthCredentials {
+  tokenHash: string;
+  jwt?: string;
+}
+
+function resolveAuthHeader(auth: AuthCredentials): string {
+  return auth.jwt ? `Bearer ${auth.jwt}` : `Bearer ${auth.tokenHash}`;
+}
+
 interface CreateProjectResponse {
   id: string;
   shareUrl: string;
@@ -70,28 +80,22 @@ interface CreateProjectResponse {
 
 export async function createProject(
   data: unknown,
-  tokenHash: string,
+  auth: AuthCredentials,
   visibility?: Visibility,
-  jwt?: string,
 ): Promise<CreateProjectResponse> {
   const body: { data: unknown; visibility?: string; ownerTokenHash?: string } = { data };
   if (visibility !== undefined) {
     body.visibility = visibility;
   }
 
-  // When JWT-authenticated, send JWT in header and token hash in body.
-  // Otherwise, send token hash in header (legacy path).
-  let authHeader: string;
-  if (jwt) {
-    authHeader = `Bearer ${jwt}`;
-    body.ownerTokenHash = tokenHash;
-  } else {
-    authHeader = `Bearer ${tokenHash}`;
+  // When JWT-authenticated, send token hash in body for ownership linkage.
+  if (auth.jwt) {
+    body.ownerTokenHash = auth.tokenHash;
   }
 
   return apiFetch<CreateProjectResponse>('/api/projects', {
     method: 'POST',
-    headers: { Authorization: authHeader },
+    headers: { Authorization: resolveAuthHeader(auth) },
     body: JSON.stringify(body),
   });
 }
@@ -104,12 +108,10 @@ interface GetProjectResponse {
   isOwner: boolean;
 }
 
-export async function getProject(id: string, tokenHash?: string, jwt?: string): Promise<GetProjectResponse> {
+export async function getProject(id: string, auth?: AuthCredentials): Promise<GetProjectResponse> {
   const headers: Record<string, string> = {};
-  if (jwt) {
-    headers['Authorization'] = `Bearer ${jwt}`;
-  } else if (tokenHash) {
-    headers['Authorization'] = `Bearer ${tokenHash}`;
+  if (auth) {
+    headers['Authorization'] = resolveAuthHeader(auth);
   }
   return apiFetch<GetProjectResponse>(`/api/projects/${encodeURIComponent(id)}`, {
     headers,
@@ -124,20 +126,18 @@ interface UpdateProjectResponse {
 export async function updateProject(
   id: string,
   data: unknown,
-  tokenHash: string,
+  auth: AuthCredentials,
   visibility?: Visibility,
-  jwt?: string,
 ): Promise<UpdateProjectResponse> {
   const body: { data: unknown; visibility?: string } = { data };
   if (visibility !== undefined) {
     body.visibility = visibility;
   }
-  const authHeader = jwt ? `Bearer ${jwt}` : `Bearer ${tokenHash}`;
   return apiFetch<UpdateProjectResponse>(
     `/api/projects/${encodeURIComponent(id)}`,
     {
       method: 'PUT',
-      headers: { Authorization: authHeader },
+      headers: { Authorization: resolveAuthHeader(auth) },
       body: JSON.stringify(body),
     },
   );
@@ -146,15 +146,13 @@ export async function updateProject(
 export async function patchProjectVisibility(
   id: string,
   visibility: Visibility,
-  tokenHash: string,
-  jwt?: string,
+  auth: AuthCredentials,
 ): Promise<UpdateProjectResponse> {
-  const authHeader = jwt ? `Bearer ${jwt}` : `Bearer ${tokenHash}`;
   return apiFetch<UpdateProjectResponse>(
     `/api/projects/${encodeURIComponent(id)}`,
     {
       method: 'PATCH',
-      headers: { Authorization: authHeader },
+      headers: { Authorization: resolveAuthHeader(auth) },
       body: JSON.stringify({ visibility }),
     },
   );
@@ -162,15 +160,13 @@ export async function patchProjectVisibility(
 
 export async function deleteProject(
   id: string,
-  tokenHash: string,
-  jwt?: string,
+  auth: AuthCredentials,
 ): Promise<void> {
-  const authHeader = jwt ? `Bearer ${jwt}` : `Bearer ${tokenHash}`;
   await apiFetchVoid(
     `/api/projects/${encodeURIComponent(id)}`,
     {
       method: 'DELETE',
-      headers: { Authorization: authHeader },
+      headers: { Authorization: resolveAuthHeader(auth) },
     },
   );
 }

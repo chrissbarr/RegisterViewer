@@ -52,7 +52,7 @@ describe('saveProjectToCloudImpl', () => {
       ownerToken: 'mock-owner-token',
     });
     expect(getOrCreateOwnerToken).toHaveBeenCalled();
-    expect(createProject).toHaveBeenCalledWith(payload, 'mock-token-hash', undefined, undefined);
+    expect(createProject).toHaveBeenCalledWith(payload, { tokenHash: 'mock-token-hash', jwt: undefined });
   });
 
   it('updates existing project when existingCloudId provided', async () => {
@@ -69,7 +69,7 @@ describe('saveProjectToCloudImpl', () => {
       timestamp: '2024-01-02T00:00:00Z',
     });
     expect(getOwnerTokenForProject).toHaveBeenCalledWith('cloud-abc');
-    expect(updateProject).toHaveBeenCalledWith('cloud-abc', payload, 'mock-token-hash', undefined, undefined);
+    expect(updateProject).toHaveBeenCalledWith('cloud-abc', payload, { tokenHash: 'mock-token-hash', jwt: undefined });
   });
 
   it('returns not-found when update gets 404', async () => {
@@ -110,7 +110,7 @@ describe('saveProjectToCloudImpl', () => {
 
     await saveProjectToCloudImpl(payload, null, 'my-jwt-token');
 
-    expect(createProject).toHaveBeenCalledWith(payload, 'mock-token-hash', undefined, 'my-jwt-token');
+    expect(createProject).toHaveBeenCalledWith(payload, { tokenHash: 'mock-token-hash', jwt: 'my-jwt-token' });
   });
 
   it('passes JWT to updateProject when provided', async () => {
@@ -121,7 +121,7 @@ describe('saveProjectToCloudImpl', () => {
 
     await saveProjectToCloudImpl(payload, 'cloud-abc', 'my-jwt-token');
 
-    expect(updateProject).toHaveBeenCalledWith('cloud-abc', payload, 'mock-token-hash', undefined, 'my-jwt-token');
+    expect(updateProject).toHaveBeenCalledWith('cloud-abc', payload, { tokenHash: 'mock-token-hash', jwt: 'my-jwt-token' });
   });
 
   it('allows JWT-only auth when owner token is missing for update', async () => {
@@ -139,7 +139,7 @@ describe('saveProjectToCloudImpl', () => {
       cloudId: 'cloud-abc',
       timestamp: '2024-01-02T00:00:00Z',
     });
-    expect(updateProject).toHaveBeenCalledWith('cloud-abc', payload, '', undefined, 'my-jwt');
+    expect(updateProject).toHaveBeenCalledWith('cloud-abc', payload, { tokenHash: '', jwt: 'my-jwt' });
   });
 });
 
@@ -150,7 +150,7 @@ describe('deleteProjectFromCloudImpl', () => {
     await deleteProjectFromCloudImpl('cloud-del');
 
     expect(getOwnerTokenForProject).toHaveBeenCalledWith('cloud-del');
-    expect(deleteProject).toHaveBeenCalledWith('cloud-del', 'mock-token-hash', undefined);
+    expect(deleteProject).toHaveBeenCalledWith('cloud-del', { tokenHash: 'mock-token-hash', jwt: undefined });
   });
 
   it('throws when owner token missing', async () => {
@@ -173,7 +173,7 @@ describe('deleteProjectFromCloudImpl', () => {
 
     await deleteProjectFromCloudImpl('cloud-del', 'my-jwt');
 
-    expect(deleteProject).toHaveBeenCalledWith('cloud-del', 'mock-token-hash', 'my-jwt');
+    expect(deleteProject).toHaveBeenCalledWith('cloud-del', { tokenHash: 'mock-token-hash', jwt: 'my-jwt' });
   });
 
   it('allows JWT-only auth when owner token is missing', async () => {
@@ -183,7 +183,7 @@ describe('deleteProjectFromCloudImpl', () => {
 
     await deleteProjectFromCloudImpl('cloud-del', 'my-jwt');
 
-    expect(deleteProject).toHaveBeenCalledWith('cloud-del', '', 'my-jwt');
+    expect(deleteProject).toHaveBeenCalledWith('cloud-del', { tokenHash: '', jwt: 'my-jwt' });
   });
 });
 
@@ -197,7 +197,7 @@ describe('patchVisibilityImpl', () => {
     await patchVisibilityImpl('cloud-vis', 'unlisted');
 
     expect(getOwnerTokenForProject).toHaveBeenCalledWith('cloud-vis');
-    expect(patchProjectVisibility).toHaveBeenCalledWith('cloud-vis', 'unlisted', 'mock-token-hash', undefined);
+    expect(patchProjectVisibility).toHaveBeenCalledWith('cloud-vis', 'unlisted', { tokenHash: 'mock-token-hash', jwt: undefined });
   });
 
   it('throws when owner token missing', async () => {
@@ -223,7 +223,7 @@ describe('patchVisibilityImpl', () => {
 
     await patchVisibilityImpl('cloud-vis', 'unlisted', 'my-jwt');
 
-    expect(patchProjectVisibility).toHaveBeenCalledWith('cloud-vis', 'unlisted', 'mock-token-hash', 'my-jwt');
+    expect(patchProjectVisibility).toHaveBeenCalledWith('cloud-vis', 'unlisted', { tokenHash: 'mock-token-hash', jwt: 'my-jwt' });
   });
 
   it('allows JWT-only auth when owner token is missing', async () => {
@@ -236,6 +236,6 @@ describe('patchVisibilityImpl', () => {
 
     await patchVisibilityImpl('cloud-vis', 'unlisted', 'my-jwt');
 
-    expect(patchProjectVisibility).toHaveBeenCalledWith('cloud-vis', 'unlisted', '', 'my-jwt');
+    expect(patchProjectVisibility).toHaveBeenCalledWith('cloud-vis', 'unlisted', { tokenHash: '', jwt: 'my-jwt' });
   });
 });

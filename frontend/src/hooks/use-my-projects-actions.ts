@@ -77,7 +77,7 @@ export function useMyProjectsActions(
       setDownloadingLocalId(localId);
       try {
         const jwt = getJwt();
-        const result = await fetchAndParseCloudProject(project.cloudId, undefined, jwt ?? undefined);
+        const result = await fetchAndParseCloudProject(project.cloudId, jwt ? { tokenHash: '', jwt } : undefined);
         const serializedValues: Record<string, string> = {};
         for (const [id, value] of Object.entries(result.values)) {
           serializedValues[id] = '0x' + value.toString(16);

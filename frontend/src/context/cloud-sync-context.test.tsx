@@ -280,9 +280,7 @@ describe('CloudSyncProvider', () => {
 
       expect(apiCreateProject).toHaveBeenCalledWith(
         { version: 1, registers: [], values: {} },
-        'mock-token-hash',
-        undefined,
-        undefined,
+        { tokenHash: 'mock-token-hash', jwt: undefined },
       );
       expect(result.current.state.cloudId).toBe('cloud-abc');
       expect(result.current.state.isOwner).toBe(true);
@@ -317,9 +315,7 @@ describe('CloudSyncProvider', () => {
       expect(apiUpdateProject).toHaveBeenCalledWith(
         'cloud-abc',
         { version: 1, registers: [], values: {} },
-        'mock-token-hash',
-        undefined,
-        undefined,
+        { tokenHash: 'mock-token-hash', jwt: undefined },
       );
       expect(result.current.state.lastCloudSavedAt).toBe('2024-01-02T12:00:00Z');
     });
@@ -492,7 +488,7 @@ describe('CloudSyncProvider', () => {
         await result.current.actions.deleteFromCloud();
       });
 
-      expect(apiDeleteProject).toHaveBeenCalledWith('cloud-abc', 'mock-token-hash', undefined);
+      expect(apiDeleteProject).toHaveBeenCalledWith('cloud-abc', { tokenHash: 'mock-token-hash', jwt: undefined });
       expect(result.current.state.cloudId).toBeNull();
       expect(result.current.state.shareUrl).toBeNull();
       expect(result.current.state.isOwner).toBe(false);
@@ -608,7 +604,7 @@ describe('CloudSyncProvider', () => {
       });
 
       expect(result.current.state.visibility).toBe('unlisted');
-      expect(apiPatchVisibility).toHaveBeenCalledWith('cloud-abc', 'unlisted', 'mock-token-hash', undefined);
+      expect(apiPatchVisibility).toHaveBeenCalledWith('cloud-abc', 'unlisted', { tokenHash: 'mock-token-hash', jwt: undefined });
       expect(apiUpdateProject).not.toHaveBeenCalled();
     });
 
@@ -657,8 +653,7 @@ describe('CloudSyncProvider', () => {
       expect(apiPatchVisibility).toHaveBeenCalledWith(
         'cloud-xyz',
         'unlisted',
-        'mock-token-hash',
-        undefined,
+        { tokenHash: 'mock-token-hash', jwt: undefined },
       );
     });
 
@@ -784,7 +779,7 @@ describe('CloudSyncProvider', () => {
         await result.current.actions.deleteProjectFromCloud('cloud-del');
       });
 
-      expect(apiDeleteProject).toHaveBeenCalledWith('cloud-del', 'mock-token-hash', undefined);
+      expect(apiDeleteProject).toHaveBeenCalledWith('cloud-del', { tokenHash: 'mock-token-hash', jwt: undefined });
     });
 
     it('throws when owner token missing', async () => {
@@ -848,7 +843,7 @@ describe('CloudSyncProvider', () => {
         await result.current.actions.loadCloudProject('cloud-load');
       });
 
-      expect(fetchAndParseCloudProject).toHaveBeenCalledWith('cloud-load', undefined, undefined);
+      expect(fetchAndParseCloudProject).toHaveBeenCalledWith('cloud-load', undefined);
       expect(result.current.state.cloudId).toBe('cloud-load');
       expect(result.current.state.isOwner).toBe(true);
       expect(result.current.state.status).toBe('idle');

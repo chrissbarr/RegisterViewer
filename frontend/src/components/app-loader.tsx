@@ -140,7 +140,10 @@ export function AppLoader() {
         const tokenHashPromise = ownerToken ? hashOwnerToken(ownerToken) : Promise.resolve(undefined);
 
         tokenHashPromise
-          .then((tokenHash) => fetchAndParseCloudProject(resolution.cloudId, tokenHash, jwt ?? undefined))
+          .then((tokenHash) => {
+            const auth = (tokenHash ?? jwt) ? { tokenHash: tokenHash ?? '', jwt: jwt ?? undefined } : undefined;
+            return fetchAndParseCloudProject(resolution.cloudId, auth);
+          })
           .then((importResult) => {
             const values: Record<string, bigint> = {};
             for (const reg of importResult.registers) {
