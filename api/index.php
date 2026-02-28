@@ -74,6 +74,13 @@ function emitResponse(ApiResponse $response): never
         ?? json_encode($response->body, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     header('Content-Length: ' . strlen($output));
     echo $output;
+
+    // Flush response to client before shutdown functions run (PERF-05).
+    // On PHP-FPM this is required; on mod_php/CLI it is a harmless no-op.
+    if (function_exists('fastcgi_finish_request')) {
+        fastcgi_finish_request();
+    }
+
     exit;
 }
 

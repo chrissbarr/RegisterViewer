@@ -28,8 +28,12 @@ function handleAuthSendCode(PDO $db, array $config, array $body): ApiResponse
     $expiresAt = gmdate('Y-m-d H:i:s', time() + 600);
     dbCreateLoginCode($db, $email, $codeHash, $expiresAt);
 
-    // Send email (best-effort; don't reveal delivery failures to client)
-    sendLoginCode($config, $email, $code);
+    // Send email after response is flushed (PERF-05: avoid blocking the PHP
+    // worker for up to 10s while the Resend API completes).  The shutdown
+    // function runs after exit(), so the client gets the response immediately.
+    register_shutdown_function(function () use ($config, $email, $code): void {
+        sendLoginCode($config, $email, $code);
+    });
 
     // Probabilistic cleanup: purge expired/used codes ~2% of the time (PERF-01)
     if (random_int(1, 50) === 1) {

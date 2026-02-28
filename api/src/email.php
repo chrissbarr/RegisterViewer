@@ -50,7 +50,7 @@ function sendLoginCode(array $config, string $email, string $code): bool
                 'Content-Length: ' . strlen($body),
             ]),
             'content' => $body,
-            'timeout' => 10,
+            'timeout' => 5,
             'ignore_errors' => true,
         ],
     ]);
