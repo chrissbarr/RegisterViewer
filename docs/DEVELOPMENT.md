@@ -48,6 +48,12 @@ All frontend commands run from the `frontend/` directory:
 | `cd api && docker compose down` | Stop containers |
 | `cd api && docker compose down -v` | Stop containers and reset database |
 
+The local Docker environment automatically runs migrations on startup via `docker-entrypoint-initdb.d/`:
+1. `001_create_projects_table.sql` — Projects and owner index
+2. `002_create_auth_tables.sql` — Users, login_codes, revoked_tokens tables
+
+To reset and re-run migrations: `cd api && docker compose down -v && docker compose up -d`
+
 ### Local Frontend + API
 
 To test cloud features locally:
@@ -82,10 +88,11 @@ npm run test:e2e        # Playwright E2E tests
 Key test areas:
 
 - **Utilities** — bitwise, float, fixed-point, decode/encode, validation, storage, format, snapshot-url, owner-token, api-client, project-storage, cloud-project-loader, cloud-operations
-- **Context providers** — app-context (reducer), cloud-sync-context, project-storage-context, preferences-context
-- **Components** — app-loader, share-dialog, my-projects-dialog
+- **Context providers** — app-context (reducer), cloud-sync-context, project-storage-context, preferences-context, auth-context
+- **Components** — app-loader, share-dialog, my-projects-dialog, login-dialog
 - **Hooks** — use-dirty-tracking, use-my-projects-actions, use-project-cloud-ops
 - **E2E (Playwright)** — project CRUD, cloud save/share/fork/delete, multi-tab, migration
+- **API Tests (PHPUnit)** — validation, ID generation, CORS, auth (extractAuth, isOwnerOrUser), JWT creation/verification, OTP send/verify flow, rate limiting, email sending
 
 ### Dead Code Detection
 
@@ -113,6 +120,7 @@ frontend/                           # React SPA
       viewer/  editor/  register-list/
     context/
       app-context.tsx             # React Context + useReducer state management
+      auth-context.tsx            # Email OTP auth state, JWT storage
       cloud-sync-context.tsx      # Cloud project state (save/share/dirty tracking)
       preferences-context.tsx     # Theme + sidebar preferences
       edit-context.tsx            # Register draft management
@@ -136,7 +144,9 @@ api/                              # PHP API backend (cPanel)
     database.php                  # PDO singleton factory
     data-access.php               # All DB queries
     validation.php                # Payload structural validation
-    auth.php                      # Token extraction + ownership check
+    auth.php                      # Dual auth (JWT + token hash), ownership checks
+    jwt.php                       # JWT creation/verification (firebase/php-jwt)
+    email.php                     # OTP email sending via Resend API
     cors.php                      # CORS header computation
     id.php                        # 12-char base62 ID generation
     handlers/*.php                # One file per endpoint

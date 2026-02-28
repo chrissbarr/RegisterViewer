@@ -29,22 +29,34 @@ This document provides step-by-step instructions for deploying the Register View
 - Node.js 22 or later installed locally
 - Docker installed locally (for running API tests)
 
-### Step 1: Create MySQL Database
+### Step 1: Create MySQL Database and Run Migrations
 
 1. Log in to cPanel
 2. Navigate to **MySQL Databases**
 3. Create a new database (e.g., `register_viewer`)
 4. Create a database user with a strong password
 5. Add the user to the database with **All Privileges**
-6. Run the migration script to create tables:
+6. Run migration scripts to create tables:
    - Upload `api/database/migrations/001_create_projects_table.sql` and import via phpMyAdmin
-   - Or run via command line: `mysql -u <user> -p <database> < api/database/migrations/001_create_projects_table.sql`
+   - Upload `api/database/migrations/002_create_auth_tables.sql` and import via phpMyAdmin
+   - Or via command line:
+     ```bash
+     mysql -u <user> -p <database> < api/database/migrations/001_create_projects_table.sql
+     mysql -u <user> -p <database> < api/database/migrations/002_create_auth_tables.sql
+     ```
+
+**Migrations create:**
+1. `projects` table — project storage with owner tracking
+2. `users` table — user accounts (email-based auth)
+3. `login_codes` table — OTP login codes with rate limiting indexes
+4. `revoked_tokens` table — revoked JWTs for server-side logout
+5. Foreign key linking `projects.user_id` → `users.id`
 
 ### Step 2: Create Production API Config
 
 1. Log in to cPanel → **File Manager**
 2. Navigate to the API deploy path (e.g., `/subdomains/registerviewer/api/`)
-3. Create `config.production.php` with your production database credentials:
+3. Create `config.production.php` with your production database and auth credentials:
 
 ```php
 <?php
@@ -56,11 +68,23 @@ return [
         'username' => 'your_database_user',
         'password' => 'your_database_password',
     ],
+    'jwt_secret'        => 'your-secret-key-min-32-chars',
+    'resend_api_key'    => 're_your_api_key_here',
+    'resend_from_email' => 'noreply@your-domain.com',
 ];
 ```
 
-3. Ensure `.htaccess` is active (Apache `mod_rewrite` must be enabled)
-4. This file is never overwritten by deployment — it lives only on the server
+**JWT Secret:** Must be at least 32 characters. Generate a 64-character random string:
+```bash
+openssl rand -hex 32
+```
+
+**Resend API Key:** Get from https://resend.com/ dashboard. Required for sending OTP emails.
+
+**From Email:** Must be a domain you control and have verified in Resend. Default if omitted: `noreply@registerviewer.com`.
+
+4. Ensure `.htaccess` is active (Apache `mod_rewrite` must be enabled)
+5. This file is never overwritten by deployment — it lives only on the server
 
 ### Step 3: Configure GitHub Secrets and Variables
 
@@ -73,6 +97,8 @@ return [
 | `FTP_HOST` | FTP server hostname (e.g., `ftp.example.com`) | cPanel hosting provider |
 | `FTP_USERNAME` | FTP username (usually same as cPanel username) | cPanel account |
 | `FTP_PASSWORD` | FTP password | cPanel account |
+
+> **Note:** Auth credentials (`JWT_SECRET`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`) are **not** set as GitHub Secrets. They live in `config.production.php` on the server (see Step 2). This keeps secrets off GitHub and allows per-environment values.
 
 ### Step 4: First Deployment
 
@@ -327,7 +353,7 @@ A: Yes! Go to **Actions** → select the Deploy workflow → **Run workflow** �
 A: Use `git revert` to create a new commit that undoes changes. See "Rollback Procedures" section above.
 
 **Q: How do I run database migrations?**
-A: Import the SQL files from `api/database/migrations/` via phpMyAdmin or the MySQL command line. Migrations are not run automatically during deployment.
+A: Import the SQL files from `api/database/migrations/` via phpMyAdmin or the MySQL command line in order: `001_create_projects_table.sql`, then `002_create_auth_tables.sql`. Migrations are not run automatically during deployment.
 
 **Q: How do I update FTP credentials?**
 A: Update the `FTP_HOST`, `FTP_USERNAME`, or `FTP_PASSWORD` secrets in GitHub → Settings → Secrets and variables → Actions.
@@ -387,8 +413,8 @@ A: Update the `FTP_HOST`, `FTP_USERNAME`, or `FTP_PASSWORD` secrets in GitHub �
 
 - [ ] All GitHub secrets are set: `FTP_HOST`, `FTP_USERNAME`, `FTP_PASSWORD` (run `gh secret list` to verify)
 - [ ] FTP credentials work (test with FileZilla or similar FTP client)
-- [ ] `config.production.php` exists on server with correct DB credentials
-- [ ] Database tables exist (migration SQL has been run)
+- [ ] `config.production.php` exists on server with correct DB credentials, `jwt_secret`, and `resend_api_key`
+- [ ] Database tables exist (both migration SQL files have been run)
 - [ ] PHP 8.3+ is enabled on the server
 - [ ] Apache `mod_rewrite` is enabled
 - [ ] Node.js version matches workflow config (22) — locally
