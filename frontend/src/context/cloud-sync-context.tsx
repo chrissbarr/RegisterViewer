@@ -29,6 +29,7 @@ import {
   isCloudEnabled,
   ApiError,
   listProjects,
+  getProject,
 } from '../utils/api-client';
 import { fetchAndParseCloudProject } from '../utils/cloud-project-loader';
 import {
@@ -36,7 +37,7 @@ import {
   hashOwnerToken,
   checkOwnership,
 } from '../utils/owner-token';
-import { useAuthActions } from './auth-context';
+import { useAuth, useAuthActions } from './auth-context';
 import { friendlyErrorMessage } from '../utils/friendly-error';
 import { buildProjectUrl } from '../utils/project-storage';
 import { setCloudUrl, clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock } from '../utils/cloud-url';
@@ -252,7 +253,31 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     }));
   }, [updateCloudMetadata, createNewProject, dataVersionRef]);
 
+  const { user: authUser } = useAuth();
   const { getJwt } = useAuthActions();
+
+  // Re-evaluate ownership when auth state changes (e.g., JWT validated after
+  // startup). Without this, a project loaded before auth finishes would have
+  // isOwner: false even if the JWT user owns it.
+  useEffect(() => {
+    const { cloudId, isOwner } = internalRef.current;
+    if (!cloudId || isOwner || !authUser) return;
+
+    // User just authenticated and the active cloud project isn't marked as owned.
+    // Re-fetch to get the server-reported isOwner flag.
+    const jwt = getJwt();
+    if (!jwt) return;
+
+    let cancelled = false;
+    getProject(cloudId, undefined, jwt)
+      .then((res) => {
+        if (!cancelled && res.isOwner) {
+          setInternal((prev) => prev.cloudId === cloudId ? { ...prev, isOwner: true } : prev);
+        }
+      })
+      .catch(() => { /* best-effort; ownership stays false */ });
+    return () => { cancelled = true; };
+  }, [authUser, getJwt]);
 
   const saveToCloud = useCallback(async () => {
     if (!isCloudEnabled()) return;
@@ -395,7 +420,8 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     async (cloudId: string) => {
       setInternal((prev) => ({ ...prev, status: 'loading', error: null, cloudId }));
       try {
-        const importResult = await fetchAndParseCloudProject(cloudId);
+        const jwt = getJwt();
+        const importResult = await fetchAndParseCloudProject(cloudId, undefined, jwt ?? undefined);
 
         dispatch({
           type: 'IMPORT_STATE',
@@ -405,7 +431,9 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
           addressUnitBits: importResult.addressUnitBits,
         });
 
-        const isOwner = checkOwnership(cloudId);
+        // Use server-reported isOwner (accounts for JWT auth cross-device),
+        // fall back to local ownerToken check when no auth was sent.
+        const isOwner = importResult.isOwner || checkOwnership(cloudId);
         const shareUrl = buildProjectUrl(cloudId);
 
         // Signal the version-tracking useEffect to capture lastSavedVersion
@@ -436,7 +464,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
         }));
       }
     },
-    [dispatch, needsVersionSyncRef],
+    [dispatch, needsVersionSyncRef, getJwt],
   );
 
   const syncCloudProjects = useCallback(async (): Promise<SyncResult> => {

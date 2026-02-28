@@ -3,6 +3,7 @@ import { importFromObject, type ImportResult } from './storage';
 
 interface CloudProjectLoadResult extends ImportResult {
   updatedAt: string;
+  isOwner: boolean;
 }
 
 /**
@@ -11,8 +12,8 @@ interface CloudProjectLoadResult extends ImportResult {
  * navigation path (CloudProjectProvider.loadProject) call this,
  * ensuring consistent data handling.
  */
-export async function fetchAndParseCloudProject(id: string, tokenHash?: string): Promise<CloudProjectLoadResult> {
-  const result = await getProject(id, tokenHash);
+export async function fetchAndParseCloudProject(id: string, tokenHash?: string, jwt?: string): Promise<CloudProjectLoadResult> {
+  const result = await getProject(id, tokenHash, jwt);
 
   // The API returns `data` as a parsed object (from res.json()).
   // Use importFromObject directly to avoid re-serializing then re-parsing.
@@ -22,5 +23,5 @@ export async function fetchAndParseCloudProject(id: string, tokenHash?: string):
   if (!importResult || importResult.registers.length === 0) {
     throw new Error('Failed to parse project data from cloud.');
   }
-  return { ...importResult, updatedAt: result.updatedAt };
+  return { ...importResult, updatedAt: result.updatedAt, isOwner: result.isOwner };
 }

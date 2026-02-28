@@ -836,6 +836,7 @@ describe('CloudSyncProvider', () => {
         project: { title: 'Imported' },
         addressUnitBits: 8,
         updatedAt: '2024-01-01T12:00:00Z',
+        isOwner: true,
       };
       (fetchAndParseCloudProject as Mock).mockResolvedValue(importResult);
       (checkOwnership as Mock).mockReturnValue(true);
@@ -846,7 +847,7 @@ describe('CloudSyncProvider', () => {
         await result.current.actions.loadCloudProject('cloud-load');
       });
 
-      expect(fetchAndParseCloudProject).toHaveBeenCalledWith('cloud-load');
+      expect(fetchAndParseCloudProject).toHaveBeenCalledWith('cloud-load', undefined, undefined);
       expect(result.current.state.cloudId).toBe('cloud-load');
       expect(result.current.state.isOwner).toBe(true);
       expect(result.current.state.status).toBe('idle');

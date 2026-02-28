@@ -32,12 +32,17 @@ function handleGetProject(PDO $db, string $id, array $auth): ApiResponse
         return new ApiResponse(['error' => 'Internal server error'], 500);
     }
 
+    // Ownership flag: true when the requesting user owns this project (token hash or JWT user_id).
+    // Enables cross-device JWT users to see owner-only UI without a local owner token.
+    $isOwner = ($auth['kind'] !== 'none') && isOwnerOrUser($auth, $project);
+
     // Build response manually to avoid decode/re-encode of the data JSON blob.
     // This preserves {} vs [] distinction for empty objects (e.g., registerValues: {}).
     $json = '{"id":' . json_encode($project['public_id'])
         . ',"data":' . $dataJson
         . ',"createdAt":' . json_encode($project['created_at_iso'])
         . ',"updatedAt":' . json_encode($project['updated_at_iso'])
+        . ',"isOwner":' . ($isOwner ? 'true' : 'false')
         . '}';
 
     return new ApiResponse(null, 200, [

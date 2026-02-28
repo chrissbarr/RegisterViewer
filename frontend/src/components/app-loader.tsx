@@ -10,6 +10,7 @@ import { isCloudEnabled } from '../utils/api-client';
 import { friendlyErrorMessage } from '../utils/friendly-error';
 import { fetchAndParseCloudProject } from '../utils/cloud-project-loader';
 import { checkOwnership, getOwnerTokenForProject, hashOwnerToken } from '../utils/owner-token';
+import { JWT_STORAGE_KEY } from '../context/auth-context';
 import { resolveInitialProject } from '../utils/project-resolution';
 import {
   runMigrationIfNeeded,
@@ -88,6 +89,15 @@ function parseSnapshotHash(hash: string): AppState | null {
   }
 }
 
+/** Read JWT from localStorage before auth context is available. */
+function readStartupJwt(): string | null {
+  try {
+    return localStorage.getItem(JWT_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
 function getSessionActiveId(): string | null {
   try {
     return sessionStorage.getItem(ACTIVE_PROJECT_SESSION_KEY);
@@ -123,12 +133,14 @@ export function AppLoader() {
       }
 
       case 'cloud': {
-        // If the user owns this project, send auth so private projects don't 404
+        // Send auth so private projects don't 404. Prefer JWT (enables
+        // cross-device access), fall back to per-project owner token hash.
+        const jwt = readStartupJwt();
         const ownerToken = getOwnerTokenForProject(resolution.cloudId);
         const tokenHashPromise = ownerToken ? hashOwnerToken(ownerToken) : Promise.resolve(undefined);
 
         tokenHashPromise
-          .then((tokenHash) => fetchAndParseCloudProject(resolution.cloudId, tokenHash))
+          .then((tokenHash) => fetchAndParseCloudProject(resolution.cloudId, tokenHash, jwt ?? undefined))
           .then((importResult) => {
             const values: Record<string, bigint> = {};
             for (const reg of importResult.registers) {
@@ -142,7 +154,8 @@ export function AppLoader() {
               addressUnitBits: importResult.addressUnitBits,
             });
 
-            const isOwner = checkOwnership(resolution.cloudId);
+            // Use server-reported isOwner (JWT-aware), fall back to local check
+            const isOwner = importResult.isOwner || checkOwnership(resolution.cloudId);
             setState({
               phase: 'ready',
               initialState: loadedState,

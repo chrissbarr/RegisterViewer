@@ -101,11 +101,14 @@ interface GetProjectResponse {
   data: unknown;
   createdAt: string;
   updatedAt: string;
+  isOwner: boolean;
 }
 
-export async function getProject(id: string, tokenHash?: string): Promise<GetProjectResponse> {
+export async function getProject(id: string, tokenHash?: string, jwt?: string): Promise<GetProjectResponse> {
   const headers: Record<string, string> = {};
-  if (tokenHash) {
+  if (jwt) {
+    headers['Authorization'] = `Bearer ${jwt}`;
+  } else if (tokenHash) {
     headers['Authorization'] = `Bearer ${tokenHash}`;
   }
   return apiFetch<GetProjectResponse>(`/api/projects/${encodeURIComponent(id)}`, {

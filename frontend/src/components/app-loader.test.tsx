@@ -297,7 +297,7 @@ describe('AppLoader', () => {
         expect(screen.getByTestId('app-shell')).toBeInTheDocument();
       });
 
-      expect(fetchAndParseCloudProject).toHaveBeenCalledWith('cloud-abc123', undefined);
+      expect(fetchAndParseCloudProject).toHaveBeenCalledWith('cloud-abc123', undefined, undefined);
     });
 
     it('passes isOwner=true when ownership is confirmed', async () => {
@@ -331,7 +331,30 @@ describe('AppLoader', () => {
       });
 
       expect(hashOwnerToken).toHaveBeenCalledWith('owner-secret');
-      expect(fetchAndParseCloudProject).toHaveBeenCalledWith('cloud-abc123', 'hashed-token');
+      expect(fetchAndParseCloudProject).toHaveBeenCalledWith('cloud-abc123', 'hashed-token', undefined);
+    });
+
+    it('sends JWT when available in localStorage (cross-device path)', async () => {
+      const importResult = makeImportResult();
+      (resolveInitialProject as Mock).mockReturnValue({ type: 'cloud', cloudId: 'cloud-abc123' });
+      (getOwnerTokenForProject as Mock).mockReturnValue(null);
+      (fetchAndParseCloudProject as Mock).mockResolvedValue({ ...importResult, isOwner: true });
+      (checkOwnership as Mock).mockReturnValue(false);
+
+      localStorage.setItem('register-viewer-jwt', 'test-jwt-token');
+      try {
+        render(<AppLoader />);
+
+        await waitFor(() => {
+          expect(screen.getByTestId('app-shell')).toBeInTheDocument();
+        });
+
+        expect(fetchAndParseCloudProject).toHaveBeenCalledWith('cloud-abc123', undefined, 'test-jwt-token');
+        // isOwner should be true from server response despite local checkOwnership returning false
+        expect(screen.getByTestId('app-shell').dataset.isOwner).toBe('true');
+      } finally {
+        localStorage.removeItem('register-viewer-jwt');
+      }
     });
 
     it('shows error state when cloud fetch fails', async () => {

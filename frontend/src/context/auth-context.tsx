@@ -2,7 +2,8 @@ import { createContext, useContext, useState, useEffect, useCallback, useMemo, t
 import { isCloudEnabled, sendLoginCode as apiSendLoginCode, verifyLoginCode as apiVerifyLoginCode, getAuthMe, postAuthLogout } from '../utils/api-client';
 import { getOwnerTokenHash } from '../utils/owner-token';
 
-const JWT_KEY = 'register-viewer-jwt';
+/** localStorage key for the JWT token. Exported for use by AppLoader (pre-context). */
+export const JWT_STORAGE_KEY = 'register-viewer-jwt';
 
 interface AuthUser {
   id: number;
@@ -26,7 +27,7 @@ const AuthActionsContext = createContext<AuthActions | null>(null);
 
 function readJwt(): string | null {
   try {
-    return localStorage.getItem(JWT_KEY);
+    return localStorage.getItem(JWT_STORAGE_KEY);
   } catch {
     return null;
   }
@@ -34,7 +35,7 @@ function readJwt(): string | null {
 
 function storeJwt(token: string): void {
   try {
-    localStorage.setItem(JWT_KEY, token);
+    localStorage.setItem(JWT_STORAGE_KEY, token);
   } catch {
     // localStorage may be full or disabled
   }
@@ -42,7 +43,7 @@ function storeJwt(token: string): void {
 
 function clearJwt(): void {
   try {
-    localStorage.removeItem(JWT_KEY);
+    localStorage.removeItem(JWT_STORAGE_KEY);
   } catch {
     // ignore
   }

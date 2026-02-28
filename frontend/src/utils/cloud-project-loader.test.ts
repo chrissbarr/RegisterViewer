@@ -30,6 +30,7 @@ function makeGetProjectResponse(dataOverride?: unknown) {
     data: dataOverride ?? makeApiProjectData(),
     createdAt: '2024-01-01T00:00:00Z',
     updatedAt: '2024-06-15T12:00:00Z',
+    isOwner: false,
   };
 }
 
@@ -46,7 +47,7 @@ describe('fetchAndParseCloudProject', () => {
 
     const result = await fetchAndParseCloudProject('ABC123DEF456');
 
-    expect(mockGetProject).toHaveBeenCalledWith('ABC123DEF456', undefined);
+    expect(mockGetProject).toHaveBeenCalledWith('ABC123DEF456', undefined, undefined);
     expect(result.registers).toHaveLength(1);
     expect(result.registers[0].name).toBe('STATUS');
   });
@@ -73,6 +74,28 @@ describe('fetchAndParseCloudProject', () => {
     const result = await fetchAndParseCloudProject('ABC123DEF456');
 
     expect(result.updatedAt).toBe('2024-06-15T12:00:00Z');
+  });
+
+  it('threads isOwner from the API response', async () => {
+    const apiResponse = { ...makeGetProjectResponse(), isOwner: true };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockGetProject.mockResolvedValue(apiResponse as any);
+    mockImportFromObject.mockRestore();
+
+    const result = await fetchAndParseCloudProject('ABC123DEF456');
+
+    expect(result.isOwner).toBe(true);
+  });
+
+  it('passes jwt parameter through to getProject', async () => {
+    const apiResponse = makeGetProjectResponse();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockGetProject.mockResolvedValue(apiResponse as any);
+    mockImportFromObject.mockRestore();
+
+    await fetchAndParseCloudProject('ABC123DEF456', undefined, 'test-jwt-token');
+
+    expect(mockGetProject).toHaveBeenCalledWith('ABC123DEF456', undefined, 'test-jwt-token');
   });
 
   it('throws when importFromObject returns null', async () => {
