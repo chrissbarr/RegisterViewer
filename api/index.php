@@ -265,6 +265,21 @@ if ($path === '/api/health' && ($method === 'GET' || $method === 'HEAD')) {
     }
 }
 
+// Email health check — verifies Resend API key is configured and reachable (DEV-04)
+if ($path === '/api/health/email' && ($method === 'GET' || $method === 'HEAD')) {
+    $result = checkResendApiHealth($config);
+    if ($result['ok']) {
+        emitResponse(new ApiResponse(['status' => 'ok', 'timestamp' => gmdate('c')]));
+    } else {
+        error_log('Email health check failed: ' . ($result['error'] ?? 'unknown'));
+        emitResponse(new ApiResponse([
+            'status' => 'error',
+            'error' => $result['error'] ?? 'Email service unhealthy',
+            'timestamp' => gmdate('c'),
+        ], 503));
+    }
+}
+
 try {
     $db = getDatabase($config);
 

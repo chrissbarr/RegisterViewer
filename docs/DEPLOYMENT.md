@@ -333,6 +333,46 @@ FTP_PASSWORD             # FTP password
 - Check cPanel → **Error Log** for PHP errors
 - Monitor MySQL usage in cPanel → **MySQL Databases**
 
+### Health Check Endpoints
+
+Two unauthenticated health endpoints are available for uptime monitoring:
+
+| Endpoint | Checks | Methods |
+|----------|--------|---------|
+| `GET /api/health` | Database connectivity (`SELECT 1`) | GET, HEAD |
+| `GET /api/health/email` | Resend API key configured + API reachable | GET, HEAD |
+
+Both return **200** when healthy and **503** when unhealthy. HEAD requests return only status codes (no body), making them compatible with UptimeRobot free tier.
+
+### Setting Up UptimeRobot (Free Tier)
+
+1. Create an account at https://uptimerobot.com/
+2. Add two HTTP(s) monitors:
+   - **Database health:** `https://www.registerviewer.com/api/health` — checks DB connectivity
+   - **Email health:** `https://www.registerviewer.com/api/health/email` — checks Resend API key validity and reachability
+3. Set monitoring interval to 5 minutes
+4. Configure email alerts for downtime notifications
+
+The email health endpoint calls `GET https://api.resend.com/api-keys` with a 3-second timeout. It does not send any email — it only verifies the API key is valid and Resend is reachable.
+
+### Email Delivery Logs
+
+The `sendLoginCode()` function writes structured JSON to PHP's error log on every send attempt. Check cPanel → **Error Log** or grep the log file:
+
+```bash
+# Successful sends
+grep '"event":"email_sent"' /path/to/php-error.log
+
+# Failed sends (with reason)
+grep '"event":"email_send_failed"' /path/to/php-error.log
+```
+
+Each log entry includes:
+- `event`: `email_sent` or `email_send_failed`
+- `reason`: (failures only) `missing_api_key`, `network_error`, `http_4xx`/`http_5xx`, or `unknown_status`
+- `duration_ms`: round-trip time to Resend API
+- `timestamp`: ISO 8601 timestamp
+
 ---
 
 ## FAQ

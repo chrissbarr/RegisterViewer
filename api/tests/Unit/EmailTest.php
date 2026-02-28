@@ -103,4 +103,32 @@ final class EmailTest extends TestCase
     {
         $this->assertNull(parseHttpStatusCode(['200']));
     }
+
+    // ---- checkResendApiHealth ----
+
+    #[Test]
+    public function healthCheckFailsWithEmptyApiKey(): void
+    {
+        $result = checkResendApiHealth(['resend_api_key' => '']);
+        $this->assertFalse($result['ok']);
+        $this->assertSame('resend_api_key not configured', $result['error']);
+    }
+
+    #[Test]
+    public function healthCheckFailsWithMissingApiKey(): void
+    {
+        $result = checkResendApiHealth([]);
+        $this->assertFalse($result['ok']);
+        $this->assertSame('resend_api_key not configured', $result['error']);
+    }
+
+    #[Test]
+    public function healthCheckFailsWhenResendUnreachable(): void
+    {
+        $this->disableHttps();
+
+        $result = checkResendApiHealth(['resend_api_key' => 'test_key_abc123']);
+        $this->assertFalse($result['ok']);
+        $this->assertSame('Resend API unreachable', $result['error']);
+    }
 }
