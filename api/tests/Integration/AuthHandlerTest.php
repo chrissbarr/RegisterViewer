@@ -334,17 +334,27 @@ final class AuthHandlerTest extends TestCase
         $this->createLoginCode($email, '111111');
         $this->createLoginCode($email, '222222');
 
-        // Wrong guess should increment the most recent code (222222)
+        // Wrong guess should increment exactly one active code via
+        // dbIncrementMostRecentLoginCodeAttempts (ORDER BY created_at DESC LIMIT 1).
+        // When both codes share the same second-precision timestamp, which one
+        // gets incremented is non-deterministic, so we assert on the total.
         handleAuthVerifyCode(self::$db, self::JWT_CONFIG, [
             'email' => $email,
             'code'  => '999999',
         ]);
 
-        // Verify: first code should have 0 attempts, second should have 1
         $row1 = dbGetActiveLoginCode(self::$db, $email, '111111');
         $row2 = dbGetActiveLoginCode(self::$db, $email, '222222');
-        $this->assertSame(0, (int) $row1['attempts']);
-        $this->assertSame(1, (int) $row2['attempts']);
+        $attempts1 = (int) $row1['attempts'];
+        $attempts2 = (int) $row2['attempts'];
+
+        // Exactly one code should have been incremented
+        $this->assertSame(1, $attempts1 + $attempts2, 'Total attempts across both codes should be 1');
+        // One should be 0 and the other 1
+        $this->assertTrue(
+            ($attempts1 === 0 && $attempts2 === 1) || ($attempts1 === 1 && $attempts2 === 0),
+            'Exactly one code should have 1 attempt, the other 0'
+        );
     }
 
     // ---- handleAuthMe ----

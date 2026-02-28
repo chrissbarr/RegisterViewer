@@ -24,3 +24,14 @@ require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/database.php';
 require __DIR__ . '/../src/data-access.php';
 require __DIR__ . '/../src/api-response.php';
+
+// Handler files (needed for handler-level integration tests)
+require __DIR__ . '/../src/handlers/auth-send-code.php';
+require __DIR__ . '/../src/handlers/auth-verify-code.php';
+require __DIR__ . '/../src/handlers/auth-me.php';
+require __DIR__ . '/../src/handlers/create-project.php';
+require __DIR__ . '/../src/handlers/get-project.php';
+require __DIR__ . '/../src/handlers/update-project.php';
+require __DIR__ . '/../src/handlers/patch-project.php';
+require __DIR__ . '/../src/handlers/delete-project.php';
+require __DIR__ . '/../src/handlers/list-projects.php';
