@@ -55,6 +55,16 @@ describe('LoginDialog', () => {
       expect(mockSendCode).not.toHaveBeenCalled();
     });
 
+    it('rejects email without valid TLD (stricter than old regex)', async () => {
+      renderDialog();
+
+      fireEvent.change(screen.getByLabelText('Email address'), { target: { value: 'user@localhost' } });
+      fireEvent.submit(screen.getByText('Send code').closest('form')!);
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('Please enter a valid email address.');
+      expect(mockSendCode).not.toHaveBeenCalled();
+    });
+
     it('shows validation error for empty email', async () => {
       renderDialog();
 

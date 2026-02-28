@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
+import * as EmailValidator from 'email-validator';
 import { Dialog } from '../common/dialog';
 import { useAuthActions } from '../../context/auth-context';
 import { ApiError } from '../../utils/api-client';
@@ -38,7 +39,8 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
   const handleSendCode = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = email.trim().toLowerCase();
-    if (!trimmed || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+    // RFC 5322-aware check; server uses PHP FILTER_VALIDATE_EMAIL as authority
+    if (!trimmed || !EmailValidator.validate(trimmed)) {
       setError('Please enter a valid email address.');
       return;
     }
