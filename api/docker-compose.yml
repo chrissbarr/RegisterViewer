@@ -26,8 +26,6 @@ services:
     ports:
       - "127.0.0.1:3307:3306"
     volumes:
-      - ./database/migrations/001_create_projects_table.sql:/docker-entrypoint-initdb.d/001.sql:ro
-      - ./database/migrations/002_create_auth_tables.sql:/docker-entrypoint-initdb.d/002.sql:ro
       - db_data:/var/lib/mysql
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
