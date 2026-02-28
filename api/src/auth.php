@@ -102,20 +102,20 @@ function isOwnerOrUser(array $auth, array $project): bool
 }
 
 /**
- * Verify auth and project ownership. Returns the project row on success.
- * Accepts both legacy token hash and JWT auth.
- * Calls sendError() (which exits) on failure.
+ * Verify auth and project ownership. Returns the project row on success,
+ * or an ApiResponse error on failure.
+ *
+ * @return array|ApiResponse
  */
-function requireOwnership(PDO $db, string $id, array $config): array
+function requireOwnership(PDO $db, string $id, array $auth): array|ApiResponse
 {
-    $auth = extractAuth($config);
     if ($auth['kind'] === 'none') {
-        sendError('Missing or invalid Authorization header', 401);
+        return new ApiResponse(['error' => 'Missing or invalid Authorization header'], 401);
     }
 
     $project = dbGetProjectForAuth($db, $id);
     if ($project === null || !isOwnerOrUser($auth, $project)) {
-        sendError('Project not found', 404);
+        return new ApiResponse(['error' => 'Project not found'], 404);
     }
 
     return $project;
