@@ -271,49 +271,70 @@ if ($path === '/api/health' && ($method === 'GET' || $method === 'HEAD')) {
     try {
         $db = getDatabase($config);
         $db->query('SELECT 1');
-        sendJson(['status' => 'ok', 'timestamp' => gmdate('c')]);
+        emitResponse(new ApiResponse(['status' => 'ok', 'timestamp' => gmdate('c')]));
     } catch (\Throwable $e) {
         error_log('Health check failed: ' . substr($e->getMessage(), 0, 200));
-        sendError('Database connection failed', 503);
+        emitResponse(new ApiResponse(['error' => 'Database connection failed'], 503));
     }
 }
 
 try {
     $db = getDatabase($config);
 
-    // Auth routes: /api/auth/*
-    if (preg_match('#^/api/auth/send-code/?$#', $path) && $method === 'POST') {
-        handleAuthSendCode($db, $config);
-    }
-    if (preg_match('#^/api/auth/verify-code/?$#', $path) && $method === 'POST') {
-        handleAuthVerifyCode($db, $config);
-    }
-    if (preg_match('#^/api/auth/me/?$#', $path) && $method === 'GET') {
-        handleAuthMe($db, $config);
+    // Parse body once for methods that need it
+    $parsed = null;
+    $body = null;
+    if (in_array($method, ['POST', 'PUT', 'PATCH'], true)) {
+        $parsed = parseBody(readBody());
+        if ($parsed instanceof ApiResponse) {
+            emitResponse($parsed);
+        }
+        $body = $parsed['assoc'];
     }
 
-    // Collection routes: /api/projects
-    if (preg_match('#^/api/projects/?$#', $path)) {
-        match ($method) {
-            'POST' => handleCreateProject($db, $config),
-            'GET'  => handleListProjects($db, $config),
-            default => sendError('Method not allowed', 405, ['Allow' => 'GET, POST, OPTIONS']),
-        };
-    // Resource routes: /api/projects/:id (12-char alphanumeric)
-    } elseif (preg_match('#^/api/projects/([A-Za-z0-9]{12})$#', $path, $matches)) {
-        $id = $matches[1];
+    // Extract auth once
+    $auth = extractAuth($config);
 
-        match ($method) {
-            'GET'    => handleGetProject($db, $id, $config),
-            'PUT'    => handleUpdateProject($db, $id, $config),
-            'PATCH'  => handlePatchProject($db, $id, $config),
-            'DELETE' => handleDeleteProject($db, $id, $config),
-            default  => sendError('Method not allowed', 405, ['Allow' => 'GET, PUT, PATCH, DELETE, OPTIONS']),
-        };
-    } else {
-        sendError('Not found', 404);
+    // Match project ID for resource routes
+    $projectId = null;
+    if (preg_match('#^/api/projects/([A-Za-z0-9]{12})$#', $path, $matches)) {
+        $projectId = $matches[1];
     }
+
+    $response = match (true) {
+        // Auth routes
+        $path === '/api/auth/send-code' && $method === 'POST'
+            => handleAuthSendCode($db, $config, $body),
+        $path === '/api/auth/verify-code' && $method === 'POST'
+            => handleAuthVerifyCode($db, $config, $body),
+        $path === '/api/auth/me' && $method === 'GET'
+            => handleAuthMe($db, $auth),
+
+        // Collection routes: /api/projects
+        preg_match('#^/api/projects/?$#', $path) === 1 && $method === 'POST'
+            => handleCreateProject($db, $config, $auth, $parsed),
+        preg_match('#^/api/projects/?$#', $path) === 1 && $method === 'GET'
+            => handleListProjects($db, $auth),
+        preg_match('#^/api/projects/?$#', $path) === 1
+            => new ApiResponse(['error' => 'Method not allowed'], 405, ['Allow' => 'GET, POST, OPTIONS']),
+
+        // Resource routes: /api/projects/:id
+        $projectId !== null && $method === 'GET'
+            => handleGetProject($db, $projectId, $auth),
+        $projectId !== null && $method === 'PUT'
+            => handleUpdateProject($db, $projectId, $auth, $parsed),
+        $projectId !== null && $method === 'PATCH'
+            => handlePatchProject($db, $projectId, $auth, $body),
+        $projectId !== null && $method === 'DELETE'
+            => handleDeleteProject($db, $projectId, $auth),
+        $projectId !== null
+            => new ApiResponse(['error' => 'Method not allowed'], 405, ['Allow' => 'GET, PUT, PATCH, DELETE, OPTIONS']),
+
+        default => new ApiResponse(['error' => 'Not found'], 404),
+    };
+
+    emitResponse($response);
 } catch (\Throwable $e) {
     error_log('API error [' . get_class($e) . ']: ' . substr($e->getMessage(), 0, 500));
-    sendError('Internal server error', 500);
+    emitResponse(new ApiResponse(['error' => 'Internal server error'], 500));
 }
