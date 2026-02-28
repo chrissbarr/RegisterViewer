@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS `users` (
 CREATE TABLE IF NOT EXISTS `login_codes` (
     `id`         INT UNSIGNED     NOT NULL AUTO_INCREMENT,
     `email`      VARCHAR(254)     NOT NULL,
-    `code`       CHAR(6)          NOT NULL,
+    `code`       CHAR(64)         NOT NULL COMMENT 'SHA-256 hash of OTP code',
     `expires_at` DATETIME         NOT NULL,
     `attempts`   TINYINT UNSIGNED NOT NULL DEFAULT 0,
     `used`       TINYINT(1)       NOT NULL DEFAULT 0,

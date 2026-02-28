@@ -56,12 +56,13 @@ final class AuthHandlerTest extends TestCase
     }
 
     /**
-     * Create a login code in the DB and return the code string.
+     * Create a login code in the DB (hashed, matching production behavior) and return the raw code string.
      */
     private function createLoginCode(string $email, string $code = '123456', int $ttlSeconds = 600): string
     {
         $expiresAt = gmdate('Y-m-d H:i:s', time() + $ttlSeconds);
-        dbCreateLoginCode(self::$db, $email, $code, $expiresAt);
+        $codeHash = hash('sha256', $code);
+        dbCreateLoginCode(self::$db, $email, $codeHash, $expiresAt);
         return $code;
     }
 
@@ -343,8 +344,8 @@ final class AuthHandlerTest extends TestCase
             'code'  => '999999',
         ]);
 
-        $row1 = dbGetActiveLoginCode(self::$db, $email, '111111');
-        $row2 = dbGetActiveLoginCode(self::$db, $email, '222222');
+        $row1 = dbGetActiveLoginCode(self::$db, $email, hash('sha256', '111111'));
+        $row2 = dbGetActiveLoginCode(self::$db, $email, hash('sha256', '222222'));
         $attempts1 = (int) $row1['attempts'];
         $attempts2 = (int) $row2['attempts'];
 
@@ -355,6 +356,23 @@ final class AuthHandlerTest extends TestCase
             ($attempts1 === 0 && $attempts2 === 1) || ($attempts1 === 1 && $attempts2 === 0),
             'Exactly one code should have 1 attempt, the other 0'
         );
+    }
+
+    #[Test]
+    public function sendCodeStoresHashedCodeNotPlaintext(): void
+    {
+        $email = 'hash-check@example.com';
+        handleAuthSendCode(self::$db, self::JWT_CONFIG, ['email' => $email]);
+
+        // Query the DB directly — the stored code should be a 64-char SHA-256 hex digest
+        $stmt = self::$db->prepare(
+            'SELECT code FROM login_codes WHERE email = :email ORDER BY created_at DESC LIMIT 1'
+        );
+        $stmt->execute(['email' => $email]);
+        $storedCode = $stmt->fetchColumn();
+
+        $this->assertSame(64, strlen($storedCode), 'Stored code should be a 64-char SHA-256 hash');
+        $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $storedCode);
     }
 
     // ---- handleAuthMe ----

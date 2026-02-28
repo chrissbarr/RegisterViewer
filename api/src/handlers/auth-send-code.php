@@ -23,9 +23,10 @@ function handleAuthSendCode(PDO $db, array $config, array $body): ApiResponse
     // Generate 6-digit code
     $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
 
-    // Store with 10-minute expiry
+    // Store hashed code with 10-minute expiry (SEC-04: never store plaintext OTP)
+    $codeHash = hash('sha256', $code);
     $expiresAt = gmdate('Y-m-d H:i:s', time() + 600);
-    dbCreateLoginCode($db, $email, $code, $expiresAt);
+    dbCreateLoginCode($db, $email, $codeHash, $expiresAt);
 
     // Send email (best-effort; don't reveal delivery failures to client)
     sendLoginCode($config, $email, $code);

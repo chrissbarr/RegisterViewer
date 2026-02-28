@@ -213,6 +213,8 @@ function dbCreateUser(PDO $db, string $email): int
 
 /**
  * Store a login OTP code.
+ *
+ * @param string $code SHA-256 hex digest of the OTP code (64 chars)
  */
 function dbCreateLoginCode(PDO $db, string $email, string $code, string $expiresAt): void
 {
@@ -228,6 +230,8 @@ function dbCreateLoginCode(PDO $db, string $email, string $code, string $expires
 
 /**
  * Get an active (unused, unexpired, under attempt limit) login code.
+ *
+ * @param string $code SHA-256 hex digest of the OTP code to match (64 chars)
  */
 function dbGetActiveLoginCode(PDO $db, string $email, string $code): ?array
 {

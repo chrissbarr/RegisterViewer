@@ -34,8 +34,11 @@ function handleAuthVerifyCode(PDO $db, array $config, array $body): ApiResponse
         return new ApiResponse(['error' => 'Too many verification attempts. Please request a new code.'], 429);
     }
 
+    // Hash the submitted code to match stored hash (SEC-04)
+    $codeHash = hash('sha256', $code);
+
     // Look up active code
-    $codeRow = dbGetActiveLoginCode($db, $email, $code);
+    $codeRow = dbGetActiveLoginCode($db, $email, $codeHash);
     if ($codeRow === null) {
         // Increment attempts on the most recent code for this email (if any),
         // so that failed guesses count against the per-code and global rate limits

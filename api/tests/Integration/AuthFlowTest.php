@@ -97,15 +97,15 @@ final class AuthFlowTest extends TestCase
     public function createAndGetLoginCode(): void
     {
         $email = 'otp@example.com';
-        $code = '123456';
+        $codeHash = hash('sha256', '123456');
         $expiresAt = gmdate('Y-m-d H:i:s', time() + 600);
 
-        dbCreateLoginCode(self::$db, $email, $code, $expiresAt);
+        dbCreateLoginCode(self::$db, $email, $codeHash, $expiresAt);
 
-        $row = dbGetActiveLoginCode(self::$db, $email, $code);
+        $row = dbGetActiveLoginCode(self::$db, $email, $codeHash);
         $this->assertNotNull($row);
         $this->assertSame($email, $row['email']);
-        $this->assertSame($code, $row['code']);
+        $this->assertSame($codeHash, $row['code']);
         $this->assertSame(0, (int) $row['attempts']);
     }
 
@@ -113,9 +113,9 @@ final class AuthFlowTest extends TestCase
     public function getActiveLoginCodeReturnsNullForWrongCode(): void
     {
         $email = 'otp@example.com';
-        dbCreateLoginCode(self::$db, $email, '123456', gmdate('Y-m-d H:i:s', time() + 600));
+        dbCreateLoginCode(self::$db, $email, hash('sha256', '123456'), gmdate('Y-m-d H:i:s', time() + 600));
 
-        $row = dbGetActiveLoginCode(self::$db, $email, '999999');
+        $row = dbGetActiveLoginCode(self::$db, $email, hash('sha256', '999999'));
         $this->assertNull($row);
     }
 
@@ -123,9 +123,9 @@ final class AuthFlowTest extends TestCase
     public function getActiveLoginCodeReturnsNullForExpiredCode(): void
     {
         $email = 'otp@example.com';
-        dbCreateLoginCode(self::$db, $email, '123456', gmdate('Y-m-d H:i:s', time() - 1));
+        dbCreateLoginCode(self::$db, $email, hash('sha256', '123456'), gmdate('Y-m-d H:i:s', time() - 1));
 
-        $row = dbGetActiveLoginCode(self::$db, $email, '123456');
+        $row = dbGetActiveLoginCode(self::$db, $email, hash('sha256', '123456'));
         $this->assertNull($row);
     }
 
@@ -133,12 +133,13 @@ final class AuthFlowTest extends TestCase
     public function getActiveLoginCodeReturnsNullForUsedCode(): void
     {
         $email = 'otp@example.com';
-        dbCreateLoginCode(self::$db, $email, '123456', gmdate('Y-m-d H:i:s', time() + 600));
+        $codeHash = hash('sha256', '123456');
+        dbCreateLoginCode(self::$db, $email, $codeHash, gmdate('Y-m-d H:i:s', time() + 600));
 
-        $row = dbGetActiveLoginCode(self::$db, $email, '123456');
+        $row = dbGetActiveLoginCode(self::$db, $email, $codeHash);
         dbMarkLoginCodeUsed(self::$db, (int) $row['id']);
 
-        $row2 = dbGetActiveLoginCode(self::$db, $email, '123456');
+        $row2 = dbGetActiveLoginCode(self::$db, $email, $codeHash);
         $this->assertNull($row2);
     }
 
@@ -146,13 +147,14 @@ final class AuthFlowTest extends TestCase
     public function incrementLoginCodeAttempts(): void
     {
         $email = 'otp@example.com';
-        dbCreateLoginCode(self::$db, $email, '123456', gmdate('Y-m-d H:i:s', time() + 600));
+        $codeHash = hash('sha256', '123456');
+        dbCreateLoginCode(self::$db, $email, $codeHash, gmdate('Y-m-d H:i:s', time() + 600));
 
-        $row = dbGetActiveLoginCode(self::$db, $email, '123456');
+        $row = dbGetActiveLoginCode(self::$db, $email, $codeHash);
         $this->assertSame(0, (int) $row['attempts']);
 
         dbIncrementLoginCodeAttempts(self::$db, (int) $row['id']);
-        $row2 = dbGetActiveLoginCode(self::$db, $email, '123456');
+        $row2 = dbGetActiveLoginCode(self::$db, $email, $codeHash);
         $this->assertSame(1, (int) $row2['attempts']);
     }
 
@@ -160,14 +162,15 @@ final class AuthFlowTest extends TestCase
     public function getActiveLoginCodeReturnsNullAfterFiveAttempts(): void
     {
         $email = 'otp@example.com';
-        dbCreateLoginCode(self::$db, $email, '123456', gmdate('Y-m-d H:i:s', time() + 600));
+        $codeHash = hash('sha256', '123456');
+        dbCreateLoginCode(self::$db, $email, $codeHash, gmdate('Y-m-d H:i:s', time() + 600));
 
-        $row = dbGetActiveLoginCode(self::$db, $email, '123456');
+        $row = dbGetActiveLoginCode(self::$db, $email, $codeHash);
         for ($i = 0; $i < 5; $i++) {
             dbIncrementLoginCodeAttempts(self::$db, (int) $row['id']);
         }
 
-        $row2 = dbGetActiveLoginCode(self::$db, $email, '123456');
+        $row2 = dbGetActiveLoginCode(self::$db, $email, $codeHash);
         $this->assertNull($row2);
     }
 
@@ -177,12 +180,12 @@ final class AuthFlowTest extends TestCase
         $email = 'rate@example.com';
         $this->assertSame(0, dbCountRecentLoginCodes(self::$db, $email));
 
-        dbCreateLoginCode(self::$db, $email, '111111', gmdate('Y-m-d H:i:s', time() + 600));
-        dbCreateLoginCode(self::$db, $email, '222222', gmdate('Y-m-d H:i:s', time() + 600));
+        dbCreateLoginCode(self::$db, $email, hash('sha256', '111111'), gmdate('Y-m-d H:i:s', time() + 600));
+        dbCreateLoginCode(self::$db, $email, hash('sha256', '222222'), gmdate('Y-m-d H:i:s', time() + 600));
         $this->assertSame(2, dbCountRecentLoginCodes(self::$db, $email));
 
         // Other email should not count
-        dbCreateLoginCode(self::$db, 'other@example.com', '333333', gmdate('Y-m-d H:i:s', time() + 600));
+        dbCreateLoginCode(self::$db, 'other@example.com', hash('sha256', '333333'), gmdate('Y-m-d H:i:s', time() + 600));
         $this->assertSame(2, dbCountRecentLoginCodes(self::$db, $email));
     }
 
