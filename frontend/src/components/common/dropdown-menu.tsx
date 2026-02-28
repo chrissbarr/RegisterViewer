@@ -15,6 +15,7 @@ interface DropdownMenuProps {
   items: MenuItem[];
   triggerLabel: string;
   triggerContent: React.ReactNode;
+  footer?: React.ReactNode;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -46,7 +47,7 @@ function lastFocusableIndex(items: MenuItem[]): number {
 
 // ── Component ────────────────────────────────────────────────────
 
-export function DropdownMenu({ items, triggerLabel, triggerContent }: DropdownMenuProps) {
+export function DropdownMenu({ items, triggerLabel, triggerContent, footer }: DropdownMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
 
@@ -169,7 +170,7 @@ export function DropdownMenu({ items, triggerLabel, triggerContent }: DropdownMe
         {triggerContent}
       </button>
 
-      {isOpen && (
+      {isOpen && (<>
         <ul
           id={menuId}
           role="menu"
@@ -272,7 +273,12 @@ export function DropdownMenu({ items, triggerLabel, triggerContent }: DropdownMe
             );
           })}
         </ul>
-      )}
+        {footer && (
+          <div className="border-t border-gray-200 dark:border-gray-700">
+            {footer}
+          </div>
+        )}
+      </>)}
     </div>
   );
 }

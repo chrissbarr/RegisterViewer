@@ -1,7 +1,6 @@
 import { useRef, useState } from 'react';
 import { DropdownMenu, type MenuItem } from '../common/dropdown-menu';
 import { AboutDialog } from '../common/about-dialog';
-import { ConfirmClearDialog } from '../common/confirm-clear-dialog';
 import { ExamplesDialog } from '../common/examples-dialog';
 import { ProjectSettingsDialog } from '../common/project-settings-dialog';
 import { ImportResultDialog } from '../common/import-result-dialog';
@@ -37,7 +36,6 @@ export function Header() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [loginDialogOpen, setLoginDialogOpen] = useState(false);
   const [examplesOpen, setExamplesOpen] = useState(false);
-  const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   const [myProjectsOpen, setMyProjectsOpen] = useState(false);
@@ -110,29 +108,16 @@ export function Header() {
   const cloudEnabled = isCloudEnabled();
 
   const menuItems: MenuItem[] = [
-    { kind: 'action', label: 'Project settings', onAction: () => setProjectSettingsOpen(true) },
-    { kind: 'separator' },
-    { kind: 'action', label: 'Import', onAction: handleImport },
-    { kind: 'action', label: 'Export', onAction: handleExport },
-    { kind: 'action', label: 'Examples', onAction: () => setExamplesOpen(true) },
-    { kind: 'action', label: 'Clear workspace', onAction: () => setClearDialogOpen(true) },
-    { kind: 'separator' },
     { kind: 'action', label: 'New project', onAction: () => {
       const localId = createNewProject();
       switchProject(localId);
     }},
     { kind: 'action', label: 'My Projects', onAction: () => setMyProjectsOpen(true) },
+    { kind: 'action', label: 'Project settings', onAction: () => setProjectSettingsOpen(true) },
     { kind: 'separator' },
-    ...(cloudEnabled
-      ? auth.user
-        ? [
-            { kind: 'action' as const, label: `Signed in: ${auth.user.email}`, onAction: () => {} },
-            { kind: 'action' as const, label: 'Sign out', onAction: () => authActions.logout() },
-          ]
-        : [
-            { kind: 'action' as const, label: 'Sign in', onAction: () => setLoginDialogOpen(true) },
-          ]
-      : []),
+    { kind: 'action', label: 'Import', onAction: handleImport },
+    { kind: 'action', label: 'Export', onAction: handleExport },
+    { kind: 'action', label: 'Examples', onAction: () => setExamplesOpen(true) },
     { kind: 'separator' },
     {
       kind: 'toggle',
@@ -140,10 +125,27 @@ export function Header() {
       checked: preferences.theme === 'dark',
       onToggle: () => preferencesActions.toggleTheme(),
     },
-    { kind: 'separator' },
     { kind: 'action', label: 'About', onAction: () => setAboutOpen(true) },
     { kind: 'link', label: 'GitHub', href: GITHUB_URL, icon: <GithubIcon size={14} /> },
+    ...(cloudEnabled && !auth.user
+      ? [
+          { kind: 'separator' as const },
+          { kind: 'action' as const, label: 'Sign in', onAction: () => setLoginDialogOpen(true) },
+        ]
+      : []),
   ];
+
+  const menuFooter = cloudEnabled && auth.user ? (
+    <div className="flex items-center justify-between px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
+      <span className="truncate mr-2">{auth.user.email}</span>
+      <button
+        onClick={() => authActions.logout()}
+        className="shrink-0 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+      >
+        Sign out
+      </button>
+    </div>
+  ) : undefined;
 
   return (
     <>
@@ -163,6 +165,7 @@ export function Header() {
             items={menuItems}
             triggerLabel="Application menu"
             triggerContent={<MenuIcon size={16} className="block" />}
+            footer={menuFooter}
           />
           <input
             ref={fileInputRef}
@@ -188,14 +191,6 @@ export function Header() {
           <AboutDialog
             open={aboutOpen}
             onClose={() => setAboutOpen(false)}
-          />
-          <ConfirmClearDialog
-            open={clearDialogOpen}
-            onClose={() => setClearDialogOpen(false)}
-            onConfirm={() => {
-              exitEditMode();
-              dispatch({ type: 'CLEAR_WORKSPACE' });
-            }}
           />
           <MyProjectsDialog
             open={myProjectsOpen}
