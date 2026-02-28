@@ -317,6 +317,8 @@ describe('CloudSyncProvider', () => {
         'cloud-abc',
         { version: 1, registers: [], values: {} },
         'mock-token-hash',
+        undefined,
+        undefined,
       );
       expect(result.current.state.lastCloudSavedAt).toBe('2024-01-02T12:00:00Z');
     });
@@ -489,7 +491,7 @@ describe('CloudSyncProvider', () => {
         await result.current.actions.deleteFromCloud();
       });
 
-      expect(apiDeleteProject).toHaveBeenCalledWith('cloud-abc', 'mock-token-hash');
+      expect(apiDeleteProject).toHaveBeenCalledWith('cloud-abc', 'mock-token-hash', undefined);
       expect(result.current.state.cloudId).toBeNull();
       expect(result.current.state.shareUrl).toBeNull();
       expect(result.current.state.isOwner).toBe(false);
@@ -605,7 +607,7 @@ describe('CloudSyncProvider', () => {
       });
 
       expect(result.current.state.visibility).toBe('unlisted');
-      expect(apiPatchVisibility).toHaveBeenCalledWith('cloud-abc', 'unlisted', 'mock-token-hash');
+      expect(apiPatchVisibility).toHaveBeenCalledWith('cloud-abc', 'unlisted', 'mock-token-hash', undefined);
       expect(apiUpdateProject).not.toHaveBeenCalled();
     });
 
@@ -655,6 +657,7 @@ describe('CloudSyncProvider', () => {
         'cloud-xyz',
         'unlisted',
         'mock-token-hash',
+        undefined,
       );
     });
 
@@ -780,7 +783,7 @@ describe('CloudSyncProvider', () => {
         await result.current.actions.deleteProjectFromCloud('cloud-del');
       });
 
-      expect(apiDeleteProject).toHaveBeenCalledWith('cloud-del', 'mock-token-hash');
+      expect(apiDeleteProject).toHaveBeenCalledWith('cloud-del', 'mock-token-hash', undefined);
     });
 
     it('throws when owner token missing', async () => {

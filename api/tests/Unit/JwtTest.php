@@ -7,7 +7,7 @@ use PHPUnit\Framework\Attributes\Test;
 
 final class JwtTest extends TestCase
 {
-    private const CONFIG = ['jwt_secret' => 'test-secret-key-for-unit-tests'];
+    private const CONFIG = ['jwt_secret' => 'test-secret-key-for-unit-tests!!'];
 
     #[Test]
     public function createsValidThreePartToken(): void

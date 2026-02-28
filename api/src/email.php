@@ -22,7 +22,7 @@ function sendLoginCode(array $config, string $email, string $code): bool
     $body = json_encode([
         'from'    => "Register Viewer <$from>",
         'to'      => [$email],
-        'subject' => "Your login code: $code",
+        'subject' => 'Your Register Viewer login code',
         'text'    => "Your Register Viewer login code is: $code\n\nIt expires in 10 minutes.\n\nIf you didn't request this, you can safely ignore this email.",
     ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 

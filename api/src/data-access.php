@@ -254,6 +254,21 @@ function dbIncrementLoginCodeAttempts(PDO $db, int $id): void
 }
 
 /**
+ * Increment attempts on the most recent active code for an email.
+ * Used to track failed guesses (wrong code) against the global rate limit.
+ */
+function dbIncrementMostRecentLoginCodeAttempts(PDO $db, string $email): void
+{
+    $stmt = $db->prepare(
+        'UPDATE login_codes SET attempts = attempts + 1
+         WHERE email = :email AND used = 0 AND expires_at > NOW()
+         ORDER BY created_at DESC
+         LIMIT 1'
+    );
+    $stmt->execute(['email' => $email]);
+}
+
+/**
  * Mark a login code as used.
  */
 function dbMarkLoginCodeUsed(PDO $db, int $id): void
@@ -270,6 +285,21 @@ function dbCountRecentLoginCodes(PDO $db, string $email): int
     $stmt = $db->prepare(
         'SELECT COUNT(*) FROM login_codes
          WHERE email = :email AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)'
+    );
+    $stmt->execute(['email' => $email]);
+    return (int) $stmt->fetchColumn();
+}
+
+/**
+ * Count total verification attempts for an email in the last 10 minutes.
+ * Sums the attempts column across all recent codes (not just a single code).
+ * Used as a global rate limit on the verify endpoint.
+ */
+function dbCountRecentVerifyAttempts(PDO $db, string $email): int
+{
+    $stmt = $db->prepare(
+        'SELECT COALESCE(SUM(attempts), 0) FROM login_codes
+         WHERE email = :email AND created_at > DATE_SUB(NOW(), INTERVAL 10 MINUTE)'
     );
     $stmt->execute(['email' => $email]);
     return (int) $stmt->fetchColumn();

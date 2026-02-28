@@ -96,7 +96,8 @@ export function useProjectCloudOps<T extends CloudSyncInternalSlice>(deps: Proje
 
   const deleteProjectFromCloud = useCallback(async (cloudId: string) => {
     await withMutationLock(mutationLockRef, async () => {
-      await deleteProjectFromCloudImpl(cloudId);
+      const jwt = getJwt?.() ?? null;
+      await deleteProjectFromCloudImpl(cloudId, jwt);
 
       const entry = projects.find(p => p.cloudId === cloudId);
       if (entry) {
@@ -109,13 +110,14 @@ export function useProjectCloudOps<T extends CloudSyncInternalSlice>(deps: Proje
         setInternal({ ...initialInternalState });
       }
     });
-  }, [updateCloudMetadata, projects, mutationLockRef, internalRef, setInternal, initialInternalState]);
+  }, [updateCloudMetadata, projects, mutationLockRef, internalRef, setInternal, initialInternalState, getJwt]);
 
   const setProjectVisibility = useCallback(async (localId: string, v: Visibility) => {
     const entry = projects.find(p => p.localId === localId);
     if (!entry?.cloudId) return;
 
-    await patchVisibilityImpl(entry.cloudId, v);
+    const jwt = getJwt?.() ?? null;
+    await patchVisibilityImpl(entry.cloudId, v, jwt);
 
     updateCloudMetadata(localId, { visibility: v });
 
@@ -123,7 +125,7 @@ export function useProjectCloudOps<T extends CloudSyncInternalSlice>(deps: Proje
     if (localId === activeLocalIdRef.current) {
       setInternal((prev) => ({ ...prev, visibility: v }));
     }
-  }, [updateCloudMetadata, projects, activeLocalIdRef, setInternal]);
+  }, [updateCloudMetadata, projects, activeLocalIdRef, setInternal, getJwt]);
 
   const unlinkCloudProject = useCallback((localId: string) => {
     const entry = projects.find(p => p.localId === localId);

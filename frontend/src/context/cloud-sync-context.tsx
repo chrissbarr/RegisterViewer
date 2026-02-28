@@ -327,7 +327,8 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     await withMutationLock(mutationLockRef, async () => {
       setInternal((prev) => ({ ...prev, status: 'deleting', error: null }));
       try {
-        await deleteProjectFromCloudImpl(cloudId);
+        const jwt = getJwt();
+        await deleteProjectFromCloudImpl(cloudId, jwt);
 
         const currentLocalId = activeLocalIdRef.current;
         if (currentLocalId) {
@@ -340,7 +341,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
         setInternal((prev) => ({ ...prev, status: 'idle', error: friendlyErrorMessage(err, 'Failed to delete project.') }));
       }
     });
-  }, [updateCloudMetadata, mutationLockRef]);
+  }, [updateCloudMetadata, mutationLockRef, getJwt]);
 
   const setVisibility = useCallback(async (v: Visibility) => {
     const { cloudId, isOwner, visibility: previousVisibility } = internalRef.current;
@@ -348,7 +349,8 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
 
     if (cloudId && isOwner) {
       try {
-        await patchVisibilityImpl(cloudId, v);
+        const jwt = getJwt();
+        await patchVisibilityImpl(cloudId, v, jwt);
 
         const currentLocalId = activeLocalIdRef.current;
         if (currentLocalId) {
@@ -363,7 +365,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
         }));
       }
     }
-  }, [updateCloudMetadata]);
+  }, [updateCloudMetadata, getJwt]);
 
   const initFromProject = useCallback(
     (cloudId: string | null, isOwner: boolean) => {

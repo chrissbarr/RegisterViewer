@@ -92,7 +92,7 @@ final class AuthTest extends TestCase
 
     // ---- extractAuth tests ----
 
-    private const JWT_CONFIG = ['jwt_secret' => 'test-secret-for-auth-tests'];
+    private const JWT_CONFIG = ['jwt_secret' => 'test-secret-for-auth-tests-32char'];
 
     #[Test]
     public function extractAuthReturnsTokenKindForHexHash(): void

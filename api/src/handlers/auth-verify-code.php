@@ -30,9 +30,18 @@ function handleAuthVerifyCode(PDO $db, array $config): never
         }
     }
 
+    // Global rate limit: max 10 total verification attempts per email per 10-minute window
+    $recentAttempts = dbCountRecentVerifyAttempts($db, $email);
+    if ($recentAttempts >= 10) {
+        sendError('Too many verification attempts. Please request a new code.', 429);
+    }
+
     // Look up active code
     $codeRow = dbGetActiveLoginCode($db, $email, $code);
     if ($codeRow === null) {
+        // Increment attempts on the most recent code for this email (if any),
+        // so that failed guesses count against the per-code and global rate limits
+        dbIncrementMostRecentLoginCodeAttempts($db, $email);
         sendError('Invalid or expired code', 401);
     }
 

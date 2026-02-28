@@ -47,12 +47,12 @@ export async function saveProjectToCloudImpl(
 ): Promise<SaveResult> {
   if (existingCloudId) {
     const ownerToken = getOwnerTokenForProject(existingCloudId);
-    if (!ownerToken) {
+    const tokenHash = ownerToken ? await hashOwnerToken(ownerToken) : '';
+    if (!ownerToken && !jwt) {
       throw new Error('Owner token not found for this project.');
     }
-    const tokenHash = await hashOwnerToken(ownerToken);
     try {
-      const result = await apiUpdateProject(existingCloudId, jsonPayload, tokenHash);
+      const result = await apiUpdateProject(existingCloudId, jsonPayload, tokenHash, undefined, jwt ?? undefined);
       return { kind: 'updated', cloudId: existingCloudId, timestamp: result.updatedAt };
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) {
@@ -72,13 +72,13 @@ export async function saveProjectToCloudImpl(
  * Delete a cloud project by its cloudId.
  * @throws If owner token is missing or the API call fails.
  */
-export async function deleteProjectFromCloudImpl(cloudId: string): Promise<void> {
+export async function deleteProjectFromCloudImpl(cloudId: string, jwt?: string | null): Promise<void> {
   const ownerToken = getOwnerTokenForProject(cloudId);
-  if (!ownerToken) {
+  const tokenHash = ownerToken ? await hashOwnerToken(ownerToken) : '';
+  if (!ownerToken && !jwt) {
     throw new Error('Owner token not found.');
   }
-  const tokenHash = await hashOwnerToken(ownerToken);
-  await apiDeleteProject(cloudId, tokenHash);
+  await apiDeleteProject(cloudId, tokenHash, jwt ?? undefined);
 }
 
 /**
@@ -88,11 +88,12 @@ export async function deleteProjectFromCloudImpl(cloudId: string): Promise<void>
 export async function patchVisibilityImpl(
   cloudId: string,
   visibility: Visibility,
+  jwt?: string | null,
 ): Promise<void> {
   const ownerToken = getOwnerTokenForProject(cloudId);
-  if (!ownerToken) {
+  const tokenHash = ownerToken ? await hashOwnerToken(ownerToken) : '';
+  if (!ownerToken && !jwt) {
     throw new Error('Owner token not found.');
   }
-  const tokenHash = await hashOwnerToken(ownerToken);
-  await apiPatchVisibility(cloudId, visibility, tokenHash);
+  await apiPatchVisibility(cloudId, visibility, tokenHash, jwt ?? undefined);
 }

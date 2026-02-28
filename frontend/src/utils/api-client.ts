@@ -123,16 +123,18 @@ export async function updateProject(
   data: unknown,
   tokenHash: string,
   visibility?: Visibility,
+  jwt?: string,
 ): Promise<UpdateProjectResponse> {
   const body: { data: unknown; visibility?: string } = { data };
   if (visibility !== undefined) {
     body.visibility = visibility;
   }
+  const authHeader = jwt ? `Bearer ${jwt}` : `Bearer ${tokenHash}`;
   return apiFetch<UpdateProjectResponse>(
     `/api/projects/${encodeURIComponent(id)}`,
     {
       method: 'PUT',
-      headers: { Authorization: `Bearer ${tokenHash}` },
+      headers: { Authorization: authHeader },
       body: JSON.stringify(body),
     },
   );
@@ -142,12 +144,14 @@ export async function patchProjectVisibility(
   id: string,
   visibility: Visibility,
   tokenHash: string,
+  jwt?: string,
 ): Promise<UpdateProjectResponse> {
+  const authHeader = jwt ? `Bearer ${jwt}` : `Bearer ${tokenHash}`;
   return apiFetch<UpdateProjectResponse>(
     `/api/projects/${encodeURIComponent(id)}`,
     {
       method: 'PATCH',
-      headers: { Authorization: `Bearer ${tokenHash}` },
+      headers: { Authorization: authHeader },
       body: JSON.stringify({ visibility }),
     },
   );
@@ -156,12 +160,14 @@ export async function patchProjectVisibility(
 export async function deleteProject(
   id: string,
   tokenHash: string,
+  jwt?: string,
 ): Promise<void> {
+  const authHeader = jwt ? `Bearer ${jwt}` : `Bearer ${tokenHash}`;
   await apiFetchVoid(
     `/api/projects/${encodeURIComponent(id)}`,
     {
       method: 'DELETE',
-      headers: { Authorization: `Bearer ${tokenHash}` },
+      headers: { Authorization: authHeader },
     },
   );
 }

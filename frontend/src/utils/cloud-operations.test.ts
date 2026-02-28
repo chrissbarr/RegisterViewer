@@ -69,7 +69,7 @@ describe('saveProjectToCloudImpl', () => {
       timestamp: '2024-01-02T00:00:00Z',
     });
     expect(getOwnerTokenForProject).toHaveBeenCalledWith('cloud-abc');
-    expect(updateProject).toHaveBeenCalledWith('cloud-abc', payload, 'mock-token-hash');
+    expect(updateProject).toHaveBeenCalledWith('cloud-abc', payload, 'mock-token-hash', undefined, undefined);
   });
 
   it('returns not-found when update gets 404', async () => {
@@ -110,7 +110,7 @@ describe('deleteProjectFromCloudImpl', () => {
     await deleteProjectFromCloudImpl('cloud-del');
 
     expect(getOwnerTokenForProject).toHaveBeenCalledWith('cloud-del');
-    expect(deleteProject).toHaveBeenCalledWith('cloud-del', 'mock-token-hash');
+    expect(deleteProject).toHaveBeenCalledWith('cloud-del', 'mock-token-hash', undefined);
   });
 
   it('throws when owner token missing', async () => {
@@ -139,7 +139,7 @@ describe('patchVisibilityImpl', () => {
     await patchVisibilityImpl('cloud-vis', 'unlisted');
 
     expect(getOwnerTokenForProject).toHaveBeenCalledWith('cloud-vis');
-    expect(patchProjectVisibility).toHaveBeenCalledWith('cloud-vis', 'unlisted', 'mock-token-hash');
+    expect(patchProjectVisibility).toHaveBeenCalledWith('cloud-vis', 'unlisted', 'mock-token-hash', undefined);
   });
 
   it('throws when owner token missing', async () => {

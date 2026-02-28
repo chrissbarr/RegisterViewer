@@ -26,6 +26,10 @@ function base64UrlDecode(string $data): string
  */
 function createJwt(array $config, int $userId, string $email): string
 {
+    if (!isset($config['jwt_secret']) || strlen($config['jwt_secret']) < 32) {
+        throw new RuntimeException('JWT secret must be at least 32 characters');
+    }
+
     $header = base64UrlEncode(json_encode(['alg' => 'HS256', 'typ' => 'JWT']));
 
     $now = time();
@@ -48,12 +52,26 @@ function createJwt(array $config, int $userId, string $email): string
  */
 function verifyJwt(array $config, string $token): ?array
 {
+    if (!isset($config['jwt_secret']) || strlen($config['jwt_secret']) < 32) {
+        return null;
+    }
+
     $parts = explode('.', $token);
     if (count($parts) !== 3) {
         return null;
     }
 
     [$header64, $payload64, $signature64] = $parts;
+
+    // Verify alg header matches expected algorithm
+    $headerJson = base64UrlDecode($header64);
+    if ($headerJson === '') {
+        return null;
+    }
+    $header = json_decode($headerJson, true);
+    if (!is_array($header) || ($header['alg'] ?? '') !== 'HS256') {
+        return null;
+    }
 
     // Verify signature (constant-time comparison)
     $expectedSig = base64UrlEncode(
