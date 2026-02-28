@@ -28,6 +28,7 @@ require __DIR__ . '/src/handlers/list-projects.php';
 require __DIR__ . '/src/handlers/auth-send-code.php';
 require __DIR__ . '/src/handlers/auth-verify-code.php';
 require __DIR__ . '/src/handlers/auth-me.php';
+require __DIR__ . '/database/migrate.php';
 
 // ---- Constants ----
 
@@ -163,6 +164,43 @@ function extractDataJson(object $parsedObject): string|ApiResponse
 
 if ($config['environment'] === 'production') {
     header('Strict-Transport-Security: max-age=31536000; includeSubDomains');
+}
+
+// ---- Auto-migrate ----
+// Runs pending migrations on first request after deploy. A sentinel file
+// skips the check on subsequent requests until it expires (1 hour).
+
+try {
+    $sentinelFile = __DIR__ . '/database/.migrate.done';
+    $skipMigration = file_exists($sentinelFile) && (time() - filemtime($sentinelFile) < 3600);
+
+    if (!$skipMigration) {
+        $migrationsDir = __DIR__ . '/database/migrations';
+        $lockFile = __DIR__ . '/database/.migrate.lock';
+        $fp = fopen($lockFile, 'c');
+        if ($fp !== false && flock($fp, LOCK_EX | LOCK_NB)) {
+            try {
+                $db = getDatabase($config);
+                $result = runPendingMigrations($db, $migrationsDir);
+                foreach ($result['applied'] as $file) {
+                    error_log("Auto-migration applied: $file");
+                }
+                foreach ($result['errors'] as $error) {
+                    error_log("Auto-migration error: $error");
+                }
+                if ($result['errors'] === []) {
+                    touch($sentinelFile);
+                }
+            } finally {
+                flock($fp, LOCK_UN);
+                fclose($fp);
+            }
+        } elseif ($fp !== false) {
+            fclose($fp);
+        }
+    }
+} catch (\Throwable $e) {
+    error_log('Auto-migration failed: ' . substr($e->getMessage(), 0, 500));
 }
 
 // ---- CORS ----

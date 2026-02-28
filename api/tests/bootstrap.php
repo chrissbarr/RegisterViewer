@@ -35,3 +35,4 @@ require __DIR__ . '/../src/handlers/update-project.php';
 require __DIR__ . '/../src/handlers/patch-project.php';
 require __DIR__ . '/../src/handlers/delete-project.php';
 require __DIR__ . '/../src/handlers/list-projects.php';
+require __DIR__ . '/../database/migrate.php';
