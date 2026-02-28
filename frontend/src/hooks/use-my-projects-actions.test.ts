@@ -18,7 +18,7 @@ const mockStorageActions = {
 
 const mockCloudActions = {
   setProjectVisibility: vi.fn(),
-  syncCloudProjects: vi.fn(() => Promise.resolve({ staleCloudIds: [], updatedCount: 0 })),
+  syncCloudProjects: vi.fn(() => Promise.resolve({ staleCloudIds: [], updatedCount: 0, placeholdersCreated: 0 })),
   deleteProjectFromCloud: vi.fn(),
   unlinkCloudProject: vi.fn(),
   saveProjectToCloud: vi.fn(),
@@ -39,6 +39,10 @@ vi.mock('../context/cloud-sync-context', () => ({
   useCloudSyncActions: vi.fn(() => mockCloudActions),
 }));
 
+vi.mock('../context/auth-context', () => ({
+  useAuthActions: vi.fn(() => ({ getJwt: vi.fn(() => null) })),
+}));
+
 vi.mock('../components/common/announcer', () => ({
   useAnnounce: vi.fn(() => mockAnnounce),
 }));
@@ -52,6 +56,10 @@ vi.mock('../utils/project-storage', () => ({
   saveProject: vi.fn(),
 }));
 
+vi.mock('../utils/cloud-project-loader', () => ({
+  fetchAndParseCloudProject: vi.fn(),
+}));
+
 vi.mock('../utils/storage', () => ({
   sanitizeProjectMetadata: vi.fn((m: unknown) => m),
 }));
@@ -62,7 +70,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   (isCloudEnabled as Mock).mockReturnValue(true);
   mockStorageActions.createNewProject.mockReturnValue('new-id');
-  mockCloudActions.syncCloudProjects.mockResolvedValue({ staleCloudIds: [], updatedCount: 0 });
+  mockCloudActions.syncCloudProjects.mockResolvedValue({ staleCloudIds: [], updatedCount: 0, placeholdersCreated: 0 });
 });
 
 /** Render the hook with open=true and flush the async cloud-sync useEffect. */

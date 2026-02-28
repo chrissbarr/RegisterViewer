@@ -68,6 +68,7 @@ vi.mock('../utils/project-storage', () => ({
 vi.mock('../utils/storage', () => ({
   exportToObject: vi.fn(() => ({ version: 1, registers: [], values: {} })),
   deserializeState: vi.fn((data: unknown) => data),
+  EMPTY_SERIALIZED_STATE: { registers: [], activeRegisterId: null, registerValues: {} },
 }));
 
 vi.mock('./auth-context', () => ({
@@ -964,7 +965,7 @@ describe('CloudSyncProvider', () => {
 
       const { result } = renderCloudSync();
 
-      let syncResult: { updatedCount: number; staleCloudIds: string[] };
+      let syncResult: { updatedCount: number; staleCloudIds: string[]; placeholdersCreated: number };
       await act(async () => {
         syncResult = await result.current.actions.syncCloudProjects();
       });
@@ -991,7 +992,7 @@ describe('CloudSyncProvider', () => {
 
       const { result } = renderCloudSync();
 
-      let syncResult: { updatedCount: number; staleCloudIds: string[] };
+      let syncResult: { updatedCount: number; staleCloudIds: string[]; placeholdersCreated: number };
       await act(async () => {
         syncResult = await result.current.actions.syncCloudProjects();
       });
@@ -1005,7 +1006,7 @@ describe('CloudSyncProvider', () => {
 
       const { result } = renderCloudSync();
 
-      let syncResult: { updatedCount: number; staleCloudIds: string[] };
+      let syncResult: { updatedCount: number; staleCloudIds: string[]; placeholdersCreated: number };
       await act(async () => {
         syncResult = await result.current.actions.syncCloudProjects();
       });

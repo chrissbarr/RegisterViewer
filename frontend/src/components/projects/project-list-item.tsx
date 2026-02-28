@@ -18,10 +18,11 @@ interface ProjectListItemProps {
   onRename: (localId: string, name: string) => void;
   onChangeVisibility?: (localId: string, v: Visibility) => void;
   onUnlinkCloud?: (localId: string) => void;
-  onSettings: (localId: string) => void;
+  onSettings?: (localId: string) => void;
   onSaveToCloud?: (localId: string) => void;
   onRemoveFromCloud?: (localId: string) => void;
   isSavingToCloud?: boolean;
+  isDownloading?: boolean;
 }
 
 export function ProjectListItem({
@@ -38,6 +39,7 @@ export function ProjectListItem({
   onSaveToCloud,
   onRemoveFromCloud,
   isSavingToCloud,
+  isDownloading,
 }: ProjectListItemProps) {
   const displayName = projectDisplayName(project.name);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -155,27 +157,31 @@ export function ProjectListItem({
             {!isActive && (
               <button
                 onClick={() => onOpen(project.localId)}
+                disabled={isDownloading}
                 title={`Open project ${displayName}`}
                 aria-label={`Open project ${displayName}`}
                 className="p-1 rounded text-gray-400 dark:text-gray-500
                   hover:text-blue-600 dark:hover:text-blue-400
                   hover:bg-gray-100 dark:hover:bg-gray-700
+                  disabled:opacity-50 disabled:cursor-not-allowed
                   transition-colors"
               >
-                <FolderOpen size={16} aria-hidden="true" />
+                <FolderOpen size={16} className={isDownloading ? 'animate-pulse' : undefined} aria-hidden="true" />
               </button>
             )}
-            <button
-              onClick={() => onSettings(project.localId)}
-              title={`Project settings for ${displayName}`}
-              aria-label={`Project settings for ${displayName}`}
-              className="p-1 rounded text-gray-400 dark:text-gray-500
-                hover:text-blue-600 dark:hover:text-blue-400
-                hover:bg-gray-100 dark:hover:bg-gray-700
-                transition-colors"
-            >
-              <Settings size={16} aria-hidden="true" />
-            </button>
+            {onSettings && (
+              <button
+                onClick={() => onSettings(project.localId)}
+                title={`Project settings for ${displayName}`}
+                aria-label={`Project settings for ${displayName}`}
+                className="p-1 rounded text-gray-400 dark:text-gray-500
+                  hover:text-blue-600 dark:hover:text-blue-400
+                  hover:bg-gray-100 dark:hover:bg-gray-700
+                  transition-colors"
+              >
+                <Settings size={16} aria-hidden="true" />
+              </button>
+            )}
             <button
               onClick={() => onShare(project.localId)}
               title={`Share project ${displayName}`}

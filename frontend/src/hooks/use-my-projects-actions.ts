@@ -2,10 +2,12 @@ import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useProjectStorage, useProjectStorageActions } from '../context/project-storage-context';
 import { useAppDispatch } from '../context/app-context';
 import { useCloudSyncActions } from '../context/cloud-sync-context';
+import { useAuthActions } from '../context/auth-context';
 import { useAnnounce } from '../components/common/announcer';
 import { isCloudEnabled } from '../utils/api-client';
 import { friendlyErrorMessage } from '../utils/friendly-error';
 import { loadProject, saveProject } from '../utils/project-storage';
+import { fetchAndParseCloudProject } from '../utils/cloud-project-loader';
 import { sanitizeProjectMetadata } from '../utils/storage';
 import type { ProjectSettingsData } from '../components/common/project-settings-dialog';
 import type { Visibility } from '../types/project';
@@ -25,11 +27,13 @@ export function useMyProjectsActions(
   const { activeLocalId, projects } = useProjectStorage();
   const { createNewProject, switchProject, deleteLocalProject, renameProject, refreshProjectList } = useProjectStorageActions();
   const { setProjectVisibility, syncCloudProjects, deleteProjectFromCloud, unlinkCloudProject, saveProjectToCloud } = useCloudSyncActions();
+  const { getJwt } = useAuthActions();
   const announce = useAnnounce();
 
   const dispatch = useAppDispatch();
 
   const [staleCloudIds, setStaleCloudIds] = useState<string[]>([]);
+  const [downloadingLocalId, setDownloadingLocalId] = useState<string | null>(null);
   const [deleteCloudConfirm, setDeleteCloudConfirm] = useState<CloudDeleteConfirm | null>(null);
   const [cloudError, setCloudError] = useState<string | null>(null);
   const [saveToCloudLocalId, setSaveToCloudLocalId] = useState<string | null>(null);
@@ -44,6 +48,7 @@ export function useMyProjectsActions(
     if (isCloudEnabled()) {
       syncCloudProjects().then((result) => {
         setStaleCloudIds(result.staleCloudIds);
+        if (result.placeholdersCreated > 0) refreshProjectList();
       }).catch((err) => {
         setCloudError(friendlyErrorMessage(err, 'Failed to sync cloud projects.'));
       });
@@ -63,11 +68,42 @@ export function useMyProjectsActions(
     onClose();
   }, [createNewProject, switchProject, announce, onBeforeNewProject, onClose]);
 
-  const handleOpen = useCallback((localId: string) => {
+  const handleOpen = useCallback(async (localId: string) => {
+    const project = projects.find(p => p.localId === localId);
+    const stored = loadProject(localId);
+
+    // Cloud-only placeholder: stored state has no registers — fetch full data first
+    if (project?.cloudId && stored && stored.state.registers.length === 0) {
+      setDownloadingLocalId(localId);
+      try {
+        const jwt = getJwt();
+        const result = await fetchAndParseCloudProject(project.cloudId, undefined, jwt ?? undefined);
+        const serializedValues: Record<string, string> = {};
+        for (const [id, value] of Object.entries(result.values)) {
+          serializedValues[id] = '0x' + value.toString(16);
+        }
+        saveProject({
+          ...stored,
+          state: {
+            registers: result.registers,
+            activeRegisterId: result.registers[0]?.id ?? null,
+            registerValues: serializedValues,
+            project: result.project,
+            addressUnitBits: result.addressUnitBits,
+          },
+        });
+      } catch (err) {
+        setDownloadingLocalId(null);
+        setCloudError(friendlyErrorMessage(err, 'Failed to download project from cloud.'));
+        return;
+      }
+      setDownloadingLocalId(null);
+    }
+
     switchProject(localId);
     announce('Project opened');
     onClose();
-  }, [switchProject, announce, onClose]);
+  }, [projects, switchProject, announce, onClose, getJwt, setCloudError]);
 
   const handleDelete = useCallback((localId: string) => {
     const project = projects.find(p => p.localId === localId);
@@ -229,6 +265,7 @@ export function useMyProjectsActions(
     isDeleteCloudConfirmOpen: deleteCloudConfirm !== null,
     cloudError,
     savingCloudLocalId,
+    downloadingLocalId,
     staleCloudIds,
     dismissCloudError,
     dismissSaveToCloud,

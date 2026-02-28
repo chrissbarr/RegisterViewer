@@ -14,6 +14,7 @@ function handleListProjects(PDO $db, array $auth): ApiResponse
 
     $projects = array_map(fn(array $row) => [
         'id'         => $row['public_id'],
+        'title'      => $row['title'],
         'visibility' => $row['visibility'],
         'createdAt'  => $row['created_at_iso'],
         'updatedAt'  => $row['updated_at_iso'],

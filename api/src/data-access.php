@@ -138,7 +138,7 @@ function dbDeleteProject(PDO $db, string $publicId): void
 function dbListProjectsByOwner(PDO $db, string $tokenHash): array
 {
     $stmt = $db->prepare(
-        "SELECT public_id, visibility,
+        "SELECT public_id, visibility, title,
                 DATE_FORMAT(created_at, '%Y-%m-%dT%H:%i:%sZ') AS created_at_iso,
                 DATE_FORMAT(updated_at, '%Y-%m-%dT%H:%i:%sZ') AS updated_at_iso
          FROM projects
@@ -461,7 +461,7 @@ function dbCleanupRevokedTokens(PDO $db): void
 function dbListProjectsByUserId(PDO $db, int $userId): array
 {
     $stmt = $db->prepare(
-        "SELECT public_id, visibility,
+        "SELECT public_id, visibility, title,
                 DATE_FORMAT(created_at, '%Y-%m-%dT%H:%i:%sZ') AS created_at_iso,
                 DATE_FORMAT(updated_at, '%Y-%m-%dT%H:%i:%sZ') AS updated_at_iso
          FROM projects

@@ -39,7 +39,8 @@ import {
 } from '../utils/owner-token';
 import { useAuth, useAuthActions } from './auth-context';
 import { friendlyErrorMessage } from '../utils/friendly-error';
-import { buildProjectUrl } from '../utils/project-storage';
+import { buildProjectUrl, createProject } from '../utils/project-storage';
+import { EMPTY_SERIALIZED_STATE } from '../utils/storage';
 import { setCloudUrl, clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock } from '../utils/cloud-url';
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
 import { useDirtyTracking } from '../hooks/use-dirty-tracking';
@@ -60,6 +61,8 @@ interface CloudSyncState {
 interface SyncResult {
   updatedCount: number;
   staleCloudIds: string[];
+  /** Number of cloud-only projects that were added as local placeholders */
+  placeholdersCreated: number;
 }
 
 interface CloudSyncActions {
@@ -97,13 +100,28 @@ interface SyncPatch {
   visibility?: Visibility;
 }
 
+interface ServerProject {
+  id: string;
+  title: string | null;
+  visibility: Visibility;
+  updatedAt: string;
+}
+
+interface SyncPatchResult {
+  patches: SyncPatch[];
+  staleCloudIds: string[];
+  /** Server projects that have no matching local entry */
+  cloudOnlyProjects: ServerProject[];
+}
+
 function computeSyncPatches(
   projects: ProjectListEntry[],
-  serverProjects: ReadonlyArray<{ id: string; visibility: Visibility; updatedAt: string }>,
-): { patches: SyncPatch[]; staleCloudIds: string[] } {
+  serverProjects: ReadonlyArray<ServerProject>,
+): SyncPatchResult {
   const serverMap = new Map(serverProjects.map(p => [p.id, p]));
   const patches: SyncPatch[] = [];
   const staleCloudIds: string[] = [];
+  const localCloudIds = new Set(projects.filter(p => p.cloudId).map(p => p.cloudId!));
 
   for (const entry of projects) {
     if (!entry.cloudId) continue;
@@ -129,7 +147,10 @@ function computeSyncPatches(
     }
   }
 
-  return { patches, staleCloudIds };
+  // Find server projects with no local counterpart
+  const cloudOnlyProjects = serverProjects.filter(sp => !localCloudIds.has(sp.id));
+
+  return { patches, staleCloudIds, cloudOnlyProjects };
 }
 
 const initialInternalState: InternalCloudSyncState = {
@@ -468,7 +489,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   );
 
   const syncCloudProjects = useCallback(async (): Promise<SyncResult> => {
-    if (!isCloudEnabled()) return { updatedCount: 0, staleCloudIds: [] };
+    if (!isCloudEnabled()) return { updatedCount: 0, staleCloudIds: [], placeholdersCreated: 0 };
 
     // Prefer JWT for listing (shows all user-linked projects cross-device),
     // fall back to token hash for anonymous users.
@@ -476,13 +497,24 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     const authToken = jwt ?? await hashOwnerToken(getOrCreateOwnerToken());
     const response = await listProjects(authToken);
 
-    const { patches, staleCloudIds } = computeSyncPatches(projectsRef.current, response.projects);
+    const { patches, staleCloudIds, cloudOnlyProjects } = computeSyncPatches(projectsRef.current, response.projects);
 
     for (const { localId, ...updates } of patches) {
       updateCloudMetadata(localId, updates);
     }
 
-    return { updatedCount: patches.length, staleCloudIds };
+    // Create lightweight local placeholders for cloud-only projects so they
+    // appear in the project list with full cloud actions (share, visibility, delete).
+    // The actual project data is fetched lazily when the user opens the project.
+    for (const sp of cloudOnlyProjects) {
+      createProject(EMPTY_SERIALIZED_STATE, sp.title ?? DEFAULT_PROJECT_NAME, {
+        cloudId: sp.id,
+        visibility: sp.visibility,
+        cloudSavedAt: sp.updatedAt,
+      });
+    }
+
+    return { updatedCount: patches.length, staleCloudIds, placeholdersCreated: cloudOnlyProjects.length };
   }, [updateCloudMetadata, getJwt]);
 
   // By-localId cloud operations (used by My Projects dialog)

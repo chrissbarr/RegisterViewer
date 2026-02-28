@@ -177,6 +177,7 @@ export async function deleteProject(
 
 interface ProjectListItem {
   id: string;
+  title: string | null;
   visibility: Visibility;
   createdAt: string;
   updatedAt: string;

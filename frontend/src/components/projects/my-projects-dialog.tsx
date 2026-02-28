@@ -9,7 +9,7 @@ import { useProjectStorage } from '../../context/project-storage-context';
 import { useAuth } from '../../context/auth-context';
 import { useMyProjectsActions } from '../../hooks/use-my-projects-actions';
 import { isCloudEnabled } from '../../utils/api-client';
-import { getStorageUsage } from '../../utils/project-storage';
+import { getStorageUsage, isPlaceholderProject } from '../../utils/project-storage';
 import { projectDisplayName } from '../../utils/project-helpers';
 
 const FILTER_THRESHOLD = 8;
@@ -53,6 +53,17 @@ export function MyProjectsDialog({ open, onClose }: MyProjectsDialogProps) {
       projectDisplayName(p.name).toLowerCase().includes(query),
     );
   }, [sortedProjects, effectiveFilter]);
+
+  // Detect cloud-only placeholder projects (no local data yet)
+  const placeholderIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const p of projects) {
+      if (p.isCloudSaved && isPlaceholderProject(p.localId)) {
+        ids.add(p.localId);
+      }
+    }
+    return ids;
+  }, [projects]);
 
   const showFilter = projects.length > FILTER_THRESHOLD;
 
@@ -131,24 +142,28 @@ export function MyProjectsDialog({ open, onClose }: MyProjectsDialogProps) {
           </div>
         ) : (
           <ul className="space-y-2" role="list">
-            {filteredProjects.map((project) => (
-              <ProjectListItem
-                key={project.localId}
-                project={project}
-                isActive={project.localId === activeLocalId}
-                isStaleCloud={project.cloudId !== null && actions.staleCloudIds.includes(project.cloudId)}
-                onOpen={actions.handleOpen}
-                onSettings={actions.handleSettings}
-                onShare={actions.handleShare}
-                onDelete={actions.handleDelete}
-                onRename={actions.handleRename}
-                onChangeVisibility={actions.handleChangeVisibility}
-                onUnlinkCloud={actions.handleUnlinkCloud}
-                onSaveToCloud={isCloudEnabled() ? actions.handleSaveToCloud : undefined}
-                onRemoveFromCloud={isCloudEnabled() ? actions.handleRemoveFromCloud : undefined}
-                isSavingToCloud={project.localId === actions.savingCloudLocalId}
-              />
-            ))}
+            {filteredProjects.map((project) => {
+              const isPlaceholder = placeholderIds.has(project.localId);
+              return (
+                <ProjectListItem
+                  key={project.localId}
+                  project={project}
+                  isActive={project.localId === activeLocalId}
+                  isStaleCloud={project.cloudId !== null && actions.staleCloudIds.includes(project.cloudId)}
+                  onOpen={actions.handleOpen}
+                  onSettings={isPlaceholder ? undefined : actions.handleSettings}
+                  onShare={actions.handleShare}
+                  onDelete={actions.handleDelete}
+                  onRename={actions.handleRename}
+                  onChangeVisibility={actions.handleChangeVisibility}
+                  onUnlinkCloud={actions.handleUnlinkCloud}
+                  onSaveToCloud={isCloudEnabled() && !isPlaceholder ? actions.handleSaveToCloud : undefined}
+                  onRemoveFromCloud={isCloudEnabled() ? actions.handleRemoveFromCloud : undefined}
+                  isSavingToCloud={project.localId === actions.savingCloudLocalId}
+                  isDownloading={project.localId === actions.downloadingLocalId}
+                />
+              );
+            })}
           </ul>
         )}
 

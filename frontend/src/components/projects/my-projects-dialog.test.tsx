@@ -38,7 +38,7 @@ const mockAnnounce = vi.fn();
 const mockSaveProjectToCloud = vi.fn().mockResolvedValue(undefined);
 const mockDeleteProjectFromCloud = vi.fn().mockResolvedValue(undefined);
 const mockUnlinkCloudProject = vi.fn();
-const mockSyncCloudProjects = vi.fn().mockResolvedValue({ updatedCount: 0, staleCloudIds: [] });
+const mockSyncCloudProjects = vi.fn().mockResolvedValue({ updatedCount: 0, staleCloudIds: [], placeholdersCreated: 0 });
 
 let mockProjects: ProjectListEntry[] = [];
 let mockActiveLocalId: string | null = null;
@@ -100,6 +100,7 @@ vi.mock('../../utils/project-storage', () => ({
   loadProject: vi.fn(() => null),
   saveProject: vi.fn(),
   buildProjectUrl: vi.fn(() => ''),
+  isPlaceholderProject: vi.fn(() => false),
 }));
 
 vi.mock('../../utils/storage', () => ({
@@ -132,7 +133,7 @@ describe('MyProjectsDialog', () => {
     mockCloudEnabled = false;
     mockSaveProjectToCloud.mockResolvedValue(undefined);
     mockDeleteProjectFromCloud.mockResolvedValue(undefined);
-    mockSyncCloudProjects.mockResolvedValue({ updatedCount: 0, staleCloudIds: [] });
+    mockSyncCloudProjects.mockResolvedValue({ updatedCount: 0, staleCloudIds: [], placeholdersCreated: 0 });
   });
 
   it('renders project list', () => {
@@ -207,7 +208,7 @@ describe('MyProjectsDialog interactions', () => {
     mockCloudEnabled = false;
     mockSaveProjectToCloud.mockResolvedValue(undefined);
     mockDeleteProjectFromCloud.mockResolvedValue(undefined);
-    mockSyncCloudProjects.mockResolvedValue({ updatedCount: 0, staleCloudIds: [] });
+    mockSyncCloudProjects.mockResolvedValue({ updatedCount: 0, staleCloudIds: [], placeholdersCreated: 0 });
   });
 
   describe('creating a new project', () => {
@@ -391,7 +392,7 @@ describe('MyProjectsDialog interactions', () => {
     it('clicking "Remove link" for a stale cloud project calls unlinkCloudProject immediately', async () => {
       mockCloudEnabled = true;
       // Make syncCloudProjects return a stale cloud ID so the project is marked stale
-      mockSyncCloudProjects.mockResolvedValue({ updatedCount: 0, staleCloudIds: ['cloud-123'] });
+      mockSyncCloudProjects.mockResolvedValue({ updatedCount: 0, staleCloudIds: ['cloud-123'], placeholdersCreated: 0 });
       mockProjects = [
         makeProject({
           localId: 'p1',
