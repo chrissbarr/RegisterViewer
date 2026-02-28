@@ -324,6 +324,26 @@ function dbCountRecentVerifyAttempts(PDO $db, string $email): int
 }
 
 /**
+ * Purge expired and used login codes older than 24 hours.
+ * Keeps the login_codes table bounded by removing rows that are no longer
+ * useful for verification or rate-limit accounting. Uses LIMIT to avoid
+ * holding a table lock for too long on large backlogs.
+ *
+ * @return int Number of rows deleted
+ */
+function dbPurgeExpiredLoginCodes(PDO $db): int
+{
+    $stmt = $db->prepare(
+        'DELETE FROM login_codes
+         WHERE (used = 1 OR expires_at < NOW())
+           AND created_at < DATE_SUB(NOW(), INTERVAL 24 HOUR)
+         LIMIT 10000'
+    );
+    $stmt->execute();
+    return $stmt->rowCount();
+}
+
+/**
  * Link all anonymous projects owned by a token hash to a user account.
  * Only links projects that don't already have a user_id.
  * Returns the number of projects linked.

@@ -508,4 +508,65 @@ final class AuthHandlerTest extends TestCase
 
         unset($_SERVER['HTTP_AUTHORIZATION']);
     }
+
+    // ---- dbPurgeExpiredLoginCodes ----
+
+    #[Test]
+    public function purgeDeletesExpiredAndUsedCodesOlderThan24Hours(): void
+    {
+        // Insert an old, used code (created 48 hours ago)
+        $stmt = self::$db->prepare(
+            "INSERT INTO login_codes (email, code, expires_at, used, created_at)
+             VALUES (:email, :code, :expires, 1, DATE_SUB(NOW(), INTERVAL 48 HOUR))"
+        );
+        $stmt->execute([
+            'email'   => 'old-used@example.com',
+            'code'    => hash('sha256', '111111'),
+            'expires' => gmdate('Y-m-d H:i:s', time() - 172800),
+        ]);
+
+        // Insert an old, expired (but not used) code (created 48 hours ago)
+        $stmt = self::$db->prepare(
+            "INSERT INTO login_codes (email, code, expires_at, used, created_at)
+             VALUES (:email, :code, :expires, 0, DATE_SUB(NOW(), INTERVAL 48 HOUR))"
+        );
+        $stmt->execute([
+            'email'   => 'old-expired@example.com',
+            'code'    => hash('sha256', '222222'),
+            'expires' => gmdate('Y-m-d H:i:s', time() - 172800),
+        ]);
+
+        // Insert a fresh, active code (should NOT be purged)
+        $this->createLoginCode('fresh@example.com', '333333');
+
+        // Insert a recently used code (created now, used = 1 — should NOT be purged because <24h old)
+        $stmt = self::$db->prepare(
+            "INSERT INTO login_codes (email, code, expires_at, used)
+             VALUES (:email, :code, :expires, 1)"
+        );
+        $stmt->execute([
+            'email'   => 'recent-used@example.com',
+            'code'    => hash('sha256', '444444'),
+            'expires' => gmdate('Y-m-d H:i:s', time() + 600),
+        ]);
+
+        $deleted = dbPurgeExpiredLoginCodes(self::$db);
+
+        $this->assertSame(2, $deleted, 'Should delete exactly the 2 old codes');
+
+        // Verify remaining rows
+        $remaining = (int) self::$db->query('SELECT COUNT(*) FROM login_codes')->fetchColumn();
+        $this->assertSame(2, $remaining, 'Fresh active code and recently used code should survive');
+    }
+
+    #[Test]
+    public function purgeReturnsZeroWhenNothingToDelete(): void
+    {
+        // Insert only a fresh active code
+        $this->createLoginCode('active@example.com', '123456');
+
+        $deleted = dbPurgeExpiredLoginCodes(self::$db);
+
+        $this->assertSame(0, $deleted);
+    }
 }

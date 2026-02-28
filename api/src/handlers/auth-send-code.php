@@ -31,6 +31,15 @@ function handleAuthSendCode(PDO $db, array $config, array $body): ApiResponse
     // Send email (best-effort; don't reveal delivery failures to client)
     sendLoginCode($config, $email, $code);
 
+    // Probabilistic cleanup: purge expired/used codes ~2% of the time (PERF-01)
+    if (random_int(1, 50) === 1) {
+        try {
+            dbPurgeExpiredLoginCodes($db);
+        } catch (\Throwable $e) {
+            error_log('login_codes purge failed: ' . $e->getMessage());
+        }
+    }
+
     // Always return success to avoid email enumeration
     return new ApiResponse(['ok' => true]);
 }
