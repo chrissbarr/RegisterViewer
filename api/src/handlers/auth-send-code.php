@@ -40,6 +40,12 @@ function handleAuthSendCode(PDO $db, array $config, array $body): ApiResponse
     $expiresAt = gmdate('Y-m-d H:i:s', time() + 600);
     dbCreateLoginCode($db, $email, $codeHash, $expiresAt, $clientIp);
 
+    // In development, log the OTP code so developers can complete the login
+    // flow without a real Resend API key.
+    if (($config['environment'] ?? 'production') === 'development') {
+        error_log("DEV OTP for $email: $code");
+    }
+
     // Send email after response is flushed (PERF-05: avoid blocking the PHP
     // worker for up to 10s while the Resend API completes).  The shutdown
     // function runs after exit(), so the client gets the response immediately.
