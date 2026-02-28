@@ -23,3 +23,4 @@ require __DIR__ . '/../src/email.php';
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/database.php';
 require __DIR__ . '/../src/data-access.php';
+require __DIR__ . '/../src/api-response.php';

@@ -10,6 +10,7 @@ if (file_exists($prodConfigPath)) {
     $config = array_replace_recursive($config, require $prodConfigPath);
 }
 
+require __DIR__ . '/src/api-response.php';
 require __DIR__ . '/src/database.php';
 require __DIR__ . '/src/cors.php';
 require __DIR__ . '/src/auth.php';
