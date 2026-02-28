@@ -12,15 +12,7 @@ function handleGetProject(PDO $db, string $id, array $config): never
     // Private projects require ownership (token hash or JWT user_id)
     if ($project['visibility'] === 'private') {
         $auth = extractAuth($config);
-        $isOwned = false;
-
-        if ($auth['kind'] === 'token') {
-            $isOwned = isOwner($auth['tokenHash'], $project);
-        } elseif ($auth['kind'] === 'jwt') {
-            $isOwned = $project['user_id'] !== null && (int) $project['user_id'] === $auth['userId'];
-        }
-
-        if (!$isOwned) {
+        if (!isOwnerOrUser($auth, $project)) {
             sendError('Project not found', 404);
         }
     }
