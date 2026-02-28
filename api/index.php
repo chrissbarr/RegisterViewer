@@ -91,6 +91,39 @@ function sendNoContent(array $extraHeaders = []): never
     exit;
 }
 
+/**
+ * Emit an ApiResponse as HTTP output. This is the single I/O exit point.
+ */
+function emitResponse(ApiResponse $response): never
+{
+    if ($response->body === null && $response->rawJson === null) {
+        // 204 No Content
+        http_response_code($response->status);
+        foreach (SECURITY_HEADERS as $k => $v) {
+            header("$k: $v");
+        }
+        foreach ($response->headers as $k => $v) {
+            header("$k: $v");
+        }
+        exit;
+    }
+
+    http_response_code($response->status);
+    header('Content-Type: application/json');
+    foreach (SECURITY_HEADERS as $k => $v) {
+        header("$k: $v");
+    }
+    foreach ($response->headers as $k => $v) {
+        header("$k: $v");
+    }
+
+    $output = $response->rawJson
+        ?? json_encode($response->body, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    header('Content-Length: ' . strlen($output));
+    echo $output;
+    exit;
+}
+
 // ---- Body reading ----
 
 function readBody(): string
@@ -154,6 +187,26 @@ function readParsedBody(): array
 }
 
 /**
+ * Parse a raw JSON string into both associative-array and stdClass views.
+ * Returns ApiResponse on error, or the parsed array on success.
+ *
+ * @return array{assoc: array, object: object}|ApiResponse
+ */
+function parseBody(string $text): array|ApiResponse
+{
+    if ($text === '') {
+        return new ApiResponse(['error' => 'Invalid JSON body'], 400);
+    }
+
+    $object = json_decode($text);
+    if (json_last_error() !== JSON_ERROR_NONE || !is_object($object)) {
+        return new ApiResponse(['error' => 'Invalid JSON body'], 400);
+    }
+
+    return ['assoc' => objectToAssoc($object), 'object' => $object];
+}
+
+/**
  * Recursively convert a stdClass tree to associative arrays.
  * Arrays are preserved as arrays; stdClass objects become associative arrays.
  */
@@ -175,11 +228,13 @@ function objectToAssoc(mixed $value): mixed
 /**
  * Extract the "data" field from the parsed request body as a JSON string,
  * using the stdClass view to preserve {} vs [] distinction.
+ *
+ * @return string|ApiResponse
  */
-function extractDataJson(object $parsedObject): string
+function extractDataJson(object $parsedObject): string|ApiResponse
 {
     if (!property_exists($parsedObject, 'data')) {
-        sendError('Invalid JSON body', 400);
+        return new ApiResponse(['error' => 'Invalid JSON body'], 400);
     }
     return json_encode($parsedObject->data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 }
