@@ -2,23 +2,25 @@
 
 declare(strict_types=1);
 
-function handleUpdateProject(PDO $db, string $id, array $config): never
+function handleUpdateProject(PDO $db, string $id, array $auth, array $parsed): ApiResponse
 {
-    $existing = requireOwnership($db, $id, $config);
+    $existing = requireOwnership($db, $id, $auth);
+    if ($existing instanceof ApiResponse) {
+        return $existing;
+    }
 
-    $parsed = readParsedBody();
     $body = $parsed['assoc'];
 
     $validation = validateProjectData($body['data'] ?? null);
     if (!$validation['valid']) {
-        sendError($validation['error'], 400);
+        return new ApiResponse(['error' => $validation['error']], 400);
     }
 
     // Visibility (optional, keeps existing if not provided)
     $visibility = $existing['visibility'];
     if (isset($body['visibility'])) {
         if (!isValidVisibility($body['visibility'])) {
-            sendError('visibility must be "private" or "unlisted"', 400);
+            return new ApiResponse(['error' => 'visibility must be "private" or "unlisted"'], 400);
         }
         $visibility = $body['visibility'];
     }
@@ -28,10 +30,15 @@ function handleUpdateProject(PDO $db, string $id, array $config): never
         $title = mb_substr($title, 0, 500);
     }
 
+    $dataJson = extractDataJson($parsed['object']);
+    if ($dataJson instanceof ApiResponse) {
+        return $dataJson;
+    }
+
     dbUpdateProject(
         $db,
         $id,
-        extractDataJson($parsed['object']),
+        $dataJson,
         $visibility,
         $title,
     );
@@ -39,7 +46,7 @@ function handleUpdateProject(PDO $db, string $id, array $config): never
     // Fetch timestamps only (lightweight query)
     $timestamps = dbGetProjectTimestamps($db, $id);
 
-    sendJson([
+    return new ApiResponse([
         'id'        => $id,
         'updatedAt' => $timestamps['updated_at_iso'],
     ]);

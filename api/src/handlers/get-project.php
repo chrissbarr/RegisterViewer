@@ -2,18 +2,17 @@
 
 declare(strict_types=1);
 
-function handleGetProject(PDO $db, string $id, array $config): never
+function handleGetProject(PDO $db, string $id, array $auth): ApiResponse
 {
     $project = dbGetProject($db, $id);
     if ($project === null) {
-        sendError('Project not found', 404);
+        return new ApiResponse(['error' => 'Project not found'], 404);
     }
 
     // Private projects require ownership (token hash or JWT user_id)
     if ($project['visibility'] === 'private') {
-        $auth = extractAuth($config);
         if (!isOwnerOrUser($auth, $project)) {
-            sendError('Project not found', 404);
+            return new ApiResponse(['error' => 'Project not found'], 404);
         }
     }
 
@@ -30,7 +29,7 @@ function handleGetProject(PDO $db, string $id, array $config): never
     $decoded = json_decode($dataJson);
     if (!is_object($decoded) && !is_array($decoded)) {
         error_log("Corrupt data column for project {$project['public_id']}");
-        sendError('Internal server error', 500);
+        return new ApiResponse(['error' => 'Internal server error'], 500);
     }
 
     // Build response manually to avoid decode/re-encode of the data JSON blob.
@@ -41,7 +40,7 @@ function handleGetProject(PDO $db, string $id, array $config): never
         . ',"updatedAt":' . json_encode($project['updated_at_iso'])
         . '}';
 
-    sendRawJson($json, 200, [
+    return new ApiResponse(null, 200, [
         'Cache-Control' => $cacheControl,
-    ]);
+    ], $json);
 }

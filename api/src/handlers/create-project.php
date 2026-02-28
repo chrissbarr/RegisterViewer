@@ -2,10 +2,8 @@
 
 declare(strict_types=1);
 
-function handleCreateProject(PDO $db, array $config): never
+function handleCreateProject(PDO $db, array $config, array $auth, array $parsed): ApiResponse
 {
-    $auth = extractAuth($config);
-    $parsed = readParsedBody();
     $body = $parsed['assoc'];
 
     // Determine token hash and user ID based on auth method.
@@ -25,25 +23,25 @@ function handleCreateProject(PDO $db, array $config): never
     }
 
     if ($tokenHash === null) {
-        sendError('Missing or invalid owner token', 401);
+        return new ApiResponse(['error' => 'Missing or invalid owner token'], 401);
     }
 
     // Per-owner project limit to prevent storage abuse
     $ownerProjectCount = dbCountProjectsByOwner($db, $tokenHash);
     if ($ownerProjectCount >= LIMITS['MAX_PROJECTS_PER_OWNER']) {
-        sendError('Project limit reached. Delete existing projects before creating new ones.', 429);
+        return new ApiResponse(['error' => 'Project limit reached. Delete existing projects before creating new ones.'], 429);
     }
 
     $validation = validateProjectData($body['data'] ?? null);
     if (!$validation['valid']) {
-        sendError($validation['error'], 400);
+        return new ApiResponse(['error' => $validation['error']], 400);
     }
 
     // Visibility (optional, defaults to 'private')
     $visibility = 'private';
     if (isset($body['visibility'])) {
         if (!isValidVisibility($body['visibility'])) {
-            sendError('visibility must be "private" or "unlisted"', 400);
+            return new ApiResponse(['error' => 'visibility must be "private" or "unlisted"'], 400);
         }
         $visibility = $body['visibility'];
     }
@@ -55,6 +53,9 @@ function handleCreateProject(PDO $db, array $config): never
     }
 
     $dataJson = extractDataJson($parsed['object']);
+    if ($dataJson instanceof ApiResponse) {
+        return $dataJson;
+    }
 
     // Optimistic insert with retry on duplicate key (eliminates TOCTOU race)
     $id = null;
@@ -74,7 +75,7 @@ function handleCreateProject(PDO $db, array $config): never
     }
 
     if ($id === null) {
-        sendError('Unable to generate a unique project ID. Please try again.', 503);
+        return new ApiResponse(['error' => 'Unable to generate a unique project ID. Please try again.'], 503);
     }
 
     // Fetch timestamps only (lightweight query)
@@ -82,7 +83,7 @@ function handleCreateProject(PDO $db, array $config): never
 
     $shareUrl = rtrim($config['app_url'], '/') . '/#/p/' . $id;
 
-    sendJson([
+    return new ApiResponse([
         'id'        => $id,
         'shareUrl'  => $shareUrl,
         'createdAt' => $timestamps['created_at_iso'],
