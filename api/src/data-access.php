@@ -163,6 +163,20 @@ function dbCountProjectsByOwner(PDO $db, string $tokenHash): int
 }
 
 /**
+ * Count projects belonging to a user (by user_id).
+ * Used alongside dbCountProjectsByOwner to enforce per-user project limits
+ * for JWT-authenticated users who may have multiple owner token hashes.
+ */
+function dbCountProjectsByUserId(PDO $db, int $userId): int
+{
+    $stmt = $db->prepare(
+        'SELECT COUNT(*) FROM projects WHERE user_id = :user_id'
+    );
+    $stmt->execute(['user_id' => $userId]);
+    return (int) $stmt->fetchColumn();
+}
+
+/**
  * Touch last_accessed_at if it is more than 24 hours stale.
  * The WHERE clause makes this a no-op if recently accessed.
  */

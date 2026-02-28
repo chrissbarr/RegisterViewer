@@ -32,6 +32,15 @@ function handleCreateProject(PDO $db, array $config, array $auth, array $parsed)
         return new ApiResponse(['error' => 'Project limit reached. Delete existing projects before creating new ones.'], 429);
     }
 
+    // Per-user limit for JWT users: prevents bypass via multiple devices/browsers
+    // (each device generates a different ownerTokenHash but shares the same userId)
+    if ($userId !== null) {
+        $userProjectCount = dbCountProjectsByUserId($db, $userId);
+        if ($userProjectCount >= LIMITS['MAX_PROJECTS_PER_OWNER']) {
+            return new ApiResponse(['error' => 'Project limit reached. Delete existing projects before creating new ones.'], 429);
+        }
+    }
+
     $validation = validateProjectData($body['data'] ?? null);
     if (!$validation['valid']) {
         return new ApiResponse(['error' => $validation['error']], 400);

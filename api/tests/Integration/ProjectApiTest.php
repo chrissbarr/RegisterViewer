@@ -208,4 +208,69 @@ final class ProjectApiTest extends TestCase
         $project = dbGetProject(self::$db, $id);
         $this->assertStringContainsString('"registerValues":{}', $project['data']);
     }
+
+    #[Test]
+    public function countProjectsByUserIdReturnsCorrectCount(): void
+    {
+        // Create a user
+        self::$db->exec('DELETE FROM users');
+        $userId = dbCreateUser(self::$db, 'counter@example.com');
+
+        // Create 3 projects under this user with different token hashes
+        for ($i = 0; $i < 3; $i++) {
+            $hash = str_repeat(dechex($i), 64);
+            $hash = substr($hash, 0, 64);
+            dbCreateProject(self::$db, generatePublicId(), $hash, 'private', self::validDataJson(), null, $userId);
+        }
+
+        // Create 1 project under a different user
+        $otherUserId = dbCreateUser(self::$db, 'other@example.com');
+        dbCreateProject(self::$db, generatePublicId(), self::OTHER_HASH, 'private', self::validDataJson(), null, $otherUserId);
+
+        $this->assertSame(3, dbCountProjectsByUserId(self::$db, $userId));
+        $this->assertSame(1, dbCountProjectsByUserId(self::$db, $otherUserId));
+    }
+
+    #[Test]
+    public function countProjectsByUserIdReturnsZeroForUnknownUser(): void
+    {
+        $this->assertSame(0, dbCountProjectsByUserId(self::$db, 999999));
+    }
+
+    #[Test]
+    public function createProjectEnforcesPerUserLimit(): void
+    {
+        self::$db->exec('DELETE FROM users');
+        $userId = dbCreateUser(self::$db, 'limittest@example.com');
+
+        // Seed projects under this user across two different token hashes
+        // to simulate multi-device usage. Use the actual LIMITS constant.
+        $hash1 = str_repeat('a', 64);
+        $hash2 = str_repeat('b', 64);
+
+        for ($i = 0; $i < LIMITS['MAX_PROJECTS_PER_OWNER']; $i++) {
+            $hash = $i % 2 === 0 ? $hash1 : $hash2;
+            dbCreateProject(self::$db, generatePublicId(), $hash, 'private', self::validDataJson(), null, $userId);
+        }
+
+        // Neither token hash alone has hit the limit (each has 50),
+        // but the user has 100 total. A new create with a fresh token hash
+        // should be rejected by the per-user check.
+        $freshHash = str_repeat('c', 64);
+        $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => 'limittest@example.com'];
+        $body = [
+            'ownerTokenHash' => $freshHash,
+            'data' => json_decode(self::validDataJson(), true),
+        ];
+        $parsed = [
+            'assoc'  => $body,
+            'object' => json_decode(json_encode($body)),
+        ];
+        $config = ['app_url' => 'http://localhost'];
+
+        $response = handleCreateProject(self::$db, $config, $auth, $parsed);
+
+        $this->assertSame(429, $response->status);
+        $this->assertStringContainsString('Project limit reached', $response->body['error']);
+    }
 }
