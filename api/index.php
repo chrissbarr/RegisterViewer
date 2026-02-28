@@ -40,57 +40,6 @@ const SECURITY_HEADERS = [
 
 // ---- Response helpers ----
 
-function sendJson(array|object $body, int $status = 200, array $extraHeaders = []): never
-{
-    http_response_code($status);
-    header('Content-Type: application/json');
-    foreach (SECURITY_HEADERS as $k => $v) {
-        header("$k: $v");
-    }
-    foreach ($extraHeaders as $k => $v) {
-        header("$k: $v");
-    }
-    $output = json_encode($body, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-    header('Content-Length: ' . strlen($output));
-    echo $output;
-    exit;
-}
-
-/**
- * Send a raw JSON string as the response body (avoids decode/re-encode round-trip).
- */
-function sendRawJson(string $json, int $status = 200, array $extraHeaders = []): never
-{
-    http_response_code($status);
-    header('Content-Type: application/json');
-    foreach (SECURITY_HEADERS as $k => $v) {
-        header("$k: $v");
-    }
-    foreach ($extraHeaders as $k => $v) {
-        header("$k: $v");
-    }
-    header('Content-Length: ' . strlen($json));
-    echo $json;
-    exit;
-}
-
-function sendError(string $message, int $status, array $extraHeaders = []): never
-{
-    sendJson(['error' => $message], $status, $extraHeaders);
-}
-
-function sendNoContent(array $extraHeaders = []): never
-{
-    http_response_code(204);
-    foreach (SECURITY_HEADERS as $k => $v) {
-        header("$k: $v");
-    }
-    foreach ($extraHeaders as $k => $v) {
-        header("$k: $v");
-    }
-    exit;
-}
-
 /**
  * Emit an ApiResponse as HTTP output. This is the single I/O exit point.
  */
