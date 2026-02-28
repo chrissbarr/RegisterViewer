@@ -170,6 +170,25 @@ function extractDataJson(object $parsedObject): string|ApiResponse
     return json_encode($parsedObject->data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 }
 
+// ---- Auth config validation (production only) ----
+// Log prominent warnings if auth-related config is missing so operators
+// notice immediately in error logs rather than after user-reported failures.
+// Intentionally logs on every request (no sentinel) — a misconfigured
+// production environment should be noisy until fixed.
+
+if ($config['environment'] === 'production') {
+    if (empty($config['jwt_secret']) || strlen($config['jwt_secret']) < 32) {
+        error_log('CONFIG WARNING: jwt_secret is missing or too short (must be >= 32 chars). '
+            . 'Auth endpoints will reject all requests. '
+            . 'Set jwt_secret in config.production.php — see docs/DEPLOYMENT.md Step 2.');
+    }
+    if (empty($config['resend_api_key'])) {
+        error_log('CONFIG WARNING: resend_api_key is not set. '
+            . 'OTP email delivery will fail silently. '
+            . 'Set resend_api_key in config.production.php — see docs/DEPLOYMENT.md Step 2.');
+    }
+}
+
 // ---- HSTS (production only) ----
 
 if ($config['environment'] === 'production') {

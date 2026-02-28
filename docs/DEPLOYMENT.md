@@ -407,6 +407,33 @@ A: Update the `FTP_HOST`, `FTP_USERNAME`, or `FTP_PASSWORD` secrets in GitHub �
 
 ---
 
+## Secret Rotation
+
+### Rotating JWT Secret (`jwt_secret`)
+
+1. Generate a new secret: `openssl rand -hex 32`
+2. Update `jwt_secret` in `config.production.php` on the server
+3. All existing user sessions become invalid immediately — users must log in again
+4. Verify auth flow works: request an OTP, verify it, confirm JWT is returned
+
+**When to rotate:** Immediately if the secret is suspected to be compromised. No scheduled rotation needed otherwise (24-hour token lifetime limits exposure).
+
+### Rotating Resend API Key (`resend_api_key`)
+
+1. Log in to [Resend dashboard](https://resend.com/) → API Keys
+2. Create a new API key
+3. Update `resend_api_key` in `config.production.php` on the server
+4. Verify email delivery: request an OTP and confirm the email arrives
+5. Delete the old key in the Resend dashboard
+
+**When to rotate:** Immediately if the key is exposed. Quarterly rotation recommended as a precaution.
+
+### Verifying Config After Changes
+
+After updating any auth config value, check the PHP error log for config warnings. The API logs a prominent `CONFIG WARNING` at startup if `jwt_secret` is missing/too short or `resend_api_key` is empty.
+
+---
+
 ## Support & Debugging
 
 ### Common Issues Checklist
