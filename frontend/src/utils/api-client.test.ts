@@ -5,8 +5,13 @@ import {
   createProject,
   getProject,
   updateProject,
+  patchProjectVisibility,
   deleteProject,
   listProjects,
+  sendLoginCode,
+  verifyLoginCode,
+  getAuthMe,
+  postAuthLogout,
 } from './api-client';
 
 // Mock fetch globally
@@ -147,6 +152,27 @@ describe('createProject', () => {
     }
   });
 
+  it('uses JWT in header and tokenHash in body when jwt provided', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => ({
+        id: 'JWT-TEST',
+        shareUrl: 'https://example.com/#/p/JWT-TEST',
+        createdAt: '2024-01-01T00:00:00Z',
+      }),
+    });
+
+    const data = { version: 1, registers: [] };
+    await createProject(data, 'a'.repeat(64), undefined, 'my-jwt');
+
+    const callArgs = mockFetch.mock.calls[0];
+    expect(callArgs[1].headers.Authorization).toBe('Bearer my-jwt');
+    const body = JSON.parse(callArgs[1].body);
+    expect(body.ownerTokenHash).toBe('a'.repeat(64));
+  });
+
   it('includes Content-Type and Authorization headers', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
@@ -260,6 +286,25 @@ describe('getProject', () => {
       expect((error as ApiError).status).toBe(404);
     }
   });
+
+  it('prefers JWT over tokenHash when both provided', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => ({
+        id: 'TEST',
+        data: '{}',
+        createdAt: '2024-01-01T00:00:00Z',
+        updatedAt: '2024-01-01T00:00:00Z',
+      }),
+    });
+
+    await getProject('TEST', 'a'.repeat(64), 'my-jwt');
+
+    const callArgs = mockFetch.mock.calls[0];
+    expect(callArgs[1].headers.Authorization).toBe('Bearer my-jwt');
+  });
 });
 
 describe('updateProject', () => {
@@ -342,6 +387,20 @@ describe('updateProject', () => {
       updateProject('NONEXISTENT', {}, 'a'.repeat(64)),
     ).rejects.toThrow(ApiError);
   });
+
+  it('uses JWT in Authorization header when provided', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => ({ id: 'TEST', updatedAt: '2024-01-01T00:00:00Z' }),
+    });
+
+    await updateProject('TEST', { version: 1 }, 'a'.repeat(64), undefined, 'my-jwt');
+
+    const callArgs = mockFetch.mock.calls[0];
+    expect(callArgs[1].headers.Authorization).toBe('Bearer my-jwt');
+  });
 });
 
 describe('deleteProject', () => {
@@ -423,6 +482,20 @@ describe('deleteProject', () => {
 
     await expect(deleteProject('NONEXISTENT', 'a'.repeat(64))).rejects.toThrow(ApiError);
   });
+
+  it('uses JWT in Authorization header when provided', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 204,
+      headers: new Headers({ 'content-length': '0' }),
+      json: async () => { throw new SyntaxError('Unexpected end of JSON input'); },
+    });
+
+    await deleteProject('TEST', 'a'.repeat(64), 'my-jwt');
+
+    const callArgs = mockFetch.mock.calls[0];
+    expect(callArgs[1].headers.Authorization).toBe('Bearer my-jwt');
+  });
 });
 
 describe('createProject with visibility', () => {
@@ -494,6 +567,51 @@ describe('updateProject with visibility', () => {
     const callArgs = mockFetch.mock.calls[0];
     const body = JSON.parse(callArgs[1].body);
     expect(body.visibility).toBe('unlisted');
+  });
+});
+
+describe('patchProjectVisibility', () => {
+  beforeEach(() => {
+    mockFetch.mockClear();
+    import.meta.env.VITE_API_URL = 'https://api.example.com';
+  });
+
+  it('makes PATCH request with visibility and auth header', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => ({ id: 'TEST', updatedAt: '2024-01-01T00:00:00Z' }),
+    });
+
+    await patchProjectVisibility('TEST', 'unlisted', 'a'.repeat(64));
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://api.example.com/api/projects/TEST',
+      {
+        method: 'PATCH',
+        signal: expect.any(AbortSignal),
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${'a'.repeat(64)}`,
+        },
+        body: JSON.stringify({ visibility: 'unlisted' }),
+      },
+    );
+  });
+
+  it('uses JWT in Authorization header when provided', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => ({ id: 'TEST', updatedAt: '2024-01-01T00:00:00Z' }),
+    });
+
+    await patchProjectVisibility('TEST', 'unlisted', 'a'.repeat(64), 'my-jwt');
+
+    const callArgs = mockFetch.mock.calls[0];
+    expect(callArgs[1].headers.Authorization).toBe('Bearer my-jwt');
   });
 });
 
@@ -661,5 +779,207 @@ describe('API base URL', () => {
       '/api/projects/TEST',
       expect.any(Object),
     );
+  });
+});
+
+// ---- TEST-12: Auth endpoint functions ----
+
+describe('sendLoginCode', () => {
+  beforeEach(() => {
+    mockFetch.mockClear();
+    import.meta.env.VITE_API_URL = 'https://api.example.com';
+  });
+
+  it('makes POST request with email in body', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => ({ ok: true }),
+    });
+
+    await sendLoginCode('user@example.com');
+
+    expect(mockFetch).toHaveBeenCalledOnce();
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://api.example.com/api/auth/send-code',
+      {
+        method: 'POST',
+        signal: expect.any(AbortSignal),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'user@example.com' }),
+      },
+    );
+  });
+
+  it('throws ApiError on 429 rate limit', async () => {
+    mockFetch.mockResolvedValue(
+      mockErrorResponse(429, { error: 'Too many requests' }),
+    );
+
+    await expect(sendLoginCode('user@example.com')).rejects.toThrow(ApiError);
+
+    try {
+      await sendLoginCode('user@example.com');
+    } catch (error) {
+      expect((error as ApiError).status).toBe(429);
+    }
+  });
+});
+
+describe('verifyLoginCode', () => {
+  beforeEach(() => {
+    mockFetch.mockClear();
+    import.meta.env.VITE_API_URL = 'https://api.example.com';
+  });
+
+  it('makes POST request with email and code', async () => {
+    const responseData = {
+      token: 'jwt-token-123',
+      user: { id: 1, email: 'user@example.com' },
+    };
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => responseData,
+    });
+
+    const result = await verifyLoginCode('user@example.com', '123456');
+
+    expect(mockFetch).toHaveBeenCalledOnce();
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://api.example.com/api/auth/verify-code',
+      {
+        method: 'POST',
+        signal: expect.any(AbortSignal),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'user@example.com', code: '123456' }),
+      },
+    );
+    expect(result).toEqual(responseData);
+  });
+
+  it('includes ownerTokenHash when provided', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => ({
+        token: 'jwt-token-123',
+        user: { id: 1, email: 'user@example.com' },
+      }),
+    });
+
+    await verifyLoginCode('user@example.com', '123456', 'a'.repeat(64));
+
+    const callArgs = mockFetch.mock.calls[0];
+    const body = JSON.parse(callArgs[1].body);
+    expect(body.ownerTokenHash).toBe('a'.repeat(64));
+  });
+
+  it('omits ownerTokenHash when not provided', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => ({
+        token: 'jwt-token-123',
+        user: { id: 1, email: 'user@example.com' },
+      }),
+    });
+
+    await verifyLoginCode('user@example.com', '123456');
+
+    const callArgs = mockFetch.mock.calls[0];
+    const body = JSON.parse(callArgs[1].body);
+    expect(body.ownerTokenHash).toBeUndefined();
+  });
+
+  it('throws ApiError on 401 invalid code', async () => {
+    mockFetch.mockResolvedValueOnce(
+      mockErrorResponse(401, { error: 'Invalid or expired code' }),
+    );
+
+    await expect(verifyLoginCode('user@example.com', '999999')).rejects.toThrow(ApiError);
+  });
+});
+
+describe('getAuthMe', () => {
+  beforeEach(() => {
+    mockFetch.mockClear();
+    import.meta.env.VITE_API_URL = 'https://api.example.com';
+  });
+
+  it('makes GET request with JWT Bearer header', async () => {
+    const responseData = { user: { id: 1, email: 'user@example.com' } };
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => responseData,
+    });
+
+    const result = await getAuthMe('my-jwt-token');
+
+    expect(mockFetch).toHaveBeenCalledOnce();
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://api.example.com/api/auth/me',
+      {
+        signal: expect.any(AbortSignal),
+        headers: { Authorization: 'Bearer my-jwt-token' },
+      },
+    );
+    expect(result).toEqual(responseData);
+  });
+
+  it('throws ApiError on 401 for invalid JWT', async () => {
+    mockFetch.mockResolvedValueOnce(
+      mockErrorResponse(401, { error: 'Unauthorized' }),
+    );
+
+    await expect(getAuthMe('bad-token')).rejects.toThrow(ApiError);
+  });
+});
+
+describe('postAuthLogout', () => {
+  beforeEach(() => {
+    mockFetch.mockClear();
+    import.meta.env.VITE_API_URL = 'https://api.example.com';
+  });
+
+  it('makes POST request with JWT Bearer header', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 204,
+      headers: new Headers({ 'content-length': '0' }),
+      json: async () => { throw new SyntaxError('Unexpected end of JSON input'); },
+    });
+
+    await postAuthLogout('my-jwt-token');
+
+    expect(mockFetch).toHaveBeenCalledOnce();
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://api.example.com/api/auth/logout',
+      {
+        method: 'POST',
+        signal: expect.any(AbortSignal),
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer my-jwt-token',
+        },
+        body: JSON.stringify({}),
+      },
+    );
+  });
+
+  it('throws ApiError on 401 for invalid JWT', async () => {
+    mockFetch.mockResolvedValueOnce(
+      mockErrorResponse(401, { error: 'Unauthorized' }),
+    );
+
+    await expect(postAuthLogout('bad-token')).rejects.toThrow(ApiError);
   });
 });

@@ -39,3 +39,14 @@ require __DIR__ . '/../src/handlers/patch-project.php';
 require __DIR__ . '/../src/handlers/delete-project.php';
 require __DIR__ . '/../src/handlers/list-projects.php';
 require __DIR__ . '/../database/migrate.php';
+
+// Helper function from index.php needed by handler tests (update-project, create-project)
+if (!function_exists('extractDataJson')) {
+    function extractDataJson(object $parsedObject): string|ApiResponse
+    {
+        if (!property_exists($parsedObject, 'data')) {
+            return new ApiResponse(['error' => 'Invalid JSON body'], 400);
+        }
+        return json_encode($parsedObject->data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    }
+}
