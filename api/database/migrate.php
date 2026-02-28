@@ -61,17 +61,17 @@ function runPendingMigrations(PDO $db, string $migrationsDir): array
         $sql = file_get_contents($file);
         $checksum = hash('sha256', $sql);
 
-        $db->beginTransaction();
         try {
+            // Run migration SQL outside a transaction — MySQL implicitly commits
+            // on DDL statements (CREATE TABLE, ALTER TABLE, etc.), which would
+            // break an explicit transaction with "There is no active transaction".
             $db->exec($sql);
             $stmt = $db->prepare(
                 "INSERT INTO _migrations (version, filename, checksum) VALUES (?, ?, ?)"
             );
             $stmt->execute([$version, $basename, $checksum]);
-            $db->commit();
             $result['applied'][] = $basename;
         } catch (\Exception $e) {
-            $db->rollBack();
             $result['errors'][] = "$basename: {$e->getMessage()}";
             break; // Halt on first error — later migrations may depend on this one
         }
