@@ -2,24 +2,22 @@
 
 declare(strict_types=1);
 
-function handleAuthSendCode(PDO $db, array $config): never
+function handleAuthSendCode(PDO $db, array $config, array $body): ApiResponse
 {
-    $body = readParsedBody()['assoc'];
-
     $email = $body['email'] ?? null;
     if (!is_string($email) || $email === '') {
-        sendError('email is required', 400);
+        return new ApiResponse(['error' => 'email is required'], 400);
     }
 
     $email = strtolower(trim($email));
     if (strlen($email) > 254 || filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
-        sendError('Invalid email address', 400);
+        return new ApiResponse(['error' => 'Invalid email address'], 400);
     }
 
     // Rate limit: max 3 codes per email per hour
     $recentCount = dbCountRecentLoginCodes($db, $email);
     if ($recentCount >= 3) {
-        sendError('Too many login attempts. Please try again later.', 429);
+        return new ApiResponse(['error' => 'Too many login attempts. Please try again later.'], 429);
     }
 
     // Generate 6-digit code
@@ -33,5 +31,5 @@ function handleAuthSendCode(PDO $db, array $config): never
     sendLoginCode($config, $email, $code);
 
     // Always return success to avoid email enumeration
-    sendJson(['ok' => true]);
+    return new ApiResponse(['ok' => true]);
 }
