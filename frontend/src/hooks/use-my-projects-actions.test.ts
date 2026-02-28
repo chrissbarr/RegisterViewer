@@ -47,10 +47,6 @@ vi.mock('../utils/api-client', () => ({
   isCloudEnabled: vi.fn(() => true),
 }));
 
-vi.mock('../utils/owner-token', () => ({
-  getOrCreateOwnerToken: vi.fn(() => 'mock-token'),
-}));
-
 vi.mock('../utils/project-storage', () => ({
   loadProject: vi.fn(() => null),
   saveProject: vi.fn(),
@@ -61,12 +57,10 @@ vi.mock('../utils/storage', () => ({
 }));
 
 import { isCloudEnabled } from '../utils/api-client';
-import { getOrCreateOwnerToken } from '../utils/owner-token';
 
 beforeEach(() => {
   vi.clearAllMocks();
   (isCloudEnabled as Mock).mockReturnValue(true);
-  (getOrCreateOwnerToken as Mock).mockReturnValue('mock-token');
   mockStorageActions.createNewProject.mockReturnValue('new-id');
   mockCloudActions.syncCloudProjects.mockResolvedValue({ staleCloudIds: [], updatedCount: 0 });
 });
@@ -368,53 +362,6 @@ describe('useMyProjectsActions', () => {
       expect(mockCloudActions.unlinkCloudProject).toHaveBeenCalledWith('local-1');
       expect(mockStorageActions.refreshProjectList).toHaveBeenCalled();
       expect(mockAnnounce).toHaveBeenCalledWith('Cloud link removed');
-    });
-  });
-
-  describe('recovery key', () => {
-    it('handleDownloadRecoveryKey creates download link', async () => {
-      vi.useFakeTimers();
-      const onClose = vi.fn();
-      const { result } = await renderWithOpen(onClose);
-
-      // Mock createElement AFTER renderHook so jsdom can set up the test component
-      const mockClick = vi.fn();
-      const realCreateElement = document.createElement.bind(document);
-      const mockCreateElement = vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
-        if (tag === 'a') {
-          return { href: '', download: '', click: mockClick } as unknown as HTMLAnchorElement;
-        }
-        return realCreateElement(tag);
-      });
-      const mockCreateObjectURL = vi.fn(() => 'blob:url');
-      const mockRevokeObjectURL = vi.fn();
-      globalThis.URL.createObjectURL = mockCreateObjectURL;
-      globalThis.URL.revokeObjectURL = mockRevokeObjectURL;
-
-      act(() => {
-        result.current.handleDownloadRecoveryKey();
-      });
-
-      expect(mockClick).toHaveBeenCalled();
-      // revokeObjectURL is deferred via setTimeout to ensure the browser initiates the download
-      vi.runAllTimers();
-      expect(mockRevokeObjectURL).toHaveBeenCalledWith('blob:url');
-      expect(mockAnnounce).toHaveBeenCalledWith('Recovery key downloaded');
-
-      mockCreateElement.mockRestore();
-      vi.useRealTimers();
-    });
-
-    it('announces error when no token available', async () => {
-      (getOrCreateOwnerToken as Mock).mockReturnValue(null);
-      const onClose = vi.fn();
-      const { result } = await renderWithOpen(onClose);
-
-      act(() => {
-        result.current.handleDownloadRecoveryKey();
-      });
-
-      expect(mockAnnounce).toHaveBeenCalledWith('No recovery key found', { politeness: 'assertive' });
     });
   });
 

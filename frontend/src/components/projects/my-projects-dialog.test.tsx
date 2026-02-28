@@ -119,6 +119,11 @@ vi.mock('../../utils/api-client', () => ({
   isCloudEnabled: () => mockCloudEnabled,
 }));
 
+vi.mock('../../context/auth-context', () => ({
+  useAuth: () => ({ user: null, isLoading: false }),
+  useAuthActions: () => ({ sendCode: vi.fn(), verifyCode: vi.fn(), logout: vi.fn(), getJwt: () => null }),
+}));
+
 describe('MyProjectsDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks();

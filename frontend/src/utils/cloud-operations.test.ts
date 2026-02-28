@@ -52,7 +52,7 @@ describe('saveProjectToCloudImpl', () => {
       ownerToken: 'mock-owner-token',
     });
     expect(getOrCreateOwnerToken).toHaveBeenCalled();
-    expect(createProject).toHaveBeenCalledWith(payload, 'mock-token-hash');
+    expect(createProject).toHaveBeenCalledWith(payload, 'mock-token-hash', undefined, undefined);
   });
 
   it('updates existing project when existingCloudId provided', async () => {

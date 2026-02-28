@@ -35,6 +35,10 @@ export async function hashOwnerToken(token: string): Promise<string> {
     .join('');
 }
 
+export async function getOwnerTokenHash(): Promise<string> {
+  return hashOwnerToken(getOrCreateOwnerToken());
+}
+
 export function getOrCreateOwnerToken(): string {
   try {
     const existing = localStorage.getItem(OWNER_TOKEN_KEY);

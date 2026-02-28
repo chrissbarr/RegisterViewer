@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 function handleUpdateProject(PDO $db, string $id, array $config): never
 {
-    $existing = requireOwnership($db, $id);
+    $existing = requireOwnership($db, $id, $config);
 
     $parsed = readParsedBody();
     $body = $parsed['assoc'];

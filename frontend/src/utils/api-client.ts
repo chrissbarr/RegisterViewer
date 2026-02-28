@@ -72,14 +72,26 @@ export async function createProject(
   data: unknown,
   tokenHash: string,
   visibility?: Visibility,
+  jwt?: string,
 ): Promise<CreateProjectResponse> {
-  const body: { data: unknown; visibility?: string } = { data };
+  const body: { data: unknown; visibility?: string; ownerTokenHash?: string } = { data };
   if (visibility !== undefined) {
     body.visibility = visibility;
   }
+
+  // When JWT-authenticated, send JWT in header and token hash in body.
+  // Otherwise, send token hash in header (legacy path).
+  let authHeader: string;
+  if (jwt) {
+    authHeader = `Bearer ${jwt}`;
+    body.ownerTokenHash = tokenHash;
+  } else {
+    authHeader = `Bearer ${tokenHash}`;
+  }
+
   return apiFetch<CreateProjectResponse>('/api/projects', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${tokenHash}` },
+    headers: { Authorization: authHeader },
     body: JSON.stringify(body),
   });
 }
@@ -165,8 +177,47 @@ interface ListProjectsResponse {
   projects: ProjectListItem[];
 }
 
-export async function listProjects(tokenHash: string): Promise<ListProjectsResponse> {
+export async function listProjects(authToken: string): Promise<ListProjectsResponse> {
   return apiFetch<ListProjectsResponse>('/api/projects', {
-    headers: { Authorization: `Bearer ${tokenHash}` },
+    headers: { Authorization: `Bearer ${authToken}` },
+  });
+}
+
+// ---- Auth endpoints ----
+
+export async function sendLoginCode(email: string): Promise<void> {
+  await apiFetchVoid('/api/auth/send-code', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+}
+
+interface VerifyLoginCodeResponse {
+  token: string;
+  user: { id: number; email: string };
+}
+
+export async function verifyLoginCode(
+  email: string,
+  code: string,
+  ownerTokenHash?: string,
+): Promise<VerifyLoginCodeResponse> {
+  const body: { email: string; code: string; ownerTokenHash?: string } = { email, code };
+  if (ownerTokenHash) {
+    body.ownerTokenHash = ownerTokenHash;
+  }
+  return apiFetch<VerifyLoginCodeResponse>('/api/auth/verify-code', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+interface AuthMeResponse {
+  user: { id: number; email: string };
+}
+
+export async function getAuthMe(jwt: string): Promise<AuthMeResponse> {
+  return apiFetch<AuthMeResponse>('/api/auth/me', {
+    headers: { Authorization: `Bearer ${jwt}` },
   });
 }

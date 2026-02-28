@@ -2,14 +2,17 @@
 
 declare(strict_types=1);
 
-function handleListProjects(PDO $db): never
+function handleListProjects(PDO $db, array $config): never
 {
-    $tokenHash = extractTokenHash();
-    if ($tokenHash === null) {
+    $auth = extractAuth($config);
+
+    if ($auth['kind'] === 'jwt') {
+        $rows = dbListProjectsByUserId($db, $auth['userId']);
+    } elseif ($auth['kind'] === 'token') {
+        $rows = dbListProjectsByOwner($db, $auth['tokenHash']);
+    } else {
         sendError('Missing or invalid Authorization header', 401);
     }
-
-    $rows = dbListProjectsByOwner($db, $tokenHash);
 
     $projects = array_map(fn(array $row) => [
         'id'         => $row['public_id'],

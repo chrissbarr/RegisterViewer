@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-function handleDeleteProject(PDO $db, string $id): never
+function handleDeleteProject(PDO $db, string $id, array $config): never
 {
-    requireOwnership($db, $id);
+    requireOwnership($db, $id, $config);
     dbDeleteProject($db, $id);
     sendNoContent();
 }

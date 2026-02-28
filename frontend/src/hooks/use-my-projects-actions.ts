@@ -4,8 +4,6 @@ import { useAppDispatch } from '../context/app-context';
 import { useCloudSyncActions } from '../context/cloud-sync-context';
 import { useAnnounce } from '../components/common/announcer';
 import { isCloudEnabled } from '../utils/api-client';
-import { getOrCreateOwnerToken } from '../utils/owner-token';
-import { triggerFileDownload } from '../utils/file-download';
 import { friendlyErrorMessage } from '../utils/friendly-error';
 import { loadProject, saveProject } from '../utils/project-storage';
 import { sanitizeProjectMetadata } from '../utils/storage';
@@ -152,27 +150,6 @@ export function useMyProjectsActions(
     announce('Cloud link removed');
   }, [unlinkCloudProject, refreshProjectList, announce, projects]);
 
-  const handleDownloadRecoveryKey = useCallback(() => {
-    try {
-      const token = getOrCreateOwnerToken();
-      if (!token) {
-        announce('No recovery key found', { politeness: 'assertive' });
-        return;
-      }
-
-      const data = {
-        type: 'register-viewer-recovery-key',
-        version: 1,
-        ownerToken: token,
-      };
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-      triggerFileDownload(blob, 'register-viewer-recovery-key.json');
-      announce('Recovery key downloaded');
-    } catch {
-      announce('Failed to download recovery key', { politeness: 'assertive' });
-    }
-  }, [announce]);
-
   const handleSettings = useCallback((localId: string) => {
     setSettingsLocalId(localId);
   }, []);
@@ -233,7 +210,6 @@ export function useMyProjectsActions(
     handleSaveToCloud,
     handleRemoveFromCloud,
     handleUnlinkCloud,
-    handleDownloadRecoveryKey,
 
     // Settings
     handleSettings,

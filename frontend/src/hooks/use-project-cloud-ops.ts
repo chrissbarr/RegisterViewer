@@ -32,6 +32,7 @@ interface ProjectCloudOpsDeps<T extends CloudSyncInternalSlice> {
   internalRef: MutableRefObject<T>;
   setInternal: Dispatch<SetStateAction<T>>;
   initialInternalState: T;
+  getJwt?: () => string | null;
 }
 
 interface ProjectCloudOps {
@@ -47,7 +48,7 @@ interface ProjectCloudOps {
  * Used primarily by the My Projects dialog.
  */
 export function useProjectCloudOps<T extends CloudSyncInternalSlice>(deps: ProjectCloudOpsDeps<T>): ProjectCloudOps {
-  const { updateCloudMetadata, projects, activeLocalIdRef, dataVersionRef, mutationLockRef, internalRef, setInternal, initialInternalState } = deps;
+  const { updateCloudMetadata, projects, activeLocalIdRef, dataVersionRef, mutationLockRef, internalRef, setInternal, initialInternalState, getJwt } = deps;
 
   const saveProjectToCloud = useCallback(async (localId: string) => {
     if (!isCloudEnabled()) return;
@@ -61,7 +62,8 @@ export function useProjectCloudOps<T extends CloudSyncInternalSlice>(deps: Proje
       const entry = projects.find(p => p.localId === localId);
       const existingCloudId = entry?.cloudId ?? project.cloudId;
 
-      const result = await saveProjectToCloudImpl(jsonPayload, existingCloudId);
+      const jwt = getJwt?.() ?? null;
+      const result = await saveProjectToCloudImpl(jsonPayload, existingCloudId, jwt);
 
       if (result.kind === 'not-found') {
         throw new Error('Cloud project not found on server.');
@@ -90,7 +92,7 @@ export function useProjectCloudOps<T extends CloudSyncInternalSlice>(deps: Proje
         updateCloudMetadata(localId, { cloudSavedAt: result.timestamp });
       }
     });
-  }, [updateCloudMetadata, projects, mutationLockRef, activeLocalIdRef, dataVersionRef, setInternal]);
+  }, [updateCloudMetadata, projects, mutationLockRef, activeLocalIdRef, dataVersionRef, setInternal, getJwt]);
 
   const deleteProjectFromCloud = useCallback(async (cloudId: string) => {
     await withMutationLock(mutationLockRef, async () => {

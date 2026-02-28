@@ -10,8 +10,10 @@ import { GithubIcon, MenuIcon } from 'lucide-react';
 import { SaveButton } from '../common/save-button';
 import { ShareButton } from '../common/share-button';
 import { MyProjectsDialog } from '../projects/my-projects-dialog';
+import { LoginDialog } from '../auth/login-dialog';
 import { GITHUB_URL } from '../../constants';
 import { useAppState, useAppDispatch } from '../../context/app-context';
+import { useAuth, useAuthActions } from '../../context/auth-context';
 import { useEditActions } from '../../context/edit-context';
 import { usePreferences, usePreferencesActions } from '../../context/preferences-context';
 import { useProjectStorageActions } from '../../context/project-storage-context';
@@ -30,7 +32,10 @@ export function Header() {
   const { exitEditMode } = useEditActions();
   const preferences = usePreferences();
   const preferencesActions = usePreferencesActions();
+  const auth = useAuth();
+  const authActions = useAuthActions();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [loginDialogOpen, setLoginDialogOpen] = useState(false);
   const [examplesOpen, setExamplesOpen] = useState(false);
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
@@ -118,6 +123,17 @@ export function Header() {
     }},
     { kind: 'action', label: 'My Projects', onAction: () => setMyProjectsOpen(true) },
     { kind: 'separator' },
+    ...(cloudEnabled
+      ? auth.user
+        ? [
+            { kind: 'action' as const, label: `Signed in: ${auth.user.email}`, onAction: () => {} },
+            { kind: 'action' as const, label: 'Sign out', onAction: () => authActions.logout() },
+          ]
+        : [
+            { kind: 'action' as const, label: 'Sign in', onAction: () => setLoginDialogOpen(true) },
+          ]
+      : []),
+    { kind: 'separator' },
     {
       kind: 'toggle',
       label: 'Dark mode',
@@ -184,6 +200,10 @@ export function Header() {
           <MyProjectsDialog
             open={myProjectsOpen}
             onClose={() => setMyProjectsOpen(false)}
+          />
+          <LoginDialog
+            open={loginDialogOpen}
+            onClose={() => setLoginDialogOpen(false)}
           />
         </div>
       </header>

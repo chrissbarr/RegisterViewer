@@ -43,6 +43,7 @@ type SaveResult = SaveCreatedResult | SaveUpdatedResult | SaveNotFoundResult;
 export async function saveProjectToCloudImpl(
   jsonPayload: unknown,
   existingCloudId: string | null,
+  jwt?: string | null,
 ): Promise<SaveResult> {
   if (existingCloudId) {
     const ownerToken = getOwnerTokenForProject(existingCloudId);
@@ -63,7 +64,7 @@ export async function saveProjectToCloudImpl(
 
   const ownerToken = getOrCreateOwnerToken();
   const tokenHash = await hashOwnerToken(ownerToken);
-  const result = await apiCreateProject(jsonPayload, tokenHash);
+  const result = await apiCreateProject(jsonPayload, tokenHash, undefined, jwt ?? undefined);
   return { kind: 'created', cloudId: result.id, timestamp: result.createdAt, ownerToken };
 }
 

@@ -2,17 +2,25 @@
 
 declare(strict_types=1);
 
-function handleGetProject(PDO $db, string $id): never
+function handleGetProject(PDO $db, string $id, array $config): never
 {
     $project = dbGetProject($db, $id);
     if ($project === null) {
         sendError('Project not found', 404);
     }
 
-    // Private projects require ownership
+    // Private projects require ownership (token hash or JWT user_id)
     if ($project['visibility'] === 'private') {
-        $tokenHash = extractTokenHash();
-        if ($tokenHash === null || !isOwner($tokenHash, $project)) {
+        $auth = extractAuth($config);
+        $isOwned = false;
+
+        if ($auth['kind'] === 'token') {
+            $isOwned = isOwner($auth['tokenHash'], $project);
+        } elseif ($auth['kind'] === 'jwt') {
+            $isOwned = $project['user_id'] !== null && (int) $project['user_id'] === $auth['userId'];
+        }
+
+        if (!$isOwned) {
             sendError('Project not found', 404);
         }
     }

@@ -46,18 +46,75 @@ function isOwner(string $tokenHash, array $project): bool
 }
 
 /**
- * Verify auth token and project ownership. Returns the project row on success.
+ * Extract and classify the Authorization header as token hash, JWT, or none.
+ *
+ * Returns one of:
+ *   ['kind' => 'token', 'tokenHash' => string]
+ *   ['kind' => 'jwt',   'userId' => int, 'email' => string]
+ *   ['kind' => 'none']
+ */
+function extractAuth(array $config): array
+{
+    $header = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+    if (empty($header)) {
+        $header = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
+    }
+    if (empty($header)) {
+        return ['kind' => 'none'];
+    }
+
+    $parts = explode(' ', $header, 2);
+    if (count($parts) !== 2 || $parts[0] !== 'Bearer') {
+        return ['kind' => 'none'];
+    }
+
+    $value = $parts[1];
+
+    // 64-char lowercase hex = legacy token hash
+    $normalized = strtolower($value);
+    if (preg_match('/^[0-9a-f]{64}$/', $normalized)) {
+        return ['kind' => 'token', 'tokenHash' => $normalized];
+    }
+
+    // JWT format: three dot-separated segments
+    if (substr_count($value, '.') === 2) {
+        $payload = verifyJwt($config, $value);
+        if ($payload !== null) {
+            return ['kind' => 'jwt', 'userId' => $payload['sub'], 'email' => $payload['email']];
+        }
+    }
+
+    return ['kind' => 'none'];
+}
+
+/**
+ * Check if the auth context owns a project (by token hash OR user_id).
+ */
+function isOwnerOrUser(array $auth, array $project): bool
+{
+    if ($auth['kind'] === 'token') {
+        return hash_equals($project['owner_token_hash'], $auth['tokenHash']);
+    }
+    if ($auth['kind'] === 'jwt') {
+        return $project['user_id'] !== null && (int) $project['user_id'] === $auth['userId'];
+    }
+    return false;
+}
+
+/**
+ * Verify auth and project ownership. Returns the project row on success.
+ * Accepts both legacy token hash and JWT auth.
  * Calls sendError() (which exits) on failure.
  */
-function requireOwnership(PDO $db, string $id): array
+function requireOwnership(PDO $db, string $id, array $config): array
 {
-    $tokenHash = extractTokenHash();
-    if ($tokenHash === null) {
+    $auth = extractAuth($config);
+    if ($auth['kind'] === 'none') {
         sendError('Missing or invalid Authorization header', 401);
     }
 
     $project = dbGetProjectForAuth($db, $id);
-    if ($project === null || !isOwner($tokenHash, $project)) {
+    if ($project === null || !isOwnerOrUser($auth, $project)) {
         sendError('Project not found', 404);
     }
 

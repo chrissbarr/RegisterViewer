@@ -70,6 +70,11 @@ vi.mock('../utils/storage', () => ({
   deserializeState: vi.fn((data: unknown) => data),
 }));
 
+vi.mock('./auth-context', () => ({
+  useAuth: () => ({ user: null, isLoading: false }),
+  useAuthActions: () => ({ sendCode: vi.fn(), verifyCode: vi.fn(), logout: vi.fn(), getJwt: () => null }),
+}));
+
 // Stub history.replaceState so it doesn't error in jsdom
 const replaceStateSpy = vi.spyOn(history, 'replaceState').mockImplementation(() => {});
 
@@ -275,6 +280,8 @@ describe('CloudSyncProvider', () => {
       expect(apiCreateProject).toHaveBeenCalledWith(
         { version: 1, registers: [], values: {} },
         'mock-token-hash',
+        undefined,
+        undefined,
       );
       expect(result.current.state.cloudId).toBe('cloud-abc');
       expect(result.current.state.isOwner).toBe(true);

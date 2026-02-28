@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-function handlePatchProject(PDO $db, string $id): never
+function handlePatchProject(PDO $db, string $id, array $config): never
 {
-    requireOwnership($db, $id);
+    requireOwnership($db, $id, $config);
 
     $body = readParsedBody()['assoc'];
 

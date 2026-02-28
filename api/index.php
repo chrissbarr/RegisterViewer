@@ -13,6 +13,8 @@ if (file_exists($prodConfigPath)) {
 require __DIR__ . '/src/database.php';
 require __DIR__ . '/src/cors.php';
 require __DIR__ . '/src/auth.php';
+require __DIR__ . '/src/jwt.php';
+require __DIR__ . '/src/email.php';
 require __DIR__ . '/src/validation.php';
 require __DIR__ . '/src/data-access.php';
 require __DIR__ . '/src/id.php';
@@ -22,6 +24,9 @@ require __DIR__ . '/src/handlers/update-project.php';
 require __DIR__ . '/src/handlers/patch-project.php';
 require __DIR__ . '/src/handlers/delete-project.php';
 require __DIR__ . '/src/handlers/list-projects.php';
+require __DIR__ . '/src/handlers/auth-send-code.php';
+require __DIR__ . '/src/handlers/auth-verify-code.php';
+require __DIR__ . '/src/handlers/auth-me.php';
 
 // ---- Constants ----
 
@@ -220,11 +225,22 @@ if ($path === '/api/health' && ($method === 'GET' || $method === 'HEAD')) {
 try {
     $db = getDatabase($config);
 
+    // Auth routes: /api/auth/*
+    if (preg_match('#^/api/auth/send-code/?$#', $path) && $method === 'POST') {
+        handleAuthSendCode($db, $config);
+    }
+    if (preg_match('#^/api/auth/verify-code/?$#', $path) && $method === 'POST') {
+        handleAuthVerifyCode($db, $config);
+    }
+    if (preg_match('#^/api/auth/me/?$#', $path) && $method === 'GET') {
+        handleAuthMe($db, $config);
+    }
+
     // Collection routes: /api/projects
     if (preg_match('#^/api/projects/?$#', $path)) {
         match ($method) {
             'POST' => handleCreateProject($db, $config),
-            'GET'  => handleListProjects($db),
+            'GET'  => handleListProjects($db, $config),
             default => sendError('Method not allowed', 405, ['Allow' => 'GET, POST, OPTIONS']),
         };
     // Resource routes: /api/projects/:id (12-char alphanumeric)
@@ -232,10 +248,10 @@ try {
         $id = $matches[1];
 
         match ($method) {
-            'GET'    => handleGetProject($db, $id),
+            'GET'    => handleGetProject($db, $id, $config),
             'PUT'    => handleUpdateProject($db, $id, $config),
-            'PATCH'  => handlePatchProject($db, $id),
-            'DELETE' => handleDeleteProject($db, $id),
+            'PATCH'  => handlePatchProject($db, $id, $config),
+            'DELETE' => handleDeleteProject($db, $id, $config),
             default  => sendError('Method not allowed', 405, ['Allow' => 'GET, PUT, PATCH, DELETE, OPTIONS']),
         };
     } else {

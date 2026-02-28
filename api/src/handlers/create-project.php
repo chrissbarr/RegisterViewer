@@ -4,9 +4,28 @@ declare(strict_types=1);
 
 function handleCreateProject(PDO $db, array $config): never
 {
-    $tokenHash = extractTokenHash();
+    $auth = extractAuth($config);
+    $parsed = readParsedBody();
+    $body = $parsed['assoc'];
+
+    // Determine token hash and user ID based on auth method.
+    // JWT users pass ownerTokenHash in the body (since the header carries the JWT).
+    // Token-hash users pass it in the Authorization header as before.
+    $userId = null;
+    $tokenHash = null;
+
+    if ($auth['kind'] === 'jwt') {
+        $userId = $auth['userId'];
+        $ownerTokenHash = $body['ownerTokenHash'] ?? null;
+        if (is_string($ownerTokenHash) && preg_match('/^[0-9a-f]{64}$/', $ownerTokenHash)) {
+            $tokenHash = $ownerTokenHash;
+        }
+    } elseif ($auth['kind'] === 'token') {
+        $tokenHash = $auth['tokenHash'];
+    }
+
     if ($tokenHash === null) {
-        sendError('Missing or invalid Authorization header', 401);
+        sendError('Missing or invalid owner token', 401);
     }
 
     // Per-owner project limit to prevent storage abuse
@@ -14,9 +33,6 @@ function handleCreateProject(PDO $db, array $config): never
     if ($ownerProjectCount >= LIMITS['MAX_PROJECTS_PER_OWNER']) {
         sendError('Project limit reached. Delete existing projects before creating new ones.', 429);
     }
-
-    $parsed = readParsedBody();
-    $body = $parsed['assoc'];
 
     $validation = validateProjectData($body['data'] ?? null);
     if (!$validation['valid']) {
@@ -45,7 +61,7 @@ function handleCreateProject(PDO $db, array $config): never
     for ($attempt = 0; $attempt < 3; $attempt++) {
         $candidate = generatePublicId();
         try {
-            dbCreateProject($db, $candidate, $tokenHash, $visibility, $dataJson, $title);
+            dbCreateProject($db, $candidate, $tokenHash, $visibility, $dataJson, $title, $userId);
             $id = $candidate;
             break;
         } catch (\PDOException $e) {

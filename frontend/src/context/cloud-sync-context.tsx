@@ -36,6 +36,7 @@ import {
   hashOwnerToken,
   checkOwnership,
 } from '../utils/owner-token';
+import { useAuthActions } from './auth-context';
 import { friendlyErrorMessage } from '../utils/friendly-error';
 import { buildProjectUrl } from '../utils/project-storage';
 import { setCloudUrl, clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock } from '../utils/cloud-url';
@@ -251,6 +252,8 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     }));
   }, [updateCloudMetadata, createNewProject, dataVersionRef]);
 
+  const { getJwt } = useAuthActions();
+
   const saveToCloud = useCallback(async () => {
     if (!isCloudEnabled()) return;
     await withMutationLock(mutationLockRef, async () => {
@@ -260,7 +263,8 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
 
         setInternal((prev) => ({ ...prev, status: 'saving', error: null }));
         const jsonPayload = exportToObject(appStateRef.current);
-        const result = await saveProjectToCloudImpl(jsonPayload, existingCloudId);
+        const jwt = getJwt();
+        const result = await saveProjectToCloudImpl(jsonPayload, existingCloudId, jwt);
 
         if (result.kind === 'not-found') {
           const currentLocalId = activeLocalIdRef.current;
@@ -299,7 +303,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
         setInternal((prev) => ({ ...prev, status: 'idle', error: friendlyErrorMessage(err, 'Failed to save project.') }));
       }
     });
-  }, [updateCloudMetadata, applyCreatedResult, mutationLockRef, dataVersionRef]);
+  }, [updateCloudMetadata, applyCreatedResult, mutationLockRef, dataVersionRef, getJwt]);
 
   const fork = useCallback(async () => {
     if (!isCloudEnabled()) return;
@@ -307,14 +311,15 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       setInternal((prev) => ({ ...prev, status: 'saving', error: null }));
       try {
         const jsonPayload = exportToObject(appStateRef.current);
-        const result = await saveProjectToCloudImpl(jsonPayload, null);
+        const jwt = getJwt();
+        const result = await saveProjectToCloudImpl(jsonPayload, null, jwt);
         if (result.kind !== 'created') throw new Error('Failed to save copy.');
         applyCreatedResult(result);
       } catch (err) {
         setInternal((prev) => ({ ...prev, status: 'idle', error: friendlyErrorMessage(err, 'Failed to save copy.') }));
       }
     });
-  }, [applyCreatedResult, mutationLockRef]);
+  }, [applyCreatedResult, mutationLockRef, getJwt]);
 
   const deleteFromCloud = useCallback(async () => {
     const { cloudId } = internalRef.current;
@@ -435,9 +440,11 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   const syncCloudProjects = useCallback(async (): Promise<SyncResult> => {
     if (!isCloudEnabled()) return { updatedCount: 0, staleCloudIds: [] };
 
-    const ownerToken = getOrCreateOwnerToken();
-    const tokenHash = await hashOwnerToken(ownerToken);
-    const response = await listProjects(tokenHash);
+    // Prefer JWT for listing (shows all user-linked projects cross-device),
+    // fall back to token hash for anonymous users.
+    const jwt = getJwt();
+    const authToken = jwt ?? await hashOwnerToken(getOrCreateOwnerToken());
+    const response = await listProjects(authToken);
 
     const { patches, staleCloudIds } = computeSyncPatches(projectsRef.current, response.projects);
 
@@ -446,7 +453,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     }
 
     return { updatedCount: patches.length, staleCloudIds };
-  }, [updateCloudMetadata]);
+  }, [updateCloudMetadata, getJwt]);
 
   // By-localId cloud operations (used by My Projects dialog)
   const projectOps = useProjectCloudOps({
@@ -458,6 +465,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     internalRef,
     setInternal,
     initialInternalState,
+    getJwt,
   });
 
   const actions = useMemo(
