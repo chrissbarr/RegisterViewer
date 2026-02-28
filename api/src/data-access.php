@@ -229,16 +229,19 @@ function dbCreateUser(PDO $db, string $email): int
  * Store a login OTP code.
  *
  * @param string $code SHA-256 hex digest of the OTP code (64 chars)
+ * @param string|null $ipAddress Client IP address for rate limiting (PERF-15)
  */
-function dbCreateLoginCode(PDO $db, string $email, string $code, string $expiresAt): void
+function dbCreateLoginCode(PDO $db, string $email, string $code, string $expiresAt, ?string $ipAddress = null): void
 {
     $stmt = $db->prepare(
-        'INSERT INTO login_codes (email, code, expires_at) VALUES (:email, :code, :expires_at)'
+        'INSERT INTO login_codes (email, code, expires_at, ip_address)
+         VALUES (:email, :code, :expires_at, :ip_address)'
     );
     $stmt->execute([
         'email'      => $email,
         'code'       => $code,
         'expires_at' => $expiresAt,
+        'ip_address' => $ipAddress,
     ]);
 }
 
@@ -320,6 +323,50 @@ function dbCountRecentVerifyAttempts(PDO $db, string $email): int
          WHERE email = :email AND created_at > DATE_SUB(NOW(), INTERVAL 10 MINUTE)'
     );
     $stmt->execute(['email' => $email]);
+    return (int) $stmt->fetchColumn();
+}
+
+/**
+ * Count total login codes sent globally within the given interval.
+ * Used as a global rate limit to prevent mass OTP abuse (PERF-15).
+ */
+function dbCountAllRecentLoginCodes(PDO $db, int $intervalSeconds = 60): int
+{
+    $cutoff = gmdate('Y-m-d H:i:s', time() - $intervalSeconds);
+    $stmt = $db->prepare(
+        'SELECT COUNT(*) FROM login_codes WHERE created_at > :cutoff'
+    );
+    $stmt->execute(['cutoff' => $cutoff]);
+    return (int) $stmt->fetchColumn();
+}
+
+/**
+ * Count login codes sent from a specific IP within the given interval.
+ * Used for per-IP rate limiting to prevent spam relay abuse (PERF-15).
+ */
+function dbCountRecentLoginCodesByIp(PDO $db, string $ipAddress, int $intervalSeconds = 900): int
+{
+    $cutoff = gmdate('Y-m-d H:i:s', time() - $intervalSeconds);
+    $stmt = $db->prepare(
+        'SELECT COUNT(*) FROM login_codes
+         WHERE ip_address = :ip AND created_at > :cutoff'
+    );
+    $stmt->execute(['ip' => $ipAddress, 'cutoff' => $cutoff]);
+    return (int) $stmt->fetchColumn();
+}
+
+/**
+ * Count total verification attempts globally within the given interval.
+ * Sums the attempts column across all recent codes.
+ * Used as a global rate limit on the verify endpoint (PERF-15).
+ */
+function dbCountAllRecentVerifyAttempts(PDO $db, int $intervalSeconds = 60): int
+{
+    $cutoff = gmdate('Y-m-d H:i:s', time() - $intervalSeconds);
+    $stmt = $db->prepare(
+        'SELECT COALESCE(SUM(attempts), 0) FROM login_codes WHERE created_at > :cutoff'
+    );
+    $stmt->execute(['cutoff' => $cutoff]);
     return (int) $stmt->fetchColumn();
 }
 

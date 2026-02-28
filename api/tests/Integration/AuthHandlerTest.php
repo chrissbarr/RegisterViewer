@@ -569,4 +569,237 @@ final class AuthHandlerTest extends TestCase
 
         $this->assertSame(0, $deleted);
     }
+
+    // ---- PERF-15: Global and IP-based rate limiting ----
+
+    #[Test]
+    public function sendCodeEnforcesGlobalRateLimit(): void
+    {
+        // Insert 30 login codes (the global limit) directly to avoid per-email limits
+        $stmt = self::$db->prepare(
+            "INSERT INTO login_codes (email, code, expires_at)
+             VALUES (:email, :code, :expires)"
+        );
+        for ($i = 0; $i < 30; $i++) {
+            $stmt->execute([
+                'email'   => "global-{$i}@example.com",
+                'code'    => hash('sha256', str_pad((string) $i, 6, '0', STR_PAD_LEFT)),
+                'expires' => gmdate('Y-m-d H:i:s', time() + 600),
+            ]);
+        }
+
+        // 31st request from a new email should hit global limit (503)
+        $response = handleAuthSendCode(self::$db, self::JWT_CONFIG, [
+            'email' => 'one-more@example.com',
+        ]);
+
+        $this->assertSame(503, $response->status);
+        $this->assertStringContainsString('Service temporarily unavailable', $response->body['error']);
+    }
+
+    #[Test]
+    public function sendCodeEnforcesIpRateLimit(): void
+    {
+        // Simulate 5 codes from the same IP
+        $ip = '192.0.2.1';
+        $stmt = self::$db->prepare(
+            "INSERT INTO login_codes (email, code, expires_at, ip_address)
+             VALUES (:email, :code, :expires, :ip)"
+        );
+        for ($i = 0; $i < 5; $i++) {
+            $stmt->execute([
+                'email'   => "ip-test-{$i}@example.com",
+                'code'    => hash('sha256', str_pad((string) $i, 6, '0', STR_PAD_LEFT)),
+                'expires' => gmdate('Y-m-d H:i:s', time() + 600),
+                'ip'      => $ip,
+            ]);
+        }
+
+        // Set REMOTE_ADDR to the same IP
+        $_SERVER['REMOTE_ADDR'] = $ip;
+        try {
+            $response = handleAuthSendCode(self::$db, self::JWT_CONFIG, [
+                'email' => 'another@example.com',
+            ]);
+
+            $this->assertSame(429, $response->status);
+            $this->assertStringContainsString('Too many requests', $response->body['error']);
+        } finally {
+            unset($_SERVER['REMOTE_ADDR']);
+        }
+    }
+
+    #[Test]
+    public function sendCodeStoresClientIpAddress(): void
+    {
+        $_SERVER['REMOTE_ADDR'] = '203.0.113.42';
+        try {
+            $response = handleAuthSendCode(self::$db, self::JWT_CONFIG, [
+                'email' => 'ip-store@example.com',
+            ]);
+
+            $this->assertSame(200, $response->status);
+
+            // Verify IP was stored in DB
+            $stmt = self::$db->prepare(
+                'SELECT ip_address FROM login_codes WHERE email = :email ORDER BY created_at DESC LIMIT 1'
+            );
+            $stmt->execute(['email' => 'ip-store@example.com']);
+            $storedIp = $stmt->fetchColumn();
+
+            $this->assertSame('203.0.113.42', $storedIp);
+        } finally {
+            unset($_SERVER['REMOTE_ADDR']);
+        }
+    }
+
+    #[Test]
+    public function verifyCodeEnforcesGlobalVerifyRateLimit(): void
+    {
+        // Insert codes with high attempt counts to exceed the global 100/minute limit.
+        // Each row with attempts=25 contributes 25 to the SUM; 4 rows = 100.
+        $stmt = self::$db->prepare(
+            "INSERT INTO login_codes (email, code, expires_at, attempts)
+             VALUES (:email, :code, :expires, :attempts)"
+        );
+        for ($i = 0; $i < 4; $i++) {
+            $stmt->execute([
+                'email'    => "global-verify-{$i}@example.com",
+                'code'     => hash('sha256', str_pad((string) $i, 6, '0', STR_PAD_LEFT)),
+                'expires'  => gmdate('Y-m-d H:i:s', time() + 600),
+                'attempts' => 25,
+            ]);
+        }
+
+        // Next verify attempt for any email should hit global limit (503)
+        $this->createLoginCode('victim@example.com', '123456');
+        $response = handleAuthVerifyCode(self::$db, self::JWT_CONFIG, [
+            'email' => 'victim@example.com',
+            'code'  => '123456',
+        ]);
+
+        $this->assertSame(503, $response->status);
+        $this->assertStringContainsString('Service temporarily unavailable', $response->body['error']);
+    }
+
+    #[Test]
+    public function dbCountAllRecentLoginCodesCountsCorrectly(): void
+    {
+        // Insert 3 recent codes
+        for ($i = 0; $i < 3; $i++) {
+            $this->createLoginCode("count-{$i}@example.com", str_pad((string) $i, 6, '0', STR_PAD_LEFT));
+        }
+
+        $count = dbCountAllRecentLoginCodes(self::$db, 60);
+        $this->assertSame(3, $count);
+    }
+
+    #[Test]
+    public function sendCodeSkipsIpLimitWhenRemoteAddrAbsent(): void
+    {
+        // Ensure REMOTE_ADDR is not set
+        unset($_SERVER['REMOTE_ADDR']);
+
+        $response = handleAuthSendCode(self::$db, self::JWT_CONFIG, [
+            'email' => 'no-ip@example.com',
+        ]);
+
+        // Should succeed — IP rate limiting is gracefully skipped
+        $this->assertSame(200, $response->status);
+        $this->assertTrue($response->body['ok']);
+
+        // Verify ip_address is NULL in the DB
+        $stmt = self::$db->prepare(
+            'SELECT ip_address FROM login_codes WHERE email = :email ORDER BY created_at DESC LIMIT 1'
+        );
+        $stmt->execute(['email' => 'no-ip@example.com']);
+        $storedIp = $stmt->fetchColumn();
+
+        $this->assertNull($storedIp, 'ip_address should be NULL when REMOTE_ADDR is absent');
+    }
+
+    #[Test]
+    public function sendCodeHandlesIpv6Address(): void
+    {
+        $ipv6 = '2001:db8::1';
+        $_SERVER['REMOTE_ADDR'] = $ipv6;
+        try {
+            $response = handleAuthSendCode(self::$db, self::JWT_CONFIG, [
+                'email' => 'ipv6@example.com',
+            ]);
+
+            $this->assertSame(200, $response->status);
+
+            // Verify IPv6 address was stored
+            $stmt = self::$db->prepare(
+                'SELECT ip_address FROM login_codes WHERE email = :email ORDER BY created_at DESC LIMIT 1'
+            );
+            $stmt->execute(['email' => 'ipv6@example.com']);
+            $storedIp = $stmt->fetchColumn();
+
+            $this->assertSame($ipv6, $storedIp);
+
+            // Verify IP counting works for IPv6
+            $count = dbCountRecentLoginCodesByIp(self::$db, $ipv6, 900);
+            $this->assertSame(1, $count);
+        } finally {
+            unset($_SERVER['REMOTE_ADDR']);
+        }
+    }
+
+    #[Test]
+    public function dbCountAllRecentVerifyAttemptsCountsCorrectly(): void
+    {
+        // Insert codes with known attempt counts
+        $stmt = self::$db->prepare(
+            "INSERT INTO login_codes (email, code, expires_at, attempts)
+             VALUES (:email, :code, :expires, :attempts)"
+        );
+        $stmt->execute([
+            'email'    => 'vattempt-1@example.com',
+            'code'     => hash('sha256', '111111'),
+            'expires'  => gmdate('Y-m-d H:i:s', time() + 600),
+            'attempts' => 3,
+        ]);
+        $stmt->execute([
+            'email'    => 'vattempt-2@example.com',
+            'code'     => hash('sha256', '222222'),
+            'expires'  => gmdate('Y-m-d H:i:s', time() + 600),
+            'attempts' => 7,
+        ]);
+
+        $total = dbCountAllRecentVerifyAttempts(self::$db, 60);
+        $this->assertSame(10, $total);
+    }
+
+    #[Test]
+    public function dbCountRecentLoginCodesByIpCountsCorrectly(): void
+    {
+        $ip = '198.51.100.1';
+        $stmt = self::$db->prepare(
+            "INSERT INTO login_codes (email, code, expires_at, ip_address)
+             VALUES (:email, :code, :expires, :ip)"
+        );
+
+        // 2 codes from target IP
+        for ($i = 0; $i < 2; $i++) {
+            $stmt->execute([
+                'email'   => "ipcount-{$i}@example.com",
+                'code'    => hash('sha256', str_pad((string) $i, 6, '0', STR_PAD_LEFT)),
+                'expires' => gmdate('Y-m-d H:i:s', time() + 600),
+                'ip'      => $ip,
+            ]);
+        }
+
+        // 1 code from different IP
+        $stmt->execute([
+            'email'   => 'other-ip@example.com',
+            'code'    => hash('sha256', '999999'),
+            'expires' => gmdate('Y-m-d H:i:s', time() + 600),
+            'ip'      => '198.51.100.99',
+        ]);
+
+        $count = dbCountRecentLoginCodesByIp(self::$db, $ip, 900);
+        $this->assertSame(2, $count);
+    }
 }

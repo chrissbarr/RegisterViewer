@@ -28,7 +28,13 @@ function handleAuthVerifyCode(PDO $db, array $config, array $body): ApiResponse
         }
     }
 
-    // Global rate limit: max 10 total verification attempts per email per 10-minute window
+    // Global rate limit: max 100 verify attempts per minute across all users (PERF-15)
+    $globalAttempts = dbCountAllRecentVerifyAttempts($db, 60);
+    if ($globalAttempts >= 100) {
+        return new ApiResponse(['error' => 'Service temporarily unavailable. Please try again later.'], 503);
+    }
+
+    // Per-email rate limit: max 10 total verification attempts per email per 10-minute window
     $recentAttempts = dbCountRecentVerifyAttempts($db, $email);
     if ($recentAttempts >= 10) {
         return new ApiResponse(['error' => 'Too many verification attempts. Please request a new code.'], 429);

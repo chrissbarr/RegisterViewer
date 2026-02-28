@@ -14,7 +14,24 @@ function handleAuthSendCode(PDO $db, array $config, array $body): ApiResponse
         return new ApiResponse(['error' => 'Invalid email address'], 400);
     }
 
-    // Rate limit: max 3 codes per email per hour
+    // Global rate limit: max 30 OTP sends per minute across all users (PERF-15)
+    $globalCount = dbCountAllRecentLoginCodes($db, 60);
+    if ($globalCount >= 30) {
+        return new ApiResponse(['error' => 'Service temporarily unavailable. Please try again later.'], 503);
+    }
+
+    // IP rate limit: max 5 OTP sends per IP per 15 minutes (PERF-15)
+    // Note: on cPanel (no reverse proxy) REMOTE_ADDR is the real client IP.
+    // Behind a reverse proxy, consider using X-Forwarded-For instead.
+    $clientIp = $_SERVER['REMOTE_ADDR'] ?? null;
+    if ($clientIp !== null) {
+        $ipCount = dbCountRecentLoginCodesByIp($db, $clientIp, 900);
+        if ($ipCount >= 5) {
+            return new ApiResponse(['error' => 'Too many requests. Please try again later.'], 429);
+        }
+    }
+
+    // Per-email rate limit: max 3 codes per email per hour
     $recentCount = dbCountRecentLoginCodes($db, $email);
     if ($recentCount >= 3) {
         return new ApiResponse(['error' => 'Too many login attempts. Please try again later.'], 429);
@@ -26,7 +43,7 @@ function handleAuthSendCode(PDO $db, array $config, array $body): ApiResponse
     // Store hashed code with 10-minute expiry (SEC-04: never store plaintext OTP)
     $codeHash = hash('sha256', $code);
     $expiresAt = gmdate('Y-m-d H:i:s', time() + 600);
-    dbCreateLoginCode($db, $email, $codeHash, $expiresAt);
+    dbCreateLoginCode($db, $email, $codeHash, $expiresAt, $clientIp);
 
     // Send email after response is flushed (PERF-05: avoid blocking the PHP
     // worker for up to 10s while the Resend API completes).  The shutdown

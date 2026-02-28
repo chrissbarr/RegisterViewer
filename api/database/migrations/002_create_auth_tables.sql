@@ -20,9 +20,12 @@ CREATE TABLE IF NOT EXISTS `login_codes` (
     `expires_at` DATETIME         NOT NULL,
     `attempts`   TINYINT UNSIGNED NOT NULL DEFAULT 0,
     `used`       TINYINT(1)       NOT NULL DEFAULT 0,
+    `ip_address` VARCHAR(45)      DEFAULT NULL COMMENT 'Client IP (IPv4 or IPv6)',
     `created_at` DATETIME         NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    KEY `ix_email_created` (`email`, `created_at` DESC)
+    KEY `ix_email_created` (`email`, `created_at` DESC),
+    KEY `ix_ip_created` (`ip_address`, `created_at` DESC),
+    KEY `ix_created` (`created_at`)
 ) ENGINE=InnoDB
   DEFAULT CHARSET=utf8mb4
   COLLATE=utf8mb4_unicode_ci
