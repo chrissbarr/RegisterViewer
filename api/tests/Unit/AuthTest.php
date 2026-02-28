@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Firebase\JWT\JWT;
 use PHPUnit\Framework\TestCase;
 use PHPUnit\Framework\Attributes\Test;
 
@@ -73,15 +74,12 @@ final class AuthTest extends TestCase
     #[Test]
     public function extractAuthReturnsNoneForExpiredJwt(): void
     {
-        $config = self::JWT_CONFIG;
-        $header = base64UrlEncode(json_encode(['alg' => 'HS256', 'typ' => 'JWT']));
-        $payload = base64UrlEncode(json_encode([
+        $token = JWT::encode([
             'sub' => 1, 'email' => 'x@x.com', 'iat' => time() - 3600, 'exp' => time() - 1,
-        ]));
-        $sig = base64UrlEncode(hash_hmac('sha256', "$header.$payload", $config['jwt_secret'], true));
-        $_SERVER['HTTP_AUTHORIZATION'] = "Bearer $header.$payload.$sig";
+        ], self::JWT_CONFIG['jwt_secret'], 'HS256');
+        $_SERVER['HTTP_AUTHORIZATION'] = "Bearer $token";
 
-        $auth = extractAuth($config);
+        $auth = extractAuth(self::JWT_CONFIG);
         $this->assertSame('none', $auth['kind']);
     }
 

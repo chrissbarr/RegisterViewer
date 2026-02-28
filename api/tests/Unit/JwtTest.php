@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Firebase\JWT\JWT;
 use PHPUnit\Framework\TestCase;
 use PHPUnit\Framework\Attributes\Test;
 
@@ -17,7 +18,8 @@ final class JwtTest extends TestCase
         $this->assertCount(3, $parts);
 
         // Header should decode to HS256
-        $header = json_decode(base64UrlDecode($parts[0]), true);
+        $headerJson = base64_decode(strtr($parts[0], '-_', '+/'));
+        $header = json_decode($headerJson, true);
         $this->assertSame('HS256', $header['alg']);
         $this->assertSame('JWT', $header['typ']);
     }
@@ -74,21 +76,15 @@ final class JwtTest extends TestCase
     public function rejectsExpiredToken(): void
     {
         // Create a token that expired 1 second ago
-        $config = self::CONFIG;
-        $header = base64UrlEncode(json_encode(['alg' => 'HS256', 'typ' => 'JWT']));
-        $payload = base64UrlEncode(json_encode([
+        $token = JWT::encode([
             'sub'   => 42,
             'email' => 'user@example.com',
             'iat'   => time() - 3600,
             'exp'   => time() - 1,
             'jti'   => bin2hex(random_bytes(16)),
-        ]));
-        $signature = base64UrlEncode(
-            hash_hmac('sha256', "$header.$payload", $config['jwt_secret'], true)
-        );
-        $token = "$header.$payload.$signature";
+        ], self::CONFIG['jwt_secret'], 'HS256');
 
-        $this->assertNull(verifyJwt($config, $token));
+        $this->assertNull(verifyJwt(self::CONFIG, $token));
     }
 
     #[Test]
@@ -98,9 +94,10 @@ final class JwtTest extends TestCase
         $parts = explode('.', $token);
 
         // Tamper with the payload (change user ID)
-        $payload = json_decode(base64UrlDecode($parts[1]), true);
+        $payloadJson = base64_decode(strtr($parts[1], '-_', '+/'));
+        $payload = json_decode($payloadJson, true);
         $payload['sub'] = 999;
-        $parts[1] = base64UrlEncode(json_encode($payload));
+        $parts[1] = rtrim(strtr(base64_encode(json_encode($payload)), '+/', '-_'), '=');
 
         $tampered = implode('.', $parts);
         $this->assertNull(verifyJwt(self::CONFIG, $tampered));
@@ -125,45 +122,40 @@ final class JwtTest extends TestCase
     #[Test]
     public function rejectsTokenMissingRequiredFields(): void
     {
-        $config = self::CONFIG;
-        $header = base64UrlEncode(json_encode(['alg' => 'HS256', 'typ' => 'JWT']));
+        $now = time();
 
         // Missing 'sub'
-        $payload = base64UrlEncode(json_encode([
+        $token = JWT::encode([
             'email' => 'user@example.com',
-            'iat'   => time(),
-            'exp'   => time() + 3600,
+            'iat'   => $now,
+            'exp'   => $now + 3600,
             'jti'   => bin2hex(random_bytes(16)),
-        ]));
-        $sig = base64UrlEncode(hash_hmac('sha256', "$header.$payload", $config['jwt_secret'], true));
-        $this->assertNull(verifyJwt($config, "$header.$payload.$sig"));
+        ], self::CONFIG['jwt_secret'], 'HS256');
+        $this->assertNull(verifyJwt(self::CONFIG, $token));
 
         // Missing 'email'
-        $payload = base64UrlEncode(json_encode([
+        $token = JWT::encode([
             'sub' => 42,
-            'iat' => time(),
-            'exp' => time() + 3600,
+            'iat' => $now,
+            'exp' => $now + 3600,
             'jti' => bin2hex(random_bytes(16)),
-        ]));
-        $sig = base64UrlEncode(hash_hmac('sha256', "$header.$payload", $config['jwt_secret'], true));
-        $this->assertNull(verifyJwt($config, "$header.$payload.$sig"));
+        ], self::CONFIG['jwt_secret'], 'HS256');
+        $this->assertNull(verifyJwt(self::CONFIG, $token));
     }
 
     #[Test]
     public function acceptsTokenWithoutJti(): void
     {
         // Legacy tokens without jti should still verify
-        $config = self::CONFIG;
-        $header = base64UrlEncode(json_encode(['alg' => 'HS256', 'typ' => 'JWT']));
-        $payload = base64UrlEncode(json_encode([
+        $now = time();
+        $token = JWT::encode([
             'sub'   => 42,
             'email' => 'user@example.com',
-            'iat'   => time(),
-            'exp'   => time() + 3600,
-        ]));
-        $sig = base64UrlEncode(hash_hmac('sha256', "$header.$payload", $config['jwt_secret'], true));
+            'iat'   => $now,
+            'exp'   => $now + 3600,
+        ], self::CONFIG['jwt_secret'], 'HS256');
 
-        $result = verifyJwt($config, "$header.$payload.$sig");
+        $result = verifyJwt(self::CONFIG, $token);
         $this->assertNotNull($result);
         $this->assertSame(42, $result['sub']);
         $this->assertArrayNotHasKey('jti', $result);

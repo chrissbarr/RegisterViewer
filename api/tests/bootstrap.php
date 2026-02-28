@@ -14,6 +14,8 @@ define('SECURITY_HEADERS', [
 $_SERVER['REQUEST_METHOD'] = 'GET';
 $_SERVER['REQUEST_URI'] = '/';
 
+require __DIR__ . '/../vendor/autoload.php';
+
 // Require source files (order matters: validation.php defines LIMITS constant)
 require __DIR__ . '/../src/validation.php';
 require __DIR__ . '/../src/id.php';
