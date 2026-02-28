@@ -175,7 +175,10 @@ const initialInternalState: InternalCloudSyncState = {
  * Refs (appStateRef, internalRef, activeLocalIdRef) are used to give
  * stable callbacks access to latest values without appearing in
  * dependency arrays — this keeps the actions object referentially
- * stable across renders.
+ * stable across renders. `initFromProject` additionally updates
+ * `internalRef` synchronously (before `setInternal`) so that the
+ * `activeLocalId` effect's guard sees the cloudId immediately and
+ * skips, preventing a race where both effects fire in the same commit.
  *
  * By-localId operations (saveProjectToCloud, deleteProjectFromCloud,
  * setProjectVisibility, unlinkCloudProject) are delegated to
@@ -186,10 +189,11 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   const dispatch = useAppDispatch();
   const { activeLocalId, projects } = useProjectStorage();
   const { updateCloudMetadata, createNewProject } = useProjectStorageActions();
+  const { user: authUser } = useAuth();
+  const { getJwt } = useAuthActions();
 
   const [internal, setInternal] = useState<InternalCloudSyncState>(initialInternalState);
 
-  // Track activeLocalId and projects in refs for use in async callbacks
   const activeLocalIdRef = useRef(activeLocalId);
   useEffect(() => {
     activeLocalIdRef.current = activeLocalId;
@@ -219,7 +223,10 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     const cloudId = entry?.cloudId ?? null;
     // Skip if cloudId hasn't changed (avoid redundant state updates)
     if (cloudId === internalRef.current.cloudId) return;
-    const isOwner = cloudId ? checkOwnership(cloudId) : false;
+    // Local ownerToken check, OR if the user has a JWT, trust that manifest
+    // projects with a cloudId are owned (they come from local save or sync,
+    // never from opening someone else's shared link).
+    const isOwner = cloudId ? (checkOwnership(cloudId) || !!getJwt()) : false;
     if (cloudId === null) {
       setInternal({ ...initialInternalState });
       clearCloudUrl();
@@ -235,7 +242,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
         visibility: entry?.visibility ?? 'private',
       }));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- dataVersionRef is a ref (stable), not a reactive value
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- dataVersionRef is a ref (stable), getJwt is stable (useCallback with [])
   }, [activeLocalId]);
 
   // Ref to avoid stale closures in save/fork callbacks
@@ -274,31 +281,25 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     }));
   }, [updateCloudMetadata, createNewProject, dataVersionRef]);
 
-  const { user: authUser } = useAuth();
-  const { getJwt } = useAuthActions();
-
-  // Re-evaluate ownership when auth state changes (e.g., JWT validated after
-  // startup). Without this, a project loaded before auth finishes would have
-  // isOwner: false even if the JWT user owns it.
+  // Re-evaluate ownership when auth state changes or the active cloud project
+  // changes while authenticated. Covers: (1) JWT validated after startup,
+  // (2) project switch while already authenticated (e.g., via My Projects).
   useEffect(() => {
-    const { cloudId, isOwner } = internalRef.current;
-    if (!cloudId || isOwner || !authUser) return;
+    if (!internal.cloudId || internal.isOwner || !authUser) return;
 
-    // User just authenticated and the active cloud project isn't marked as owned.
-    // Re-fetch to get the server-reported isOwner flag.
     const jwt = getJwt();
     if (!jwt) return;
 
     let cancelled = false;
-    getProject(cloudId, undefined, jwt)
+    getProject(internal.cloudId, undefined, jwt)
       .then((res) => {
         if (!cancelled && res.isOwner) {
-          setInternal((prev) => prev.cloudId === cloudId ? { ...prev, isOwner: true } : prev);
+          setInternal((prev) => prev.cloudId === internal.cloudId ? { ...prev, isOwner: true } : prev);
         }
       })
       .catch(() => { /* best-effort; ownership stays false */ });
     return () => { cancelled = true; };
-  }, [authUser, getJwt]);
+  }, [authUser, getJwt, internal.cloudId, internal.isOwner]);
 
   const saveToCloud = useCallback(async () => {
     if (!isCloudEnabled()) return;
@@ -416,18 +417,25 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   const initFromProject = useCallback(
     (cloudId: string | null, isOwner: boolean) => {
       if (cloudId === null) {
-        setInternal({ ...initialInternalState });
+        const next = { ...initialInternalState };
+        internalRef.current = next;
+        setInternal(next);
         clearCloudUrl();
       } else {
-        setInternal((prev) => ({
-          ...prev,
+        const next = {
+          ...internalRef.current,
           cloudId,
           isOwner,
           shareUrl: buildProjectUrl(cloudId),
           lastSavedVersion: dataVersionRef.current,
           lastCloudSavedAt: null,
           error: null,
-        }));
+        };
+        // Synchronously update ref so the activeLocalId effect's guard
+        // (cloudId === internalRef.current.cloudId) sees this immediately,
+        // preventing it from overwriting isOwner with a stale local check.
+        internalRef.current = next;
+        setInternal(next);
       }
     },
     [dataVersionRef],
