@@ -5,13 +5,9 @@ declare(strict_types=1);
 function handleAuthVerifyCode(PDO $db, array $config, array $body): ApiResponse
 {
     // Validate email
-    $email = $body['email'] ?? null;
-    if (!is_string($email) || $email === '') {
-        return new ApiResponse(['error' => 'email is required'], 400);
-    }
-    $email = strtolower(trim($email));
-    if (strlen($email) > 254 || filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
-        return new ApiResponse(['error' => 'Invalid email address'], 400);
+    $email = validateAndNormalizeEmail($body);
+    if ($email instanceof ApiResponse) {
+        return $email;
     }
 
     // Validate code
