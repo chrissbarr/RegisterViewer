@@ -6,10 +6,10 @@ declare(strict_types=1);
  * Minimal HMAC-SHA256 JWT implementation.
  *
  * No external library needed — uses PHP's built-in hash_hmac().
- * Tokens contain: sub (user ID), email, iat (issued at), exp (expiry).
+ * Tokens contain: sub (user ID), email, iat (issued at), exp (expiry), jti (token ID).
  */
 
-const JWT_EXPIRY_SECONDS = 30 * 24 * 60 * 60; // 30 days
+const JWT_EXPIRY_SECONDS = 24 * 60 * 60; // 24 hours
 
 function base64UrlEncode(string $data): string
 {
@@ -23,6 +23,9 @@ function base64UrlDecode(string $data): string
 
 /**
  * Create a signed JWT for the given user.
+ *
+ * Includes a `jti` (JWT ID) claim — a 32-char hex string from 16 random bytes.
+ * This enables server-side revocation via the `revoked_tokens` table.
  */
 function createJwt(array $config, int $userId, string $email): string
 {
@@ -38,6 +41,7 @@ function createJwt(array $config, int $userId, string $email): string
         'email' => $email,
         'iat'   => $now,
         'exp'   => $now + JWT_EXPIRY_SECONDS,
+        'jti'   => bin2hex(random_bytes(16)),
     ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
 
     $signature = base64UrlEncode(
@@ -49,6 +53,9 @@ function createJwt(array $config, int $userId, string $email): string
 
 /**
  * Verify a JWT and return the decoded payload, or null if invalid/expired.
+ *
+ * Note: This performs cryptographic verification only. Revocation checking
+ * requires a DB lookup and is handled by extractAuth() in auth.php.
  */
 function verifyJwt(array $config, string $token): ?array
 {
@@ -102,6 +109,11 @@ function verifyJwt(array $config, string $token): ?array
         return null;
     }
     if (!isset($payload['email']) || !is_string($payload['email'])) {
+        return null;
+    }
+
+    // Validate jti type if present (optional claim, but must be string when set)
+    if (isset($payload['jti']) && !is_string($payload['jti'])) {
         return null;
     }
 

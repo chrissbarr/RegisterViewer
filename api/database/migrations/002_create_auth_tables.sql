@@ -33,3 +33,15 @@ ALTER TABLE `projects`
     ADD CONSTRAINT `fk_projects_user`
     FOREIGN KEY (`user_id`) REFERENCES `users`(`id`)
     ON DELETE SET NULL;
+
+-- Revoked JWT tokens (for server-side logout / token invalidation)
+CREATE TABLE IF NOT EXISTS `revoked_tokens` (
+    `jti`        CHAR(32)     NOT NULL COMMENT 'JWT ID (hex, 16 random bytes)',
+    `expires_at` DATETIME     NOT NULL COMMENT 'Original token expiry (for cleanup)',
+    `revoked_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`jti`),
+    KEY `ix_expires_at` (`expires_at`)
+) ENGINE=InnoDB
+  DEFAULT CHARSET=utf8mb4
+  COLLATE=utf8mb4_unicode_ci
+  COMMENT='Revoked JWTs — checked on every authenticated request';

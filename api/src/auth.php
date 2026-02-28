@@ -50,10 +50,13 @@ function isOwner(string $tokenHash, array $project): bool
  *
  * Returns one of:
  *   ['kind' => 'token', 'tokenHash' => string]
- *   ['kind' => 'jwt',   'userId' => int, 'email' => string]
+ *   ['kind' => 'jwt',   'userId' => int, 'email' => string, 'jti' => ?string, 'exp' => int]
  *   ['kind' => 'none']
+ *
+ * When $db is provided, JWT tokens are checked against the revoked_tokens table.
+ * Pass null for $db in unit tests to skip the revocation check.
  */
-function extractAuth(array $config): array
+function extractAuth(array $config, ?PDO $db = null): array
 {
     $header = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
     if (empty($header)) {
@@ -80,7 +83,20 @@ function extractAuth(array $config): array
     if (substr_count($value, '.') === 2) {
         $payload = verifyJwt($config, $value);
         if ($payload !== null) {
-            return ['kind' => 'jwt', 'userId' => $payload['sub'], 'email' => $payload['email']];
+            // Check revocation if DB is available and jti is present
+            $jti = $payload['jti'] ?? null;
+            if ($jti !== null && is_string($jti) && $db !== null) {
+                if (dbIsTokenRevoked($db, $jti)) {
+                    return ['kind' => 'none'];
+                }
+            }
+            return [
+                'kind'   => 'jwt',
+                'userId' => $payload['sub'],
+                'email'  => $payload['email'],
+                'jti'    => $jti,
+                'exp'    => $payload['exp'],
+            ];
         }
     }
 

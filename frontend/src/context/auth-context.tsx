@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, type ReactNode } from 'react';
-import { isCloudEnabled, sendLoginCode as apiSendLoginCode, verifyLoginCode as apiVerifyLoginCode, getAuthMe } from '../utils/api-client';
+import { isCloudEnabled, sendLoginCode as apiSendLoginCode, verifyLoginCode as apiVerifyLoginCode, getAuthMe, postAuthLogout } from '../utils/api-client';
 import { getOwnerTokenHash } from '../utils/owner-token';
 
 const JWT_KEY = 'register-viewer-jwt';
@@ -90,8 +90,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
+    const jwt = readJwt();
     clearJwt();
     setUser(null);
+    // Revoke the token server-side (best-effort, don't block on result)
+    if (jwt && isCloudEnabled()) {
+      postAuthLogout(jwt).catch(() => { /* best-effort */ });
+    }
   }, []);
 
   const getJwt = useCallback((): string | null => {

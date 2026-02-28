@@ -44,6 +44,7 @@ final class AuthFlowTest extends TestCase
         self::$db->exec('DELETE FROM projects');
         self::$db->exec('DELETE FROM login_codes');
         self::$db->exec('DELETE FROM users');
+        self::$db->exec('DELETE FROM revoked_tokens');
     }
 
     public static function tearDownAfterClass(): void
@@ -52,6 +53,7 @@ final class AuthFlowTest extends TestCase
             self::$db->exec('DELETE FROM projects');
             self::$db->exec('DELETE FROM login_codes');
             self::$db->exec('DELETE FROM users');
+            self::$db->exec('DELETE FROM revoked_tokens');
             self::$db = null;
         }
     }

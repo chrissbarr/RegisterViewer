@@ -10,6 +10,7 @@ vi.mock('../utils/api-client', () => ({
   sendLoginCode: vi.fn(),
   verifyLoginCode: vi.fn(),
   getAuthMe: vi.fn(),
+  postAuthLogout: vi.fn(),
 }));
 
 vi.mock('../utils/owner-token', () => ({
@@ -23,6 +24,7 @@ import {
   sendLoginCode,
   verifyLoginCode,
   getAuthMe,
+  postAuthLogout,
 } from '../utils/api-client';
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -179,6 +181,7 @@ describe('AuthProvider', () => {
 
   describe('logout', () => {
     it('clears JWT and user', async () => {
+      (postAuthLogout as Mock).mockResolvedValue(undefined);
       // First sign in
       (verifyLoginCode as Mock).mockResolvedValue({
         token: 'jwt-to-clear',
@@ -201,6 +204,71 @@ describe('AuthProvider', () => {
         result.current.actions.logout();
       });
 
+      expect(result.current.state.user).toBeNull();
+      expect(localStorage.getItem(JWT_KEY)).toBeNull();
+    });
+
+    it('calls server-side logout with JWT', async () => {
+      (postAuthLogout as Mock).mockResolvedValue(undefined);
+      (verifyLoginCode as Mock).mockResolvedValue({
+        token: 'jwt-to-revoke',
+        user: { id: 1, email: 'a@b.com' },
+      });
+
+      const { result } = renderHook(
+        () => ({ state: useAuth(), actions: useAuthActions() }),
+        { wrapper },
+      );
+
+      await act(async () => {
+        await result.current.actions.verifyCode('a@b.com', '123456');
+      });
+
+      act(() => {
+        result.current.actions.logout();
+      });
+
+      expect(postAuthLogout).toHaveBeenCalledWith('jwt-to-revoke');
+    });
+
+    it('does not call server-side logout when cloud disabled', async () => {
+      (postAuthLogout as Mock).mockResolvedValue(undefined);
+      (isCloudEnabled as Mock).mockReturnValue(false);
+      localStorage.setItem(JWT_KEY, 'some-jwt');
+
+      const { result } = renderHook(
+        () => ({ state: useAuth(), actions: useAuthActions() }),
+        { wrapper },
+      );
+
+      act(() => {
+        result.current.actions.logout();
+      });
+
+      expect(postAuthLogout).not.toHaveBeenCalled();
+    });
+
+    it('still clears local state when server-side logout fails', async () => {
+      (postAuthLogout as Mock).mockRejectedValue(new Error('network error'));
+      (verifyLoginCode as Mock).mockResolvedValue({
+        token: 'jwt-to-fail',
+        user: { id: 1, email: 'a@b.com' },
+      });
+
+      const { result } = renderHook(
+        () => ({ state: useAuth(), actions: useAuthActions() }),
+        { wrapper },
+      );
+
+      await act(async () => {
+        await result.current.actions.verifyCode('a@b.com', '123456');
+      });
+
+      act(() => {
+        result.current.actions.logout();
+      });
+
+      // Local state should be cleared even though server call fails
       expect(result.current.state.user).toBeNull();
       expect(localStorage.getItem(JWT_KEY)).toBeNull();
     });

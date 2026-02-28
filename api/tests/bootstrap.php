@@ -29,6 +29,7 @@ require __DIR__ . '/../src/api-response.php';
 require __DIR__ . '/../src/handlers/auth-send-code.php';
 require __DIR__ . '/../src/handlers/auth-verify-code.php';
 require __DIR__ . '/../src/handlers/auth-me.php';
+require __DIR__ . '/../src/handlers/auth-logout.php';
 require __DIR__ . '/../src/handlers/create-project.php';
 require __DIR__ . '/../src/handlers/get-project.php';
 require __DIR__ . '/../src/handlers/update-project.php';

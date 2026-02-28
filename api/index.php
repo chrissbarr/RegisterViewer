@@ -28,6 +28,7 @@ require __DIR__ . '/src/handlers/list-projects.php';
 require __DIR__ . '/src/handlers/auth-send-code.php';
 require __DIR__ . '/src/handlers/auth-verify-code.php';
 require __DIR__ . '/src/handlers/auth-me.php';
+require __DIR__ . '/src/handlers/auth-logout.php';
 require __DIR__ . '/database/migrate.php';
 
 // ---- Constants ----
@@ -254,8 +255,8 @@ try {
         $body = $parsed['assoc'];
     }
 
-    // Extract auth once
-    $auth = extractAuth($config);
+    // Extract auth once (pass $db for JWT revocation check)
+    $auth = extractAuth($config, $db);
 
     // Match project ID for resource routes
     $projectId = null;
@@ -271,6 +272,8 @@ try {
             => handleAuthVerifyCode($db, $config, $body),
         $path === '/api/auth/me' && $method === 'GET'
             => handleAuthMe($db, $auth),
+        $path === '/api/auth/logout' && $method === 'POST'
+            => handleAuthLogout($db, $auth),
 
         // Collection routes: /api/projects
         preg_match('#^/api/projects/?$#', $path) === 1 && $method === 'POST'

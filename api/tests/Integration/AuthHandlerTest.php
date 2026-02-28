@@ -43,6 +43,7 @@ final class AuthHandlerTest extends TestCase
         self::$db->exec('DELETE FROM projects');
         self::$db->exec('DELETE FROM login_codes');
         self::$db->exec('DELETE FROM users');
+        self::$db->exec('DELETE FROM revoked_tokens');
     }
 
     public static function tearDownAfterClass(): void
@@ -51,6 +52,7 @@ final class AuthHandlerTest extends TestCase
             self::$db->exec('DELETE FROM projects');
             self::$db->exec('DELETE FROM login_codes');
             self::$db->exec('DELETE FROM users');
+            self::$db->exec('DELETE FROM revoked_tokens');
             self::$db = null;
         }
     }
@@ -421,5 +423,89 @@ final class AuthHandlerTest extends TestCase
 
         $this->assertSame(401, $response->status);
         $this->assertSame('User not found', $response->body['error']);
+    }
+
+    // ---- handleAuthLogout ----
+
+    #[Test]
+    public function logoutRevokesToken(): void
+    {
+        $email = 'logout@example.com';
+        $userId = dbCreateUser(self::$db, $email);
+        $token = createJwt(self::JWT_CONFIG, $userId, $email);
+        $payload = verifyJwt(self::JWT_CONFIG, $token);
+
+        $auth = [
+            'kind'   => 'jwt',
+            'userId' => $userId,
+            'email'  => $email,
+            'jti'    => $payload['jti'],
+            'exp'    => $payload['exp'],
+        ];
+
+        $response = handleAuthLogout(self::$db, $auth);
+        $this->assertSame(204, $response->status);
+
+        // Token's jti should now be in revoked_tokens
+        $this->assertTrue(dbIsTokenRevoked(self::$db, $payload['jti']));
+    }
+
+    #[Test]
+    public function logoutRejectsNonJwtAuth(): void
+    {
+        $auth = ['kind' => 'token', 'tokenHash' => self::OWNER_HASH];
+        $response = handleAuthLogout(self::$db, $auth);
+        $this->assertSame(401, $response->status);
+    }
+
+    #[Test]
+    public function logoutRejectsNoAuth(): void
+    {
+        $auth = ['kind' => 'none'];
+        $response = handleAuthLogout(self::$db, $auth);
+        $this->assertSame(401, $response->status);
+    }
+
+    #[Test]
+    public function revokedTokenIsRejectedByExtractAuth(): void
+    {
+        $email = 'revoked@example.com';
+        $userId = dbCreateUser(self::$db, $email);
+        $token = createJwt(self::JWT_CONFIG, $userId, $email);
+        $payload = verifyJwt(self::JWT_CONFIG, $token);
+
+        // Token works before revocation
+        $_SERVER['HTTP_AUTHORIZATION'] = "Bearer $token";
+        $auth = extractAuth(self::JWT_CONFIG, self::$db);
+        $this->assertSame('jwt', $auth['kind']);
+
+        // Revoke the token
+        $expiresAt = gmdate('Y-m-d H:i:s', $payload['exp']);
+        dbRevokeToken(self::$db, $payload['jti'], $expiresAt);
+
+        // Token should now be rejected
+        $auth = extractAuth(self::JWT_CONFIG, self::$db);
+        $this->assertSame('none', $auth['kind']);
+
+        unset($_SERVER['HTTP_AUTHORIZATION']);
+    }
+
+    #[Test]
+    public function extractAuthReturnsJtiAndExp(): void
+    {
+        $email = 'jti@example.com';
+        $userId = dbCreateUser(self::$db, $email);
+        $token = createJwt(self::JWT_CONFIG, $userId, $email);
+
+        $_SERVER['HTTP_AUTHORIZATION'] = "Bearer $token";
+        $auth = extractAuth(self::JWT_CONFIG, self::$db);
+
+        $this->assertSame('jwt', $auth['kind']);
+        $this->assertArrayHasKey('jti', $auth);
+        $this->assertArrayHasKey('exp', $auth);
+        $this->assertMatchesRegularExpression('/^[0-9a-f]{32}$/', $auth['jti']);
+        $this->assertIsInt($auth['exp']);
+
+        unset($_SERVER['HTTP_AUTHORIZATION']);
     }
 }

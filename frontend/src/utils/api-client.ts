@@ -227,3 +227,11 @@ export async function getAuthMe(jwt: string): Promise<AuthMeResponse> {
     headers: { Authorization: `Bearer ${jwt}` },
   });
 }
+
+export async function postAuthLogout(jwt: string): Promise<void> {
+  await apiFetchVoid('/api/auth/logout', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${jwt}` },
+    body: JSON.stringify({}),
+  });
+}
