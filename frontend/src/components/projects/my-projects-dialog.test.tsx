@@ -121,7 +121,7 @@ vi.mock('../../utils/api-client', () => ({
 }));
 
 vi.mock('../../context/auth-context', () => ({
-  useAuth: () => ({ user: null, isLoading: false }),
+  useAuth: () => ({ user: null }),
   useAuthActions: () => ({ sendCode: vi.fn(), verifyCode: vi.fn(), logout: vi.fn(), getJwt: () => null }),
 }));
 

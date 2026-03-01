@@ -34,6 +34,23 @@ function wrapper({ children }: { children: ReactNode }) {
 
 const JWT_KEY = 'register-viewer-jwt';
 
+/** Build a fake JWT with a parseable payload (not cryptographically valid). */
+function fakeJwt(payload: Record<string, unknown>): string {
+  const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+  const body = btoa(JSON.stringify(payload));
+  return `${header}.${body}.fakesig`;
+}
+
+/** A valid-looking fake JWT that expires far in the future. */
+function validJwt(id: number, email: string): string {
+  return fakeJwt({ sub: id, email, exp: Math.floor(Date.now() / 1000) + 86400 });
+}
+
+/** A fake JWT that is already expired. */
+function expiredJwt(id: number, email: string): string {
+  return fakeJwt({ sub: id, email, exp: Math.floor(Date.now() / 1000) - 3600 });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
@@ -44,59 +61,84 @@ beforeEach(() => {
 
 describe('AuthProvider', () => {
   describe('initial state', () => {
-    it('starts with no user and not loading when no JWT stored', () => {
+    it('starts with no user when no JWT stored', () => {
       const { result } = renderHook(() => useAuth(), { wrapper });
 
       expect(result.current.user).toBeNull();
-      expect(result.current.isLoading).toBe(false);
     });
 
-    it('starts with no user and not loading when cloud is disabled', () => {
+    it('starts with no user when cloud is disabled', () => {
       (isCloudEnabled as Mock).mockReturnValue(false);
-      localStorage.setItem(JWT_KEY, 'some-jwt');
+      localStorage.setItem(JWT_KEY, validJwt(1, 'a@b.com'));
 
       const { result } = renderHook(() => useAuth(), { wrapper });
 
       expect(result.current.user).toBeNull();
-      expect(result.current.isLoading).toBe(false);
     });
 
-    it('starts loading when JWT exists and cloud enabled', () => {
-      localStorage.setItem(JWT_KEY, 'stored-jwt');
+    it('initializes user immediately from valid JWT payload', () => {
+      const jwt = validJwt(1, 'a@b.com');
+      localStorage.setItem(JWT_KEY, jwt);
       (getAuthMe as Mock).mockResolvedValue({ user: { id: 1, email: 'a@b.com' } });
 
       const { result } = renderHook(() => useAuth(), { wrapper });
 
-      // isLoading is true synchronously before the effect resolves
-      expect(result.current.isLoading).toBe(true);
+      expect(result.current.user).toEqual({ id: 1, email: 'a@b.com' });
+    });
+
+    it('starts with no user when stored JWT is expired', () => {
+      localStorage.setItem(JWT_KEY, expiredJwt(1, 'a@b.com'));
+
+      const { result } = renderHook(() => useAuth(), { wrapper });
+
+      expect(result.current.user).toBeNull();
+    });
+
+    it('starts with no user when stored JWT is malformed', () => {
+      localStorage.setItem(JWT_KEY, 'not-a-jwt');
+
+      const { result } = renderHook(() => useAuth(), { wrapper });
+
+      expect(result.current.user).toBeNull();
+    });
+
+    it('treats JWT without exp field as non-expired', () => {
+      const jwt = fakeJwt({ sub: 5, email: 'noexp@test.com' });
+      localStorage.setItem(JWT_KEY, jwt);
+      (getAuthMe as Mock).mockResolvedValue({ user: { id: 5, email: 'noexp@test.com' } });
+
+      const { result } = renderHook(() => useAuth(), { wrapper });
+
+      expect(result.current.user).toEqual({ id: 5, email: 'noexp@test.com' });
     });
   });
 
   describe('JWT validation on mount', () => {
-    it('validates stored JWT and sets user on success', async () => {
-      localStorage.setItem(JWT_KEY, 'valid-jwt');
+    it('validates stored JWT and updates user from server', async () => {
+      const jwt = validJwt(42, 'user@example.com');
+      localStorage.setItem(JWT_KEY, jwt);
       (getAuthMe as Mock).mockResolvedValue({ user: { id: 42, email: 'user@example.com' } });
 
       const { result } = await renderHookAndFlush(() => useAuth());
 
-      expect(getAuthMe).toHaveBeenCalledWith('valid-jwt');
+      expect(getAuthMe).toHaveBeenCalledWith(jwt);
       expect(result.current.user).toEqual({ id: 42, email: 'user@example.com' });
-      expect(result.current.isLoading).toBe(false);
     });
 
-    it('clears JWT on validation failure', async () => {
-      localStorage.setItem(JWT_KEY, 'expired-jwt');
+    it('clears user and JWT when server rejects token', async () => {
+      const jwt = validJwt(42, 'user@example.com');
+      localStorage.setItem(JWT_KEY, jwt);
       (getAuthMe as Mock).mockRejectedValue(new Error('401'));
 
       const { result } = await renderHookAndFlush(() => useAuth());
 
       expect(result.current.user).toBeNull();
-      expect(result.current.isLoading).toBe(false);
       expect(localStorage.getItem(JWT_KEY)).toBeNull();
     });
 
     it('stores refreshed token when returned by getAuthMe', async () => {
-      localStorage.setItem(JWT_KEY, 'old-jwt');
+      const jwt = validJwt(42, 'user@example.com');
+      localStorage.setItem(JWT_KEY, jwt);
       (getAuthMe as Mock).mockResolvedValue({
         user: { id: 42, email: 'user@example.com' },
         refreshedToken: 'new-refreshed-jwt',
@@ -108,14 +150,15 @@ describe('AuthProvider', () => {
     });
 
     it('keeps existing JWT when no refreshedToken returned', async () => {
-      localStorage.setItem(JWT_KEY, 'current-jwt');
+      const jwt = validJwt(42, 'user@example.com');
+      localStorage.setItem(JWT_KEY, jwt);
       (getAuthMe as Mock).mockResolvedValue({
         user: { id: 42, email: 'user@example.com' },
       });
 
       await renderHookAndFlush(() => useAuth());
 
-      expect(localStorage.getItem(JWT_KEY)).toBe('current-jwt');
+      expect(localStorage.getItem(JWT_KEY)).toBe(jwt);
     });
 
     it('does not call getAuthMe when no JWT stored', () => {
@@ -126,7 +169,7 @@ describe('AuthProvider', () => {
 
     it('does not call getAuthMe when cloud is disabled', () => {
       (isCloudEnabled as Mock).mockReturnValue(false);
-      localStorage.setItem(JWT_KEY, 'some-jwt');
+      localStorage.setItem(JWT_KEY, validJwt(1, 'a@b.com'));
 
       renderHook(() => useAuth(), { wrapper });
 

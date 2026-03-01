@@ -10,9 +10,26 @@ interface AuthUser {
   email: string;
 }
 
+/**
+ * Decode a JWT payload without verification (base64url → JSON).
+ * Returns null for malformed or expired tokens.
+ */
+function parseJwtPayload(token: string): AuthUser | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const payload = JSON.parse(atob(base64 + '='.repeat((4 - base64.length % 4) % 4)));
+    if (typeof payload.exp === 'number' && payload.exp * 1000 < Date.now()) return null;
+    if (typeof payload.sub !== 'number' || typeof payload.email !== 'string') return null;
+    return { id: payload.sub, email: payload.email };
+  } catch {
+    return null;
+  }
+}
+
 interface AuthState {
   user: AuthUser | null;
-  isLoading: boolean;
 }
 
 interface AuthActions {
@@ -50,19 +67,15 @@ function clearJwt(): void {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [isLoading, setIsLoading] = useState(() => {
-    // Only show loading if there's a JWT to validate and cloud is enabled
-    return isCloudEnabled() && readJwt() !== null;
+  const [user, setUser] = useState<AuthUser | null>(() => {
+    if (!isCloudEnabled()) return null;
+    const jwt = readJwt();
+    return jwt ? parseJwtPayload(jwt) : null;
   });
-
-  // Validate existing JWT on mount
+  // Background-validate the JWT on mount (clear user if revoked/invalid)
   useEffect(() => {
     const jwt = readJwt();
-    if (!jwt || !isCloudEnabled()) {
-      // isLoading was initialized to false for this case, nothing to do
-      return;
-    }
+    if (!jwt || !isCloudEnabled()) return;
 
     let cancelled = false;
     getAuthMe(jwt)
@@ -73,10 +86,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       })
       .catch(() => {
-        if (!cancelled) clearJwt();
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoading(false);
+        if (!cancelled) {
+          clearJwt();
+          setUser(null);
+        }
       });
 
     return () => { cancelled = true; };
@@ -107,7 +120,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return readJwt();
   }, []);
 
-  const state = useMemo<AuthState>(() => ({ user, isLoading }), [user, isLoading]);
+  const state = useMemo<AuthState>(() => ({ user }), [user]);
   const actions = useMemo<AuthActions>(() => ({ sendCode, verifyCode, logout, getJwt }), [sendCode, verifyCode, logout, getJwt]);
 
   return (
