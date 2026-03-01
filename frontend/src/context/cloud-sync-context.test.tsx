@@ -27,6 +27,7 @@ vi.mock('../utils/api-client', () => ({
   createProject: vi.fn(),
   updateProject: vi.fn(),
   patchProjectVisibility: vi.fn(),
+  getProject: vi.fn(),
   deleteProject: vi.fn(),
   listProjects: vi.fn(),
 }));
@@ -71,9 +72,13 @@ vi.mock('../utils/storage', () => ({
   EMPTY_SERIALIZED_STATE: { registers: [], activeRegisterId: null, registerValues: {} },
 }));
 
+const authMock = {
+  user: null as { id: number; email: string } | null,
+  getJwt: vi.fn(() => null as string | null),
+};
 vi.mock('./auth-context', () => ({
-  useAuth: () => ({ user: null }),
-  useAuthActions: () => ({ sendCode: vi.fn(), verifyCode: vi.fn(), logout: vi.fn(), getJwt: () => null }),
+  useAuth: () => ({ user: authMock.user }),
+  useAuthActions: () => ({ sendCode: vi.fn(), verifyCode: vi.fn(), logout: vi.fn(), getJwt: authMock.getJwt }),
 }));
 
 // Stub history.replaceState so it doesn't error in jsdom
@@ -84,6 +89,7 @@ const replaceStateSpy = vi.spyOn(history, 'replaceState').mockImplementation(() 
 import {
   isCloudEnabled,
   createProject as apiCreateProject,
+  getProject as apiGetProject,
   updateProject as apiUpdateProject,
   patchProjectVisibility as apiPatchVisibility,
   deleteProject as apiDeleteProject,
@@ -162,6 +168,8 @@ beforeEach(() => {
   vi.clearAllMocks();
 
   // Default mocks
+  authMock.user = null;
+  authMock.getJwt.mockReturnValue(null);
   (isCloudEnabled as Mock).mockReturnValue(true);
   (getOrCreateOwnerToken as Mock).mockReturnValue('mock-owner-token');
   (hashOwnerToken as Mock).mockResolvedValue('mock-token-hash');
@@ -1087,6 +1095,58 @@ describe('CloudSyncProvider', () => {
       });
 
       expect(result.current.state.cloudId).toBeNull();
+    });
+  });
+
+  describe('SEC-N02 regression: ownership inference', () => {
+    it('does not grant ownership to authenticated users for non-owned projects', () => {
+      // Simulate: user is logged in with a JWT
+      authMock.user = { id: 1, email: 'user@example.com' };
+      authMock.getJwt.mockReturnValue('mock-jwt-token');
+
+      // Manifest has a cloud project without a local ownerToken
+      (loadManifest as Mock).mockReturnValue({
+        version: 1,
+        projects: [makeManifestEntry({ cloudId: 'shared-cloud-id' })],
+      });
+      (checkOwnership as Mock).mockReturnValue(false);
+
+      // Prevent the async re-evaluation effect from resolving during this test
+      (apiGetProject as Mock).mockReturnValue(new Promise(() => {}));
+
+      const { result } = renderCloudSync();
+
+      // The activeLocalId effect should NOT infer ownership from !!getJwt()
+      expect(result.current.state.cloudId).toBe('shared-cloud-id');
+      expect(result.current.state.isOwner).toBe(false);
+    });
+
+    it('promotes ownership after server confirms via re-evaluation effect', async () => {
+      authMock.user = { id: 1, email: 'user@example.com' };
+      authMock.getJwt.mockReturnValue('mock-jwt-token');
+
+      (loadManifest as Mock).mockReturnValue({
+        version: 1,
+        projects: [makeManifestEntry({ cloudId: 'my-cloud-id' })],
+      });
+      (checkOwnership as Mock).mockReturnValue(false);
+
+      // Server confirms ownership
+      (apiGetProject as Mock).mockResolvedValue({ isOwner: true });
+
+      const { result } = renderCloudSync();
+
+      // Initially false (synchronous phase)
+      expect(result.current.state.isOwner).toBe(false);
+
+      // Flush the async re-evaluation effect (getProject promise + state update)
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(apiGetProject).toHaveBeenCalledWith('my-cloud-id', { tokenHash: '', jwt: 'mock-jwt-token' });
+      expect(result.current.state.isOwner).toBe(true);
     });
   });
 });

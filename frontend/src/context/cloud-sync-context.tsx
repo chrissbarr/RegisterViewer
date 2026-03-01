@@ -223,10 +223,10 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     const cloudId = entry?.cloudId ?? null;
     // Skip if cloudId hasn't changed (avoid redundant state updates)
     if (cloudId === internalRef.current.cloudId) return;
-    // Local ownerToken check, OR if the user has a JWT, trust that manifest
-    // projects with a cloudId are owned (they come from local save or sync,
-    // never from opening someone else's shared link).
-    const isOwner = cloudId ? (checkOwnership(cloudId) || !!getJwt()) : false;
+    // Local ownerToken check only; the auth re-evaluation effect (below)
+    // will asynchronously promote isOwner via a server round-trip when the
+    // user is authenticated, avoiding false ownership for shared projects.
+    const isOwner = cloudId ? checkOwnership(cloudId) : false;
     if (cloudId === null) {
       setInternal({ ...initialInternalState });
       clearCloudUrl();
@@ -242,7 +242,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
         visibility: entry?.visibility ?? 'private',
       }));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- dataVersionRef is a ref (stable), getJwt is stable (useCallback with [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- dataVersionRef is a ref (stable)
   }, [activeLocalId]);
 
   // Ref to avoid stale closures in save/fork callbacks
