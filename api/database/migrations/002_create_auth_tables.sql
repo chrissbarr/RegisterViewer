@@ -31,7 +31,11 @@ CREATE TABLE IF NOT EXISTS `login_codes` (
   COLLATE=utf8mb4_unicode_ci
   COMMENT='OTP codes for email login';
 
--- Link projects.user_id to users table
+-- Link projects.user_id → users.id
+-- Prerequisite: projects.user_id column must exist (created in 001_create_projects_table.sql).
+-- The migration runner (database/migrate.php) sorts files lexicographically,
+-- so zero-padded numeric prefixes guarantee 001 always runs before 002.
+-- Do NOT remove user_id from migration 001.
 ALTER TABLE `projects`
     ADD CONSTRAINT `fk_projects_user`
     FOREIGN KEY (`user_id`) REFERENCES `users`(`id`)
