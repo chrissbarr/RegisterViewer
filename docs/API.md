@@ -16,7 +16,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
 - **Algorithm:** HMAC-SHA256
 - **Expiry:** 24 hours from issue
-- **Claims:** `sub` (user ID), `email`, `iat`, `exp`
+- **Claims:** `sub` (user ID), `email`, `iat`, `exp`, `jti` (token ID for revocation)
 - **Scope:** Grants access to all projects owned by the authenticated user
 
 ### Legacy Token Hash Authentication
@@ -61,7 +61,10 @@ Sends a 6-digit OTP code to the provided email address.
 }
 ```
 
-**Rate Limiting:** Max 3 codes per email per hour.
+**Rate Limiting:**
+- Global: max 30 OTP sends per minute across all users (returns `503`)
+- Per-IP: max 5 sends per IP per 15 minutes (returns `429`)
+- Per-email: max 3 codes per email per hour (returns `429`)
 
 **Response `200 OK`:**
 
@@ -78,7 +81,8 @@ Always returns 200 regardless of whether the email was delivered, to prevent ema
 | Status | Reason |
 |--------|--------|
 | 400 | Invalid or missing email address |
-| 429 | Too many login attempts (max 3/hour per email) |
+| 429 | Too many requests (per-IP or per-email rate limit exceeded) |
+| 503 | Global rate limit exceeded — try again later |
 
 ---
 
@@ -156,6 +160,26 @@ Returns the authenticated user's profile.
   }
 }
 ```
+
+**Errors:**
+
+| Status | Reason |
+|--------|--------|
+| 401 | Missing or invalid JWT token |
+
+---
+
+### Logout
+
+```
+POST /api/auth/logout
+```
+
+Revokes the current JWT token. The token's `jti` is added to the `revoked_tokens` table, preventing reuse.
+
+**Auth:** Required (JWT only)
+
+**Response:** `204 No Content` (empty body)
 
 **Errors:**
 
@@ -253,9 +277,12 @@ Retrieves a project by its 12-character base62 ID.
   "id": "AbCdEfGhIjKl",
   "data": { "version": 1, "registers": [...], "registerValues": {...} },
   "createdAt": "2026-02-23T09:00:00.000Z",
-  "updatedAt": "2026-02-23T09:00:00.000Z"
+  "updatedAt": "2026-02-23T09:00:00.000Z",
+  "isOwner": true
 }
 ```
+
+`isOwner` is `true` when the requesting user owns this project (via token hash or JWT user ID), `false` otherwise.
 
 **Cache-Control:**
 - Private projects: `private, no-store`
@@ -414,11 +441,19 @@ Lists all projects owned by the authenticated user.
 
 ## Security Headers
 
-All JSON responses include:
+All responses include:
 
 ```
 X-Content-Type-Options: nosniff
 Referrer-Policy: no-referrer
+X-Frame-Options: DENY
+Content-Security-Policy: default-src 'none'
+```
+
+In production, HSTS is also sent:
+
+```
+Strict-Transport-Security: max-age=31536000; includeSubDomains
 ```
 
 ## Error Response Format
