@@ -42,6 +42,14 @@ ALTER TABLE `projects`
     FOREIGN KEY (`user_id`) REFERENCES `users`(`id`)
     ON DELETE SET NULL;
 
+-- Upgrade ix_user_id to composite index for ORDER BY updated_at DESC.
+-- The composite index covers the FK on user_id via leftmost prefix,
+-- making the single-column ix_user_id redundant. (PERF-03 / ARCH-09)
+-- Requires MySQL 8.0.13+ for DESC key part support.
+ALTER TABLE `projects`
+    DROP INDEX `ix_user_id`,
+    ADD INDEX `ix_user_updated` (`user_id`, `updated_at` DESC);
+
 -- Revoked JWT tokens (for server-side logout / token invalidation)
 CREATE TABLE IF NOT EXISTS `revoked_tokens` (
     `jti`        CHAR(32)     NOT NULL COMMENT 'JWT ID (hex, 16 random bytes)',
