@@ -265,9 +265,9 @@ if ($path === '/api/health' && ($method === 'GET' || $method === 'HEAD')) {
     }
 }
 
-// Email health check — verifies Resend API key is configured and reachable (DEV-04)
+// Email health check — verifies email provider is configured and reachable (DEV-04)
 if ($path === '/api/health/email' && ($method === 'GET' || $method === 'HEAD')) {
-    $result = checkResendApiHealth($config);
+    $result = checkEmailHealth($config);
     if ($result['ok']) {
         emitResponse(new ApiResponse(['status' => 'ok', 'timestamp' => gmdate('c')]));
     } else {

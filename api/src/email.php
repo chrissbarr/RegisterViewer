@@ -3,28 +3,32 @@
 declare(strict_types=1);
 
 /**
- * Parse the HTTP status code from a $http_response_header array.
+ * Send a login OTP code via email.
  *
- * @param list<string> $responseHeaders The $http_response_header magic variable.
- * @return int|null The status code, or null if unparseable.
+ * Builds the OTP message and delegates to sendEmail() for transport.
+ *
+ * @return bool True if the email was accepted by the provider, false otherwise.
  */
-function parseHttpStatusCode(array $responseHeaders): ?int
+function sendLoginCode(array $config, string $email, string $code): bool
 {
-    $statusLine = $responseHeaders[0] ?? '';
-    if (preg_match('/\s(\d{3})\s/', $statusLine, $matches)) {
-        return (int) $matches[1];
-    }
-    return null;
+    return sendEmail(
+        $config,
+        $email,
+        'Your Register Viewer login code',
+        "Your Register Viewer login code is: $code\n\nIt expires in 10 minutes.\n\nIf you didn't request this, you can safely ignore this email.",
+    );
 }
 
 /**
- * Send a login OTP code via the Resend API.
+ * Send an email via the configured provider (currently Resend).
  *
- * Uses file_get_contents with a stream context (no curl dependency).
+ * Uses cURL for reliable HTTP transport with direct status code access.
+ * To swap providers, rewrite the body of this function — the rest of the
+ * codebase calls sendLoginCode() / sendEmail() and is unaffected.
  *
- * @return bool True if the API returned 2xx, false otherwise.
+ * @return bool True if the provider returned 2xx, false otherwise.
  */
-function sendLoginCode(array $config, string $email, string $code): bool
+function sendEmail(array $config, string $to, string $subject, string $text): bool
 {
     $startTime = microtime(true);
     $apiKey = $config['resend_api_key'] ?? '';
@@ -41,41 +45,44 @@ function sendLoginCode(array $config, string $email, string $code): bool
 
     $body = json_encode([
         'from'    => "Register Viewer <$from>",
-        'to'      => [$email],
-        'subject' => 'Your Register Viewer login code',
-        'text'    => "Your Register Viewer login code is: $code\n\nIt expires in 10 minutes.\n\nIf you didn't request this, you can safely ignore this email.",
+        'to'      => [$to],
+        'subject' => $subject,
+        'text'    => $text,
     ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 
-    $context = stream_context_create([
-        'http' => [
-            'method'  => 'POST',
-            'header'  => implode("\r\n", [
-                'Content-Type: application/json',
-                "Authorization: Bearer $apiKey",
-                'Content-Length: ' . strlen($body),
-            ]),
-            'content' => $body,
-            'timeout' => 5,
-            'ignore_errors' => true,
+    $ch = curl_init('https://api.resend.com/emails');
+    curl_setopt_array($ch, [
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => $body,
+        CURLOPT_HTTPHEADER     => [
+            'Content-Type: application/json',
+            "Authorization: Bearer $apiKey",
         ],
+        CURLOPT_RETURNTRANSFER  => true,
+        CURLOPT_CONNECTTIMEOUT  => 3,
+        CURLOPT_TIMEOUT         => 5,
     ]);
 
-    $response = @file_get_contents('https://api.resend.com/emails', false, $context);
+    $response = curl_exec($ch);
     $durationMs = (int) ((microtime(true) - $startTime) * 1000);
 
     if ($response === false) {
+        $curlError = curl_error($ch);
+        curl_close($ch);
         error_log(json_encode([
             'event' => 'email_send_failed',
             'reason' => 'network_error',
+            'detail' => $curlError,
             'duration_ms' => $durationMs,
             'timestamp' => gmdate('c'),
         ]));
         return false;
     }
 
-    // Check HTTP status from response headers
-    $status = parseHttpStatusCode($http_response_header ?? []);
-    if ($status !== null && $status >= 200 && $status < 300) {
+    $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($status >= 200 && $status < 300) {
         error_log(json_encode([
             'event' => 'email_sent',
             'duration_ms' => $durationMs,
@@ -86,8 +93,8 @@ function sendLoginCode(array $config, string $email, string $code): bool
 
     error_log(json_encode([
         'event' => 'email_send_failed',
-        'reason' => $status !== null ? "http_$status" : 'unknown_status',
-        'response' => substr($response, 0, 200),
+        'reason' => "http_$status",
+        'response' => substr((string) $response, 0, 200),
         'duration_ms' => $durationMs,
         'timestamp' => gmdate('c'),
     ]));
@@ -95,41 +102,42 @@ function sendLoginCode(array $config, string $email, string $code): bool
 }
 
 /**
- * Check whether the Resend API is reachable and the API key is valid.
+ * Check whether the email provider is reachable and properly configured.
  *
- * Calls GET https://api.resend.com/api-keys with a short timeout.
- * Does NOT send any email — purely a connectivity/auth check.
+ * Currently validates the Resend API key via GET /api-keys (no email sent).
+ * To swap providers, rewrite this function body alongside sendEmail().
  *
  * @return array{ok: bool, error?: string} Health status.
  */
-function checkResendApiHealth(array $config): array
+function checkEmailHealth(array $config): array
 {
     $apiKey = $config['resend_api_key'] ?? '';
     if ($apiKey === '') {
         return ['ok' => false, 'error' => 'resend_api_key not configured'];
     }
 
-    $context = stream_context_create([
-        'http' => [
-            'method'  => 'GET',
-            'header'  => "Authorization: Bearer $apiKey",
-            'timeout' => 3,
-            'ignore_errors' => true,
-        ],
+    $ch = curl_init('https://api.resend.com/api-keys');
+    curl_setopt_array($ch, [
+        CURLOPT_HTTPHEADER      => ["Authorization: Bearer $apiKey"],
+        CURLOPT_RETURNTRANSFER  => true,
+        CURLOPT_CONNECTTIMEOUT  => 2,
+        CURLOPT_TIMEOUT         => 3,
     ]);
 
-    // Note: $response contains the list of API keys for the account.
-    // Only the HTTP status is used — never forward $response to callers.
-    $response = @file_get_contents('https://api.resend.com/api-keys', false, $context);
+    $response = curl_exec($ch);
 
     if ($response === false) {
-        return ['ok' => false, 'error' => 'Resend API unreachable'];
+        $curlError = curl_error($ch);
+        curl_close($ch);
+        return ['ok' => false, 'error' => "Email provider unreachable: $curlError"];
     }
 
-    $status = parseHttpStatusCode($http_response_header ?? []);
-    if ($status !== null && $status >= 200 && $status < 300) {
+    $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($status >= 200 && $status < 300) {
         return ['ok' => true];
     }
 
-    return ['ok' => false, 'error' => "Resend API returned HTTP $status"];
+    return ['ok' => false, 'error' => "Email provider returned HTTP $status"];
 }

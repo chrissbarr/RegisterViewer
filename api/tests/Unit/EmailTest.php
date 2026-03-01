@@ -7,109 +7,42 @@ use PHPUnit\Framework\Attributes\Test;
 
 final class EmailTest extends TestCase
 {
-    private bool $httpsReplaced = false;
-
-    protected function tearDown(): void
-    {
-        if ($this->httpsReplaced) {
-            stream_wrapper_restore('https');
-            $this->httpsReplaced = false;
-        }
-    }
-
-    /**
-     * Unregister the https wrapper entirely so file_get_contents returns false.
-     */
-    private function disableHttps(): void
-    {
-        stream_wrapper_unregister('https');
-        $this->httpsReplaced = true;
-    }
-
-    // ---- sendLoginCode: missing / empty API key ----
+    // ---- sendLoginCode / sendEmail: missing / empty API key ----
 
     #[Test]
-    public function returnsFalseWithEmptyApiKey(): void
+    public function sendLoginCodeReturnsFalseWithEmptyApiKey(): void
     {
         $result = sendLoginCode(['resend_api_key' => ''], 'test@example.com', '123456');
         $this->assertFalse($result);
     }
 
     #[Test]
-    public function returnsFalseWithMissingApiKey(): void
+    public function sendLoginCodeReturnsFalseWithMissingApiKey(): void
     {
         $result = sendLoginCode([], 'test@example.com', '123456');
         $this->assertFalse($result);
     }
 
-    // ---- sendLoginCode: network error ----
-
     #[Test]
-    public function returnsFalseWhenFileGetContentsFails(): void
+    public function sendEmailReturnsFalseWithEmptyApiKey(): void
     {
-        $this->disableHttps();
-
-        $config = ['resend_api_key' => 'test_key_abc123'];
-        $result = sendLoginCode($config, 'test@example.com', '123456');
+        $result = sendEmail(['resend_api_key' => ''], 'test@example.com', 'Subject', 'Body');
         $this->assertFalse($result);
     }
 
-    // ---- parseHttpStatusCode ----
-
     #[Test]
-    public function parsesHttp200Status(): void
+    public function sendEmailReturnsFalseWithMissingApiKey(): void
     {
-        $this->assertSame(200, parseHttpStatusCode(['HTTP/1.1 200 OK']));
+        $result = sendEmail([], 'test@example.com', 'Subject', 'Body');
+        $this->assertFalse($result);
     }
 
-    #[Test]
-    public function parsesHttp202Status(): void
-    {
-        $this->assertSame(202, parseHttpStatusCode(['HTTP/1.1 202 Accepted']));
-    }
-
-    #[Test]
-    public function parsesHttp401Status(): void
-    {
-        $this->assertSame(401, parseHttpStatusCode(['HTTP/1.1 401 Unauthorized']));
-    }
-
-    #[Test]
-    public function parsesHttp500Status(): void
-    {
-        $this->assertSame(500, parseHttpStatusCode(['HTTP/1.1 500 Internal Server Error']));
-    }
-
-    #[Test]
-    public function parsesHttp429Status(): void
-    {
-        $this->assertSame(429, parseHttpStatusCode(['HTTP/1.1 429 Too Many Requests']));
-    }
-
-    #[Test]
-    public function returnsNullForEmptyHeaders(): void
-    {
-        $this->assertNull(parseHttpStatusCode([]));
-    }
-
-    #[Test]
-    public function returnsNullForUnparseableStatusLine(): void
-    {
-        $this->assertNull(parseHttpStatusCode(['GARBAGE']));
-    }
-
-    #[Test]
-    public function returnsNullForStatusLineWithNoSpaces(): void
-    {
-        $this->assertNull(parseHttpStatusCode(['200']));
-    }
-
-    // ---- checkResendApiHealth ----
+    // ---- checkEmailHealth: missing / empty API key ----
 
     #[Test]
     public function healthCheckFailsWithEmptyApiKey(): void
     {
-        $result = checkResendApiHealth(['resend_api_key' => '']);
+        $result = checkEmailHealth(['resend_api_key' => '']);
         $this->assertFalse($result['ok']);
         $this->assertSame('resend_api_key not configured', $result['error']);
     }
@@ -117,18 +50,8 @@ final class EmailTest extends TestCase
     #[Test]
     public function healthCheckFailsWithMissingApiKey(): void
     {
-        $result = checkResendApiHealth([]);
+        $result = checkEmailHealth([]);
         $this->assertFalse($result['ok']);
         $this->assertSame('resend_api_key not configured', $result['error']);
-    }
-
-    #[Test]
-    public function healthCheckFailsWhenResendUnreachable(): void
-    {
-        $this->disableHttps();
-
-        $result = checkResendApiHealth(['resend_api_key' => 'test_key_abc123']);
-        $this->assertFalse($result['ok']);
-        $this->assertSame('Resend API unreachable', $result['error']);
     }
 }
