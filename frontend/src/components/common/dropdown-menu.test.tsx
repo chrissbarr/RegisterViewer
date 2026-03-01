@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { DropdownMenu, type MenuItem } from './dropdown-menu';
 
 function makeItems(overrides?: { onAction?: () => void; onToggle?: () => void }): MenuItem[] {
@@ -24,7 +24,14 @@ function openMenu() {
   fireEvent.click(screen.getByRole('button', { name: 'Menu' }));
 }
 
+/** Advance past the exit animation timeout so the panel unmounts. */
+function waitForClose() {
+  act(() => { vi.advanceTimersByTime(200); });
+}
+
 describe('DropdownMenu', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
   describe('rendering', () => {
     it('renders the trigger button', () => {
       renderMenu();
@@ -54,6 +61,7 @@ describe('DropdownMenu', () => {
       renderMenu();
       openMenu();
       fireEvent.click(screen.getByRole('button', { name: 'Menu' }));
+      waitForClose();
       expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     });
 
@@ -61,6 +69,7 @@ describe('DropdownMenu', () => {
       renderMenu();
       openMenu();
       fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+      waitForClose();
       expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     });
 
@@ -75,12 +84,15 @@ describe('DropdownMenu', () => {
       renderMenu();
       openMenu();
       fireEvent.pointerDown(document.body);
+      waitForClose();
       expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     });
 
     it('opens with ArrowDown on trigger and focuses first item', () => {
       renderMenu();
-      fireEvent.keyDown(screen.getByRole('button', { name: 'Menu' }), { key: 'ArrowDown' });
+      act(() => {
+        fireEvent.keyDown(screen.getByRole('button', { name: 'Menu' }), { key: 'ArrowDown' });
+      });
       expect(screen.getByRole('menu')).toBeInTheDocument();
       expect(screen.getAllByRole('menuitem')[0]).toHaveFocus();
     });
@@ -96,6 +108,7 @@ describe('DropdownMenu', () => {
       openMenu();
       fireEvent.click(screen.getByRole('menuitem', { name: 'Do thing' }));
       expect(onAction).toHaveBeenCalledOnce();
+      waitForClose();
       expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     });
   });
@@ -161,6 +174,7 @@ describe('DropdownMenu', () => {
       renderMenu(items);
       openMenu();
       fireEvent.click(screen.getByRole('menuitem', { name: 'GitHub' }));
+      waitForClose();
       expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     });
 
