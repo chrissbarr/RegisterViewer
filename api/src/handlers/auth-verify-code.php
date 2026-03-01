@@ -39,31 +39,44 @@ function handleAuthVerifyCode(PDO $db, array $config, array $body): ApiResponse
     // Hash the submitted code to match stored hash (SEC-04)
     $codeHash = hash('sha256', $code);
 
-    // Look up active code
-    $codeRow = dbGetActiveLoginCode($db, $email, $codeHash);
-    if ($codeRow === null) {
-        // Increment attempts on the most recent code for this email (if any),
-        // so that failed guesses count against the per-code and global rate limits
-        dbIncrementMostRecentLoginCodeAttempts($db, $email);
-        return new ApiResponse(['error' => 'Invalid or expired code'], 401);
+    // Begin transaction to prevent race conditions (SEC-N01):
+    // Without isolation, two concurrent requests with the same OTP can both
+    // read the code as "active" before either marks it "used", resulting in
+    // duplicate user creation attempts and double JWT issuance.
+    $db->beginTransaction();
+    try {
+        // Look up active code with exclusive row lock
+        $codeRow = dbGetActiveLoginCodeForUpdate($db, $email, $codeHash);
+        if ($codeRow === null) {
+            $db->rollBack();
+            // Increment attempts on the most recent code for this email (if any),
+            // so that failed guesses count against the per-code and global rate limits
+            dbIncrementMostRecentLoginCodeAttempts($db, $email);
+            return new ApiResponse(['error' => 'Invalid or expired code'], 401);
+        }
+
+        // Increment attempts (even on success, to track usage)
+        dbIncrementLoginCodeAttempts($db, (int) $codeRow['id']);
+
+        // Mark code as used
+        dbMarkLoginCodeUsed($db, (int) $codeRow['id']);
+
+        // Find or create user
+        $user = dbFindOrCreateUser($db, $email);
+        $userId = (int) $user['id'];
+
+        // Auto-link anonymous projects to this user account
+        if ($ownerTokenHash !== null) {
+            dbLinkProjectsByOwnerToken($db, $ownerTokenHash, $userId);
+        }
+
+        $db->commit();
+    } catch (\Throwable $e) {
+        $db->rollBack();
+        throw $e;
     }
 
-    // Increment attempts (even on success, to track usage)
-    dbIncrementLoginCodeAttempts($db, (int) $codeRow['id']);
-
-    // Mark code as used
-    dbMarkLoginCodeUsed($db, (int) $codeRow['id']);
-
-    // Find or create user
-    $user = dbFindOrCreateUser($db, $email);
-    $userId = (int) $user['id'];
-
-    // Auto-link anonymous projects to this user account
-    if ($ownerTokenHash !== null) {
-        dbLinkProjectsByOwnerToken($db, $ownerTokenHash, $userId);
-    }
-
-    // Generate JWT
+    // Generate JWT (outside transaction — no DB writes needed)
     $token = createJwt($config, $userId, $email);
 
     return new ApiResponse([

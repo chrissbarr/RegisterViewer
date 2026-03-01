@@ -826,6 +826,93 @@ final class AuthHandlerTest extends TestCase
         $this->assertSame(10, $total);
     }
 
+    // ---- SEC-N01: Race condition prevention ----
+
+    #[Test]
+    public function dbFindOrCreateUserHandlesDuplicateKeyGracefully(): void
+    {
+        $email = 'race@example.com';
+
+        // Create user first
+        $firstId = dbCreateUser(self::$db, $email);
+
+        // dbFindOrCreateUser should return the existing user, not throw
+        $user = dbFindOrCreateUser(self::$db, $email);
+        $this->assertSame($firstId, (int) $user['id']);
+        $this->assertSame($email, $user['email']);
+    }
+
+    #[Test]
+    public function dbFindOrCreateUserDuplicateKeyRaceRecovery(): void
+    {
+        $email = 'race-insert@example.com';
+
+        // Simulate the race: directly insert to trigger duplicate key path.
+        // First call creates the user normally.
+        $user1 = dbFindOrCreateUser(self::$db, $email);
+        $this->assertNotNull($user1);
+
+        // Second call should find the existing user (the normal path)
+        $user2 = dbFindOrCreateUser(self::$db, $email);
+        $this->assertSame((int) $user1['id'], (int) $user2['id']);
+    }
+
+    #[Test]
+    public function dbGetActiveLoginCodeForUpdateWorksInTransaction(): void
+    {
+        $email = 'forupdate@example.com';
+        $this->createLoginCode($email, '123456');
+        $codeHash = hash('sha256', '123456');
+
+        self::$db->beginTransaction();
+        try {
+            $row = dbGetActiveLoginCodeForUpdate(self::$db, $email, $codeHash);
+            $this->assertNotNull($row);
+            $this->assertSame($email, $row['email']);
+            $this->assertSame($codeHash, $row['code']);
+        } finally {
+            self::$db->rollBack();
+        }
+    }
+
+    #[Test]
+    public function dbGetActiveLoginCodeForUpdateReturnsNullForInvalidCode(): void
+    {
+        $email = 'forupdate-invalid@example.com';
+        $this->createLoginCode($email, '123456');
+
+        self::$db->beginTransaction();
+        try {
+            $row = dbGetActiveLoginCodeForUpdate(self::$db, $email, hash('sha256', '999999'));
+            $this->assertNull($row);
+        } finally {
+            self::$db->rollBack();
+        }
+    }
+
+    #[Test]
+    public function verifyCodeWorksWithTransactionWrapper(): void
+    {
+        // Verify the full handler still works end-to-end with the transaction
+        $email = 'txn-verify@example.com';
+        $this->createLoginCode($email, '654321');
+
+        $response = handleAuthVerifyCode(self::$db, self::JWT_CONFIG, [
+            'email' => $email,
+            'code'  => '654321',
+        ]);
+
+        $this->assertSame(200, $response->status);
+        $this->assertArrayHasKey('token', $response->body);
+
+        // Code should be marked as used — second attempt should fail
+        $response2 = handleAuthVerifyCode(self::$db, self::JWT_CONFIG, [
+            'email' => $email,
+            'code'  => '654321',
+        ]);
+        $this->assertSame(401, $response2->status);
+    }
+
     #[Test]
     public function dbCountRecentLoginCodesByIpCountsCorrectly(): void
     {

@@ -238,16 +238,30 @@ function dbCreateUser(PDO $db, string $email): int
 
 /**
  * Find an existing user by email, or create one if none exists.
+ * Handles duplicate-key race conditions gracefully: if a concurrent
+ * request creates the user between our SELECT and INSERT, the unique
+ * constraint violation is caught and we re-fetch the user (SEC-N01).
  * Returns an associative array with 'id' (int) and 'email' (string).
  */
 function dbFindOrCreateUser(PDO $db, string $email): array
 {
     $user = dbGetUserByEmail($db, $email);
-    if ($user === null) {
+    if ($user !== null) {
+        return $user;
+    }
+    try {
         $userId = dbCreateUser($db, $email);
         return ['id' => $userId, 'email' => $email];
+    } catch (\PDOException $e) {
+        if ($e->getCode() === '23000') {
+            // Race: another request created the user first
+            $user = dbGetUserByEmail($db, $email);
+            if ($user !== null) {
+                return $user;
+            }
+        }
+        throw $e;
     }
-    return $user;
 }
 
 /**
@@ -284,6 +298,29 @@ function dbGetActiveLoginCode(PDO $db, string $email, string $code, int $maxAtte
            AND expires_at > NOW() AND attempts < :max_attempts
          ORDER BY created_at DESC
          LIMIT 1'
+    );
+    $stmt->execute(['email' => $email, 'code' => $code, 'max_attempts' => $maxAttempts]);
+    $row = $stmt->fetch();
+    return $row ?: null;
+}
+
+/**
+ * Get an active login code with an exclusive row lock (FOR UPDATE).
+ * Must be called within a transaction. Prevents concurrent verify-code
+ * requests from both reading the same code as "active" (SEC-N01).
+ *
+ * @param string $code SHA-256 hex digest of the OTP code to match (64 chars)
+ */
+function dbGetActiveLoginCodeForUpdate(PDO $db, string $email, string $code, int $maxAttempts = OTP_MAX_ATTEMPTS): ?array
+{
+    $stmt = $db->prepare(
+        'SELECT id, email, code, expires_at, attempts
+         FROM login_codes
+         WHERE email = :email AND code = :code AND used = 0
+           AND expires_at > NOW() AND attempts < :max_attempts
+         ORDER BY created_at DESC
+         LIMIT 1
+         FOR UPDATE'
     );
     $stmt->execute(['email' => $email, 'code' => $code, 'max_attempts' => $maxAttempts]);
     $row = $stmt->fetch();
