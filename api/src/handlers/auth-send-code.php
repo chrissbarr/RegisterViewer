@@ -18,12 +18,10 @@ function handleAuthSendCode(PDO $db, array $config, array $body): ApiResponse
     // IP rate limit: max 5 OTP sends per IP per 15 minutes (PERF-15)
     // Note: on cPanel (no reverse proxy) REMOTE_ADDR is the real client IP.
     // Behind a reverse proxy, consider using X-Forwarded-For instead.
-    $clientIp = $_SERVER['REMOTE_ADDR'] ?? null;
-    if ($clientIp !== null) {
-        $ipCount = dbCountRecentLoginCodesByIp($db, $clientIp, 900);
-        if ($ipCount >= 5) {
-            return new ApiResponse(['error' => 'Too many requests. Please try again later.'], 429);
-        }
+    $clientIp = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+    $ipCount = dbCountRecentLoginCodesByIp($db, $clientIp, 900);
+    if ($ipCount >= 5) {
+        return new ApiResponse(['error' => 'Too many requests. Please try again later.'], 429);
     }
 
     // Per-email rate limit: max 3 codes per email per hour

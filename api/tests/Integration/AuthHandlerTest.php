@@ -749,7 +749,7 @@ final class AuthHandlerTest extends TestCase
     }
 
     #[Test]
-    public function sendCodeSkipsIpLimitWhenRemoteAddrAbsent(): void
+    public function sendCodeAppliesIpLimitWithFallbackWhenRemoteAddrAbsent(): void
     {
         // Ensure REMOTE_ADDR is not set
         unset($_SERVER['REMOTE_ADDR']);
@@ -758,18 +758,18 @@ final class AuthHandlerTest extends TestCase
             'email' => 'no-ip@example.com',
         ]);
 
-        // Should succeed — IP rate limiting is gracefully skipped
+        // Should succeed — fallback IP 0.0.0.0 is used for rate limiting (SEC-N04)
         $this->assertSame(200, $response->status);
         $this->assertTrue($response->body['ok']);
 
-        // Verify ip_address is NULL in the DB
+        // Verify fallback IP is stored (not NULL)
         $stmt = self::$db->prepare(
             'SELECT ip_address FROM login_codes WHERE email = :email ORDER BY created_at DESC LIMIT 1'
         );
         $stmt->execute(['email' => 'no-ip@example.com']);
         $storedIp = $stmt->fetchColumn();
 
-        $this->assertNull($storedIp, 'ip_address should be NULL when REMOTE_ADDR is absent');
+        $this->assertSame('0.0.0.0', $storedIp, 'ip_address should be fallback 0.0.0.0 when REMOTE_ADDR is absent');
     }
 
     #[Test]
