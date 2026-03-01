@@ -170,41 +170,99 @@ export function DropdownMenu({ items, triggerLabel, triggerContent, footer }: Dr
         {triggerContent}
       </button>
 
-      {isOpen && (<>
-        <ul
-          id={menuId}
-          role="menu"
-          onKeyDown={handleMenuKeyDown}
-          className="absolute right-0 top-full mt-1 min-w-[10rem] py-1
-            rounded-md shadow-lg border
-            bg-white dark:bg-gray-800
-            border-gray-200 dark:border-gray-700
-            z-50"
+      {isOpen && (
+        <div className="absolute right-0 top-full mt-1 min-w-[10rem]
+          rounded-md shadow-lg border overflow-hidden
+          bg-white dark:bg-gray-800
+          border-gray-200 dark:border-gray-700
+          z-50"
         >
-          {items.map((item, i) => {
-            if (item.kind === 'separator') {
-              return (
-                <li
-                  key={i}
-                  role="separator"
-                  className="my-1 border-t border-gray-200 dark:border-gray-700"
-                />
-              );
-            }
+          <ul
+            id={menuId}
+            role="menu"
+            onKeyDown={handleMenuKeyDown}
+            className="py-1"
+          >
+            {items.map((item, i) => {
+              if (item.kind === 'separator') {
+                return (
+                  <li
+                    key={i}
+                    role="separator"
+                    className="my-1 border-t border-gray-200 dark:border-gray-700"
+                  />
+                );
+              }
 
-            const isActive = activeIndex === i;
+              const isActive = activeIndex === i;
 
-            if (item.kind === 'toggle') {
+              if (item.kind === 'toggle') {
+                return (
+                  <li
+                    key={i}
+                    ref={(el) => { itemRefs.current[i] = el; }}
+                    role="menuitemcheckbox"
+                    aria-checked={item.checked}
+                    tabIndex={isActive ? 0 : -1}
+                    onClick={() => activateItem(item)}
+                    className={`flex items-center justify-between w-full px-3 py-2
+                      text-left text-sm cursor-pointer select-none
+                      text-gray-700 dark:text-gray-200
+                      focus:outline-none
+                      ${isActive
+                        ? 'bg-gray-100 dark:bg-gray-700'
+                        : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+                      }`}
+                  >
+                    <span>{item.label}</span>
+                    {item.checked && (
+                      <span className="text-blue-600 dark:text-blue-400 ml-3" aria-hidden="true">
+                        ✓
+                      </span>
+                    )}
+                  </li>
+                );
+              }
+
+              if (item.kind === 'link') {
+                const itemClass = `flex items-center gap-2 w-full px-3 py-2 text-left text-sm cursor-pointer select-none
+                  text-gray-700 dark:text-gray-200 no-underline
+                  focus:outline-none
+                  ${isActive
+                    ? 'bg-gray-100 dark:bg-gray-700'
+                    : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+                  }`;
+                return (
+                  <li
+                    key={i}
+                    ref={(el) => { itemRefs.current[i] = el; }}
+                    role="menuitem"
+                    tabIndex={isActive ? 0 : -1}
+                    onClick={() => close(false)}
+                  >
+                    <a
+                      href={item.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={itemClass}
+                      tabIndex={-1}
+                    >
+                      {item.icon}
+                      {item.label}
+                    </a>
+                  </li>
+                );
+              }
+
+              // action item
               return (
                 <li
                   key={i}
                   ref={(el) => { itemRefs.current[i] = el; }}
-                  role="menuitemcheckbox"
-                  aria-checked={item.checked}
+                  role="menuitem"
                   tabIndex={isActive ? 0 : -1}
                   onClick={() => activateItem(item)}
-                  className={`flex items-center justify-between w-full px-3 py-2
-                    text-left text-sm cursor-pointer select-none
+                  className={`w-full px-3 py-2 text-left text-sm cursor-pointer select-none
                     text-gray-700 dark:text-gray-200
                     focus:outline-none
                     ${isActive
@@ -212,73 +270,18 @@ export function DropdownMenu({ items, triggerLabel, triggerContent, footer }: Dr
                       : 'hover:bg-gray-100 dark:hover:bg-gray-700'
                     }`}
                 >
-                  <span>{item.label}</span>
-                  {item.checked && (
-                    <span className="text-blue-600 dark:text-blue-400 ml-3" aria-hidden="true">
-                      ✓
-                    </span>
-                  )}
+                  {item.label}
                 </li>
               );
-            }
-
-            if (item.kind === 'link') {
-              const itemClass = `flex items-center gap-2 w-full px-3 py-2 text-left text-sm cursor-pointer select-none
-                text-gray-700 dark:text-gray-200 no-underline
-                focus:outline-none
-                ${isActive
-                  ? 'bg-gray-100 dark:bg-gray-700'
-                  : 'hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`;
-              return (
-                <li
-                  key={i}
-                  ref={(el) => { itemRefs.current[i] = el; }}
-                  role="menuitem"
-                  tabIndex={isActive ? 0 : -1}
-                  onClick={() => close(false)}
-                >
-                  <a
-                    href={item.href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={itemClass}
-                    tabIndex={-1}
-                  >
-                    {item.icon}
-                    {item.label}
-                  </a>
-                </li>
-              );
-            }
-
-            // action item
-            return (
-              <li
-                key={i}
-                ref={(el) => { itemRefs.current[i] = el; }}
-                role="menuitem"
-                tabIndex={isActive ? 0 : -1}
-                onClick={() => activateItem(item)}
-                className={`w-full px-3 py-2 text-left text-sm cursor-pointer select-none
-                  text-gray-700 dark:text-gray-200
-                  focus:outline-none
-                  ${isActive
-                    ? 'bg-gray-100 dark:bg-gray-700'
-                    : 'hover:bg-gray-100 dark:hover:bg-gray-700'
-                  }`}
-              >
-                {item.label}
-              </li>
-            );
-          })}
-        </ul>
-        {footer && (
-          <div className="border-t border-gray-200 dark:border-gray-700">
-            {footer}
-          </div>
-        )}
-      </>)}
+            })}
+          </ul>
+          {footer && (
+            <div className="border-t border-gray-200 dark:border-gray-700">
+              {footer}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
