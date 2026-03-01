@@ -33,6 +33,22 @@ interface SaveNotFoundResult {
 type SaveResult = SaveCreatedResult | SaveUpdatedResult | SaveNotFoundResult;
 
 /**
+ * Resolve auth credentials for an existing cloud project.
+ * Throws if neither an owner token nor JWT is available.
+ */
+async function resolveProjectAuth(
+  cloudId: string,
+  jwt?: string | null,
+): Promise<AuthCredentials> {
+  const ownerToken = getOwnerTokenForProject(cloudId);
+  const tokenHash = ownerToken ? await hashOwnerToken(ownerToken) : '';
+  if (!ownerToken && !jwt) {
+    throw new Error('No auth credentials available for project.');
+  }
+  return { tokenHash, jwt: jwt ?? undefined };
+}
+
+/**
  * Save a project to the cloud. Creates or updates depending on whether
  * existingCloudId is provided.
  *
@@ -47,12 +63,7 @@ export async function saveProjectToCloudImpl(
   jwt?: string | null,
 ): Promise<SaveResult> {
   if (existingCloudId) {
-    const ownerToken = getOwnerTokenForProject(existingCloudId);
-    const tokenHash = ownerToken ? await hashOwnerToken(ownerToken) : '';
-    if (!ownerToken && !jwt) {
-      throw new Error('Owner token not found for this project.');
-    }
-    const auth: AuthCredentials = { tokenHash, jwt: jwt ?? undefined };
+    const auth = await resolveProjectAuth(existingCloudId, jwt);
     try {
       const result = await apiUpdateProject(existingCloudId, jsonPayload, auth);
       return { kind: 'updated', cloudId: existingCloudId, timestamp: result.updatedAt };
@@ -76,12 +87,8 @@ export async function saveProjectToCloudImpl(
  * @throws If owner token is missing or the API call fails.
  */
 export async function deleteProjectFromCloudImpl(cloudId: string, jwt?: string | null): Promise<void> {
-  const ownerToken = getOwnerTokenForProject(cloudId);
-  const tokenHash = ownerToken ? await hashOwnerToken(ownerToken) : '';
-  if (!ownerToken && !jwt) {
-    throw new Error('Owner token not found.');
-  }
-  await apiDeleteProject(cloudId, { tokenHash, jwt: jwt ?? undefined });
+  const auth = await resolveProjectAuth(cloudId, jwt);
+  await apiDeleteProject(cloudId, auth);
 }
 
 /**
@@ -93,10 +100,6 @@ export async function patchVisibilityImpl(
   visibility: Visibility,
   jwt?: string | null,
 ): Promise<void> {
-  const ownerToken = getOwnerTokenForProject(cloudId);
-  const tokenHash = ownerToken ? await hashOwnerToken(ownerToken) : '';
-  if (!ownerToken && !jwt) {
-    throw new Error('Owner token not found.');
-  }
-  await apiPatchVisibility(cloudId, visibility, { tokenHash, jwt: jwt ?? undefined });
+  const auth = await resolveProjectAuth(cloudId, jwt);
+  await apiPatchVisibility(cloudId, visibility, auth);
 }

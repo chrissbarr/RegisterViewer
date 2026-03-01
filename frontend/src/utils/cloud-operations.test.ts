@@ -86,7 +86,7 @@ describe('saveProjectToCloudImpl', () => {
     (getOwnerTokenForProject as Mock).mockReturnValue(null);
 
     await expect(saveProjectToCloudImpl(payload, 'cloud-abc')).rejects.toThrow(
-      'Owner token not found for this project.',
+      'No auth credentials available for project.',
     );
   });
 
@@ -157,7 +157,7 @@ describe('deleteProjectFromCloudImpl', () => {
     (getOwnerTokenForProject as Mock).mockReturnValue(null);
 
     await expect(deleteProjectFromCloudImpl('cloud-del')).rejects.toThrow(
-      'Owner token not found.',
+      'No auth credentials available for project.',
     );
     expect(deleteProject).not.toHaveBeenCalled();
   });
@@ -204,7 +204,7 @@ describe('patchVisibilityImpl', () => {
     (getOwnerTokenForProject as Mock).mockReturnValue(null);
 
     await expect(patchVisibilityImpl('cloud-vis', 'unlisted')).rejects.toThrow(
-      'Owner token not found.',
+      'No auth credentials available for project.',
     );
     expect(patchProjectVisibility).not.toHaveBeenCalled();
   });

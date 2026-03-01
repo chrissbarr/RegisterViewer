@@ -799,7 +799,7 @@ describe('CloudSyncProvider', () => {
         act(async () => {
           await result.current.actions.deleteProjectFromCloud('cloud-del');
         }),
-      ).rejects.toThrow('Owner token not found.');
+      ).rejects.toThrow('No auth credentials available for project.');
     });
 
     it('clears active cloud state when deleting the active cloud project', async () => {
