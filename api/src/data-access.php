@@ -191,6 +191,17 @@ function dbTouchLastAccessed(PDO $db, string $publicId): void
     $stmt->execute(['public_id' => $publicId]);
 }
 
+// ---- OTP constants ----
+
+/** Maximum OTP codes per email per hour. */
+const OTP_RATE_LIMIT_PER_HOUR = 3;
+
+/** OTP code validity window in seconds (10 minutes). */
+const OTP_EXPIRY_SECONDS = 600;
+
+/** Maximum verification attempts per OTP code before lockout. */
+const OTP_MAX_ATTEMPTS = 5;
+
 // ---- User & Auth queries ----
 
 /**
@@ -264,17 +275,17 @@ function dbCreateLoginCode(PDO $db, string $email, string $code, string $expires
  *
  * @param string $code SHA-256 hex digest of the OTP code to match (64 chars)
  */
-function dbGetActiveLoginCode(PDO $db, string $email, string $code): ?array
+function dbGetActiveLoginCode(PDO $db, string $email, string $code, int $maxAttempts = OTP_MAX_ATTEMPTS): ?array
 {
     $stmt = $db->prepare(
         'SELECT id, email, code, expires_at, attempts
          FROM login_codes
          WHERE email = :email AND code = :code AND used = 0
-           AND expires_at > NOW() AND attempts < 5
+           AND expires_at > NOW() AND attempts < :max_attempts
          ORDER BY created_at DESC
          LIMIT 1'
     );
-    $stmt->execute(['email' => $email, 'code' => $code]);
+    $stmt->execute(['email' => $email, 'code' => $code, 'max_attempts' => $maxAttempts]);
     $row = $stmt->fetch();
     return $row ?: null;
 }

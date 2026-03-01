@@ -78,6 +78,7 @@ function makeDeps(overrides: Record<string, unknown> = {}) {
     internalRef,
     setInternal: vi.fn() as Mock,
     initialInternalState: initial,
+    getJwt: (overrides.getJwt as (() => string | null)) ?? (() => null),
   };
 }
 

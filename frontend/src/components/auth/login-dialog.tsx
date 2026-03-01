@@ -107,7 +107,6 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
     try {
       await sendCode(email);
       setCode('');
-      setError(null);
     } catch {
       setError('Failed to resend code.');
     } finally {

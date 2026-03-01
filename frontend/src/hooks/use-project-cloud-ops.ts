@@ -32,7 +32,7 @@ interface ProjectCloudOpsDeps<T extends CloudSyncInternalSlice> {
   internalRef: MutableRefObject<T>;
   setInternal: Dispatch<SetStateAction<T>>;
   initialInternalState: T;
-  getJwt?: () => string | null;
+  getJwt: () => string | null;
 }
 
 interface ProjectCloudOps {
@@ -62,7 +62,7 @@ export function useProjectCloudOps<T extends CloudSyncInternalSlice>(deps: Proje
       const entry = projects.find(p => p.localId === localId);
       const existingCloudId = entry?.cloudId ?? project.cloudId;
 
-      const jwt = getJwt?.() ?? null;
+      const jwt = getJwt();
       const result = await saveProjectToCloudImpl(jsonPayload, existingCloudId, jwt);
 
       if (result.kind === 'not-found') {
@@ -96,7 +96,7 @@ export function useProjectCloudOps<T extends CloudSyncInternalSlice>(deps: Proje
 
   const deleteProjectFromCloud = useCallback(async (cloudId: string) => {
     await withMutationLock(mutationLockRef, async () => {
-      const jwt = getJwt?.() ?? null;
+      const jwt = getJwt();
       await deleteProjectFromCloudImpl(cloudId, jwt);
 
       const entry = projects.find(p => p.cloudId === cloudId);
@@ -116,7 +116,7 @@ export function useProjectCloudOps<T extends CloudSyncInternalSlice>(deps: Proje
     const entry = projects.find(p => p.localId === localId);
     if (!entry?.cloudId) return;
 
-    const jwt = getJwt?.() ?? null;
+    const jwt = getJwt();
     await patchVisibilityImpl(entry.cloudId, v, jwt);
 
     updateCloudMetadata(localId, { visibility: v });
