@@ -68,7 +68,6 @@ function sendEmail(array $config, string $to, string $subject, string $text): bo
 
     if ($response === false) {
         $curlError = curl_error($ch);
-        curl_close($ch);
         error_log(json_encode([
             'event' => 'email_send_failed',
             'reason' => 'network_error',
@@ -80,7 +79,6 @@ function sendEmail(array $config, string $to, string $subject, string $text): bo
     }
 
     $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
 
     if ($status >= 200 && $status < 300) {
         error_log(json_encode([
@@ -127,12 +125,10 @@ function checkEmailHealth(array $config): array
 
     if ($response === false) {
         $curlError = curl_error($ch);
-        curl_close($ch);
         return ['ok' => false, 'error' => "Email provider unreachable: $curlError"];
     }
 
     $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
 
     if ($status >= 200 && $status < 300) {
         return ['ok' => true];
