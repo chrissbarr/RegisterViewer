@@ -15,7 +15,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 ```
 
 - **Algorithm:** HMAC-SHA256
-- **Expiry:** 30 days from issue
+- **Expiry:** 24 hours from issue
 - **Claims:** `sub` (user ID), `email`, `iat`, `exp`
 - **Scope:** Grants access to all projects owned by the authenticated user
 
