@@ -16,7 +16,7 @@ function handleAuthLogout(PDO $db, array $auth): ApiResponse
 
     $jti = $auth['jti'] ?? null;
     if ($jti !== null && is_string($jti)) {
-        $expiresAt = gmdate('Y-m-d H:i:s', $auth['exp']);
+        $expiresAt = date('Y-m-d H:i:s', $auth['exp']);
         dbRevokeToken($db, $jti, $expiresAt);
 
         // Opportunistic cleanup of expired revocations
