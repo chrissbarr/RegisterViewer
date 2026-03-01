@@ -214,10 +214,10 @@ test.describe('Auth: Successful login updates menu', () => {
     await resetApp(page);
     await performLogin(page);
 
-    // Open menu — should show "Signed in: test@example.com" instead of "Sign in"
+    // Open menu — footer should show email + Sign out, "Sign in" item should be gone
     await page.getByRole('button', { name: 'Application menu' }).click();
-    await expect(page.getByRole('menuitem', { name: `Signed in: ${MOCK_EMAIL}` })).toBeVisible();
-    await expect(page.getByRole('menuitem', { name: 'Sign out' })).toBeVisible();
+    await expect(page.getByText(MOCK_EMAIL)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
     await expect(page.getByRole('menuitem', { name: 'Sign in' })).not.toBeVisible();
   });
 });
@@ -228,14 +228,14 @@ test.describe('Auth: Logout reverts UI', () => {
     await resetApp(page);
     await performLogin(page);
 
-    // Open menu and click Sign out
+    // Open menu and click Sign out in footer
     await page.getByRole('button', { name: 'Application menu' }).click();
-    await page.getByRole('menuitem', { name: 'Sign out' }).click();
+    await page.getByRole('button', { name: 'Sign out' }).click();
 
-    // Re-open menu — should revert to "Sign in"
+    // Re-open menu — should revert to "Sign in" item, no footer email
     await page.getByRole('button', { name: 'Application menu' }).click();
     await expect(page.getByRole('menuitem', { name: 'Sign in' })).toBeVisible();
-    await expect(page.getByRole('menuitem', { name: /Signed in/ })).not.toBeVisible();
+    await expect(page.getByText(MOCK_EMAIL)).not.toBeVisible();
   });
 });
 
