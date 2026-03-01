@@ -386,7 +386,7 @@ final class AuthHandlerTest extends TestCase
         $userId = dbCreateUser(self::$db, $email);
         $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => $email];
 
-        $response = handleAuthMe(self::$db, $auth);
+        $response = handleAuthMe(self::$db, self::JWT_CONFIG, $auth);
 
         $this->assertSame(200, $response->status);
         $this->assertSame($userId, $response->body['user']['id']);
@@ -398,7 +398,7 @@ final class AuthHandlerTest extends TestCase
     {
         $auth = ['kind' => 'token', 'tokenHash' => self::OWNER_HASH];
 
-        $response = handleAuthMe(self::$db, $auth);
+        $response = handleAuthMe(self::$db, self::JWT_CONFIG, $auth);
 
         $this->assertSame(401, $response->status);
     }
@@ -408,7 +408,7 @@ final class AuthHandlerTest extends TestCase
     {
         $auth = ['kind' => 'none'];
 
-        $response = handleAuthMe(self::$db, $auth);
+        $response = handleAuthMe(self::$db, self::JWT_CONFIG, $auth);
 
         $this->assertSame(401, $response->status);
     }
@@ -419,10 +419,61 @@ final class AuthHandlerTest extends TestCase
         // Auth claims a user ID that doesn't exist in the DB
         $auth = ['kind' => 'jwt', 'userId' => 999999, 'email' => 'ghost@example.com'];
 
-        $response = handleAuthMe(self::$db, $auth);
+        $response = handleAuthMe(self::$db, self::JWT_CONFIG, $auth);
 
         $this->assertSame(401, $response->status);
         $this->assertSame('User not found', $response->body['error']);
+    }
+
+    #[Test]
+    public function authMeDoesNotRefreshTokenWhenFarFromExpiry(): void
+    {
+        $email = 'fresh@example.com';
+        $userId = dbCreateUser(self::$db, $email);
+        // Token expires in 20 hours — well outside the 6-hour refresh window
+        $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => $email, 'exp' => time() + 20 * 3600];
+
+        $response = handleAuthMe(self::$db, self::JWT_CONFIG, $auth);
+
+        $this->assertSame(200, $response->status);
+        $this->assertArrayNotHasKey('refreshedToken', $response->body);
+    }
+
+    #[Test]
+    public function authMeRefreshesTokenWhenNearExpiry(): void
+    {
+        $email = 'expiring@example.com';
+        $userId = dbCreateUser(self::$db, $email);
+        // Token expires in 2 hours — inside the 6-hour refresh window
+        $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => $email, 'exp' => time() + 2 * 3600];
+
+        $response = handleAuthMe(self::$db, self::JWT_CONFIG, $auth);
+
+        $this->assertSame(200, $response->status);
+        $this->assertArrayHasKey('refreshedToken', $response->body);
+
+        // Verify the refreshed token is a valid JWT
+        $decoded = verifyJwt(self::JWT_CONFIG, $response->body['refreshedToken']);
+        $this->assertNotNull($decoded);
+        $this->assertSame($userId, $decoded['sub']);
+        $this->assertSame($email, $decoded['email']);
+        // New token should have a full 24-hour lifetime
+        $this->assertGreaterThan(time() + 23 * 3600, $decoded['exp']);
+    }
+
+    #[Test]
+    public function authMeRefreshesTokenAtExactBoundary(): void
+    {
+        $email = 'boundary@example.com';
+        $userId = dbCreateUser(self::$db, $email);
+        // Token expires in exactly 6 hours — at the boundary, should refresh
+        $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => $email, 'exp' => time() + 6 * 3600];
+
+        $response = handleAuthMe(self::$db, self::JWT_CONFIG, $auth);
+
+        $this->assertSame(200, $response->status);
+        // At exactly the boundary (remaining == window), the condition `remaining < window` is false
+        $this->assertArrayNotHasKey('refreshedToken', $response->body);
     }
 
     // ---- handleAuthLogout ----

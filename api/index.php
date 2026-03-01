@@ -314,7 +314,7 @@ try {
         $path === '/api/auth/verify-code' && $method === 'POST'
             => handleAuthVerifyCode($db, $config, $body),
         $path === '/api/auth/me' && $method === 'GET'
-            => handleAuthMe($db, $auth),
+            => handleAuthMe($db, $config, $auth),
         $path === '/api/auth/logout' && $method === 'POST'
             => handleAuthLogout($db, $auth),
 

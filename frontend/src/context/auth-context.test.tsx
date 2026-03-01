@@ -96,6 +96,29 @@ describe('AuthProvider', () => {
       expect(localStorage.getItem(JWT_KEY)).toBeNull();
     });
 
+    it('stores refreshed token when returned by getAuthMe', async () => {
+      localStorage.setItem(JWT_KEY, 'old-jwt');
+      (getAuthMe as Mock).mockResolvedValue({
+        user: { id: 42, email: 'user@example.com' },
+        refreshedToken: 'new-refreshed-jwt',
+      });
+
+      await renderHookAndFlush(() => useAuth());
+
+      expect(localStorage.getItem(JWT_KEY)).toBe('new-refreshed-jwt');
+    });
+
+    it('keeps existing JWT when no refreshedToken returned', async () => {
+      localStorage.setItem(JWT_KEY, 'current-jwt');
+      (getAuthMe as Mock).mockResolvedValue({
+        user: { id: 42, email: 'user@example.com' },
+      });
+
+      await renderHookAndFlush(() => useAuth());
+
+      expect(localStorage.getItem(JWT_KEY)).toBe('current-jwt');
+    });
+
     it('does not call getAuthMe when no JWT stored', () => {
       renderHook(() => useAuth(), { wrapper });
 

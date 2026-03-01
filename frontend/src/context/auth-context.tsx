@@ -67,7 +67,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     getAuthMe(jwt)
       .then((res) => {
-        if (!cancelled) setUser(res.user);
+        if (!cancelled) {
+          setUser(res.user);
+          if (res.refreshedToken) storeJwt(res.refreshedToken);
+        }
       })
       .catch(() => {
         if (!cancelled) clearJwt();

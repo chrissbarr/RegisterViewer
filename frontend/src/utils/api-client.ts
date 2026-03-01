@@ -220,6 +220,7 @@ export async function verifyLoginCode(
 
 interface AuthMeResponse {
   user: { id: number; email: string };
+  refreshedToken?: string;
 }
 
 export async function getAuthMe(jwt: string): Promise<AuthMeResponse> {
