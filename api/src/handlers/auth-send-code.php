@@ -35,7 +35,7 @@ function handleAuthSendCode(PDO $db, array $config, array $body): ApiResponse
 
     // Store hashed code with 10-minute expiry (SEC-04: never store plaintext OTP)
     $codeHash = hash('sha256', $code);
-    $expiresAt = gmdate('Y-m-d H:i:s', time() + OTP_EXPIRY_SECONDS);
+    $expiresAt = date('Y-m-d H:i:s', time() + OTP_EXPIRY_SECONDS);
     dbCreateLoginCode($db, $email, $codeHash, $expiresAt, $clientIp);
 
     // In development, log the OTP code so developers can complete the login

@@ -149,7 +149,7 @@ function dbCountRecentVerifyAttempts(PDO $db, string $email): int
  */
 function dbCountAllRecentLoginCodes(PDO $db, int $intervalSeconds = 60): int
 {
-    $cutoff = gmdate('Y-m-d H:i:s', time() - $intervalSeconds);
+    $cutoff = date('Y-m-d H:i:s', time() - $intervalSeconds);
     $stmt = $db->prepare(
         'SELECT COUNT(*) FROM login_codes WHERE created_at > :cutoff'
     );
@@ -163,7 +163,7 @@ function dbCountAllRecentLoginCodes(PDO $db, int $intervalSeconds = 60): int
  */
 function dbCountRecentLoginCodesByIp(PDO $db, string $ipAddress, int $intervalSeconds = 900): int
 {
-    $cutoff = gmdate('Y-m-d H:i:s', time() - $intervalSeconds);
+    $cutoff = date('Y-m-d H:i:s', time() - $intervalSeconds);
     $stmt = $db->prepare(
         'SELECT COUNT(*) FROM login_codes
          WHERE ip_address = :ip AND created_at > :cutoff'
@@ -179,7 +179,7 @@ function dbCountRecentLoginCodesByIp(PDO $db, string $ipAddress, int $intervalSe
  */
 function dbCountAllRecentVerifyAttempts(PDO $db, int $intervalSeconds = 60): int
 {
-    $cutoff = gmdate('Y-m-d H:i:s', time() - $intervalSeconds);
+    $cutoff = date('Y-m-d H:i:s', time() - $intervalSeconds);
     $stmt = $db->prepare(
         'SELECT COALESCE(SUM(attempts), 0) FROM login_codes WHERE created_at > :cutoff'
     );
