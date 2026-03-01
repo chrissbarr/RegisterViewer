@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS `login_codes` (
     `created_at` DATETIME         NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     KEY `ix_email_created` (`email`, `created_at` DESC),
+    KEY `ix_email_code_active` (`email`, `code`, `used`, `expires_at`),
     KEY `ix_ip_created` (`ip_address`, `created_at` DESC),
     KEY `ix_created` (`created_at`)
 ) ENGINE=InnoDB
