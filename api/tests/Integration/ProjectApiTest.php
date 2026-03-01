@@ -255,10 +255,10 @@ final class ProjectApiTest extends TestCase
         // Neither token hash alone has hit the limit (each has 50),
         // but the user has 100 total. A new create with a fresh token hash
         // should be rejected by the per-user check.
-        $freshHash = str_repeat('c', 64);
+        $freshRawToken = str_repeat('c', 64);
         $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => 'limittest@example.com'];
         $body = [
-            'ownerTokenHash' => $freshHash,
+            'ownerToken' => $freshRawToken,
             'data' => json_decode(self::validDataJson(), true),
         ];
         $parsed = [

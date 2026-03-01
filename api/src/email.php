@@ -94,7 +94,6 @@ function sendEmail(array $config, string $to, string $subject, string $text): bo
     error_log(json_encode([
         'event' => 'email_send_failed',
         'reason' => "http_$status",
-        'response' => substr((string) $response, 0, 200),
         'duration_ms' => $durationMs,
         'timestamp' => gmdate('c'),
     ]));

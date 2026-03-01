@@ -7,16 +7,16 @@ function handleCreateProject(PDO $db, array $config, array $auth, array $parsed)
     $body = $parsed['assoc'];
 
     // Determine token hash and user ID based on auth method.
-    // JWT users pass ownerTokenHash in the body (since the header carries the JWT).
+    // JWT users pass raw ownerToken in the body (hashed server-side for SEC-12).
     // Token-hash users pass it in the Authorization header as before.
     $userId = null;
     $tokenHash = null;
 
     if ($auth['kind'] === 'jwt') {
         $userId = $auth['userId'];
-        $ownerTokenHash = $body['ownerTokenHash'] ?? null;
-        if (is_string($ownerTokenHash) && preg_match('/^[0-9a-f]{64}$/', $ownerTokenHash)) {
-            $tokenHash = $ownerTokenHash;
+        $rawOwnerToken = $body['ownerToken'] ?? null;
+        if (is_string($rawOwnerToken) && preg_match('/^[0-9a-f]{64}$/', $rawOwnerToken)) {
+            $tokenHash = hash('sha256', $rawOwnerToken);
         }
     } elseif ($auth['kind'] === 'token') {
         $tokenHash = $auth['tokenHash'];

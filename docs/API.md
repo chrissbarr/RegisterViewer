@@ -21,7 +21,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
 ### Legacy Token Hash Authentication
 
-Generated client-side via `getOwnerTokenHash()`. A 64-character lowercase hex string (SHA-256 hash) — the server never sees the raw token.
+Generated client-side via `hashOwnerToken()`. A 64-character lowercase hex string (SHA-256 hash of the raw owner token). For legacy token-hash auth, only the hash is sent in the `Authorization` header. For JWT-authenticated create and verify-code requests, the raw token is sent in the body and the server hashes it server-side to verify possession.
 
 ```
 Authorization: Bearer abc123def456...  (64-char hex)
@@ -35,7 +35,7 @@ Authorization: Bearer abc123def456...  (64-char hex)
 
 - **Token hash projects:** Owned by the token hash. Any request with the matching hash can modify/delete.
 - **JWT user projects:** Owned by the user ID. Any valid JWT for that user can modify/delete all their projects.
-- **Migration:** Pass `ownerTokenHash` when calling `POST /api/auth/verify-code` to link existing anonymous projects to a user account. The token hash continues to work for backward compatibility.
+- **Migration:** Pass `ownerToken` (raw 64-char hex token) when calling `POST /api/auth/verify-code` to link existing anonymous projects to a user account. The server hashes it server-side to verify possession. The token hash continues to work for backward compatibility.
 
 **Constant-time comparison** (`hash_equals`) is used for all ownership checks to prevent timing side-channel attacks.
 
@@ -98,7 +98,7 @@ Verifies a 6-digit OTP code and returns a JWT token. Optionally links anonymous 
 {
   "email": "user@example.com",
   "code": "123456",
-  "ownerTokenHash": "abc123..."
+  "ownerToken": "abc123..."
 }
 ```
 
@@ -106,7 +106,7 @@ Verifies a 6-digit OTP code and returns a JWT token. Optionally links anonymous 
 |-------|----------|-------------|
 | `email` | Yes | Email address the code was sent to |
 | `code` | Yes | 6-digit OTP code |
-| `ownerTokenHash` | No | 64-char hex hash — links anonymous projects to this user |
+| `ownerToken` | No | 64-char hex raw owner token — server hashes it to link anonymous projects to this user |
 
 **Rate Limiting:**
 - Max 10 verification attempts per email per 10-minute window

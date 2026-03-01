@@ -66,7 +66,7 @@ export async function saveProjectToCloudImpl(
 
   const ownerToken = getOrCreateOwnerToken();
   const tokenHash = await hashOwnerToken(ownerToken);
-  const auth: AuthCredentials = { tokenHash, jwt: jwt ?? undefined };
+  const auth: AuthCredentials = { tokenHash, jwt: jwt ?? undefined, ownerToken };
   const result = await apiCreateProject(jsonPayload, auth);
   return { kind: 'created', cloudId: result.id, timestamp: result.createdAt, ownerToken };
 }

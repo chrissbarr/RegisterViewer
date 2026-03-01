@@ -9,7 +9,10 @@ final class AuthHandlerTest extends TestCase
 {
     private static ?PDO $db = null;
     private const JWT_CONFIG = ['jwt_secret' => 'test-jwt-secret-not-for-production'];
-    private const OWNER_HASH = '4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e';
+    /** Raw 64-char hex owner token (simulates what the browser stores). */
+    private const OWNER_TOKEN = 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2';
+    /** SHA-256 hash of OWNER_TOKEN (what the server stores in projects.owner_token_hash). */
+    private const OWNER_HASH = 'fa0cacfe1122ac62b0f70e4db95790326bae5a5c38924f315282cc4fd55b4986';
 
     private static function validDataJson(): string
     {
@@ -210,9 +213,9 @@ final class AuthHandlerTest extends TestCase
         dbCreateProject(self::$db, $projectId, self::OWNER_HASH, 'private', self::validDataJson(), null);
 
         $response = handleAuthVerifyCode(self::$db, self::JWT_CONFIG, [
-            'email'          => $email,
-            'code'           => '123456',
-            'ownerTokenHash' => self::OWNER_HASH,
+            'email'      => $email,
+            'code'       => '123456',
+            'ownerToken' => self::OWNER_TOKEN,
         ]);
 
         $this->assertSame(200, $response->status);
@@ -224,15 +227,15 @@ final class AuthHandlerTest extends TestCase
     }
 
     #[Test]
-    public function verifyCodeIgnoresInvalidOwnerTokenHash(): void
+    public function verifyCodeIgnoresInvalidOwnerToken(): void
     {
         $email = 'ignore@example.com';
         $this->createLoginCode($email, '123456');
 
         $response = handleAuthVerifyCode(self::$db, self::JWT_CONFIG, [
-            'email'          => $email,
-            'code'           => '123456',
-            'ownerTokenHash' => 'not-a-valid-hash',
+            'email'      => $email,
+            'code'       => '123456',
+            'ownerToken' => 'not-a-valid-token',
         ]);
 
         // Should succeed — invalid hash is silently ignored

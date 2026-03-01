@@ -16,7 +16,6 @@ vi.mock('../utils/api-client', () => ({
 vi.mock('../utils/owner-token', () => ({
   getOrCreateOwnerToken: vi.fn(() => 'mock-owner-token'),
   hashOwnerToken: vi.fn(async () => 'mock-token-hash'),
-  getOwnerTokenHash: vi.fn(async () => 'mock-token-hash'),
 }));
 
 import {
@@ -178,7 +177,7 @@ describe('AuthProvider', () => {
         await result.current.actions.verifyCode('test@test.com', '123456');
       });
 
-      expect(verifyLoginCode).toHaveBeenCalledWith('test@test.com', '123456', 'mock-token-hash');
+      expect(verifyLoginCode).toHaveBeenCalledWith('test@test.com', '123456', 'mock-owner-token');
       expect(localStorage.getItem(JWT_KEY)).toBe('new-jwt-token');
       expect(result.current.state.user).toEqual({ id: 7, email: 'test@test.com' });
     });

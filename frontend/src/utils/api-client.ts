@@ -66,6 +66,8 @@ async function apiFetchVoid(path: string, options?: RequestInit): Promise<void> 
 export interface AuthCredentials {
   tokenHash: string;
   jwt?: string;
+  /** Raw owner token (hex). Sent in body for JWT-authed create so server can verify possession. */
+  ownerToken?: string;
 }
 
 function resolveAuthHeader(auth: AuthCredentials): string {
@@ -83,14 +85,15 @@ export async function createProject(
   auth: AuthCredentials,
   visibility?: Visibility,
 ): Promise<CreateProjectResponse> {
-  const body: { data: unknown; visibility?: string; ownerTokenHash?: string } = { data };
+  const body: { data: unknown; visibility?: string; ownerToken?: string } = { data };
   if (visibility !== undefined) {
     body.visibility = visibility;
   }
 
-  // When JWT-authenticated, send token hash in body for ownership linkage.
-  if (auth.jwt) {
-    body.ownerTokenHash = auth.tokenHash;
+  // When JWT-authenticated, send raw owner token in body so server can verify
+  // possession and compute the hash (SEC-12: prevents hash-only impersonation).
+  if (auth.jwt && auth.ownerToken) {
+    body.ownerToken = auth.ownerToken;
   }
 
   return apiFetch<CreateProjectResponse>('/api/projects', {
@@ -206,11 +209,11 @@ interface VerifyLoginCodeResponse {
 export async function verifyLoginCode(
   email: string,
   code: string,
-  ownerTokenHash?: string,
+  ownerToken?: string,
 ): Promise<VerifyLoginCodeResponse> {
-  const body: { email: string; code: string; ownerTokenHash?: string } = { email, code };
-  if (ownerTokenHash) {
-    body.ownerTokenHash = ownerTokenHash;
+  const body: { email: string; code: string; ownerToken?: string } = { email, code };
+  if (ownerToken) {
+    body.ownerToken = ownerToken;
   }
   return apiFetch<VerifyLoginCodeResponse>('/api/auth/verify-code', {
     method: 'POST',

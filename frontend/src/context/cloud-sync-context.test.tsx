@@ -280,7 +280,7 @@ describe('CloudSyncProvider', () => {
 
       expect(apiCreateProject).toHaveBeenCalledWith(
         { version: 1, registers: [], values: {} },
-        { tokenHash: 'mock-token-hash', jwt: undefined },
+        { tokenHash: 'mock-token-hash', jwt: undefined, ownerToken: 'mock-owner-token' },
       );
       expect(result.current.state.cloudId).toBe('cloud-abc');
       expect(result.current.state.isOwner).toBe(true);

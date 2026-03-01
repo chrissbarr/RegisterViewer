@@ -152,7 +152,7 @@ describe('createProject', () => {
     }
   });
 
-  it('uses JWT in header and tokenHash in body when jwt provided', async () => {
+  it('uses JWT in header and raw ownerToken in body when jwt provided', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       status: 200,
@@ -165,12 +165,12 @@ describe('createProject', () => {
     });
 
     const data = { version: 1, registers: [] };
-    await createProject(data, { tokenHash: 'a'.repeat(64), jwt: 'my-jwt' });
+    await createProject(data, { tokenHash: 'a'.repeat(64), jwt: 'my-jwt', ownerToken: 'b'.repeat(64) });
 
     const callArgs = mockFetch.mock.calls[0];
     expect(callArgs[1].headers.Authorization).toBe('Bearer my-jwt');
     const body = JSON.parse(callArgs[1].body);
-    expect(body.ownerTokenHash).toBe('a'.repeat(64));
+    expect(body.ownerToken).toBe('b'.repeat(64));
   });
 
   it('includes Content-Type and Authorization headers', async () => {
@@ -861,7 +861,7 @@ describe('verifyLoginCode', () => {
     expect(result).toEqual(responseData);
   });
 
-  it('includes ownerTokenHash when provided', async () => {
+  it('includes ownerToken when provided', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       status: 200,
@@ -876,10 +876,10 @@ describe('verifyLoginCode', () => {
 
     const callArgs = mockFetch.mock.calls[0];
     const body = JSON.parse(callArgs[1].body);
-    expect(body.ownerTokenHash).toBe('a'.repeat(64));
+    expect(body.ownerToken).toBe('a'.repeat(64));
   });
 
-  it('omits ownerTokenHash when not provided', async () => {
+  it('omits ownerToken when not provided', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       status: 200,
@@ -894,7 +894,7 @@ describe('verifyLoginCode', () => {
 
     const callArgs = mockFetch.mock.calls[0];
     const body = JSON.parse(callArgs[1].body);
-    expect(body.ownerTokenHash).toBeUndefined();
+    expect(body.ownerToken).toBeUndefined();
   });
 
   it('throws ApiError on 401 invalid code', async () => {

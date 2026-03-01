@@ -52,7 +52,7 @@ describe('saveProjectToCloudImpl', () => {
       ownerToken: 'mock-owner-token',
     });
     expect(getOrCreateOwnerToken).toHaveBeenCalled();
-    expect(createProject).toHaveBeenCalledWith(payload, { tokenHash: 'mock-token-hash', jwt: undefined });
+    expect(createProject).toHaveBeenCalledWith(payload, { tokenHash: 'mock-token-hash', jwt: undefined, ownerToken: 'mock-owner-token' });
   });
 
   it('updates existing project when existingCloudId provided', async () => {
@@ -110,7 +110,7 @@ describe('saveProjectToCloudImpl', () => {
 
     await saveProjectToCloudImpl(payload, null, 'my-jwt-token');
 
-    expect(createProject).toHaveBeenCalledWith(payload, { tokenHash: 'mock-token-hash', jwt: 'my-jwt-token' });
+    expect(createProject).toHaveBeenCalledWith(payload, { tokenHash: 'mock-token-hash', jwt: 'my-jwt-token', ownerToken: 'mock-owner-token' });
   });
 
   it('passes JWT to updateProject when provided', async () => {
