@@ -224,6 +224,24 @@ function validateProjectMetadata(mixed $meta): array
     return ['valid' => true];
 }
 
+/**
+ * Validate and normalize an email from a request body.
+ *
+ * @return string|ApiResponse Normalized email on success, or ApiResponse error on failure.
+ */
+function validateAndNormalizeEmail(array $body): string|ApiResponse
+{
+    $email = $body['email'] ?? null;
+    if (!is_string($email) || $email === '') {
+        return new ApiResponse(['error' => 'email is required'], 400);
+    }
+    $email = strtolower(trim($email));
+    if (strlen($email) > 254 || filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
+        return new ApiResponse(['error' => 'Invalid email address'], 400);
+    }
+    return $email;
+}
+
 function isValidVisibility(mixed $value): bool
 {
     return is_string($value) && in_array($value, ['private', 'unlisted'], true);

@@ -2,9 +2,13 @@
 
 declare(strict_types=1);
 
-function handleDeleteProject(PDO $db, string $id): never
+function handleDeleteProject(PDO $db, string $id, array $auth): ApiResponse
 {
-    requireOwnership($db, $id);
+    $existing = requireOwnership($db, $id, $auth);
+    if ($existing instanceof ApiResponse) {
+        return $existing;
+    }
+
     dbDeleteProject($db, $id);
-    sendNoContent();
+    return new ApiResponse(null, 204);
 }

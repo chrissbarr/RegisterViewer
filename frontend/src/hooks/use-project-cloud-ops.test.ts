@@ -78,6 +78,7 @@ function makeDeps(overrides: Record<string, unknown> = {}) {
     internalRef,
     setInternal: vi.fn() as Mock,
     initialInternalState: initial,
+    getJwt: (overrides.getJwt as (() => string | null)) ?? (() => null),
   };
 }
 
@@ -206,7 +207,7 @@ describe('useProjectCloudOps', () => {
         await result.current.deleteProjectFromCloud('cloud-1');
       });
 
-      expect(deleteProjectFromCloudImpl).toHaveBeenCalledWith('cloud-1');
+      expect(deleteProjectFromCloudImpl).toHaveBeenCalledWith('cloud-1', null);
       expect(deps.updateCloudMetadata).toHaveBeenCalledWith('local-1', {
         cloudId: null,
         visibility: 'private',
@@ -255,7 +256,7 @@ describe('useProjectCloudOps', () => {
         await result.current.setProjectVisibility('local-1', 'unlisted');
       });
 
-      expect(patchVisibilityImpl).toHaveBeenCalledWith('cloud-1', 'unlisted');
+      expect(patchVisibilityImpl).toHaveBeenCalledWith('cloud-1', 'unlisted', null);
       expect(deps.updateCloudMetadata).toHaveBeenCalledWith('local-1', { visibility: 'unlisted' });
     });
 

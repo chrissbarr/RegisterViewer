@@ -62,6 +62,16 @@ export function toProjectListEntry(entry: ProjectManifestEntry): ProjectListEntr
   };
 }
 
+/**
+ * Check if a project is a cloud-only placeholder (no real data yet).
+ * Placeholder projects are created during cloud sync for projects that
+ * exist on the server but have no local counterpart.
+ */
+export function isPlaceholderProject(localId: string): boolean {
+  const project = loadProject(localId);
+  return project !== null && project.state.registers.length === 0;
+}
+
 /** Scan localStorage for orphaned project keys not in the manifest */
 function recoverOrphanedProjects(manifest: ProjectManifest): ProjectManifest {
   const knownIds = new Set(manifest.projects.map(p => p.localId));
@@ -165,18 +175,25 @@ export function saveProject(project: StoredLocalProject): void {
   saveManifest(manifest);
 }
 
+/** Optional cloud metadata for creating a project that is already cloud-linked */
+interface CreateProjectCloudMeta {
+  cloudId: string;
+  visibility: import('../types/project').Visibility;
+  cloudSavedAt: string;
+}
+
 /** Create a new project with initial state, returns the localId */
-export function createProject(initialState: SerializedAppState, name?: string): string {
+export function createProject(initialState: SerializedAppState, name?: string, cloudMeta?: CreateProjectCloudMeta): string {
   const localId = generateLocalId();
   const now = new Date().toISOString();
   const project: StoredLocalProject = {
     localId,
-    cloudId: null,
+    cloudId: cloudMeta?.cloudId ?? null,
     name: name ?? DEFAULT_PROJECT_NAME,
-    visibility: 'private',
+    visibility: cloudMeta?.visibility ?? 'private',
     createdAt: now,
     localSavedAt: now,
-    cloudSavedAt: null,
+    cloudSavedAt: cloudMeta?.cloudSavedAt ?? null,
     ownerToken: null,
     state: initialState,
   };

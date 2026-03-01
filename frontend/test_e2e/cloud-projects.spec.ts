@@ -55,7 +55,7 @@ async function saveToCloudViaMyProjects(page: Page) {
   await expect(confirmDialog).toBeVisible();
   await confirmDialog.getByRole('button', { name: 'Save to Cloud' }).click();
   // Wait for save to complete — visibility badge appears
-  await expect(dialog.getByText('Private')).toBeVisible({ timeout: 5000 });
+  await expect(dialog.getByRole('button', { name: /Visibility: private for Example Project/ })).toBeVisible({ timeout: 5000 });
   // Close My Projects dialog
   await page.keyboard.press('Escape');
   // After save, "Update cloud copy" button should appear in header
@@ -230,7 +230,7 @@ test.describe('Cloud: Save to cloud', () => {
     const dialog = page.getByRole('dialog');
 
     // The project should show as cloud-saved (visibility badge should appear)
-    await expect(dialog.getByText('Private')).toBeVisible({ timeout: 5000 });
+    await expect(dialog.getByRole('button', { name: /Visibility: private for Example Project/ })).toBeVisible({ timeout: 5000 });
   });
 });
 
@@ -259,7 +259,7 @@ test.describe('Cloud: Save to cloud from My Projects', () => {
     await confirmDialog.getByRole('button', { name: 'Save to Cloud' }).click();
 
     // Wait for the save to complete — the project should now show as cloud-saved
-    await expect(dialog.getByText('Private')).toBeVisible({ timeout: 5000 });
+    await expect(dialog.getByRole('button', { name: /Visibility: private for Example Project/ })).toBeVisible({ timeout: 5000 });
   });
 });
 
@@ -411,7 +411,7 @@ test.describe('Cloud: Delete from cloud', () => {
     await expect(dialog.getByText('1 project')).toBeVisible({ timeout: 5000 });
 
     // But no longer cloud-saved — "Private" visibility badge should be gone
-    await expect(dialog.getByText('Private')).not.toBeVisible();
+    await expect(dialog.getByRole('button', { name: /Visibility: private for Example Project/ })).not.toBeVisible();
 
     // Close dialog — header save button should be hidden (local-only project)
     await page.keyboard.press('Escape');

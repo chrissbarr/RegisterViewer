@@ -1,16 +1,17 @@
 /**
  * CloudSyncProvider — cloud save/load/fork/delete/sync for the active project.
  *
- * Cloud operations have two paths:
- * - **Active-project path** (this provider): operates on the currently-loaded
- *   project using in-memory `appState` via refs. Exposes `saveToCloud`,
- *   `deleteFromCloud`, `setVisibility`, `fork`, `loadCloudProject`, and
+ * Cloud operations are split across three hooks:
+ * - **Active-project ops** (`useActiveProjectCloudOps`): `saveToCloud`,
+ *   `deleteFromCloud`, `setVisibility`, `fork`, `loadCloudProject` — operate
+ *   on the currently-loaded project using in-memory `appState` via refs.
+ * - **By-localId ops** (`useProjectCloudOps`): operates on any project by
+ *   `localId`, reading state from localStorage. Used by the My Projects dialog.
+ * - **This provider**: orchestrates state, refs, effects, and delegates to the
+ *   two hooks above. Also owns `initFromProject`, `dismissError`, and
  *   `syncCloudProjects`.
- * - **By-localId path** (`useProjectCloudOps` hook): operates on any project
- *   by `localId`, reading state from localStorage. Used by the My Projects
- *   dialog for bulk operations on non-active projects.
  *
- * Both paths delegate shared logic to `cloud-operations.ts` to avoid divergence.
+ * Both operation hooks delegate shared API logic to `cloud-operations.ts`.
  *
  * Key patterns:
  * - **Generation-counter dirty tracking** (`useDirtyTracking`): a ref-based
@@ -24,23 +25,22 @@
 import { createContext, useContext, useCallback, useState, useMemo, useRef, useEffect, type ReactNode } from 'react';
 import { useAppState, useAppDispatch } from './app-context';
 import { useProjectStorage, useProjectStorageActions } from './project-storage-context';
-import { exportToObject, serializeState } from '../utils/storage';
 import {
   isCloudEnabled,
-  ApiError,
   listProjects,
+  getProject,
 } from '../utils/api-client';
-import { fetchAndParseCloudProject } from '../utils/cloud-project-loader';
 import {
   getOrCreateOwnerToken,
   hashOwnerToken,
   checkOwnership,
 } from '../utils/owner-token';
-import { friendlyErrorMessage } from '../utils/friendly-error';
-import { buildProjectUrl } from '../utils/project-storage';
-import { setCloudUrl, clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock } from '../utils/cloud-url';
-import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
+import { useAuth, useAuthActions } from './auth-context';
+import { buildProjectUrl, createProject } from '../utils/project-storage';
+import { EMPTY_SERIALIZED_STATE } from '../utils/storage';
+import { clearCloudUrl } from '../utils/cloud-url';
 import { useDirtyTracking } from '../hooks/use-dirty-tracking';
+import { useActiveProjectCloudOps } from '../hooks/use-active-project-cloud-ops';
 import { useProjectCloudOps } from '../hooks/use-project-cloud-ops';
 import { DEFAULT_PROJECT_NAME, type ProjectListEntry, type Visibility } from '../types/project';
 
@@ -58,6 +58,8 @@ interface CloudSyncState {
 interface SyncResult {
   updatedCount: number;
   staleCloudIds: string[];
+  /** Number of cloud-only projects that were added as local placeholders */
+  placeholdersCreated: number;
 }
 
 interface CloudSyncActions {
@@ -78,7 +80,8 @@ interface CloudSyncActions {
 const CloudSyncStateContext = createContext<CloudSyncState | null>(null);
 const CloudSyncActionsContext = createContext<CloudSyncActions | null>(null);
 
-interface InternalCloudSyncState {
+/** Shared with useActiveProjectCloudOps and useProjectCloudOps. */
+export interface InternalCloudSyncState {
   cloudId: string | null;
   isOwner: boolean;
   status: 'idle' | 'saving' | 'loading' | 'deleting';
@@ -95,13 +98,28 @@ interface SyncPatch {
   visibility?: Visibility;
 }
 
+interface ServerProject {
+  id: string;
+  title: string | null;
+  visibility: Visibility;
+  updatedAt: string;
+}
+
+interface SyncPatchResult {
+  patches: SyncPatch[];
+  staleCloudIds: string[];
+  /** Server projects that have no matching local entry */
+  cloudOnlyProjects: ServerProject[];
+}
+
 function computeSyncPatches(
   projects: ProjectListEntry[],
-  serverProjects: ReadonlyArray<{ id: string; visibility: Visibility; updatedAt: string }>,
-): { patches: SyncPatch[]; staleCloudIds: string[] } {
+  serverProjects: ReadonlyArray<ServerProject>,
+): SyncPatchResult {
   const serverMap = new Map(serverProjects.map(p => [p.id, p]));
   const patches: SyncPatch[] = [];
   const staleCloudIds: string[] = [];
+  const localCloudIds = new Set(projects.filter(p => p.cloudId).map(p => p.cloudId!));
 
   for (const entry of projects) {
     if (!entry.cloudId) continue;
@@ -127,7 +145,10 @@ function computeSyncPatches(
     }
   }
 
-  return { patches, staleCloudIds };
+  // Find server projects with no local counterpart
+  const cloudOnlyProjects = serverProjects.filter(sp => !localCloudIds.has(sp.id));
+
+  return { patches, staleCloudIds, cloudOnlyProjects };
 }
 
 const initialInternalState: InternalCloudSyncState = {
@@ -152,7 +173,10 @@ const initialInternalState: InternalCloudSyncState = {
  * Refs (appStateRef, internalRef, activeLocalIdRef) are used to give
  * stable callbacks access to latest values without appearing in
  * dependency arrays — this keeps the actions object referentially
- * stable across renders.
+ * stable across renders. `initFromProject` additionally updates
+ * `internalRef` synchronously (before `setInternal`) so that the
+ * `activeLocalId` effect's guard sees the cloudId immediately and
+ * skips, preventing a race where both effects fire in the same commit.
  *
  * By-localId operations (saveProjectToCloud, deleteProjectFromCloud,
  * setProjectVisibility, unlinkCloudProject) are delegated to
@@ -163,10 +187,11 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   const dispatch = useAppDispatch();
   const { activeLocalId, projects } = useProjectStorage();
   const { updateCloudMetadata, createNewProject } = useProjectStorageActions();
+  const { user: authUser } = useAuth();
+  const { getJwt } = useAuthActions();
 
   const [internal, setInternal] = useState<InternalCloudSyncState>(initialInternalState);
 
-  // Track activeLocalId and projects in refs for use in async callbacks
   const activeLocalIdRef = useRef(activeLocalId);
   useEffect(() => {
     activeLocalIdRef.current = activeLocalId;
@@ -196,6 +221,9 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     const cloudId = entry?.cloudId ?? null;
     // Skip if cloudId hasn't changed (avoid redundant state updates)
     if (cloudId === internalRef.current.cloudId) return;
+    // Local ownerToken check only; the auth re-evaluation effect (below)
+    // will asynchronously promote isOwner via a server round-trip when the
+    // user is authenticated, avoiding false ownership for shared projects.
     const isOwner = cloudId ? checkOwnership(cloudId) : false;
     if (cloudId === null) {
       setInternal({ ...initialInternalState });
@@ -212,7 +240,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
         visibility: entry?.visibility ?? 'private',
       }));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- dataVersionRef is a ref (stable), not a reactive value
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- dataVersionRef is a ref (stable)
   }, [activeLocalId]);
 
   // Ref to avoid stale closures in save/fork callbacks
@@ -221,160 +249,56 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     appStateRef.current = appState;
   }, [appState]);
 
-  const applyCreatedResult = useCallback((result: { cloudId: string; timestamp: string; ownerToken: string }) => {
-    let currentLocalId = activeLocalIdRef.current;
+  // Re-evaluate ownership when auth state changes or the active cloud project
+  // changes while authenticated. Covers: (1) JWT validated after startup,
+  // (2) project switch while already authenticated (e.g., via My Projects).
+  useEffect(() => {
+    if (!internal.cloudId || internal.isOwner || !authUser) return;
 
-    // When forking a shared project, no local project exists yet — create one
-    if (!currentLocalId) {
-      const serialized = serializeState(appStateRef.current);
-      const name = appStateRef.current.project?.title ?? DEFAULT_PROJECT_NAME;
-      currentLocalId = createNewProject(name, serialized);
-    }
+    const jwt = getJwt();
+    if (!jwt) return;
 
-    updateCloudMetadata(currentLocalId, {
-      cloudId: result.cloudId,
-      cloudSavedAt: result.timestamp,
-      ownerToken: result.ownerToken,
-    });
-
-    const shareUrl = buildProjectUrl(result.cloudId);
-    setCloudUrl(result.cloudId);
-
-    setInternal((prev) => ({
-      ...prev,
-      cloudId: result.cloudId,
-      isOwner: true,
-      status: 'idle',
-      shareUrl,
-      lastCloudSavedAt: result.timestamp,
-      lastSavedVersion: dataVersionRef.current,
-    }));
-  }, [updateCloudMetadata, createNewProject, dataVersionRef]);
-
-  const saveToCloud = useCallback(async () => {
-    if (!isCloudEnabled()) return;
-    await withMutationLock(mutationLockRef, async () => {
-      try {
-        const { cloudId, isOwner } = internalRef.current;
-        const existingCloudId = (cloudId && isOwner) ? cloudId : null;
-
-        setInternal((prev) => ({ ...prev, status: 'saving', error: null }));
-        const jsonPayload = exportToObject(appStateRef.current);
-        const result = await saveProjectToCloudImpl(jsonPayload, existingCloudId);
-
-        if (result.kind === 'not-found') {
-          const currentLocalId = activeLocalIdRef.current;
-          if (currentLocalId) {
-            updateCloudMetadata(currentLocalId, CLEARED_CLOUD_METADATA);
-          }
-          clearCloudUrl();
-          setInternal((prev) => ({
-            ...prev,
-            cloudId: null,
-            isOwner: false,
-            status: 'idle',
-            shareUrl: null,
-            lastCloudSavedAt: null,
-            visibility: 'private',
-            error: 'Cloud project not found. It may have been deleted. Use "Save to Cloud" to create a new copy.',
-          }));
-          return;
+    let cancelled = false;
+    getProject(internal.cloudId, { tokenHash: '', jwt })
+      .then((res) => {
+        if (!cancelled && res.isOwner) {
+          setInternal((prev) => prev.cloudId === internal.cloudId ? { ...prev, isOwner: true } : prev);
         }
+      })
+      .catch(() => { /* best-effort; ownership stays false */ });
+    return () => { cancelled = true; };
+  }, [authUser, getJwt, internal.cloudId, internal.isOwner]);
 
-        if (result.kind === 'created') {
-          applyCreatedResult(result);
-        } else {
-          const currentLocalId = activeLocalIdRef.current;
-          if (currentLocalId) {
-            updateCloudMetadata(currentLocalId, { cloudSavedAt: result.timestamp });
-          }
-          setInternal((prev) => ({
-            ...prev,
-            status: 'idle',
-            lastCloudSavedAt: result.timestamp,
-            lastSavedVersion: dataVersionRef.current,
-          }));
-        }
-      } catch (err) {
-        setInternal((prev) => ({ ...prev, status: 'idle', error: friendlyErrorMessage(err, 'Failed to save project.') }));
-      }
-    });
-  }, [updateCloudMetadata, applyCreatedResult, mutationLockRef, dataVersionRef]);
-
-  const fork = useCallback(async () => {
-    if (!isCloudEnabled()) return;
-    await withMutationLock(mutationLockRef, async () => {
-      setInternal((prev) => ({ ...prev, status: 'saving', error: null }));
-      try {
-        const jsonPayload = exportToObject(appStateRef.current);
-        const result = await saveProjectToCloudImpl(jsonPayload, null);
-        if (result.kind !== 'created') throw new Error('Failed to save copy.');
-        applyCreatedResult(result);
-      } catch (err) {
-        setInternal((prev) => ({ ...prev, status: 'idle', error: friendlyErrorMessage(err, 'Failed to save copy.') }));
-      }
-    });
-  }, [applyCreatedResult, mutationLockRef]);
-
-  const deleteFromCloud = useCallback(async () => {
-    const { cloudId } = internalRef.current;
-    if (!cloudId) return;
-    await withMutationLock(mutationLockRef, async () => {
-      setInternal((prev) => ({ ...prev, status: 'deleting', error: null }));
-      try {
-        await deleteProjectFromCloudImpl(cloudId);
-
-        const currentLocalId = activeLocalIdRef.current;
-        if (currentLocalId) {
-          updateCloudMetadata(currentLocalId, CLEARED_CLOUD_METADATA);
-        }
-
-        clearCloudUrl();
-        setInternal({ ...initialInternalState });
-      } catch (err) {
-        setInternal((prev) => ({ ...prev, status: 'idle', error: friendlyErrorMessage(err, 'Failed to delete project.') }));
-      }
-    });
-  }, [updateCloudMetadata, mutationLockRef]);
-
-  const setVisibility = useCallback(async (v: Visibility) => {
-    const { cloudId, isOwner, visibility: previousVisibility } = internalRef.current;
-    setInternal((prev) => ({ ...prev, visibility: v }));
-
-    if (cloudId && isOwner) {
-      try {
-        await patchVisibilityImpl(cloudId, v);
-
-        const currentLocalId = activeLocalIdRef.current;
-        if (currentLocalId) {
-          updateCloudMetadata(currentLocalId, { visibility: v });
-        }
-      } catch (err) {
-        // Revert on failure and show error
-        setInternal((prev) => ({
-          ...prev,
-          visibility: previousVisibility,
-          error: friendlyErrorMessage(err, 'Failed to update visibility.'),
-        }));
-      }
-    }
-  }, [updateCloudMetadata]);
+  // Active-project cloud operations (save, fork, delete, visibility, load)
+  const activeOps = useActiveProjectCloudOps({
+    internalRef, appStateRef, activeLocalIdRef,
+    dataVersionRef, mutationLockRef, needsVersionSyncRef,
+    setInternal, updateCloudMetadata, createNewProject,
+    getJwt, dispatch, initialInternalState,
+  });
 
   const initFromProject = useCallback(
     (cloudId: string | null, isOwner: boolean) => {
       if (cloudId === null) {
-        setInternal({ ...initialInternalState });
+        const next = { ...initialInternalState };
+        internalRef.current = next;
+        setInternal(next);
         clearCloudUrl();
       } else {
-        setInternal((prev) => ({
-          ...prev,
+        const next = {
+          ...internalRef.current,
           cloudId,
           isOwner,
           shareUrl: buildProjectUrl(cloudId),
           lastSavedVersion: dataVersionRef.current,
           lastCloudSavedAt: null,
           error: null,
-        }));
+        };
+        // Synchronously update ref so the activeLocalId effect's guard
+        // (cloudId === internalRef.current.cloudId) sees this immediately,
+        // preventing it from overwriting isOwner with a stale local check.
+        internalRef.current = next;
+        setInternal(next);
       }
     },
     [dataVersionRef],
@@ -384,69 +308,34 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     setInternal((prev) => ({ ...prev, error: null }));
   }, []);
 
-  const loadCloudProject = useCallback(
-    async (cloudId: string) => {
-      setInternal((prev) => ({ ...prev, status: 'loading', error: null, cloudId }));
-      try {
-        const importResult = await fetchAndParseCloudProject(cloudId);
-
-        dispatch({
-          type: 'IMPORT_STATE',
-          registers: importResult.registers,
-          values: importResult.values,
-          project: importResult.project,
-          addressUnitBits: importResult.addressUnitBits,
-        });
-
-        const isOwner = checkOwnership(cloudId);
-        const shareUrl = buildProjectUrl(cloudId);
-
-        // Signal the version-tracking useEffect to capture lastSavedVersion
-        needsVersionSyncRef.current = true;
-
-        setInternal((prev) => ({
-          ...prev,
-          cloudId,
-          isOwner,
-          status: 'idle',
-          shareUrl,
-          lastCloudSavedAt: importResult.updatedAt,
-        }));
-      } catch (err) {
-        if (err instanceof ApiError && err.status === 404) {
-          setInternal((prev) => ({
-            ...prev,
-            status: 'idle',
-            error: 'Project not found \u2014 it may have been deleted.',
-            cloudId: null,
-          }));
-          return;
-        }
-        setInternal((prev) => ({
-          ...prev,
-          status: 'idle',
-          error: friendlyErrorMessage(err, 'Failed to load project.'),
-        }));
-      }
-    },
-    [dispatch, needsVersionSyncRef],
-  );
-
   const syncCloudProjects = useCallback(async (): Promise<SyncResult> => {
-    if (!isCloudEnabled()) return { updatedCount: 0, staleCloudIds: [] };
+    if (!isCloudEnabled()) return { updatedCount: 0, staleCloudIds: [], placeholdersCreated: 0 };
 
-    const ownerToken = getOrCreateOwnerToken();
-    const tokenHash = await hashOwnerToken(ownerToken);
-    const response = await listProjects(tokenHash);
+    // Prefer JWT for listing (shows all user-linked projects cross-device),
+    // fall back to token hash for anonymous users.
+    const jwt = getJwt();
+    const authToken = jwt ?? await hashOwnerToken(getOrCreateOwnerToken());
+    const response = await listProjects(authToken);
 
-    const { patches, staleCloudIds } = computeSyncPatches(projectsRef.current, response.projects);
+    const { patches, staleCloudIds, cloudOnlyProjects } = computeSyncPatches(projectsRef.current, response.projects);
 
     for (const { localId, ...updates } of patches) {
       updateCloudMetadata(localId, updates);
     }
 
-    return { updatedCount: patches.length, staleCloudIds };
-  }, [updateCloudMetadata]);
+    // Create lightweight local placeholders for cloud-only projects so they
+    // appear in the project list with full cloud actions (share, visibility, delete).
+    // The actual project data is fetched lazily when the user opens the project.
+    for (const sp of cloudOnlyProjects) {
+      createProject(EMPTY_SERIALIZED_STATE, sp.title ?? DEFAULT_PROJECT_NAME, {
+        cloudId: sp.id,
+        visibility: sp.visibility,
+        cloudSavedAt: sp.updatedAt,
+      });
+    }
+
+    return { updatedCount: patches.length, staleCloudIds, placeholdersCreated: cloudOnlyProjects.length };
+  }, [updateCloudMetadata, getJwt]);
 
   // By-localId cloud operations (used by My Projects dialog)
   const projectOps = useProjectCloudOps({
@@ -458,16 +347,16 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     internalRef,
     setInternal,
     initialInternalState,
+    getJwt,
   });
 
   const actions = useMemo(
     () => ({
-      saveToCloud, deleteFromCloud, setVisibility, loadCloudProject,
-      fork, dismissError, initFromProject, syncCloudProjects,
+      ...activeOps,
+      dismissError, initFromProject, syncCloudProjects,
       ...projectOps,
     }),
-    [saveToCloud, deleteFromCloud, setVisibility, loadCloudProject,
-     fork, dismissError, initFromProject, syncCloudProjects, projectOps],
+    [activeOps, dismissError, initFromProject, syncCloudProjects, projectOps],
   );
 
   const providedState: CloudSyncState = useMemo(

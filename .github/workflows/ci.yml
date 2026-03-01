@@ -66,7 +66,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Build and run tests
-        run: docker compose run --rm test bash -c "composer install -q && vendor/bin/phpunit"
+        run: docker compose run --rm test bash -c "composer install -q && composer audit --no-dev && vendor/bin/phpunit"
       - name: Stop containers
         if: always()
         run: docker compose down -v

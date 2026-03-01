@@ -28,6 +28,11 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: composer:v2
+
       - run: npm ci
         working-directory: frontend
 
@@ -36,12 +41,17 @@ jobs:
         env:
           VITE_API_URL: ${{ vars.VITE_API_URL }}
 
+      - name: Install PHP runtime dependencies
+        run: composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
+        working-directory: api
+
       - name: Assemble deploy payload
         run: |
-          mkdir -p deploy/api/src/handlers deploy/api/database/migrations
+          mkdir -p deploy/api/src/handlers deploy/api/database/migrations deploy/api/vendor
           cp -R frontend/dist/* deploy/
           cp -R api/src/* deploy/api/src/
           cp -R api/database/* deploy/api/database/
+          cp -R api/vendor/* deploy/api/vendor/
           cp api/index.php deploy/api/
           cp api/config.php deploy/api/
           cp api/.htaccess deploy/api/
@@ -68,3 +78,16 @@ jobs:
           curl -sf --retry 3 --retry-delay 5 ${{ vars.VITE_API_URL }}/api/health
           echo ""
           echo "API OK"
+          echo "Checking auth endpoint..."
+          AUTH_STATUS=$(curl -s -o /dev/null -w '%{http_code}' \
+            -X POST -H 'Content-Type: application/json' \
+            -d '{"email":""}' \
+            ${{ vars.VITE_API_URL }}/api/auth/send-code)
+          if [ "$AUTH_STATUS" = "400" ]; then
+            echo "Auth endpoint reachable (returned 400 for invalid input as expected)"
+          elif [ "$AUTH_STATUS" = "000" ]; then
+            echo "::error::Auth endpoint unreachable"
+            exit 1
+          else
+            echo "::warning::Auth endpoint returned unexpected status $AUTH_STATUS (expected 400)"
+          fi

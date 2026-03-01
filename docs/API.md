@@ -4,19 +4,192 @@ Base URL: `https://<your-domain>/api`
 
 ## Authentication
 
-All mutating endpoints require a Bearer token in the `Authorization` header:
+The API supports two authentication methods. The server auto-detects which is in use by inspecting the token format.
+
+### JWT Authentication (Recommended)
+
+Obtained by completing the email OTP flow via `POST /api/auth/verify-code`.
 
 ```
-Authorization: Bearer <token_hash>
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 ```
 
-The token hash is a 64-character lowercase hex string representing the SHA-256 hash of the client's owner token. The server never sees or stores the raw token.
+- **Algorithm:** HMAC-SHA256
+- **Expiry:** 24 hours from issue
+- **Claims:** `sub` (user ID), `email`, `iat`, `exp`, `jti` (token ID for revocation)
+- **Scope:** Grants access to all projects owned by the authenticated user
 
-**Constant-time comparison** is used for ownership checks to prevent timing side-channel attacks.
+### Legacy Token Hash Authentication
+
+Generated client-side via `hashOwnerToken()`. A 64-character lowercase hex string (SHA-256 hash of the raw owner token). For legacy token-hash auth, only the hash is sent in the `Authorization` header. For JWT-authenticated create and verify-code requests, the raw token is sent in the body and the server hashes it server-side to verify possession.
+
+```
+Authorization: Bearer abc123def456...  (64-char hex)
+```
+
+- **Expiry:** None — valid indefinitely
+- **Scope:** Grants access to projects created with the same token hash
+- **Note:** Being phased out in favor of JWT for multi-device and recovery scenarios
+
+### Ownership Model
+
+- **Token hash projects:** Owned by the token hash. Any request with the matching hash can modify/delete.
+- **JWT user projects:** Owned by the user ID. Any valid JWT for that user can modify/delete all their projects.
+- **Migration:** Pass `ownerToken` (raw 64-char hex token) when calling `POST /api/auth/verify-code` to link existing anonymous projects to a user account. The server hashes it server-side to verify possession. The token hash continues to work for backward compatibility.
+
+**Constant-time comparison** (`hash_equals`) is used for all ownership checks to prevent timing side-channel attacks.
 
 ---
 
-## Endpoints
+## Authentication Endpoints
+
+### Send Login Code
+
+```
+POST /api/auth/send-code
+```
+
+Sends a 6-digit OTP code to the provided email address.
+
+**Auth:** Not required
+
+**Request Body:**
+
+```json
+{
+  "email": "user@example.com"
+}
+```
+
+**Rate Limiting:**
+- Global: max 30 OTP sends per minute across all users (returns `503`)
+- Per-IP: max 5 sends per IP per 15 minutes (returns `429`)
+- Per-email: max 3 codes per email per hour (returns `429`)
+
+**Response `200 OK`:**
+
+```json
+{
+  "ok": true
+}
+```
+
+Always returns 200 regardless of whether the email was delivered, to prevent email enumeration.
+
+**Errors:**
+
+| Status | Reason |
+|--------|--------|
+| 400 | Invalid or missing email address |
+| 429 | Too many requests (per-IP or per-email rate limit exceeded) |
+| 503 | Global rate limit exceeded — try again later |
+
+---
+
+### Verify Login Code
+
+```
+POST /api/auth/verify-code
+```
+
+Verifies a 6-digit OTP code and returns a JWT token. Optionally links anonymous projects to the new user account.
+
+**Auth:** Not required
+
+**Request Body:**
+
+```json
+{
+  "email": "user@example.com",
+  "code": "123456",
+  "ownerToken": "abc123..."
+}
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `email` | Yes | Email address the code was sent to |
+| `code` | Yes | 6-digit OTP code |
+| `ownerToken` | No | 64-char hex raw owner token — server hashes it to link anonymous projects to this user |
+
+**Rate Limiting:**
+- Max 10 verification attempts per email per 10-minute window
+- Max 5 attempts per individual code
+
+**Code Expiry:** 10 minutes after generation. Single-use (marked used on success).
+
+**Response `200 OK`:**
+
+```json
+{
+  "token": "eyJhbGc...",
+  "user": {
+    "id": 1,
+    "email": "user@example.com"
+  }
+}
+```
+
+**Errors:**
+
+| Status | Reason |
+|--------|--------|
+| 400 | Invalid email or code format |
+| 401 | Invalid or expired code |
+| 429 | Too many verification attempts |
+
+---
+
+### Get Current User
+
+```
+GET /api/auth/me
+```
+
+Returns the authenticated user's profile.
+
+**Auth:** Required (JWT only)
+
+**Response `200 OK`:**
+
+```json
+{
+  "user": {
+    "id": 1,
+    "email": "user@example.com"
+  }
+}
+```
+
+**Errors:**
+
+| Status | Reason |
+|--------|--------|
+| 401 | Missing or invalid JWT token |
+
+---
+
+### Logout
+
+```
+POST /api/auth/logout
+```
+
+Revokes the current JWT token. The token's `jti` is added to the `revoked_tokens` table, preventing reuse.
+
+**Auth:** Required (JWT only)
+
+**Response:** `204 No Content` (empty body)
+
+**Errors:**
+
+| Status | Reason |
+|--------|--------|
+| 401 | Missing or invalid JWT token |
+
+---
+
+## Project Endpoints
 
 ### Create Project
 
@@ -104,9 +277,12 @@ Retrieves a project by its 12-character base62 ID.
   "id": "AbCdEfGhIjKl",
   "data": { "version": 1, "registers": [...], "registerValues": {...} },
   "createdAt": "2026-02-23T09:00:00.000Z",
-  "updatedAt": "2026-02-23T09:00:00.000Z"
+  "updatedAt": "2026-02-23T09:00:00.000Z",
+  "isOwner": true
 }
 ```
+
+`isOwner` is `true` when the requesting user owns this project (via token hash or JWT user ID), `false` otherwise.
 
 **Cache-Control:**
 - Private projects: `private, no-store`
@@ -265,11 +441,19 @@ Lists all projects owned by the authenticated user.
 
 ## Security Headers
 
-All JSON responses include:
+All responses include:
 
 ```
 X-Content-Type-Options: nosniff
 Referrer-Policy: no-referrer
+X-Frame-Options: DENY
+Content-Security-Policy: default-src 'none'
+```
+
+In production, HSTS is also sent:
+
+```
+Strict-Transport-Security: max-age=31536000; includeSubDomains
 ```
 
 ## Error Response Format
@@ -304,3 +488,8 @@ Referrer-Policy: no-referrer
 | `DB_PASSWORD` | Yes | MySQL database password |
 | `APP_ENV` | No | Set to `production` to restrict CORS. Default: `production`. |
 | `ALLOWED_ORIGINS` | No | Configured in `config.php` `allowed_origins` array |
+| `JWT_SECRET` | Yes* | HMAC-SHA256 secret for signing JWT tokens. **Must be ≥32 characters.** Generate with: `openssl rand -hex 32` |
+| `RESEND_API_KEY` | Yes* | API key from [Resend](https://resend.com/) for sending OTP emails. Without it, login codes won't be delivered (errors logged server-side). |
+| `RESEND_FROM_EMAIL` | No | Sender email address for OTP emails. Default: `noreply@registerviewer.com`. Must be a verified domain in Resend. |
+
+\* Required for email authentication. Optional if deploying without the auth feature.

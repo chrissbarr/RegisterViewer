@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS `projects` (
     `created_at`        DATETIME            NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`        DATETIME            NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `last_accessed_at`  DATETIME            NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    `user_id`           INT UNSIGNED        DEFAULT NULL COMMENT 'Future: FK to users.id when email auth is added',
+    `user_id`           INT UNSIGNED        DEFAULT NULL COMMENT 'FK to users.id — required by 002_create_auth_tables.sql',
     `schema_version`    TINYINT UNSIGNED    NOT NULL DEFAULT 1,
 
     PRIMARY KEY (`id`),

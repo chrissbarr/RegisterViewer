@@ -10,9 +10,14 @@ if (file_exists($prodConfigPath)) {
     $config = array_replace_recursive($config, require $prodConfigPath);
 }
 
+require __DIR__ . '/vendor/autoload.php';
+
+require __DIR__ . '/src/api-response.php';
 require __DIR__ . '/src/database.php';
 require __DIR__ . '/src/cors.php';
 require __DIR__ . '/src/auth.php';
+require __DIR__ . '/src/jwt.php';
+require __DIR__ . '/src/email.php';
 require __DIR__ . '/src/validation.php';
 require __DIR__ . '/src/data-access.php';
 require __DIR__ . '/src/id.php';
@@ -22,6 +27,11 @@ require __DIR__ . '/src/handlers/update-project.php';
 require __DIR__ . '/src/handlers/patch-project.php';
 require __DIR__ . '/src/handlers/delete-project.php';
 require __DIR__ . '/src/handlers/list-projects.php';
+require __DIR__ . '/src/handlers/auth-send-code.php';
+require __DIR__ . '/src/handlers/auth-verify-code.php';
+require __DIR__ . '/src/handlers/auth-me.php';
+require __DIR__ . '/src/handlers/auth-logout.php';
+require __DIR__ . '/database/migrate.php';
 
 // ---- Constants ----
 
@@ -34,60 +44,49 @@ const SECURITY_HEADERS = [
 
 // ---- Response helpers ----
 
-function sendJson(array|object $body, int $status = 200, array $extraHeaders = []): never
+/**
+ * Emit an ApiResponse as HTTP output. This is the single I/O exit point.
+ */
+function emitResponse(ApiResponse $response): never
 {
-    http_response_code($status);
+    if ($response->body === null && $response->rawJson === null) {
+        // 204 No Content
+        http_response_code($response->status);
+        foreach (SECURITY_HEADERS as $k => $v) {
+            header("$k: $v");
+        }
+        foreach ($response->headers as $k => $v) {
+            header("$k: $v");
+        }
+        exit;
+    }
+
+    http_response_code($response->status);
     header('Content-Type: application/json');
     foreach (SECURITY_HEADERS as $k => $v) {
         header("$k: $v");
     }
-    foreach ($extraHeaders as $k => $v) {
+    foreach ($response->headers as $k => $v) {
         header("$k: $v");
     }
-    $output = json_encode($body, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+    $output = $response->rawJson
+        ?? json_encode($response->body, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     header('Content-Length: ' . strlen($output));
     echo $output;
-    exit;
-}
 
-/**
- * Send a raw JSON string as the response body (avoids decode/re-encode round-trip).
- */
-function sendRawJson(string $json, int $status = 200, array $extraHeaders = []): never
-{
-    http_response_code($status);
-    header('Content-Type: application/json');
-    foreach (SECURITY_HEADERS as $k => $v) {
-        header("$k: $v");
+    // Flush response to client before shutdown functions run (PERF-05).
+    // On PHP-FPM this is required; on mod_php/CLI it is a harmless no-op.
+    if (function_exists('fastcgi_finish_request')) {
+        fastcgi_finish_request();
     }
-    foreach ($extraHeaders as $k => $v) {
-        header("$k: $v");
-    }
-    header('Content-Length: ' . strlen($json));
-    echo $json;
-    exit;
-}
 
-function sendError(string $message, int $status, array $extraHeaders = []): never
-{
-    sendJson(['error' => $message], $status, $extraHeaders);
-}
-
-function sendNoContent(array $extraHeaders = []): never
-{
-    http_response_code(204);
-    foreach (SECURITY_HEADERS as $k => $v) {
-        header("$k: $v");
-    }
-    foreach ($extraHeaders as $k => $v) {
-        header("$k: $v");
-    }
     exit;
 }
 
 // ---- Body reading ----
 
-function readBody(): string
+function readBody(): string|ApiResponse
 {
     static $rawBody = null;
     if ($rawBody !== null) {
@@ -97,7 +96,10 @@ function readBody(): string
     // Check Content-Length header first (fast path)
     $contentLength = $_SERVER['HTTP_CONTENT_LENGTH'] ?? $_SERVER['CONTENT_LENGTH'] ?? null;
     if ($contentLength !== null && (int) $contentLength > LIMITS['MAX_PAYLOAD_SIZE']) {
-        sendError('Request body must be at most ' . LIMITS['MAX_PAYLOAD_SIZE'] . ' bytes', 400);
+        return new ApiResponse(
+            ['error' => 'Request body must be at most ' . LIMITS['MAX_PAYLOAD_SIZE'] . ' bytes'],
+            400
+        );
     }
 
     $rawBody = file_get_contents('php://input', false, null, 0, LIMITS['MAX_PAYLOAD_SIZE'] + 1);
@@ -105,46 +107,34 @@ function readBody(): string
         $rawBody = '';
     }
     if (strlen($rawBody) > LIMITS['MAX_PAYLOAD_SIZE']) {
-        sendError('Request body must be at most ' . LIMITS['MAX_PAYLOAD_SIZE'] . ' bytes', 400);
+        $rawBody = null; // Don't cache the oversized body
+        return new ApiResponse(
+            ['error' => 'Request body must be at most ' . LIMITS['MAX_PAYLOAD_SIZE'] . ' bytes'],
+            400
+        );
     }
 
     return $rawBody;
 }
 
 /**
- * Parse the request body as JSON, returning both associative-array and stdClass views.
+ * Parse a raw JSON string into both associative-array and stdClass views.
+ * Returns ApiResponse on error, or the parsed array on success.
  *
- * The body is parsed once as stdClass (to preserve the {} vs [] distinction,
- * since json_decode with assoc=true turns {} into [], losing the difference).
- * The assoc view is derived by recursively converting the stdClass tree,
- * avoiding a second json_decode call.
- *
- * The assoc view is used for validation and reading scalar fields.
- * The object view is used for faithful JSON storage.
- *
- * @return array{assoc: array, object: object}
+ * @return array{assoc: array, object: object}|ApiResponse
  */
-function readParsedBody(): array
+function parseBody(string $text): array|ApiResponse
 {
-    static $cached = null;
-    if ($cached !== null) {
-        return $cached;
-    }
-
-    $text = readBody();
     if ($text === '') {
-        sendError('Invalid JSON body', 400);
+        return new ApiResponse(['error' => 'Invalid JSON body'], 400);
     }
 
     $object = json_decode($text);
     if (json_last_error() !== JSON_ERROR_NONE || !is_object($object)) {
-        sendError('Invalid JSON body', 400);
+        return new ApiResponse(['error' => 'Invalid JSON body'], 400);
     }
 
-    $assoc = objectToAssoc($object);
-
-    $cached = ['assoc' => $assoc, 'object' => $object];
-    return $cached;
+    return ['assoc' => objectToAssoc($object), 'object' => $object];
 }
 
 /**
@@ -169,19 +159,77 @@ function objectToAssoc(mixed $value): mixed
 /**
  * Extract the "data" field from the parsed request body as a JSON string,
  * using the stdClass view to preserve {} vs [] distinction.
+ *
+ * @return string|ApiResponse
  */
-function extractDataJson(object $parsedObject): string
+function extractDataJson(object $parsedObject): string|ApiResponse
 {
     if (!property_exists($parsedObject, 'data')) {
-        sendError('Invalid JSON body', 400);
+        return new ApiResponse(['error' => 'Invalid JSON body'], 400);
     }
     return json_encode($parsedObject->data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+}
+
+// ---- Auth config validation (production only) ----
+// Log prominent warnings if auth-related config is missing so operators
+// notice immediately in error logs rather than after user-reported failures.
+// Intentionally logs on every request (no sentinel) — a misconfigured
+// production environment should be noisy until fixed.
+
+if ($config['environment'] === 'production') {
+    if (empty($config['jwt_secret']) || strlen($config['jwt_secret']) < 32) {
+        error_log('CONFIG WARNING: jwt_secret is missing or too short (must be >= 32 chars). '
+            . 'Auth endpoints will reject all requests. '
+            . 'Set jwt_secret in config.production.php — see docs/DEPLOYMENT.md Step 2.');
+    }
+    if (empty($config['resend_api_key'])) {
+        error_log('CONFIG WARNING: resend_api_key is not set. '
+            . 'OTP email delivery will fail silently. '
+            . 'Set resend_api_key in config.production.php — see docs/DEPLOYMENT.md Step 2.');
+    }
 }
 
 // ---- HSTS (production only) ----
 
 if ($config['environment'] === 'production') {
     header('Strict-Transport-Security: max-age=31536000; includeSubDomains');
+}
+
+// ---- Auto-migrate ----
+// Runs pending migrations on first request after deploy. A sentinel file
+// skips the check on subsequent requests until it expires (1 hour).
+
+try {
+    $sentinelFile = __DIR__ . '/database/.migrate.done';
+    $skipMigration = file_exists($sentinelFile) && (time() - filemtime($sentinelFile) < 3600);
+
+    if (!$skipMigration) {
+        $migrationsDir = __DIR__ . '/database/migrations';
+        $lockFile = __DIR__ . '/database/.migrate.lock';
+        $fp = fopen($lockFile, 'c');
+        if ($fp !== false && flock($fp, LOCK_EX | LOCK_NB)) {
+            try {
+                $db = getDatabase($config);
+                $result = runPendingMigrations($db, $migrationsDir);
+                foreach ($result['applied'] as $file) {
+                    error_log("Auto-migration applied: $file");
+                }
+                foreach ($result['errors'] as $error) {
+                    error_log("Auto-migration error: $error");
+                }
+                if ($result['errors'] === []) {
+                    touch($sentinelFile);
+                }
+            } finally {
+                flock($fp, LOCK_UN);
+                fclose($fp);
+            }
+        } elseif ($fp !== false) {
+            fclose($fp);
+        }
+    }
+} catch (\Throwable $e) {
+    error_log('Auto-migration failed: ' . substr($e->getMessage(), 0, 500));
 }
 
 // ---- CORS ----
@@ -210,38 +258,91 @@ if ($path === '/api/health' && ($method === 'GET' || $method === 'HEAD')) {
     try {
         $db = getDatabase($config);
         $db->query('SELECT 1');
-        sendJson(['status' => 'ok', 'timestamp' => gmdate('c')]);
+        emitResponse(new ApiResponse(['status' => 'ok', 'timestamp' => gmdate('c')]));
     } catch (\Throwable $e) {
         error_log('Health check failed: ' . substr($e->getMessage(), 0, 200));
-        sendError('Database connection failed', 503);
+        emitResponse(new ApiResponse(['error' => 'Database connection failed'], 503));
+    }
+}
+
+// Email health check — verifies email provider is configured and reachable (DEV-04)
+if ($path === '/api/health/email' && ($method === 'GET' || $method === 'HEAD')) {
+    $result = checkEmailHealth($config);
+    if ($result['ok']) {
+        emitResponse(new ApiResponse(['status' => 'ok', 'timestamp' => gmdate('c')]));
+    } else {
+        error_log('Email health check failed: ' . ($result['error'] ?? 'unknown'));
+        emitResponse(new ApiResponse([
+            'status' => 'error',
+            'error' => $result['error'] ?? 'Email service unhealthy',
+            'timestamp' => gmdate('c'),
+        ], 503));
     }
 }
 
 try {
     $db = getDatabase($config);
 
-    // Collection routes: /api/projects
-    if (preg_match('#^/api/projects/?$#', $path)) {
-        match ($method) {
-            'POST' => handleCreateProject($db, $config),
-            'GET'  => handleListProjects($db),
-            default => sendError('Method not allowed', 405, ['Allow' => 'GET, POST, OPTIONS']),
-        };
-    // Resource routes: /api/projects/:id (12-char alphanumeric)
-    } elseif (preg_match('#^/api/projects/([A-Za-z0-9]{12})$#', $path, $matches)) {
-        $id = $matches[1];
-
-        match ($method) {
-            'GET'    => handleGetProject($db, $id),
-            'PUT'    => handleUpdateProject($db, $id, $config),
-            'PATCH'  => handlePatchProject($db, $id),
-            'DELETE' => handleDeleteProject($db, $id),
-            default  => sendError('Method not allowed', 405, ['Allow' => 'GET, PUT, PATCH, DELETE, OPTIONS']),
-        };
-    } else {
-        sendError('Not found', 404);
+    // Parse body once for methods that need it
+    $parsed = null;
+    $body = null;
+    if (in_array($method, ['POST', 'PUT', 'PATCH'], true)) {
+        $raw = readBody();
+        if ($raw instanceof ApiResponse) {
+            emitResponse($raw);
+        }
+        $parsed = parseBody($raw);
+        if ($parsed instanceof ApiResponse) {
+            emitResponse($parsed);
+        }
+        $body = $parsed['assoc'];
     }
+
+    // Extract auth once (pass $db for JWT revocation check)
+    $auth = extractAuth($config, $db);
+
+    // Match project ID for resource routes
+    $projectId = null;
+    if (preg_match('#^/api/projects/([A-Za-z0-9]{12})$#', $path, $matches)) {
+        $projectId = $matches[1];
+    }
+
+    $response = match (true) {
+        // Auth routes
+        $path === '/api/auth/send-code' && $method === 'POST'
+            => handleAuthSendCode($db, $config, $body),
+        $path === '/api/auth/verify-code' && $method === 'POST'
+            => handleAuthVerifyCode($db, $config, $body),
+        $path === '/api/auth/me' && $method === 'GET'
+            => handleAuthMe($db, $config, $auth),
+        $path === '/api/auth/logout' && $method === 'POST'
+            => handleAuthLogout($db, $auth),
+
+        // Collection routes: /api/projects
+        preg_match('#^/api/projects/?$#', $path) === 1 && $method === 'POST'
+            => handleCreateProject($db, $config, $auth, $parsed),
+        preg_match('#^/api/projects/?$#', $path) === 1 && $method === 'GET'
+            => handleListProjects($db, $auth),
+        preg_match('#^/api/projects/?$#', $path) === 1
+            => new ApiResponse(['error' => 'Method not allowed'], 405, ['Allow' => 'GET, POST, OPTIONS']),
+
+        // Resource routes: /api/projects/:id
+        $projectId !== null && $method === 'GET'
+            => handleGetProject($db, $projectId, $auth),
+        $projectId !== null && $method === 'PUT'
+            => handleUpdateProject($db, $projectId, $auth, $parsed),
+        $projectId !== null && $method === 'PATCH'
+            => handlePatchProject($db, $projectId, $auth, $body),
+        $projectId !== null && $method === 'DELETE'
+            => handleDeleteProject($db, $projectId, $auth),
+        $projectId !== null
+            => new ApiResponse(['error' => 'Method not allowed'], 405, ['Allow' => 'GET, PUT, PATCH, DELETE, OPTIONS']),
+
+        default => new ApiResponse(['error' => 'Not found'], 404),
+    };
+
+    emitResponse($response);
 } catch (\Throwable $e) {
     error_log('API error [' . get_class($e) . ']: ' . substr($e->getMessage(), 0, 500));
-    sendError('Internal server error', 500);
+    emitResponse(new ApiResponse(['error' => 'Internal server error'], 500));
 }

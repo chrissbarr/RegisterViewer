@@ -11,6 +11,7 @@ services:
       DB_DATABASE: register_viewer
       DB_USERNAME: regapi
       DB_PASSWORD: regapi_dev
+      JWT_SECRET: dev-jwt-secret-not-for-production
     depends_on:
       db:
         condition: service_healthy
@@ -25,8 +26,8 @@ services:
     ports:
       - "127.0.0.1:3307:3306"
     volumes:
-      - ./database/migrations/001_create_projects_table.sql:/docker-entrypoint-initdb.d/001.sql:ro
       - db_data:/var/lib/mysql
+      - ./database/migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 5s
@@ -45,6 +46,7 @@ services:
       DB_DATABASE: register_viewer
       DB_USERNAME: regapi
       DB_PASSWORD: regapi_dev
+      JWT_SECRET: test-jwt-secret-not-for-production
     depends_on:
       db:
         condition: service_healthy

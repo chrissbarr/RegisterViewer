@@ -2,18 +2,17 @@
 
 declare(strict_types=1);
 
-function handleGetProject(PDO $db, string $id): never
+function handleGetProject(PDO $db, string $id, array $auth): ApiResponse
 {
     $project = dbGetProject($db, $id);
     if ($project === null) {
-        sendError('Project not found', 404);
+        return new ApiResponse(['error' => 'Project not found'], 404);
     }
 
-    // Private projects require ownership
+    // Private projects require ownership (token hash or JWT user_id)
     if ($project['visibility'] === 'private') {
-        $tokenHash = extractTokenHash();
-        if ($tokenHash === null || !isOwner($tokenHash, $project)) {
-            sendError('Project not found', 404);
+        if (!isOwnerOrUser($auth, $project)) {
+            return new ApiResponse(['error' => 'Project not found'], 404);
         }
     }
 
@@ -30,8 +29,12 @@ function handleGetProject(PDO $db, string $id): never
     $decoded = json_decode($dataJson);
     if (!is_object($decoded) && !is_array($decoded)) {
         error_log("Corrupt data column for project {$project['public_id']}");
-        sendError('Internal server error', 500);
+        return new ApiResponse(['error' => 'Internal server error'], 500);
     }
+
+    // Ownership flag: true when the requesting user owns this project (token hash or JWT user_id).
+    // Enables cross-device JWT users to see owner-only UI without a local owner token.
+    $isOwner = ($auth['kind'] !== 'none') && isOwnerOrUser($auth, $project);
 
     // Build response manually to avoid decode/re-encode of the data JSON blob.
     // This preserves {} vs [] distinction for empty objects (e.g., registerValues: {}).
@@ -39,9 +42,10 @@ function handleGetProject(PDO $db, string $id): never
         . ',"data":' . $dataJson
         . ',"createdAt":' . json_encode($project['created_at_iso'])
         . ',"updatedAt":' . json_encode($project['updated_at_iso'])
+        . ',"isOwner":' . ($isOwner ? 'true' : 'false')
         . '}';
 
-    sendRawJson($json, 200, [
+    return new ApiResponse(null, 200, [
         'Cache-Control' => $cacheControl,
-    ]);
+    ], $json);
 }

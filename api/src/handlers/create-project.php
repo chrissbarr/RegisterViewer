@@ -2,32 +2,55 @@
 
 declare(strict_types=1);
 
-function handleCreateProject(PDO $db, array $config): never
+function handleCreateProject(PDO $db, array $config, array $auth, array $parsed): ApiResponse
 {
-    $tokenHash = extractTokenHash();
+    $body = $parsed['assoc'];
+
+    // Determine token hash and user ID based on auth method.
+    // JWT users pass raw ownerToken in the body (hashed server-side for SEC-12).
+    // Token-hash users pass it in the Authorization header as before.
+    $userId = null;
+    $tokenHash = null;
+
+    if ($auth['kind'] === 'jwt') {
+        $userId = $auth['userId'];
+        $rawOwnerToken = $body['ownerToken'] ?? null;
+        if (is_string($rawOwnerToken) && preg_match('/^[0-9a-f]{64}$/', $rawOwnerToken)) {
+            $tokenHash = hash('sha256', $rawOwnerToken);
+        }
+    } elseif ($auth['kind'] === 'token') {
+        $tokenHash = $auth['tokenHash'];
+    }
+
     if ($tokenHash === null) {
-        sendError('Missing or invalid Authorization header', 401);
+        return new ApiResponse(['error' => 'Missing or invalid owner token'], 401);
     }
 
     // Per-owner project limit to prevent storage abuse
     $ownerProjectCount = dbCountProjectsByOwner($db, $tokenHash);
     if ($ownerProjectCount >= LIMITS['MAX_PROJECTS_PER_OWNER']) {
-        sendError('Project limit reached. Delete existing projects before creating new ones.', 429);
+        return new ApiResponse(['error' => 'Project limit reached. Delete existing projects before creating new ones.'], 429);
     }
 
-    $parsed = readParsedBody();
-    $body = $parsed['assoc'];
+    // Per-user limit for JWT users: prevents bypass via multiple devices/browsers
+    // (each device generates a different ownerTokenHash but shares the same userId)
+    if ($userId !== null) {
+        $userProjectCount = dbCountProjectsByUserId($db, $userId);
+        if ($userProjectCount >= LIMITS['MAX_PROJECTS_PER_OWNER']) {
+            return new ApiResponse(['error' => 'Project limit reached. Delete existing projects before creating new ones.'], 429);
+        }
+    }
 
     $validation = validateProjectData($body['data'] ?? null);
     if (!$validation['valid']) {
-        sendError($validation['error'], 400);
+        return new ApiResponse(['error' => $validation['error']], 400);
     }
 
     // Visibility (optional, defaults to 'private')
     $visibility = 'private';
     if (isset($body['visibility'])) {
         if (!isValidVisibility($body['visibility'])) {
-            sendError('visibility must be "private" or "unlisted"', 400);
+            return new ApiResponse(['error' => 'visibility must be "private" or "unlisted"'], 400);
         }
         $visibility = $body['visibility'];
     }
@@ -39,13 +62,16 @@ function handleCreateProject(PDO $db, array $config): never
     }
 
     $dataJson = extractDataJson($parsed['object']);
+    if ($dataJson instanceof ApiResponse) {
+        return $dataJson;
+    }
 
     // Optimistic insert with retry on duplicate key (eliminates TOCTOU race)
     $id = null;
     for ($attempt = 0; $attempt < 3; $attempt++) {
         $candidate = generatePublicId();
         try {
-            dbCreateProject($db, $candidate, $tokenHash, $visibility, $dataJson, $title);
+            dbCreateProject($db, $candidate, $tokenHash, $visibility, $dataJson, $title, $userId);
             $id = $candidate;
             break;
         } catch (\PDOException $e) {
@@ -58,7 +84,7 @@ function handleCreateProject(PDO $db, array $config): never
     }
 
     if ($id === null) {
-        sendError('Unable to generate a unique project ID. Please try again.', 503);
+        return new ApiResponse(['error' => 'Unable to generate a unique project ID. Please try again.'], 503);
     }
 
     // Fetch timestamps only (lightweight query)
@@ -66,7 +92,7 @@ function handleCreateProject(PDO $db, array $config): never
 
     $shareUrl = rtrim($config['app_url'], '/') . '/#/p/' . $id;
 
-    sendJson([
+    return new ApiResponse([
         'id'        => $id,
         'shareUrl'  => $shareUrl,
         'createdAt' => $timestamps['created_at_iso'],

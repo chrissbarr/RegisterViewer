@@ -6,9 +6,10 @@ import { ShareDialog } from '../common/share-dialog';
 import { ProjectListItem } from './project-list-item';
 import { MyProjectsCloudDialogs } from './my-projects-cloud-dialogs';
 import { useProjectStorage } from '../../context/project-storage-context';
+import { useAuth } from '../../context/auth-context';
 import { useMyProjectsActions } from '../../hooks/use-my-projects-actions';
 import { isCloudEnabled } from '../../utils/api-client';
-import { getStorageUsage } from '../../utils/project-storage';
+import { getStorageUsage, isPlaceholderProject } from '../../utils/project-storage';
 import { projectDisplayName } from '../../utils/project-helpers';
 
 const FILTER_THRESHOLD = 8;
@@ -21,6 +22,7 @@ interface MyProjectsDialogProps {
 
 export function MyProjectsDialog({ open, onClose }: MyProjectsDialogProps) {
   const { activeLocalId, projects } = useProjectStorage();
+  const auth = useAuth();
 
   const [filter, setFilter] = useState('');
   const resetFilter = useCallback(() => setFilter(''), []);
@@ -51,6 +53,17 @@ export function MyProjectsDialog({ open, onClose }: MyProjectsDialogProps) {
       projectDisplayName(p.name).toLowerCase().includes(query),
     );
   }, [sortedProjects, effectiveFilter]);
+
+  // Detect cloud-only placeholder projects (no local data yet)
+  const placeholderIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const p of projects) {
+      if (p.isCloudSaved && isPlaceholderProject(p.localId)) {
+        ids.add(p.localId);
+      }
+    }
+    return ids;
+  }, [projects]);
 
   const showFilter = projects.length > FILTER_THRESHOLD;
 
@@ -129,40 +142,44 @@ export function MyProjectsDialog({ open, onClose }: MyProjectsDialogProps) {
           </div>
         ) : (
           <ul className="space-y-2" role="list">
-            {filteredProjects.map((project) => (
-              <ProjectListItem
-                key={project.localId}
-                project={project}
-                isActive={project.localId === activeLocalId}
-                isStaleCloud={project.cloudId !== null && actions.staleCloudIds.includes(project.cloudId)}
-                onOpen={actions.handleOpen}
-                onSettings={actions.handleSettings}
-                onShare={actions.handleShare}
-                onDelete={actions.handleDelete}
-                onRename={actions.handleRename}
-                onChangeVisibility={actions.handleChangeVisibility}
-                onUnlinkCloud={actions.handleUnlinkCloud}
-                onSaveToCloud={isCloudEnabled() ? actions.handleSaveToCloud : undefined}
-                onRemoveFromCloud={isCloudEnabled() ? actions.handleRemoveFromCloud : undefined}
-                isSavingToCloud={project.localId === actions.savingCloudLocalId}
-              />
-            ))}
+            {filteredProjects.map((project) => {
+              const isPlaceholder = placeholderIds.has(project.localId);
+              return (
+                <ProjectListItem
+                  key={project.localId}
+                  project={project}
+                  isActive={project.localId === activeLocalId}
+                  isStaleCloud={project.cloudId !== null && actions.staleCloudIds.includes(project.cloudId)}
+                  onOpen={actions.handleOpen}
+                  onSettings={isPlaceholder ? undefined : actions.handleSettings}
+                  onShare={actions.handleShare}
+                  onDelete={actions.handleDelete}
+                  onRename={actions.handleRename}
+                  onChangeVisibility={actions.handleChangeVisibility}
+                  onUnlinkCloud={actions.handleUnlinkCloud}
+                  onSaveToCloud={isCloudEnabled() && !isPlaceholder ? actions.handleSaveToCloud : undefined}
+                  onRemoveFromCloud={isCloudEnabled() ? actions.handleRemoveFromCloud : undefined}
+                  isSavingToCloud={project.localId === actions.savingCloudLocalId}
+                  isDownloading={project.localId === actions.downloadingLocalId}
+                />
+              );
+            })}
           </ul>
         )}
 
-        {/* Footer: Recovery key download */}
-        {projects.length > 0 && (
+        {/* Footer: Sign-in prompt or signed-in status */}
+        {projects.length > 0 && isCloudEnabled() && (
           <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
-            <button
-              onClick={actions.handleDownloadRecoveryKey}
-              className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200
-                transition-colors underline"
-            >
-              Download recovery key
-            </button>
-            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-              Keep this file safe. It allows recovering ownership of your projects if you clear browser data.
-            </p>
+            {auth.user ? (
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Signed in as <span className="font-medium text-gray-700 dark:text-gray-300">{auth.user.email}</span>
+              </p>
+            ) : (
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Sign in with your email to access projects from any device.
+                Use <span className="font-medium">Sign in</span> from the menu.
+              </p>
+            )}
           </div>
         )}
       </div>

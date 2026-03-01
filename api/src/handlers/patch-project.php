@@ -2,17 +2,18 @@
 
 declare(strict_types=1);
 
-function handlePatchProject(PDO $db, string $id): never
+function handlePatchProject(PDO $db, string $id, array $auth, array $body): ApiResponse
 {
-    requireOwnership($db, $id);
-
-    $body = readParsedBody()['assoc'];
+    $existing = requireOwnership($db, $id, $auth);
+    if ($existing instanceof ApiResponse) {
+        return $existing;
+    }
 
     if (!isset($body['visibility'])) {
-        sendError('PATCH requires a visibility field', 400);
+        return new ApiResponse(['error' => 'PATCH requires a visibility field'], 400);
     }
     if (!isValidVisibility($body['visibility'])) {
-        sendError('visibility must be "private" or "unlisted"', 400);
+        return new ApiResponse(['error' => 'visibility must be "private" or "unlisted"'], 400);
     }
 
     dbPatchVisibility($db, $id, $body['visibility']);
@@ -20,7 +21,7 @@ function handlePatchProject(PDO $db, string $id): never
     // Fetch timestamps only (lightweight query)
     $timestamps = dbGetProjectTimestamps($db, $id);
 
-    sendJson([
+    return new ApiResponse([
         'id'        => $id,
         'updatedAt' => $timestamps['updated_at_iso'],
     ]);
