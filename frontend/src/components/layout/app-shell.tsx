@@ -68,7 +68,14 @@ function AppShellInner({ cloudInit }: AppShellProps) {
     return () => clearTimeout(timer);
   }, [state, activeLocalId]);
 
-  // Flush any pending save on unmount or page unload
+  // Flush any pending save on unmount or page unload.
+  // Ref-based so the effect is set up once — avoids stale-closure flush
+  // when cloudActions identity changes after a cloud save.
+  const cloudActionsRef = useRef(cloudActions);
+  useEffect(() => {
+    cloudActionsRef.current = cloudActions;
+  }, [cloudActions]);
+
   useEffect(() => {
     const flush = () => {
       const id = activeLocalIdRef.current;
@@ -77,7 +84,7 @@ function AppShellInner({ cloudInit }: AppShellProps) {
         pendingStateRef.current = null;
       }
       // Best-effort cloud sync flush (fire-and-forget on unload)
-      cloudActions.flushSync().catch(() => {});
+      cloudActionsRef.current.flushSync().catch(() => {});
     };
     window.addEventListener('beforeunload', flush);
     window.addEventListener('pagehide', flush);
@@ -86,7 +93,7 @@ function AppShellInner({ cloudInit }: AppShellProps) {
       window.removeEventListener('pagehide', flush);
       flush();
     };
-  }, [cloudActions]);
+  }, []);
 
   // Keyboard shortcut: Ctrl+B toggles sidebar collapse
   const collapsedRef = useRef(preferences.sidebarCollapsed);

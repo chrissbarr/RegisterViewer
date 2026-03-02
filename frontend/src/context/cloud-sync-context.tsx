@@ -364,7 +364,10 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
 
   const flushSync = useCallback(async () => {
     if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
-    if (!isDirty || !internalRef.current.cloudId || !internalRef.current.isOwner) return;
+    // Derive dirty status from refs so this callback is referentially stable
+    // (isDirty in the dep array caused a stale-closure duplicate PUT).
+    const { cloudId, isOwner, lastSavedVersion } = internalRef.current;
+    if (!cloudId || !isOwner || dataVersionRef.current === lastSavedVersion) return;
     const jwt = getJwt();
     if (!jwt) return;
     try {
@@ -372,7 +375,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     } catch {
       // Best-effort on unload — data is safe in localStorage
     }
-  }, [isDirty, getJwt, rawActiveOps]);
+  }, [getJwt, rawActiveOps, dataVersionRef]);
 
   // Wrap save/fork with JWT guards
   const saveToCloud = useCallback(async () => {
