@@ -62,15 +62,6 @@ export function toProjectListEntry(entry: ProjectManifestEntry): ProjectListEntr
   };
 }
 
-/**
- * Check if a project is a cloud-only placeholder (no real data yet).
- * Placeholder projects are created during cloud sync for projects that
- * exist on the server but have no local counterpart.
- */
-export function isPlaceholderProject(localId: string): boolean {
-  const project = loadProject(localId);
-  return project !== null && project.state.registers.length === 0;
-}
 
 /** Scan localStorage for orphaned project keys not in the manifest */
 function recoverOrphanedProjects(manifest: ProjectManifest): ProjectManifest {
