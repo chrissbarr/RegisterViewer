@@ -9,7 +9,7 @@ import { useProjectStorage } from '../../context/project-storage-context';
 import { useAuth } from '../../context/auth-context';
 import { useMyProjectsActions } from '../../hooks/use-my-projects-actions';
 import { isCloudEnabled } from '../../utils/api-client';
-import { getStorageUsage, isPlaceholderProject } from '../../utils/project-storage';
+import { getStorageUsage, hasLocalData } from '../../utils/project-storage';
 import { projectDisplayName } from '../../utils/project-helpers';
 
 const FILTER_THRESHOLD = 8;
@@ -54,11 +54,11 @@ export function MyProjectsDialog({ open, onClose }: MyProjectsDialogProps) {
     );
   }, [sortedProjects, effectiveFilter]);
 
-  // Detect cloud-only placeholder projects (no local data yet)
+  // Detect cloud-only projects whose data has been evicted from localStorage
   const placeholderIds = useMemo(() => {
     const ids = new Set<string>();
     for (const p of projects) {
-      if (p.isCloudSaved && isPlaceholderProject(p.localId)) {
+      if (p.isCloudSaved && !hasLocalData(p.localId)) {
         ids.add(p.localId);
       }
     }

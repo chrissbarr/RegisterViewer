@@ -31,8 +31,7 @@ import {
   getProject,
 } from '../utils/api-client';
 import { useAuth, useAuthActions } from './auth-context';
-import { buildProjectUrl, createProject, loadProject, purgeCloudProjects, getMostRecentProjectId } from '../utils/project-storage';
-import { ACTIVE_PROJECT_SESSION_KEY } from '../utils/project-storage';
+import { buildProjectUrl, createProject, loadProject, purgeCloudProjects, getMostRecentProjectId, evictProjectData, ACTIVE_PROJECT_SESSION_KEY } from '../utils/project-storage';
 import { EMPTY_SERIALIZED_STATE, exportToObject, deserializeState } from '../utils/storage';
 import { saveProjectToCloudImpl } from '../utils/cloud-operations';
 import { clearCloudUrl } from '../utils/cloud-url';
@@ -225,8 +224,24 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     internalRef.current = internal;
   }, [internal]);
 
+  const prevActiveLocalIdRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (!activeLocalId) return;
+
+    // Evict previous cloud project's data from localStorage on switch
+    const prevLocalId = prevActiveLocalIdRef.current;
+    prevActiveLocalIdRef.current = activeLocalId;
+    if (prevLocalId && prevLocalId !== activeLocalId) {
+      const prevEntry = projectsRef.current.find(p => p.localId === prevLocalId);
+      if (prevEntry?.cloudId) {
+        // Flush pending sync first, then evict
+        flushSyncRef.current?.().catch(() => {}).finally(() => {
+          evictProjectData(prevLocalId);
+        });
+      }
+    }
+
     const entry = projectsRef.current.find(p => p.localId === activeLocalId);
     const cloudId = entry?.cloudId ?? null;
     // Skip if cloudId hasn't changed (avoid redundant state updates)
@@ -389,6 +404,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   // Note: syncCloudProjects ref is used to avoid forward-reference issues.
   const prevAuthUserRef = useRef(authUser);
   const syncCloudProjectsRef = useRef<(() => Promise<SyncResult>) | null>(null);
+  const flushSyncRef = useRef<(() => Promise<void>) | null>(null);
 
   const initFromProject = useCallback(
     (cloudId: string | null, isOwner: boolean) => {
@@ -471,8 +487,9 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     return { updatedCount: patches.length, staleCloudIds, placeholdersCreated: cloudOnlyProjects.length, uploadedCount };
   }, [updateCloudMetadata, getJwt]);
 
-  // Keep syncCloudProjects ref up-to-date for the auth-transition effect
+  // Keep refs up-to-date for the auth-transition and eviction effects
   syncCloudProjectsRef.current = syncCloudProjects;
+  flushSyncRef.current = flushSync;
 
   useEffect(() => {
     const wasNull = prevAuthUserRef.current === null;

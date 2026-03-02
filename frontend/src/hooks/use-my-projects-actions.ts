@@ -6,7 +6,7 @@ import { useAuthActions } from '../context/auth-context';
 import { useAnnounce } from '../components/common/announcer';
 import { isCloudEnabled } from '../utils/api-client';
 import { friendlyErrorMessage } from '../utils/friendly-error';
-import { loadProject, saveProject } from '../utils/project-storage';
+import { loadProject, saveProject, hasLocalData } from '../utils/project-storage';
 import { fetchAndParseCloudProject } from '../utils/cloud-project-loader';
 import { sanitizeProjectMetadata } from '../utils/storage';
 import type { ProjectSettingsData } from '../components/common/project-settings-dialog';
@@ -69,10 +69,9 @@ export function useMyProjectsActions(
 
   const handleOpen = useCallback(async (localId: string) => {
     const project = projects.find(p => p.localId === localId);
-    const stored = loadProject(localId);
 
-    // Cloud-only placeholder: stored state has no registers — fetch full data first
-    if (project?.cloudId && stored && stored.state.registers.length === 0) {
+    // Cloud project with evicted/missing local data — fetch full data first
+    if (project?.cloudId && !hasLocalData(localId)) {
       setDownloadingLocalId(localId);
       try {
         const jwt = getJwt();
@@ -82,7 +81,13 @@ export function useMyProjectsActions(
           serializedValues[id] = '0x' + value.toString(16);
         }
         saveProject({
-          ...stored,
+          localId,
+          cloudId: project.cloudId,
+          name: project.name,
+          visibility: project.visibility,
+          createdAt: project.createdAt,
+          localSavedAt: new Date().toISOString(),
+          cloudSavedAt: project.cloudSavedAt,
           state: {
             registers: result.registers,
             activeRegisterId: result.registers[0]?.id ?? null,

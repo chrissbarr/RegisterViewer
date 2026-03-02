@@ -54,6 +54,7 @@ vi.mock('../utils/api-client', () => ({
 vi.mock('../utils/project-storage', () => ({
   loadProject: vi.fn(() => null),
   saveProject: vi.fn(),
+  hasLocalData: vi.fn(() => true),
 }));
 
 vi.mock('../utils/cloud-project-loader', () => ({

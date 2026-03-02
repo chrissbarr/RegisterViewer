@@ -100,7 +100,7 @@ vi.mock('../../utils/project-storage', () => ({
   loadProject: vi.fn(() => null),
   saveProject: vi.fn(),
   buildProjectUrl: vi.fn(() => ''),
-  isPlaceholderProject: vi.fn(() => false),
+  hasLocalData: vi.fn(() => true),
 }));
 
 vi.mock('../../utils/storage', () => ({
