@@ -30,11 +30,6 @@ import {
   listProjects,
   getProject,
 } from '../utils/api-client';
-import {
-  getOrCreateOwnerToken,
-  hashOwnerToken,
-  checkOwnership,
-} from '../utils/owner-token';
 import { useAuth, useAuthActions } from './auth-context';
 import { buildProjectUrl, createProject } from '../utils/project-storage';
 import { EMPTY_SERIALIZED_STATE } from '../utils/storage';
@@ -53,6 +48,8 @@ interface CloudSyncState {
   shareUrl: string | null;
   lastCloudSavedAt: string | null;
   visibility: Visibility;
+  /** True when a cloud operation requires login before proceeding. */
+  loginRequired: boolean;
 }
 
 interface SyncResult {
@@ -75,6 +72,8 @@ interface CloudSyncActions {
   initFromProject: (cloudId: string | null, isOwner: boolean) => void;
   syncCloudProjects: () => Promise<SyncResult>;
   unlinkCloudProject: (localId: string) => void;
+  /** Cancel pending cloud operation that was waiting for login. */
+  cancelPendingOp: () => void;
 }
 
 const CloudSyncStateContext = createContext<CloudSyncState | null>(null);
@@ -221,10 +220,13 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     const cloudId = entry?.cloudId ?? null;
     // Skip if cloudId hasn't changed (avoid redundant state updates)
     if (cloudId === internalRef.current.cloudId) return;
-    // Local ownerToken check only; the auth re-evaluation effect (below)
+    // Clear any pending cloud operation from the previous project
+    pendingCloudOpRef.current = null;
+    setLoginRequired(false);
+    // Default to false; the auth re-evaluation effect (below)
     // will asynchronously promote isOwner via a server round-trip when the
-    // user is authenticated, avoiding false ownership for shared projects.
-    const isOwner = cloudId ? checkOwnership(cloudId) : false;
+    // user is authenticated.
+    const isOwner = false;
     if (cloudId === null) {
       setInternal({ ...initialInternalState });
       clearCloudUrl();
@@ -259,7 +261,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     if (!jwt) return;
 
     let cancelled = false;
-    getProject(internal.cloudId, { tokenHash: '', jwt })
+    getProject(internal.cloudId, jwt)
       .then((res) => {
         if (!cancelled && res.isOwner) {
           setInternal((prev) => prev.cloudId === internal.cloudId ? { ...prev, isOwner: true } : prev);
@@ -269,13 +271,69 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     return () => { cancelled = true; };
   }, [authUser, getJwt, internal.cloudId, internal.isOwner]);
 
+  // Login-before-save: when a cloud op is attempted without a JWT,
+  // store the pending op type and show the login dialog. After login,
+  // the auth-transition effect retries the operation automatically.
+  const [loginRequired, setLoginRequired] = useState(false);
+  const pendingCloudOpRef = useRef<'save' | 'fork' | null>(null);
+
   // Active-project cloud operations (save, fork, delete, visibility, load)
-  const activeOps = useActiveProjectCloudOps({
+  const rawActiveOps = useActiveProjectCloudOps({
     internalRef, appStateRef, activeLocalIdRef,
     dataVersionRef, mutationLockRef, needsVersionSyncRef,
     setInternal, updateCloudMetadata, createNewProject,
     getJwt, dispatch, initialInternalState,
   });
+
+  // Wrap save/fork with JWT guards
+  const saveToCloud = useCallback(async () => {
+    if (!getJwt()) {
+      pendingCloudOpRef.current = 'save';
+      setLoginRequired(true);
+      return;
+    }
+    return rawActiveOps.saveToCloud();
+  }, [getJwt, rawActiveOps]);
+
+  const forkProject = useCallback(async () => {
+    if (!getJwt()) {
+      pendingCloudOpRef.current = 'fork';
+      setLoginRequired(true);
+      return;
+    }
+    return rawActiveOps.fork();
+  }, [getJwt, rawActiveOps]);
+
+  const activeOps = useMemo(() => ({
+    ...rawActiveOps,
+    saveToCloud,
+    fork: forkProject,
+  }), [rawActiveOps, saveToCloud, forkProject]);
+
+  const cancelPendingOp = useCallback(() => {
+    pendingCloudOpRef.current = null;
+    setLoginRequired(false);
+  }, []);
+
+  // Auth-transition effect: when the user transitions from logged-out (null)
+  // to logged-in (non-null), retry any pending cloud operation that was
+  // deferred because a JWT was not available at the time of the request.
+  const prevAuthUserRef = useRef(authUser);
+  useEffect(() => {
+    const wasNull = prevAuthUserRef.current === null;
+    prevAuthUserRef.current = authUser;
+
+    if (wasNull && authUser && pendingCloudOpRef.current) {
+      const op = pendingCloudOpRef.current;
+      pendingCloudOpRef.current = null;
+      setLoginRequired(false);
+      if (op === 'save') {
+        void rawActiveOps.saveToCloud();
+      } else if (op === 'fork') {
+        void rawActiveOps.fork();
+      }
+    }
+  }, [authUser, rawActiveOps]);
 
   const initFromProject = useCallback(
     (cloudId: string | null, isOwner: boolean) => {
@@ -311,11 +369,9 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   const syncCloudProjects = useCallback(async (): Promise<SyncResult> => {
     if (!isCloudEnabled()) return { updatedCount: 0, staleCloudIds: [], placeholdersCreated: 0 };
 
-    // Prefer JWT for listing (shows all user-linked projects cross-device),
-    // fall back to token hash for anonymous users.
     const jwt = getJwt();
-    const authToken = jwt ?? await hashOwnerToken(getOrCreateOwnerToken());
-    const response = await listProjects(authToken);
+    if (!jwt) return { updatedCount: 0, staleCloudIds: [], placeholdersCreated: 0 };
+    const response = await listProjects(jwt);
 
     const { patches, staleCloudIds, cloudOnlyProjects } = computeSyncPatches(projectsRef.current, response.projects);
 
@@ -353,10 +409,10 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   const actions = useMemo(
     () => ({
       ...activeOps,
-      dismissError, initFromProject, syncCloudProjects,
+      dismissError, initFromProject, syncCloudProjects, cancelPendingOp,
       ...projectOps,
     }),
-    [activeOps, dismissError, initFromProject, syncCloudProjects, projectOps],
+    [activeOps, dismissError, initFromProject, syncCloudProjects, cancelPendingOp, projectOps],
   );
 
   const providedState: CloudSyncState = useMemo(
@@ -369,6 +425,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       shareUrl: internal.shareUrl,
       lastCloudSavedAt: internal.lastCloudSavedAt,
       visibility: internal.visibility,
+      loginRequired,
     }),
     [
       internal.cloudId,
@@ -379,6 +436,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       internal.shareUrl,
       internal.lastCloudSavedAt,
       internal.visibility,
+      loginRequired,
     ],
   );
 

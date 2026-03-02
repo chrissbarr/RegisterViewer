@@ -4,7 +4,7 @@ export const DEFAULT_PROJECT_NAME = 'Untitled Project';
 /** Visibility levels for cloud-saved projects */
 export type Visibility = 'private' | 'unlisted';
 
-/** Lightweight entry in the project manifest (no project data, no ownerToken) */
+/** Lightweight entry in the project manifest (no project data) */
 export interface ProjectManifestEntry {
   localId: string;          // UUID v4
   cloudId: string | null;   // 12-char base62
@@ -30,11 +30,10 @@ export interface StoredLocalProject {
   createdAt: string;
   localSavedAt: string;
   cloudSavedAt: string | null;
-  ownerToken: string | null;
   state: import('./register').SerializedAppState;
 }
 
-/** UI-safe view type — omits ownerToken to prevent secret leakage */
+/** UI-safe view type for project list display */
 export interface ProjectListEntry {
   localId: string;
   cloudId: string | null;

@@ -36,13 +36,6 @@ vi.mock('../utils/cloud-project-loader', () => ({
   fetchAndParseCloudProject: vi.fn(),
 }));
 
-vi.mock('../utils/owner-token', () => ({
-  getOrCreateOwnerToken: vi.fn(() => 'mock-owner-token'),
-  hashOwnerToken: vi.fn(async () => 'mock-token-hash'),
-  checkOwnership: vi.fn(() => false),
-  getOwnerTokenForProject: vi.fn(() => 'mock-owner-token'),
-}));
-
 vi.mock('../utils/project-storage', () => ({
   loadManifest: vi.fn(() => ({ version: 1, projects: [] })),
   saveManifest: vi.fn(),
@@ -96,12 +89,6 @@ import {
   listProjects as apiListProjects,
 } from '../utils/api-client';
 import { fetchAndParseCloudProject } from '../utils/cloud-project-loader';
-import {
-  getOrCreateOwnerToken,
-  hashOwnerToken,
-  checkOwnership,
-  getOwnerTokenForProject,
-} from '../utils/owner-token';
 import {
   loadManifest,
   loadProject,
@@ -167,17 +154,15 @@ function renderCloudSyncWithDispatch() {
 beforeEach(() => {
   vi.clearAllMocks();
 
-  // Default mocks
-  authMock.user = null;
-  authMock.getJwt.mockReturnValue(null);
+  // Default mocks — authenticated by default so cloud ops proceed
+  authMock.user = { id: 1, email: 'test@test.com' };
+  authMock.getJwt.mockReturnValue('mock-jwt-token');
   (isCloudEnabled as Mock).mockReturnValue(true);
-  (getOrCreateOwnerToken as Mock).mockReturnValue('mock-owner-token');
-  (hashOwnerToken as Mock).mockResolvedValue('mock-token-hash');
-  (checkOwnership as Mock).mockReturnValue(false);
-  (getOwnerTokenForProject as Mock).mockReturnValue('mock-owner-token');
   (loadManifest as Mock).mockReturnValue({ version: 1, projects: [] });
   (loadProject as Mock).mockReturnValue(null);
   (exportToObject as Mock).mockReturnValue({ version: 1, registers: [], values: {} });
+  // getProject is called by the ownership re-evaluation effect; default to a resolved promise
+  (apiGetProject as Mock).mockResolvedValue({ id: 'test', data: '{}', createdAt: '', updatedAt: '', isOwner: false });
 });
 
 // ── Tests ────────────────────────────────────────────────────────────
@@ -288,7 +273,7 @@ describe('CloudSyncProvider', () => {
 
       expect(apiCreateProject).toHaveBeenCalledWith(
         { version: 1, registers: [], values: {} },
-        { tokenHash: 'mock-token-hash', jwt: undefined, ownerToken: 'mock-owner-token' },
+        'mock-jwt-token',
       );
       expect(result.current.state.cloudId).toBe('cloud-abc');
       expect(result.current.state.isOwner).toBe(true);
@@ -323,7 +308,7 @@ describe('CloudSyncProvider', () => {
       expect(apiUpdateProject).toHaveBeenCalledWith(
         'cloud-abc',
         { version: 1, registers: [], values: {} },
-        { tokenHash: 'mock-token-hash', jwt: undefined },
+        'mock-jwt-token',
       );
       expect(result.current.state.lastCloudSavedAt).toBe('2024-01-02T12:00:00Z');
     });
@@ -380,12 +365,10 @@ describe('CloudSyncProvider', () => {
       expect(apiCreateProject).not.toHaveBeenCalled();
     });
 
-    it('sets error when owner token missing for existing project', async () => {
-      (apiCreateProject as Mock).mockResolvedValue({
-        id: 'cloud-abc',
-        shareUrl: 'https://example.com/#/p/cloud-abc',
-        createdAt: '2024-01-01T12:00:00Z',
-      });
+    it('triggers login dialog when JWT missing', async () => {
+      // Start unauthenticated
+      authMock.user = null;
+      authMock.getJwt.mockReturnValue(null);
 
       const { result } = renderCloudSync();
 
@@ -393,14 +376,9 @@ describe('CloudSyncProvider', () => {
         await result.current.actions.saveToCloud();
       });
 
-      // Now remove owner token
-      (getOwnerTokenForProject as Mock).mockReturnValue(null);
-
-      await act(async () => {
-        await result.current.actions.saveToCloud();
-      });
-
-      expect(result.current.state.error).toBe('Authentication error. Your owner token may be missing or corrupted.');
+      // saveToCloud should set loginRequired instead of making API call
+      expect(result.current.state.loginRequired).toBe(true);
+      expect(apiCreateProject).not.toHaveBeenCalled();
     });
   });
 
@@ -496,7 +474,7 @@ describe('CloudSyncProvider', () => {
         await result.current.actions.deleteFromCloud();
       });
 
-      expect(apiDeleteProject).toHaveBeenCalledWith('cloud-abc', { tokenHash: 'mock-token-hash', jwt: undefined });
+      expect(apiDeleteProject).toHaveBeenCalledWith('cloud-abc', 'mock-jwt-token');
       expect(result.current.state.cloudId).toBeNull();
       expect(result.current.state.shareUrl).toBeNull();
       expect(result.current.state.isOwner).toBe(false);
@@ -510,31 +488,6 @@ describe('CloudSyncProvider', () => {
       });
 
       expect(apiDeleteProject).not.toHaveBeenCalled();
-    });
-
-    it('sets error on failure instead of throwing', async () => {
-      (apiCreateProject as Mock).mockResolvedValue({
-        id: 'cloud-abc',
-        shareUrl: 'https://example.com/#/p/cloud-abc',
-        createdAt: '2024-01-01T12:00:00Z',
-      });
-
-      const { result } = renderCloudSync();
-
-      await act(async () => {
-        await result.current.actions.saveToCloud();
-      });
-
-      (getOwnerTokenForProject as Mock).mockReturnValue(null);
-
-      await act(async () => {
-        await result.current.actions.deleteFromCloud();
-      });
-
-      expect(result.current.state.status).toBe('idle');
-      expect(result.current.state.error).toBe('Authentication error. Your owner token may be missing or corrupted.');
-      // Cloud state should NOT be cleared on failure
-      expect(result.current.state.cloudId).toBe('cloud-abc');
     });
 
     it('sets error on network failure', async () => {
@@ -612,7 +565,7 @@ describe('CloudSyncProvider', () => {
       });
 
       expect(result.current.state.visibility).toBe('unlisted');
-      expect(apiPatchVisibility).toHaveBeenCalledWith('cloud-abc', 'unlisted', { tokenHash: 'mock-token-hash', jwt: undefined });
+      expect(apiPatchVisibility).toHaveBeenCalledWith('cloud-abc', 'unlisted', 'mock-jwt-token');
       expect(apiUpdateProject).not.toHaveBeenCalled();
     });
 
@@ -661,7 +614,7 @@ describe('CloudSyncProvider', () => {
       expect(apiPatchVisibility).toHaveBeenCalledWith(
         'cloud-xyz',
         'unlisted',
-        { tokenHash: 'mock-token-hash', jwt: undefined },
+        'mock-jwt-token',
       );
     });
 
@@ -787,11 +740,11 @@ describe('CloudSyncProvider', () => {
         await result.current.actions.deleteProjectFromCloud('cloud-del');
       });
 
-      expect(apiDeleteProject).toHaveBeenCalledWith('cloud-del', { tokenHash: 'mock-token-hash', jwt: undefined });
+      expect(apiDeleteProject).toHaveBeenCalledWith('cloud-del', 'mock-jwt-token');
     });
 
-    it('throws when owner token missing', async () => {
-      (getOwnerTokenForProject as Mock).mockReturnValue(null);
+    it('throws when JWT missing', async () => {
+      authMock.getJwt.mockReturnValue(null);
 
       const { result } = renderCloudSync();
 
@@ -799,7 +752,7 @@ describe('CloudSyncProvider', () => {
         act(async () => {
           await result.current.actions.deleteProjectFromCloud('cloud-del');
         }),
-      ).rejects.toThrow('No auth credentials available for project.');
+      ).rejects.toThrow('Authentication required. Please sign in.');
     });
 
     it('clears active cloud state when deleting the active cloud project', async () => {
@@ -843,7 +796,6 @@ describe('CloudSyncProvider', () => {
         isOwner: true,
       };
       (fetchAndParseCloudProject as Mock).mockResolvedValue(importResult);
-      (checkOwnership as Mock).mockReturnValue(true);
 
       const { result } = renderCloudSync();
 
@@ -851,7 +803,7 @@ describe('CloudSyncProvider', () => {
         await result.current.actions.loadCloudProject('cloud-load');
       });
 
-      expect(fetchAndParseCloudProject).toHaveBeenCalledWith('cloud-load', undefined);
+      expect(fetchAndParseCloudProject).toHaveBeenCalledWith('cloud-load', 'mock-jwt-token');
       expect(result.current.state.cloudId).toBe('cloud-load');
       expect(result.current.state.isOwner).toBe(true);
       expect(result.current.state.status).toBe('idle');
@@ -1048,7 +1000,7 @@ describe('CloudSyncProvider', () => {
       // updateCloudMetadata flows through ProjectStorageProvider to updateProjectMetadata
       expect(updateProjectMetadata).toHaveBeenCalledWith(
         TEST_LOCAL_ID,
-        expect.objectContaining({ cloudId: null, ownerToken: null }),
+        expect.objectContaining({ cloudId: null }),
       );
     });
 
@@ -1098,18 +1050,121 @@ describe('CloudSyncProvider', () => {
     });
   });
 
+  describe('cancelPendingOp', () => {
+    it('resets loginRequired to false and clears pending op', async () => {
+      // Start unauthenticated so save triggers loginRequired
+      authMock.user = null;
+      authMock.getJwt.mockReturnValue(null);
+
+      const { result } = renderCloudSync();
+
+      await act(async () => {
+        await result.current.actions.saveToCloud();
+      });
+      expect(result.current.state.loginRequired).toBe(true);
+
+      act(() => {
+        result.current.actions.cancelPendingOp();
+      });
+
+      expect(result.current.state.loginRequired).toBe(false);
+      // After cancel, authenticating should NOT retry the operation
+    });
+  });
+
+  describe('retry-after-login', () => {
+    it('retries pending save after auth transition null→user', async () => {
+      // Start unauthenticated
+      authMock.user = null;
+      authMock.getJwt.mockReturnValue(null);
+
+      const { result, rerender } = renderCloudSync();
+
+      // Attempt save — should set loginRequired
+      await act(async () => {
+        await result.current.actions.saveToCloud();
+      });
+      expect(result.current.state.loginRequired).toBe(true);
+      expect(apiCreateProject).not.toHaveBeenCalled();
+
+      // Simulate login: set auth state and provide JWT
+      (apiCreateProject as Mock).mockResolvedValue({
+        id: 'cloud-retry',
+        shareUrl: 'https://example.com/#/p/cloud-retry',
+        createdAt: '2024-01-01T12:00:00Z',
+      });
+      authMock.user = { id: 1, email: 'test@test.com' };
+      authMock.getJwt.mockReturnValue('mock-jwt-token');
+
+      // Re-render to trigger auth-transition effect
+      await act(async () => {
+        rerender();
+      });
+
+      // The pending save should have been retried
+      expect(result.current.state.loginRequired).toBe(false);
+      expect(apiCreateProject).toHaveBeenCalled();
+    });
+
+    it('retries pending fork after auth transition null→user', async () => {
+      // Start unauthenticated
+      authMock.user = null;
+      authMock.getJwt.mockReturnValue(null);
+
+      const { result, rerender } = renderCloudSync();
+
+      // Attempt fork — should set loginRequired
+      await act(async () => {
+        await result.current.actions.fork();
+      });
+      expect(result.current.state.loginRequired).toBe(true);
+      expect(apiCreateProject).not.toHaveBeenCalled();
+
+      // Simulate login
+      (apiCreateProject as Mock).mockResolvedValue({
+        id: 'cloud-fork-retry',
+        shareUrl: 'https://example.com/#/p/cloud-fork-retry',
+        createdAt: '2024-01-01T12:00:00Z',
+      });
+      authMock.user = { id: 1, email: 'test@test.com' };
+      authMock.getJwt.mockReturnValue('mock-jwt-token');
+
+      await act(async () => {
+        rerender();
+      });
+
+      expect(result.current.state.loginRequired).toBe(false);
+      expect(apiCreateProject).toHaveBeenCalled();
+    });
+  });
+
+  describe('fork loginRequired', () => {
+    it('triggers login dialog when JWT missing for fork', async () => {
+      authMock.user = null;
+      authMock.getJwt.mockReturnValue(null);
+
+      const { result } = renderCloudSync();
+
+      await act(async () => {
+        await result.current.actions.fork();
+      });
+
+      expect(result.current.state.loginRequired).toBe(true);
+      expect(apiCreateProject).not.toHaveBeenCalled();
+    });
+  });
+
   describe('SEC-N02 regression: ownership inference', () => {
     it('does not grant ownership to authenticated users for non-owned projects', () => {
       // Simulate: user is logged in with a JWT
       authMock.user = { id: 1, email: 'user@example.com' };
       authMock.getJwt.mockReturnValue('mock-jwt-token');
 
-      // Manifest has a cloud project without a local ownerToken
+      // Manifest has a cloud project
       (loadManifest as Mock).mockReturnValue({
         version: 1,
         projects: [makeManifestEntry({ cloudId: 'shared-cloud-id' })],
       });
-      (checkOwnership as Mock).mockReturnValue(false);
 
       // Prevent the async re-evaluation effect from resolving during this test
       (apiGetProject as Mock).mockReturnValue(new Promise(() => {}));
@@ -1129,7 +1184,6 @@ describe('CloudSyncProvider', () => {
         version: 1,
         projects: [makeManifestEntry({ cloudId: 'my-cloud-id' })],
       });
-      (checkOwnership as Mock).mockReturnValue(false);
 
       // Server confirms ownership
       (apiGetProject as Mock).mockResolvedValue({ isOwner: true });
@@ -1145,7 +1199,7 @@ describe('CloudSyncProvider', () => {
         await Promise.resolve();
       });
 
-      expect(apiGetProject).toHaveBeenCalledWith('my-cloud-id', { tokenHash: '', jwt: 'mock-jwt-token' });
+      expect(apiGetProject).toHaveBeenCalledWith('my-cloud-id', 'mock-jwt-token');
       expect(result.current.state.isOwner).toBe(true);
     });
   });

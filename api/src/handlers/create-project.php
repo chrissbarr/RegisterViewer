@@ -6,39 +6,16 @@ function handleCreateProject(PDO $db, array $config, array $auth, array $parsed)
 {
     $body = $parsed['assoc'];
 
-    // Determine token hash and user ID based on auth method.
-    // JWT users pass raw ownerToken in the body (hashed server-side for SEC-12).
-    // Token-hash users pass it in the Authorization header as before.
-    $userId = null;
-    $tokenHash = null;
-
-    if ($auth['kind'] === 'jwt') {
-        $userId = $auth['userId'];
-        $rawOwnerToken = $body['ownerToken'] ?? null;
-        if (is_string($rawOwnerToken) && preg_match('/^[0-9a-f]{64}$/', $rawOwnerToken)) {
-            $tokenHash = hash('sha256', $rawOwnerToken);
-        }
-    } elseif ($auth['kind'] === 'token') {
-        $tokenHash = $auth['tokenHash'];
+    if ($auth['kind'] !== 'jwt') {
+        return new ApiResponse(['error' => 'Authentication required'], 401);
     }
 
-    if ($tokenHash === null) {
-        return new ApiResponse(['error' => 'Missing or invalid owner token'], 401);
-    }
+    $userId = $auth['userId'];
 
-    // Per-owner project limit to prevent storage abuse
-    $ownerProjectCount = dbCountProjectsByOwner($db, $tokenHash);
-    if ($ownerProjectCount >= LIMITS['MAX_PROJECTS_PER_OWNER']) {
+    // Per-user project limit to prevent storage abuse
+    $userProjectCount = dbCountProjectsByUserId($db, $userId);
+    if ($userProjectCount >= LIMITS['MAX_PROJECTS_PER_USER']) {
         return new ApiResponse(['error' => 'Project limit reached. Delete existing projects before creating new ones.'], 429);
-    }
-
-    // Per-user limit for JWT users: prevents bypass via multiple devices/browsers
-    // (each device generates a different ownerTokenHash but shares the same userId)
-    if ($userId !== null) {
-        $userProjectCount = dbCountProjectsByUserId($db, $userId);
-        if ($userProjectCount >= LIMITS['MAX_PROJECTS_PER_OWNER']) {
-            return new ApiResponse(['error' => 'Project limit reached. Delete existing projects before creating new ones.'], 429);
-        }
     }
 
     $validation = validateProjectData($body['data'] ?? null);
@@ -71,7 +48,7 @@ function handleCreateProject(PDO $db, array $config, array $auth, array $parsed)
     for ($attempt = 0; $attempt < 3; $attempt++) {
         $candidate = generatePublicId();
         try {
-            dbCreateProject($db, $candidate, $tokenHash, $visibility, $dataJson, $title, $userId);
+            dbCreateProject($db, $candidate, $visibility, $dataJson, $title, $userId);
             $id = $candidate;
             break;
         } catch (\PDOException $e) {

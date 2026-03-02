@@ -62,18 +62,6 @@ async function apiFetchVoid(path: string, options?: RequestInit): Promise<void> 
   await apiRequest(path, options);
 }
 
-/** Credentials for authenticated API calls (JWT-preferred, token-hash fallback). */
-export interface AuthCredentials {
-  tokenHash: string;
-  jwt?: string;
-  /** Raw owner token (hex). Sent in body for JWT-authed create so server can verify possession. */
-  ownerToken?: string;
-}
-
-function resolveAuthHeader(auth: AuthCredentials): string {
-  return auth.jwt ? `Bearer ${auth.jwt}` : `Bearer ${auth.tokenHash}`;
-}
-
 interface CreateProjectResponse {
   id: string;
   shareUrl: string;
@@ -82,23 +70,17 @@ interface CreateProjectResponse {
 
 export async function createProject(
   data: unknown,
-  auth: AuthCredentials,
+  jwt: string,
   visibility?: Visibility,
 ): Promise<CreateProjectResponse> {
-  const body: { data: unknown; visibility?: string; ownerToken?: string } = { data };
+  const body: { data: unknown; visibility?: string } = { data };
   if (visibility !== undefined) {
     body.visibility = visibility;
   }
 
-  // When JWT-authenticated, send raw owner token in body so server can verify
-  // possession and compute the hash (SEC-12: prevents hash-only impersonation).
-  if (auth.jwt && auth.ownerToken) {
-    body.ownerToken = auth.ownerToken;
-  }
-
   return apiFetch<CreateProjectResponse>('/api/projects', {
     method: 'POST',
-    headers: { Authorization: resolveAuthHeader(auth) },
+    headers: { Authorization: `Bearer ${jwt}` },
     body: JSON.stringify(body),
   });
 }
@@ -111,10 +93,10 @@ interface GetProjectResponse {
   isOwner: boolean;
 }
 
-export async function getProject(id: string, auth?: AuthCredentials): Promise<GetProjectResponse> {
+export async function getProject(id: string, jwt?: string): Promise<GetProjectResponse> {
   const headers: Record<string, string> = {};
-  if (auth) {
-    headers['Authorization'] = resolveAuthHeader(auth);
+  if (jwt) {
+    headers['Authorization'] = `Bearer ${jwt}`;
   }
   return apiFetch<GetProjectResponse>(`/api/projects/${encodeURIComponent(id)}`, {
     headers,
@@ -129,7 +111,7 @@ interface UpdateProjectResponse {
 export async function updateProject(
   id: string,
   data: unknown,
-  auth: AuthCredentials,
+  jwt: string,
   visibility?: Visibility,
 ): Promise<UpdateProjectResponse> {
   const body: { data: unknown; visibility?: string } = { data };
@@ -140,7 +122,7 @@ export async function updateProject(
     `/api/projects/${encodeURIComponent(id)}`,
     {
       method: 'PUT',
-      headers: { Authorization: resolveAuthHeader(auth) },
+      headers: { Authorization: `Bearer ${jwt}` },
       body: JSON.stringify(body),
     },
   );
@@ -149,13 +131,13 @@ export async function updateProject(
 export async function patchProjectVisibility(
   id: string,
   visibility: Visibility,
-  auth: AuthCredentials,
+  jwt: string,
 ): Promise<UpdateProjectResponse> {
   return apiFetch<UpdateProjectResponse>(
     `/api/projects/${encodeURIComponent(id)}`,
     {
       method: 'PATCH',
-      headers: { Authorization: resolveAuthHeader(auth) },
+      headers: { Authorization: `Bearer ${jwt}` },
       body: JSON.stringify({ visibility }),
     },
   );
@@ -163,13 +145,13 @@ export async function patchProjectVisibility(
 
 export async function deleteProject(
   id: string,
-  auth: AuthCredentials,
+  jwt: string,
 ): Promise<void> {
   await apiFetchVoid(
     `/api/projects/${encodeURIComponent(id)}`,
     {
       method: 'DELETE',
-      headers: { Authorization: resolveAuthHeader(auth) },
+      headers: { Authorization: `Bearer ${jwt}` },
     },
   );
 }
@@ -186,9 +168,9 @@ interface ListProjectsResponse {
   projects: ProjectListItem[];
 }
 
-export async function listProjects(authToken: string): Promise<ListProjectsResponse> {
+export async function listProjects(jwt: string): Promise<ListProjectsResponse> {
   return apiFetch<ListProjectsResponse>('/api/projects', {
-    headers: { Authorization: `Bearer ${authToken}` },
+    headers: { Authorization: `Bearer ${jwt}` },
   });
 }
 
@@ -209,15 +191,10 @@ interface VerifyLoginCodeResponse {
 export async function verifyLoginCode(
   email: string,
   code: string,
-  ownerToken?: string,
 ): Promise<VerifyLoginCodeResponse> {
-  const body: { email: string; code: string; ownerToken?: string } = { email, code };
-  if (ownerToken) {
-    body.ownerToken = ownerToken;
-  }
   return apiFetch<VerifyLoginCodeResponse>('/api/auth/verify-code', {
     method: 'POST',
-    body: JSON.stringify(body),
+    body: JSON.stringify({ email, code }),
   });
 }
 

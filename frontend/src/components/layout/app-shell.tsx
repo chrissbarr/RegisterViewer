@@ -12,6 +12,7 @@ import { Header } from './header';
 import { Sidebar } from './sidebar';
 import { MainPanel } from '../viewer/main-panel';
 import { Toast } from '../common/toast';
+import { LoginDialog } from '../auth/login-dialog';
 import { ToastPortalProvider } from '../../context/toast-portal-context';
 import { AuthProvider } from '../../context/auth-context';
 import { SAVE_DEBOUNCE_MS } from '../../constants';
@@ -181,6 +182,9 @@ function AppShellInner({ cloudInit }: AppShellProps) {
 
         <MainPanel />
       </div>
+
+      {/* Login dialog triggered by cloud ops when unauthenticated */}
+      <LoginDialog open={cloud.loginRequired} onClose={cloudActions.cancelPendingOp} />
     </div>
   );
 }

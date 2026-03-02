@@ -28,10 +28,5 @@ export function friendlyErrorMessage(err: unknown, fallback: string): string {
     return err.message;
   }
 
-  // Known app-level messages — make more user-friendly
-  if (err.message.startsWith('Owner token not found') || err.message.startsWith('No auth credentials available')) {
-    return 'Authentication error. Your owner token may be missing or corrupted.';
-  }
-
   return err.message || fallback;
 }

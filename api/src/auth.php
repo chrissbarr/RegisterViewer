@@ -3,20 +3,10 @@
 declare(strict_types=1);
 
 /**
- * Check whether a token hash matches the project's owner token hash.
- * Uses hash_equals() for constant-time comparison.
- */
-function isOwner(string $tokenHash, array $project): bool
-{
-    return hash_equals($project['owner_token_hash'], $tokenHash);
-}
-
-/**
- * Extract and classify the Authorization header as token hash, JWT, or none.
+ * Extract and classify the Authorization header as JWT or none.
  *
  * Returns one of:
- *   ['kind' => 'token', 'tokenHash' => string]
- *   ['kind' => 'jwt',   'userId' => int, 'email' => string, 'jti' => ?string, 'exp' => int]
+ *   ['kind' => 'jwt',  'userId' => int, 'email' => string, 'jti' => ?string, 'exp' => int]
  *   ['kind' => 'none']
  *
  * When $db is provided, JWT tokens are checked against the revoked_tokens table.
@@ -38,12 +28,6 @@ function extractAuth(array $config, ?PDO $db = null): array
     }
 
     $value = $parts[1];
-
-    // 64-char lowercase hex = legacy token hash
-    $normalized = strtolower($value);
-    if (preg_match('/^[0-9a-f]{64}$/', $normalized)) {
-        return ['kind' => 'token', 'tokenHash' => $normalized];
-    }
 
     // JWT format: three dot-separated segments
     if (substr_count($value, '.') === 2) {
@@ -70,13 +54,10 @@ function extractAuth(array $config, ?PDO $db = null): array
 }
 
 /**
- * Check if the auth context owns a project (by token hash OR user_id).
+ * Check if the authenticated user owns a project (by user_id).
  */
-function isOwnerOrUser(array $auth, array $project): bool
+function isProjectOwner(array $auth, array $project): bool
 {
-    if ($auth['kind'] === 'token') {
-        return hash_equals($project['owner_token_hash'], $auth['tokenHash']);
-    }
     if ($auth['kind'] === 'jwt') {
         return $project['user_id'] !== null && (int) $project['user_id'] === $auth['userId'];
     }
@@ -92,11 +73,11 @@ function isOwnerOrUser(array $auth, array $project): bool
 function requireOwnership(PDO $db, string $id, array $auth): array|ApiResponse
 {
     if ($auth['kind'] === 'none') {
-        return new ApiResponse(['error' => 'Missing or invalid Authorization header'], 401);
+        return new ApiResponse(['error' => 'Authentication required'], 401);
     }
 
     $project = dbGetProjectForAuth($db, $id);
-    if ($project === null || !isOwnerOrUser($auth, $project)) {
+    if ($project === null || !isProjectOwner($auth, $project)) {
         return new ApiResponse(['error' => 'Project not found'], 404);
     }
 

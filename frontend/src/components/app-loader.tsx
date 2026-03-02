@@ -9,7 +9,6 @@ import { decompressSnapshot } from '../utils/snapshot-url';
 import { isCloudEnabled } from '../utils/api-client';
 import { friendlyErrorMessage } from '../utils/friendly-error';
 import { fetchAndParseCloudProject } from '../utils/cloud-project-loader';
-import { checkOwnership, getOwnerTokenForProject, hashOwnerToken } from '../utils/owner-token';
 import { JWT_STORAGE_KEY } from '../context/auth-context';
 import { resolveInitialProject } from '../utils/project-resolution';
 import {
@@ -133,17 +132,9 @@ export function AppLoader() {
       }
 
       case 'cloud': {
-        // Send auth so private projects don't 404. Prefer JWT (enables
-        // cross-device access), fall back to per-project owner token hash.
         const jwt = readStartupJwt();
-        const ownerToken = getOwnerTokenForProject(resolution.cloudId);
-        const tokenHashPromise = ownerToken ? hashOwnerToken(ownerToken) : Promise.resolve(undefined);
 
-        tokenHashPromise
-          .then((tokenHash) => {
-            const auth = (tokenHash ?? jwt) ? { tokenHash: tokenHash ?? '', jwt: jwt ?? undefined } : undefined;
-            return fetchAndParseCloudProject(resolution.cloudId, auth);
-          })
+        fetchAndParseCloudProject(resolution.cloudId, jwt ?? undefined)
           .then((importResult) => {
             const values: Record<string, bigint> = {};
             for (const reg of importResult.registers) {
@@ -157,12 +148,10 @@ export function AppLoader() {
               addressUnitBits: importResult.addressUnitBits,
             });
 
-            // Use server-reported isOwner (JWT-aware), fall back to local check
-            const isOwner = importResult.isOwner || checkOwnership(resolution.cloudId);
             setState({
               phase: 'ready',
               initialState: loadedState,
-              cloudInit: { projectId: resolution.cloudId, isOwner },
+              cloudInit: { projectId: resolution.cloudId, isOwner: importResult.isOwner },
             });
           })
           .catch((err) => {
@@ -176,7 +165,7 @@ export function AppLoader() {
         if (project) {
           const appState = deserializeState(project.state);
           const cloudInit = project.cloudId
-            ? { projectId: project.cloudId, isOwner: checkOwnership(project.cloudId) }
+            ? { projectId: project.cloudId, isOwner: false }
             : undefined;
           setState({ phase: 'ready', initialState: appState, localId: resolution.localId, cloudInit });
         } else {

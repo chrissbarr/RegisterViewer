@@ -344,16 +344,7 @@ describe('ShareDialog', () => {
       ).toBeInTheDocument();
     });
 
-    it('shows first-time cloud prompt when "Save to Cloud" is clicked', () => {
-      renderShareDialog();
-      fireEvent.click(screen.getByRole('button', { name: 'Save to Cloud' }));
-      // FirstTimeCloudPrompt contains "Save to Cloud" dialog with specific text
-      expect(
-        screen.getByText('Your project will be uploaded to our servers and you\'ll get a shareable link.'),
-      ).toBeInTheDocument();
-    });
-
-    it('calls saveToCloud after confirming first-time prompt (active project path)', async () => {
+    it('calls saveToCloud directly when clicking Save to Cloud (active project path)', async () => {
       const mockSaveToCloud = vi.fn().mockResolvedValue(undefined);
       (useCloudSyncActions as Mock).mockReturnValue({
         saveToCloud: mockSaveToCloud,
@@ -363,34 +354,11 @@ describe('ShareDialog', () => {
       });
       renderShareDialog();
 
-      // Click "Save to Cloud" to open first-time prompt
-      fireEvent.click(screen.getByRole('button', { name: 'Save to Cloud' }));
-
-      // Confirm the first-time prompt — find the confirm button within the prompt
-      const confirmButtons = screen.getAllByRole('button', { name: 'Save to Cloud' });
-      // The last one in the DOM is the confirm button inside the ConfirmationDialog
-      const confirmBtn = confirmButtons[confirmButtons.length - 1];
       await act(async () => {
-        fireEvent.click(confirmBtn);
+        fireEvent.click(screen.getByRole('button', { name: 'Save to Cloud' }));
       });
 
       expect(mockSaveToCloud).toHaveBeenCalledOnce();
-    });
-
-    it('does not call saveToCloud if first-time prompt is cancelled', () => {
-      const mockSaveToCloud = vi.fn();
-      (useCloudSyncActions as Mock).mockReturnValue({
-        saveToCloud: mockSaveToCloud,
-        saveProjectToCloud: vi.fn(),
-        setVisibility: vi.fn(),
-        setProjectVisibility: vi.fn(),
-      });
-      renderShareDialog();
-
-      fireEvent.click(screen.getByRole('button', { name: 'Save to Cloud' }));
-      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-
-      expect(mockSaveToCloud).not.toHaveBeenCalled();
     });
 
     it('calls doSave directly (skips first-time prompt) when cloud project already exists', () => {
@@ -507,13 +475,6 @@ describe('ShareDialog', () => {
         fireEvent.click(saveBtn);
       });
 
-      // Confirm first-time prompt
-      const confirmButtons = screen.getAllByRole('button', { name: 'Save to Cloud' });
-      const confirmBtn = confirmButtons[confirmButtons.length - 1];
-      act(() => {
-        fireEvent.click(confirmBtn);
-      });
-
       await waitFor(() => {
         expect(screen.getByRole('button', { name: 'Saving...' })).toBeDisabled();
       });
@@ -573,12 +534,8 @@ describe('ShareDialog', () => {
 
       renderShareDialog({ projectLocalId: 'local-123' });
 
-      fireEvent.click(screen.getByRole('button', { name: 'Save to Cloud' }));
-
-      const confirmButtons = screen.getAllByRole('button', { name: 'Save to Cloud' });
-      const confirmBtn = confirmButtons[confirmButtons.length - 1];
       await act(async () => {
-        fireEvent.click(confirmBtn);
+        fireEvent.click(screen.getByRole('button', { name: 'Save to Cloud' }));
       });
 
       await waitFor(() => {
@@ -632,11 +589,8 @@ describe('ShareDialog', () => {
 
       renderShareDialog({ projectLocalId: 'local-err' });
 
-      fireEvent.click(screen.getByRole('button', { name: 'Save to Cloud' }));
-      const confirmButtons = screen.getAllByRole('button', { name: 'Save to Cloud' });
-      const confirmBtn = confirmButtons[confirmButtons.length - 1];
       await act(async () => {
-        fireEvent.click(confirmBtn);
+        fireEvent.click(screen.getByRole('button', { name: 'Save to Cloud' }));
       });
 
       await waitFor(() => {
@@ -752,12 +706,8 @@ describe('ShareDialog', () => {
 
       renderShareDialog({ projectLocalId: 'local-vis-c' });
 
-      // In State C, click "Save to Cloud" → first-time prompt → confirm → error
-      fireEvent.click(screen.getByRole('button', { name: 'Save to Cloud' }));
-      const confirmButtons = screen.getAllByRole('button', { name: 'Save to Cloud' });
-      const confirmBtn = confirmButtons[confirmButtons.length - 1];
       await act(async () => {
-        fireEvent.click(confirmBtn);
+        fireEvent.click(screen.getByRole('button', { name: 'Save to Cloud' }));
       });
 
       await waitFor(() => {
@@ -1055,13 +1005,8 @@ describe('ShareDialog', () => {
 
       renderShareDialog({ projectLocalId: 'local-save' });
 
-      fireEvent.click(screen.getByRole('button', { name: 'Save to Cloud' }));
-
-      // Confirm first-time prompt
-      const confirmButtons = screen.getAllByRole('button', { name: 'Save to Cloud' });
-      const confirmBtn = confirmButtons[confirmButtons.length - 1];
       await act(async () => {
-        fireEvent.click(confirmBtn);
+        fireEvent.click(screen.getByRole('button', { name: 'Save to Cloud' }));
       });
 
       expect(mockSaveProjectToCloud).toHaveBeenCalledWith('local-save');
@@ -1182,12 +1127,8 @@ describe('ShareDialog', () => {
       const onClose = vi.fn();
       const { rerender } = renderShareDialog({ projectLocalId: 'local-reset' });
 
-      // Click "Save to Cloud" → first-time prompt → confirm → triggers error
-      fireEvent.click(screen.getByRole('button', { name: 'Save to Cloud' }));
-      const confirmButtons = screen.getAllByRole('button', { name: 'Save to Cloud' });
-      const confirmBtn = confirmButtons[confirmButtons.length - 1];
       await act(async () => {
-        fireEvent.click(confirmBtn);
+        fireEvent.click(screen.getByRole('button', { name: 'Save to Cloud' }));
       });
 
       await waitFor(() => {

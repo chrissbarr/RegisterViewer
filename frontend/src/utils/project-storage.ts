@@ -194,7 +194,6 @@ export function createProject(initialState: SerializedAppState, name?: string, c
     createdAt: now,
     localSavedAt: now,
     cloudSavedAt: cloudMeta?.cloudSavedAt ?? null,
-    ownerToken: null,
     state: initialState,
   };
   saveProject(project);
@@ -250,7 +249,7 @@ export function patchProjectState(localId: string, state: SerializedAppState, na
 /** Update metadata fields on a project (name, cloudId, visibility, etc.) */
 export function updateProjectMetadata(
   localId: string,
-  updates: Partial<Pick<StoredLocalProject, 'name' | 'cloudId' | 'visibility' | 'cloudSavedAt' | 'ownerToken'>>,
+  updates: Partial<Pick<StoredLocalProject, 'name' | 'cloudId' | 'visibility' | 'cloudSavedAt'>>,
 ): void {
   const project = loadProject(localId);
   if (!project) return;
@@ -288,8 +287,6 @@ export function getStorageUsage(): { usedBytes: number; estimatedTotalBytes: num
   };
 }
 
-const CLOUD_PROJECTS_KEY = 'register-viewer-cloud-projects';
-
 /** Migrate legacy single-project state into a manifest project entry. */
 function migrateLegacyState(): void {
   if (localStorage.getItem(MANIFEST_KEY)) return;
@@ -305,48 +302,15 @@ function migrateLegacyState(): void {
   }
 }
 
-/**
- * Migrate ownerTokens from legacy cloud-projects records into StoredLocalProject records.
- * Reads from either the original key ('register-viewer-projects') or the intermediate
- * key ('register-viewer-cloud-projects') — whichever exists — then cleans up both.
- */
-function migrateOwnerTokensToProjects(): void {
-  const raw = localStorage.getItem(LEGACY_PROJECTS_KEY)
-    ?? localStorage.getItem(CLOUD_PROJECTS_KEY);
-  if (!raw) return;
-  try {
-    const records = JSON.parse(raw) as Array<{ id: string; ownerToken: string }>;
-    if (Array.isArray(records)) {
-      const manifest = loadManifest();
-      for (const record of records) {
-        if (!record.id || !record.ownerToken) continue;
-        const entry = manifest.projects.find(p => p.cloudId === record.id);
-        if (!entry) continue;
-        const project = loadProject(entry.localId);
-        if (project && !project.ownerToken) {
-          project.ownerToken = record.ownerToken;
-          localStorage.setItem(projectStorageKey(project.localId), JSON.stringify(project));
-        }
-      }
-    }
-  } catch (err) {
-    if (import.meta.env.DEV) {
-      console.warn('[project-storage] Failed to migrate owner tokens:', err);
-    }
-  }
-  localStorage.removeItem(CLOUD_PROJECTS_KEY);
-}
-
 /** Run migration from legacy storage format. Call once on startup. */
 export function runMigrationIfNeeded(): void {
   migrateLegacyState();
-  migrateOwnerTokensToProjects();
 
   // Clean up legacy keys unconditionally.
-  // Note: LEGACY_TOKEN_KEY ('register-viewer-owner-token') is NOT removed
-  // because getOrCreateOwnerToken() actively uses that key for cloud auth.
   localStorage.removeItem(LEGACY_STATE_KEY);
   localStorage.removeItem(LEGACY_PROJECTS_KEY);
+  localStorage.removeItem('register-viewer-cloud-projects');
+  localStorage.removeItem('register-viewer-owner-token');
 
   // Ensure a manifest exists even if no migration happened
   if (!localStorage.getItem(MANIFEST_KEY)) {

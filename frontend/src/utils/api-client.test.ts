@@ -101,9 +101,9 @@ describe('createProject', () => {
     });
 
     const data = { version: 1, registers: [] };
-    const tokenHash = 'a'.repeat(64);
+    const jwt = 'a'.repeat(64);
 
-    const result = await createProject(data, { tokenHash });
+    const result = await createProject(data, jwt);
 
     expect(mockFetch).toHaveBeenCalledOnce();
     expect(mockFetch).toHaveBeenCalledWith('https://api.example.com/api/projects', {
@@ -122,13 +122,13 @@ describe('createProject', () => {
     mockFetch.mockResolvedValue(mockErrorResponse(400, { error: 'Invalid data' }));
 
     const data = { version: 1 };
-    const tokenHash = 'a'.repeat(64);
+    const jwt = 'a'.repeat(64);
 
-    await expect(createProject(data, { tokenHash })).rejects.toThrow(ApiError);
-    await expect(createProject(data, { tokenHash })).rejects.toThrow('Invalid data');
+    await expect(createProject(data, jwt)).rejects.toThrow(ApiError);
+    await expect(createProject(data, jwt)).rejects.toThrow('Invalid data');
 
     try {
-      await createProject(data, { tokenHash });
+      await createProject(data, jwt);
     } catch (error) {
       expect(error).toBeInstanceOf(ApiError);
       expect((error as ApiError).status).toBe(400);
@@ -139,38 +139,17 @@ describe('createProject', () => {
     mockFetch.mockResolvedValue(mockNonJsonErrorResponse(500, 'Internal Server Error'));
 
     const data = { version: 1 };
-    const tokenHash = 'a'.repeat(64);
+    const jwt = 'a'.repeat(64);
 
-    await expect(createProject(data, { tokenHash })).rejects.toThrow(ApiError);
+    await expect(createProject(data, jwt)).rejects.toThrow(ApiError);
 
     try {
-      await createProject(data, { tokenHash });
+      await createProject(data, jwt);
     } catch (error) {
       expect(error).toBeInstanceOf(ApiError);
       expect((error as ApiError).status).toBe(500);
       expect((error as ApiError).errorBody.error).toBe('Internal Server Error');
     }
-  });
-
-  it('uses JWT in header and raw ownerToken in body when jwt provided', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      headers: new Headers({ 'content-type': 'application/json' }),
-      json: async () => ({
-        id: 'JWT-TEST',
-        shareUrl: 'https://example.com/#/p/JWT-TEST',
-        createdAt: '2024-01-01T00:00:00Z',
-      }),
-    });
-
-    const data = { version: 1, registers: [] };
-    await createProject(data, { tokenHash: 'a'.repeat(64), jwt: 'my-jwt', ownerToken: 'b'.repeat(64) });
-
-    const callArgs = mockFetch.mock.calls[0];
-    expect(callArgs[1].headers.Authorization).toBe('Bearer my-jwt');
-    const body = JSON.parse(callArgs[1].body);
-    expect(body.ownerToken).toBe('b'.repeat(64));
   });
 
   it('includes Content-Type and Authorization headers', async () => {
@@ -185,7 +164,7 @@ describe('createProject', () => {
       }),
     });
 
-    await createProject({}, { tokenHash: 'a'.repeat(64) });
+    await createProject({}, 'a'.repeat(64));
 
     const callArgs = mockFetch.mock.calls[0];
     expect(callArgs[1].headers).toHaveProperty('Content-Type', 'application/json');
@@ -227,7 +206,7 @@ describe('getProject', () => {
     expect(result).toEqual(responseData);
   });
 
-  it('sends Authorization header when tokenHash provided', async () => {
+  it('sends Authorization header when jwt provided', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       status: 200,
@@ -240,15 +219,15 @@ describe('getProject', () => {
       }),
     });
 
-    const tokenHash = 'a'.repeat(64);
-    await getProject('ABC123DEF456', { tokenHash });
+    const jwt = 'a'.repeat(64);
+    await getProject('ABC123DEF456', jwt);
 
     expect(mockFetch).toHaveBeenCalledWith(
       'https://api.example.com/api/projects/ABC123DEF456',
       {
         signal: expect.any(AbortSignal),
         headers: {
-          Authorization: `Bearer ${tokenHash}`,
+          Authorization: `Bearer ${jwt}`,
         },
       },
     );
@@ -287,24 +266,6 @@ describe('getProject', () => {
     }
   });
 
-  it('prefers JWT over tokenHash when both provided', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      headers: new Headers({ 'content-type': 'application/json' }),
-      json: async () => ({
-        id: 'TEST',
-        data: '{}',
-        createdAt: '2024-01-01T00:00:00Z',
-        updatedAt: '2024-01-01T00:00:00Z',
-      }),
-    });
-
-    await getProject('TEST', { tokenHash: 'a'.repeat(64), jwt: 'my-jwt' });
-
-    const callArgs = mockFetch.mock.calls[0];
-    expect(callArgs[1].headers.Authorization).toBe('Bearer my-jwt');
-  });
 });
 
 describe('updateProject', () => {
@@ -328,9 +289,9 @@ describe('updateProject', () => {
 
     const id = 'ABC123DEF456';
     const data = { version: 1, registers: [] };
-    const tokenHash = 'a'.repeat(64);
+    const jwt = 'a'.repeat(64);
 
-    const result = await updateProject(id, data, { tokenHash });
+    const result = await updateProject(id, data, jwt);
 
     expect(mockFetch).toHaveBeenCalledOnce();
     expect(mockFetch).toHaveBeenCalledWith(
@@ -359,7 +320,7 @@ describe('updateProject', () => {
       }),
     });
 
-    await updateProject('test/with/slashes', {}, { tokenHash: 'a'.repeat(64) });
+    await updateProject('test/with/slashes', {}, 'a'.repeat(64));
 
     const callArgs = mockFetch.mock.calls[0];
     expect(callArgs[0]).toContain('test%2Fwith%2Fslashes');
@@ -369,11 +330,11 @@ describe('updateProject', () => {
     mockFetch.mockResolvedValue(mockErrorResponse(401, { error: 'Unauthorized' }));
 
     await expect(
-      updateProject('ABC123DEF456', {}, { tokenHash: 'wrong'.repeat(16) }),
+      updateProject('ABC123DEF456', {}, 'wrong'.repeat(16)),
     ).rejects.toThrow(ApiError);
 
     try {
-      await updateProject('ABC123DEF456', {}, { tokenHash: 'wrong'.repeat(16) });
+      await updateProject('ABC123DEF456', {}, 'wrong'.repeat(16));
     } catch (error) {
       expect(error).toBeInstanceOf(ApiError);
       expect((error as ApiError).status).toBe(401);
@@ -384,7 +345,7 @@ describe('updateProject', () => {
     mockFetch.mockResolvedValueOnce(mockErrorResponse(404, { error: 'Project not found' }));
 
     await expect(
-      updateProject('NONEXISTENT', {}, { tokenHash: 'a'.repeat(64) }),
+      updateProject('NONEXISTENT', {}, 'a'.repeat(64)),
     ).rejects.toThrow(ApiError);
   });
 
@@ -396,7 +357,7 @@ describe('updateProject', () => {
       json: async () => ({ id: 'TEST', updatedAt: '2024-01-01T00:00:00Z' }),
     });
 
-    await updateProject('TEST', { version: 1 }, { tokenHash: 'a'.repeat(64), jwt: 'my-jwt' });
+    await updateProject('TEST', { version: 1 }, 'my-jwt');
 
     const callArgs = mockFetch.mock.calls[0];
     expect(callArgs[1].headers.Authorization).toBe('Bearer my-jwt');
@@ -418,9 +379,9 @@ describe('deleteProject', () => {
     });
 
     const id = 'ABC123DEF456';
-    const tokenHash = 'a'.repeat(64);
+    const jwt = 'a'.repeat(64);
 
-    await deleteProject(id, { tokenHash });
+    await deleteProject(id, jwt);
 
     expect(mockFetch).toHaveBeenCalledOnce();
     expect(mockFetch).toHaveBeenCalledWith(
@@ -443,7 +404,7 @@ describe('deleteProject', () => {
       json: async () => { throw new SyntaxError('Unexpected end of JSON input'); },
     });
 
-    await deleteProject('test/with/slashes', { tokenHash: 'a'.repeat(64) });
+    await deleteProject('test/with/slashes', 'a'.repeat(64));
 
     const callArgs = mockFetch.mock.calls[0];
     expect(callArgs[0]).toContain('test%2Fwith%2Fslashes');
@@ -457,7 +418,7 @@ describe('deleteProject', () => {
       json: async () => { throw new SyntaxError('Unexpected end of JSON input'); },
     });
 
-    const result = await deleteProject('ABC123DEF456', { tokenHash: 'a'.repeat(64) });
+    const result = await deleteProject('ABC123DEF456', 'a'.repeat(64));
 
     expect(result).toBeUndefined();
   });
@@ -465,12 +426,12 @@ describe('deleteProject', () => {
   it('throws ApiError on 401 (unauthorized)', async () => {
     mockFetch.mockResolvedValue(mockErrorResponse(401, { error: 'Unauthorized' }));
 
-    await expect(deleteProject('ABC123DEF456', { tokenHash: 'wrong'.repeat(16) })).rejects.toThrow(
+    await expect(deleteProject('ABC123DEF456', 'wrong'.repeat(16))).rejects.toThrow(
       ApiError,
     );
 
     try {
-      await deleteProject('ABC123DEF456', { tokenHash: 'wrong'.repeat(16) });
+      await deleteProject('ABC123DEF456', 'wrong'.repeat(16));
     } catch (error) {
       expect(error).toBeInstanceOf(ApiError);
       expect((error as ApiError).status).toBe(401);
@@ -480,7 +441,7 @@ describe('deleteProject', () => {
   it('throws ApiError on 404 (not found)', async () => {
     mockFetch.mockResolvedValueOnce(mockErrorResponse(404, { error: 'Project not found' }));
 
-    await expect(deleteProject('NONEXISTENT', { tokenHash: 'a'.repeat(64) })).rejects.toThrow(ApiError);
+    await expect(deleteProject('NONEXISTENT', 'a'.repeat(64))).rejects.toThrow(ApiError);
   });
 
   it('uses JWT in Authorization header when provided', async () => {
@@ -491,7 +452,7 @@ describe('deleteProject', () => {
       json: async () => { throw new SyntaxError('Unexpected end of JSON input'); },
     });
 
-    await deleteProject('TEST', { tokenHash: 'a'.repeat(64), jwt: 'my-jwt' });
+    await deleteProject('TEST', 'my-jwt');
 
     const callArgs = mockFetch.mock.calls[0];
     expect(callArgs[1].headers.Authorization).toBe('Bearer my-jwt');
@@ -517,7 +478,7 @@ describe('createProject with visibility', () => {
     });
 
     const data = { version: 1, registers: [] };
-    await createProject(data, { tokenHash: 'a'.repeat(64) }, 'unlisted');
+    await createProject(data, 'a'.repeat(64), 'unlisted');
 
     const callArgs = mockFetch.mock.calls[0];
     const body = JSON.parse(callArgs[1].body);
@@ -537,7 +498,7 @@ describe('createProject with visibility', () => {
     });
 
     const data = { version: 1, registers: [] };
-    await createProject(data, { tokenHash: 'a'.repeat(64) });
+    await createProject(data, 'a'.repeat(64));
 
     const callArgs = mockFetch.mock.calls[0];
     const body = JSON.parse(callArgs[1].body);
@@ -562,7 +523,7 @@ describe('updateProject with visibility', () => {
       }),
     });
 
-    await updateProject('TEST', { version: 1 }, { tokenHash: 'a'.repeat(64) }, 'unlisted');
+    await updateProject('TEST', { version: 1 }, 'a'.repeat(64), 'unlisted');
 
     const callArgs = mockFetch.mock.calls[0];
     const body = JSON.parse(callArgs[1].body);
@@ -584,7 +545,7 @@ describe('patchProjectVisibility', () => {
       json: async () => ({ id: 'TEST', updatedAt: '2024-01-01T00:00:00Z' }),
     });
 
-    await patchProjectVisibility('TEST', 'unlisted', { tokenHash: 'a'.repeat(64) });
+    await patchProjectVisibility('TEST', 'unlisted', 'a'.repeat(64));
 
     expect(mockFetch).toHaveBeenCalledWith(
       'https://api.example.com/api/projects/TEST',
@@ -608,7 +569,7 @@ describe('patchProjectVisibility', () => {
       json: async () => ({ id: 'TEST', updatedAt: '2024-01-01T00:00:00Z' }),
     });
 
-    await patchProjectVisibility('TEST', 'unlisted', { tokenHash: 'a'.repeat(64), jwt: 'my-jwt' });
+    await patchProjectVisibility('TEST', 'unlisted', 'my-jwt');
 
     const callArgs = mockFetch.mock.calls[0];
     expect(callArgs[1].headers.Authorization).toBe('Bearer my-jwt');
@@ -635,15 +596,15 @@ describe('listProjects', () => {
       json: async () => responseData,
     });
 
-    const tokenHash = 'a'.repeat(64);
-    const result = await listProjects(tokenHash);
+    const jwt = 'a'.repeat(64);
+    const result = await listProjects(jwt);
 
     expect(mockFetch).toHaveBeenCalledWith(
       'https://api.example.com/api/projects',
       {
         signal: expect.any(AbortSignal),
         headers: {
-          Authorization: `Bearer ${tokenHash}`,
+          Authorization: `Bearer ${jwt}`,
         },
       },
     );
@@ -859,42 +820,6 @@ describe('verifyLoginCode', () => {
       },
     );
     expect(result).toEqual(responseData);
-  });
-
-  it('includes ownerToken when provided', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      headers: new Headers({ 'content-type': 'application/json' }),
-      json: async () => ({
-        token: 'jwt-token-123',
-        user: { id: 1, email: 'user@example.com' },
-      }),
-    });
-
-    await verifyLoginCode('user@example.com', '123456', 'a'.repeat(64));
-
-    const callArgs = mockFetch.mock.calls[0];
-    const body = JSON.parse(callArgs[1].body);
-    expect(body.ownerToken).toBe('a'.repeat(64));
-  });
-
-  it('omits ownerToken when not provided', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      headers: new Headers({ 'content-type': 'application/json' }),
-      json: async () => ({
-        token: 'jwt-token-123',
-        user: { id: 1, email: 'user@example.com' },
-      }),
-    });
-
-    await verifyLoginCode('user@example.com', '123456');
-
-    const callArgs = mockFetch.mock.calls[0];
-    const body = JSON.parse(callArgs[1].body);
-    expect(body.ownerToken).toBeUndefined();
   });
 
   it('throws ApiError on 401 invalid code', async () => {

@@ -35,7 +35,6 @@ function makeStoredProject(overrides?: Partial<StoredLocalProject>): StoredLocal
     createdAt: '2026-01-01T00:00:00.000Z',
     localSavedAt: '2026-01-01T00:00:00.000Z',
     cloudSavedAt: null,
-    ownerToken: null,
     state: makeSerializedState(),
     ...overrides,
   };
@@ -252,7 +251,6 @@ describe('createProject', () => {
     expect(project!.name).toBe(DEFAULT_PROJECT_NAME);
     expect(project!.visibility).toBe('private');
     expect(project!.cloudId).toBeNull();
-    expect(project!.ownerToken).toBeNull();
   });
 
   it('creates project with custom name', () => {
@@ -319,13 +317,6 @@ describe('updateProjectMetadata', () => {
     updateProjectMetadata(localId, { visibility: 'unlisted' });
     const project = loadProject(localId);
     expect(project!.visibility).toBe('unlisted');
-  });
-
-  it('updates ownerToken', () => {
-    const localId = createProject(makeSerializedState());
-    updateProjectMetadata(localId, { ownerToken: 'secret-token-123' });
-    const project = loadProject(localId);
-    expect(project!.ownerToken).toBe('secret-token-123');
   });
 
   it('updates manifest entry as well', () => {
@@ -420,7 +411,7 @@ describe('runMigrationIfNeeded', () => {
     expect(manifest.projects[0].name).toBe(DEFAULT_PROJECT_NAME);
   });
 
-  it('cleans up legacy keys but preserves owner token', () => {
+  it('cleans up all legacy keys including owner token', () => {
     localStorage.setItem('register-viewer-state', JSON.stringify(makeSerializedState()));
     localStorage.setItem('register-viewer-projects', 'some-data');
     localStorage.setItem('register-viewer-owner-token', 'some-token');
@@ -429,8 +420,8 @@ describe('runMigrationIfNeeded', () => {
 
     expect(localStorage.getItem('register-viewer-state')).toBeNull();
     expect(localStorage.getItem('register-viewer-projects')).toBeNull();
-    // Owner token is preserved — it's actively used by getOrCreateOwnerToken()
-    expect(localStorage.getItem('register-viewer-owner-token')).toBe('some-token');
+    // Owner token is now also removed
+    expect(localStorage.getItem('register-viewer-owner-token')).toBeNull();
   });
 
   it('cleans up legacy keys even when no legacy state exists', () => {
@@ -440,8 +431,8 @@ describe('runMigrationIfNeeded', () => {
     runMigrationIfNeeded();
 
     expect(localStorage.getItem('register-viewer-projects')).toBeNull();
-    // Owner token is preserved
-    expect(localStorage.getItem('register-viewer-owner-token')).toBe('some-token');
+    // Owner token is also removed
+    expect(localStorage.getItem('register-viewer-owner-token')).toBeNull();
   });
 
   it('is idempotent — does not re-migrate if manifest exists, but still cleans legacy keys', () => {
@@ -456,10 +447,10 @@ describe('runMigrationIfNeeded', () => {
 
     // Manifest should still be empty (migration was skipped)
     expect(loadManifest().projects).toHaveLength(0);
-    // Legacy keys cleaned up, but owner token preserved
+    // All legacy keys cleaned up
     expect(localStorage.getItem('register-viewer-state')).toBeNull();
     expect(localStorage.getItem('register-viewer-projects')).toBeNull();
-    expect(localStorage.getItem('register-viewer-owner-token')).toBe('old-token');
+    expect(localStorage.getItem('register-viewer-owner-token')).toBeNull();
   });
 
   it('creates empty manifest when no legacy data exists', () => {
