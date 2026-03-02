@@ -20,6 +20,45 @@ const MOCK_PROJECT_DATA = {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Build a fake JWT that passes the frontend's `parseJwtPayload` check.
+ * The signature is bogus — only the base64url-encoded payload matters
+ * because the frontend never verifies signatures (the real API does).
+ */
+function buildMockJwt(): string {
+  const header = { alg: 'HS256', typ: 'JWT' };
+  const payload = {
+    sub: 1,
+    email: 'test@example.com',
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + 86400, // 24 h
+    jti: 'test-jti',
+  };
+  const b64url = (obj: unknown) =>
+    btoa(JSON.stringify(obj)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+  return `${b64url(header)}.${b64url(payload)}.mock-signature`;
+}
+
+const MOCK_JWT = buildMockJwt();
+
+/**
+ * Set up mock auth: intercept `/api/auth/me` and use `addInitScript` to
+ * inject a mock JWT into localStorage before React mounts on every navigation.
+ * Call this BEFORE navigating to the app.
+ */
+async function setupMockAuth(page: Page) {
+  await page.route(/\/api\/auth\/me/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ user: { id: 1, email: 'test@example.com' } }),
+    });
+  });
+  await page.addInitScript((jwt) => {
+    localStorage.setItem('register-viewer-jwt', jwt);
+  }, MOCK_JWT);
+}
+
 /** Clear storage and reload so the app creates the default seed project. */
 async function resetApp(page: Page) {
   await page.goto('/');
@@ -46,14 +85,11 @@ async function openShareDialog(page: Page) {
   await expect(page.getByRole('dialog')).toBeVisible();
 }
 
-/** Save the current project to cloud via My Projects dialog (first-time save flow). */
+/** Save the current project to cloud via My Projects dialog. */
 async function saveToCloudViaMyProjects(page: Page) {
   await openMyProjects(page);
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('button', { name: /Save project.*to cloud/ }).click();
-  const confirmDialog = page.getByRole('alertdialog');
-  await expect(confirmDialog).toBeVisible();
-  await confirmDialog.getByRole('button', { name: 'Save to Cloud' }).click();
   // Wait for save to complete — visibility badge appears
   await expect(dialog.getByRole('button', { name: /Visibility: private for Example Project/ })).toBeVisible({ timeout: 5000 });
   // Close My Projects dialog
@@ -141,7 +177,7 @@ async function mockCloudApi(page: Page, options: {
         if (method === 'GET') {
           const resp = options.getResponse ?? {
             status: 200,
-            body: { id: projectId, data: MOCK_PROJECT_DATA, createdAt: now, updatedAt: now },
+            body: { id: projectId, data: MOCK_PROJECT_DATA, createdAt: now, updatedAt: now, isOwner: false },
           };
           await route.fulfill({
             status: resp.status,
@@ -197,6 +233,7 @@ async function mockCloudApi(page: Page, options: {
 test.describe('Cloud: Save to cloud', () => {
   test('saves project to cloud via My Projects and updates UI', async ({ page }) => {
     const now = new Date().toISOString();
+    await setupMockAuth(page);
     await mockCloudApi(page, {
       // List must include the created project so sync doesn't mark it stale
       listResponse: {
@@ -240,23 +277,15 @@ test.describe('Cloud: Save to cloud', () => {
 
 test.describe('Cloud: Save to cloud from My Projects', () => {
   test('saves project to cloud via My Projects dialog', async ({ page }) => {
+    await setupMockAuth(page);
     await mockCloudApi(page);
     await resetApp(page);
 
     await openMyProjects(page);
     const dialog = page.getByRole('dialog');
 
-    // Click the "Save to cloud" button on the project
+    // Click the "Save to cloud" button — save executes immediately (no confirmation dialog)
     await dialog.getByRole('button', { name: /Save project.*to cloud/ }).click();
-
-    // First-time confirmation dialog should appear
-    const confirmDialog = page.getByRole('alertdialog');
-    await expect(confirmDialog).toBeVisible();
-    await expect(confirmDialog.getByRole('heading', { name: 'Save to Cloud' })).toBeVisible();
-    await expect(confirmDialog.getByText('uploaded to our servers')).toBeVisible();
-
-    // Confirm the save
-    await confirmDialog.getByRole('button', { name: 'Save to Cloud' }).click();
 
     // Wait for the save to complete — the project should now show as cloud-saved
     await expect(dialog.getByRole('button', { name: /Visibility: private for Example Project/ })).toBeVisible({ timeout: 5000 });
@@ -277,6 +306,7 @@ test.describe('Cloud: Open shared project', () => {
           data: MOCK_PROJECT_DATA,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
+          isOwner: false,
         },
       },
     });
@@ -322,6 +352,7 @@ test.describe('Cloud: Open shared project', () => {
 
 test.describe('Cloud: Fork shared project', () => {
   test('clicking "Save your own copy" creates a new cloud project', async ({ page }) => {
+    await setupMockAuth(page);
     await mockCloudApi(page);
 
     // Open shared project
@@ -350,6 +381,7 @@ test.describe('Cloud: Update cloud project', () => {
   test('updates an existing cloud project after editing', async ({ page }) => {
     const requests: { method: string; url: string }[] = [];
 
+    await setupMockAuth(page);
     await mockCloudApi(page, {
       onRequest: (method, url) => {
         requests.push({ method, url });
@@ -384,6 +416,7 @@ test.describe('Cloud: Update cloud project', () => {
 
 test.describe('Cloud: Delete from cloud', () => {
   test('removes cloud copy while keeping local project', async ({ page }) => {
+    await setupMockAuth(page);
     await mockCloudApi(page);
     await resetApp(page);
 
@@ -429,6 +462,7 @@ test.describe('Cloud: Delete from cloud', () => {
 
 test.describe('Cloud: Visibility change', () => {
   test('changes visibility from private to unlisted via Share dialog', async ({ page }) => {
+    await setupMockAuth(page);
     await mockCloudApi(page);
     await resetApp(page);
 
@@ -467,7 +501,8 @@ test.describe('Cloud: Share dialog cloud section states', () => {
     await expect(dialog.getByRole('button', { name: 'Save to Cloud' })).toBeVisible();
   });
 
-  test('saves to cloud from Share dialog with first-time prompt', async ({ page }) => {
+  test('saves to cloud from Share dialog', async ({ page }) => {
+    await setupMockAuth(page);
     await mockCloudApi(page);
     await resetApp(page);
 
@@ -475,16 +510,8 @@ test.describe('Cloud: Share dialog cloud section states', () => {
     await openShareDialog(page);
     const dialog = page.getByRole('dialog');
 
-    // Click "Save to Cloud" in the share dialog
+    // Click "Save to Cloud" in the share dialog — save executes immediately
     await dialog.getByRole('button', { name: 'Save to Cloud' }).click();
-
-    // First-time confirmation dialog should appear
-    const confirmDialog = page.getByRole('alertdialog');
-    await expect(confirmDialog).toBeVisible();
-    await expect(confirmDialog.getByText('uploaded to our servers')).toBeVisible();
-
-    // Confirm
-    await confirmDialog.getByRole('button', { name: 'Save to Cloud' }).click();
 
     // After saving, dialog should show the cloud link (State B: private)
     await expect(dialog.getByText('This project is private')).toBeVisible({ timeout: 5000 });
@@ -498,6 +525,7 @@ test.describe('Cloud: Share dialog cloud section states', () => {
 test.describe('Cloud: Sync detects stale cloud projects', () => {
   test('shows warning for projects deleted from cloud server', async ({ page }) => {
     // Mock API: create succeeds, but list returns empty (project deleted from server)
+    await setupMockAuth(page);
     await mockCloudApi(page, {
       listResponse: {
         status: 200,
@@ -522,6 +550,7 @@ test.describe('Cloud: Sync detects stale cloud projects', () => {
   });
 
   test('clicking "Remove link" clears stale cloud association', async ({ page }) => {
+    await setupMockAuth(page);
     await mockCloudApi(page, {
       listResponse: {
         status: 200,
@@ -561,7 +590,15 @@ test.describe('Cloud: Sync detects stale cloud projects', () => {
 
 test.describe('Cloud: Owner opens own project via URL', () => {
   test('reloading a cloud URL the owner saved preserves ownership state', async ({ page }) => {
-    await mockCloudApi(page);
+    const now = new Date().toISOString();
+    await setupMockAuth(page);
+    await mockCloudApi(page, {
+      // When reloading, the GET response should indicate the user is the owner
+      getResponse: {
+        status: 200,
+        body: { id: 'mockCloud123', data: MOCK_PROJECT_DATA, createdAt: now, updatedAt: now, isOwner: true },
+      },
+    });
     await resetApp(page);
 
     // Save to cloud to establish ownership via My Projects
@@ -591,6 +628,7 @@ test.describe('Cloud: Owner opens own project via URL', () => {
 
 test.describe('Cloud: API failure handling', () => {
   test('shows error toast when initial save fails (500)', async ({ page }) => {
+    await setupMockAuth(page);
     await mockCloudApi(page, {
       createResponse: {
         status: 500,
@@ -603,9 +641,6 @@ test.describe('Cloud: API failure handling', () => {
     await openMyProjects(page);
     const dialog = page.getByRole('dialog');
     await dialog.getByRole('button', { name: /Save project.*to cloud/ }).click();
-    const confirmDialog = page.getByRole('alertdialog');
-    await expect(confirmDialog).toBeVisible();
-    await confirmDialog.getByRole('button', { name: 'Save to Cloud' }).click();
 
     // Should show error toast (use the fixed-position toast, not the sr-only announcer)
     const toast = page.locator('.fixed[role="alert"]');
@@ -621,6 +656,7 @@ test.describe('Cloud: API failure handling', () => {
   });
 
   test('shows error toast when update fails (500)', async ({ page }) => {
+    await setupMockAuth(page);
     await mockCloudApi(page, {
       updateResponse: {
         status: 500,
@@ -643,6 +679,7 @@ test.describe('Cloud: API failure handling', () => {
 
   test('handles update 404 by clearing cloud state', async ({ page }) => {
     // Create succeeds, but then update returns 404 (project deleted on server)
+    await setupMockAuth(page);
     await mockCloudApi(page, {
       updateResponse: {
         status: 404,
@@ -679,6 +716,7 @@ test.describe('Cloud: Copy cloud link', () => {
     // Grant clipboard permissions
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
 
+    await setupMockAuth(page);
     await mockCloudApi(page);
     await resetApp(page);
 
