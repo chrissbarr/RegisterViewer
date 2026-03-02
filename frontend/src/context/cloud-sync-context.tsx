@@ -38,6 +38,9 @@ import { useDirtyTracking } from '../hooks/use-dirty-tracking';
 import { useActiveProjectCloudOps } from '../hooks/use-active-project-cloud-ops';
 import { useProjectCloudOps } from '../hooks/use-project-cloud-ops';
 import { DEFAULT_PROJECT_NAME, type ProjectListEntry, type Visibility } from '../types/project';
+import { CLOUD_SYNC_DEBOUNCE_MS } from '../constants';
+
+export type SyncStatus = 'saved' | 'syncing' | 'offline' | 'local-only';
 
 interface CloudSyncState {
   cloudId: string | null;
@@ -50,6 +53,8 @@ interface CloudSyncState {
   visibility: Visibility;
   /** True when a cloud operation requires login before proceeding. */
   loginRequired: boolean;
+  /** Cloud auto-sync status indicator. */
+  syncStatus: SyncStatus;
 }
 
 interface SyncResult {
@@ -74,6 +79,8 @@ interface CloudSyncActions {
   unlinkCloudProject: (localId: string) => void;
   /** Cancel pending cloud operation that was waiting for login. */
   cancelPendingOp: () => void;
+  /** Flush any pending cloud sync immediately (best-effort, for beforeunload). */
+  flushSync: () => Promise<void>;
 }
 
 const CloudSyncStateContext = createContext<CloudSyncState | null>(null);
@@ -285,6 +292,62 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     getJwt, dispatch, initialInternalState,
   });
 
+  // --- Cloud auto-sync (debounced after dirty) ---
+  const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryCountRef = useRef(0);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('local-only');
+
+  // Derive whether auto-sync should be active
+  const canAutoSync = internal.cloudId !== null && internal.isOwner && !!authUser;
+
+  useEffect(() => {
+    if (!canAutoSync) {
+      setSyncStatus('local-only');
+      return;
+    }
+    if (!isDirty) {
+      setSyncStatus('saved');
+      return;
+    }
+
+    syncTimerRef.current = setTimeout(async () => {
+      const jwt = getJwt();
+      if (!jwt) return;
+      setSyncStatus('syncing');
+      try {
+        await rawActiveOps.saveToCloud();
+        retryCountRef.current = 0;
+        setSyncStatus('saved');
+      } catch {
+        retryCountRef.current++;
+        setSyncStatus('offline');
+        // Exponential backoff retry
+        if (retryCountRef.current <= 5) {
+          const backoff = Math.min(1000 * 2 ** (retryCountRef.current - 1), 30000);
+          syncTimerRef.current = setTimeout(() => {
+            setSyncStatus((prev) => prev === 'offline' ? 'offline' : prev);
+          }, backoff);
+        }
+      }
+    }, CLOUD_SYNC_DEBOUNCE_MS);
+
+    return () => {
+      if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    };
+  }, [isDirty, canAutoSync, getJwt, rawActiveOps]);
+
+  const flushSync = useCallback(async () => {
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    if (!isDirty || !internalRef.current.cloudId || !internalRef.current.isOwner) return;
+    const jwt = getJwt();
+    if (!jwt) return;
+    try {
+      await rawActiveOps.saveToCloud();
+    } catch {
+      // Best-effort on unload — data is safe in localStorage
+    }
+  }, [isDirty, getJwt, rawActiveOps]);
+
   // Wrap save/fork with JWT guards
   const saveToCloud = useCallback(async () => {
     if (!getJwt()) {
@@ -409,10 +472,10 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   const actions = useMemo(
     () => ({
       ...activeOps,
-      dismissError, initFromProject, syncCloudProjects, cancelPendingOp,
+      dismissError, initFromProject, syncCloudProjects, cancelPendingOp, flushSync,
       ...projectOps,
     }),
-    [activeOps, dismissError, initFromProject, syncCloudProjects, cancelPendingOp, projectOps],
+    [activeOps, dismissError, initFromProject, syncCloudProjects, cancelPendingOp, flushSync, projectOps],
   );
 
   const providedState: CloudSyncState = useMemo(
@@ -426,6 +489,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       lastCloudSavedAt: internal.lastCloudSavedAt,
       visibility: internal.visibility,
       loginRequired,
+      syncStatus,
     }),
     [
       internal.cloudId,
@@ -437,6 +501,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       internal.lastCloudSavedAt,
       internal.visibility,
       loginRequired,
+      syncStatus,
     ],
   );
 

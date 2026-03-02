@@ -180,6 +180,7 @@ describe('CloudSyncProvider', () => {
         shareUrl: null,
         lastCloudSavedAt: null,
         visibility: 'private',
+        syncStatus: 'local-only',
       });
     });
   });
