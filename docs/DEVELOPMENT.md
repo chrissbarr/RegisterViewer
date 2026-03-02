@@ -49,8 +49,7 @@ All frontend commands run from the `frontend/` directory:
 | `cd api && docker compose down -v` | Stop containers and reset database |
 
 The local Docker environment automatically runs migrations on startup via `docker-entrypoint-initdb.d/`:
-1. `001_create_projects_table.sql` — Projects and owner index
-2. `002_create_auth_tables.sql` — Users, login_codes, revoked_tokens tables
+1. `001_create_projects_table.sql` — Full schema (users, projects, login_codes, revoked_tokens)
 
 To reset and re-run migrations: `cd api && docker compose down -v && docker compose up -d`
 

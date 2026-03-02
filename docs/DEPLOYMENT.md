@@ -36,13 +36,11 @@ This document provides step-by-step instructions for deploying the Register View
 3. Create a new database (e.g., `register_viewer`)
 4. Create a database user with a strong password
 5. Add the user to the database with **All Privileges**
-6. Run migration scripts to create tables:
+6. Run migration script to create tables:
    - Upload `api/database/migrations/001_create_projects_table.sql` and import via phpMyAdmin
-   - Upload `api/database/migrations/002_create_auth_tables.sql` and import via phpMyAdmin
    - Or via command line:
      ```bash
      mysql -u <user> -p <database> < api/database/migrations/001_create_projects_table.sql
-     mysql -u <user> -p <database> < api/database/migrations/002_create_auth_tables.sql
      ```
 
 **Migrations create:**
@@ -393,7 +391,7 @@ A: Yes! Go to **Actions** → select the Deploy workflow → **Run workflow** �
 A: Use `git revert` to create a new commit that undoes changes. See "Rollback Procedures" section above.
 
 **Q: How do I run database migrations?**
-A: Import the SQL files from `api/database/migrations/` via phpMyAdmin or the MySQL command line in order: `001_create_projects_table.sql`, then `002_create_auth_tables.sql`. Migrations are not run automatically during deployment.
+A: Import `api/database/migrations/001_create_projects_table.sql` via phpMyAdmin or the MySQL command line. Migrations are not run automatically during deployment.
 
 **Q: How do I update FTP credentials?**
 A: Update the `FTP_HOST`, `FTP_USERNAME`, or `FTP_PASSWORD` secrets in GitHub → Settings → Secrets and variables → Actions.
@@ -481,7 +479,7 @@ After updating any auth config value, check the PHP error log for config warning
 - [ ] All GitHub secrets are set: `FTP_HOST`, `FTP_USERNAME`, `FTP_PASSWORD` (run `gh secret list` to verify)
 - [ ] FTP credentials work (test with FileZilla or similar FTP client)
 - [ ] `config.production.php` exists on server with correct DB credentials, `jwt_secret`, and `resend_api_key`
-- [ ] Database tables exist (both migration SQL files have been run)
+- [ ] Database tables exist (migration SQL has been run)
 - [ ] PHP 8.3+ is enabled on the server
 - [ ] Apache `mod_rewrite` is enabled
 - [ ] Node.js version matches workflow config (22) — locally
