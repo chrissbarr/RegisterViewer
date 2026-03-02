@@ -1050,6 +1050,110 @@ describe('CloudSyncProvider', () => {
     });
   });
 
+  describe('cancelPendingOp', () => {
+    it('resets loginRequired to false and clears pending op', async () => {
+      // Start unauthenticated so save triggers loginRequired
+      authMock.user = null;
+      authMock.getJwt.mockReturnValue(null);
+
+      const { result } = renderCloudSync();
+
+      await act(async () => {
+        await result.current.actions.saveToCloud();
+      });
+      expect(result.current.state.loginRequired).toBe(true);
+
+      act(() => {
+        result.current.actions.cancelPendingOp();
+      });
+
+      expect(result.current.state.loginRequired).toBe(false);
+      // After cancel, authenticating should NOT retry the operation
+    });
+  });
+
+  describe('retry-after-login', () => {
+    it('retries pending save after auth transition null→user', async () => {
+      // Start unauthenticated
+      authMock.user = null;
+      authMock.getJwt.mockReturnValue(null);
+
+      const { result, rerender } = renderCloudSync();
+
+      // Attempt save — should set loginRequired
+      await act(async () => {
+        await result.current.actions.saveToCloud();
+      });
+      expect(result.current.state.loginRequired).toBe(true);
+      expect(apiCreateProject).not.toHaveBeenCalled();
+
+      // Simulate login: set auth state and provide JWT
+      (apiCreateProject as Mock).mockResolvedValue({
+        id: 'cloud-retry',
+        shareUrl: 'https://example.com/#/p/cloud-retry',
+        createdAt: '2024-01-01T12:00:00Z',
+      });
+      authMock.user = { id: 1, email: 'test@test.com' };
+      authMock.getJwt.mockReturnValue('mock-jwt-token');
+
+      // Re-render to trigger auth-transition effect
+      await act(async () => {
+        rerender();
+      });
+
+      // The pending save should have been retried
+      expect(result.current.state.loginRequired).toBe(false);
+      expect(apiCreateProject).toHaveBeenCalled();
+    });
+
+    it('retries pending fork after auth transition null→user', async () => {
+      // Start unauthenticated
+      authMock.user = null;
+      authMock.getJwt.mockReturnValue(null);
+
+      const { result, rerender } = renderCloudSync();
+
+      // Attempt fork — should set loginRequired
+      await act(async () => {
+        await result.current.actions.fork();
+      });
+      expect(result.current.state.loginRequired).toBe(true);
+      expect(apiCreateProject).not.toHaveBeenCalled();
+
+      // Simulate login
+      (apiCreateProject as Mock).mockResolvedValue({
+        id: 'cloud-fork-retry',
+        shareUrl: 'https://example.com/#/p/cloud-fork-retry',
+        createdAt: '2024-01-01T12:00:00Z',
+      });
+      authMock.user = { id: 1, email: 'test@test.com' };
+      authMock.getJwt.mockReturnValue('mock-jwt-token');
+
+      await act(async () => {
+        rerender();
+      });
+
+      expect(result.current.state.loginRequired).toBe(false);
+      expect(apiCreateProject).toHaveBeenCalled();
+    });
+  });
+
+  describe('fork loginRequired', () => {
+    it('triggers login dialog when JWT missing for fork', async () => {
+      authMock.user = null;
+      authMock.getJwt.mockReturnValue(null);
+
+      const { result } = renderCloudSync();
+
+      await act(async () => {
+        await result.current.actions.fork();
+      });
+
+      expect(result.current.state.loginRequired).toBe(true);
+      expect(apiCreateProject).not.toHaveBeenCalled();
+    });
+  });
+
   describe('SEC-N02 regression: ownership inference', () => {
     it('does not grant ownership to authenticated users for non-owned projects', () => {
       // Simulate: user is logged in with a JWT

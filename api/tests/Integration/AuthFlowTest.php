@@ -238,10 +238,10 @@ final class AuthFlowTest extends TestCase
 
         // JWT auth should match
         $jwtAuth = ['kind' => 'jwt', 'userId' => $userId, 'email' => 'owner@example.com'];
-        $this->assertTrue(isOwnerOrUser($jwtAuth, $project));
+        $this->assertTrue(isProjectOwner($jwtAuth, $project));
 
         // Wrong user should not match
         $wrongAuth = ['kind' => 'jwt', 'userId' => 999, 'email' => 'wrong@example.com'];
-        $this->assertFalse(isOwnerOrUser($wrongAuth, $project));
+        $this->assertFalse(isProjectOwner($wrongAuth, $project));
     }
 }

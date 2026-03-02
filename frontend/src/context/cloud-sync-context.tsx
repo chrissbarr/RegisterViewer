@@ -220,6 +220,9 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     const cloudId = entry?.cloudId ?? null;
     // Skip if cloudId hasn't changed (avoid redundant state updates)
     if (cloudId === internalRef.current.cloudId) return;
+    // Clear any pending cloud operation from the previous project
+    pendingCloudOpRef.current = null;
+    setLoginRequired(false);
     // Default to false; the auth re-evaluation effect (below)
     // will asynchronously promote isOwner via a server round-trip when the
     // user is authenticated.
@@ -312,7 +315,9 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     setLoginRequired(false);
   }, []);
 
-  // After login, retry the pending cloud operation
+  // Auth-transition effect: when the user transitions from logged-out (null)
+  // to logged-in (non-null), retry any pending cloud operation that was
+  // deferred because a JWT was not available at the time of the request.
   const prevAuthUserRef = useRef(authUser);
   useEffect(() => {
     const wasNull = prevAuthUserRef.current === null;

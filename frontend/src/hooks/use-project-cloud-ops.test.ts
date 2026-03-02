@@ -158,6 +158,19 @@ describe('useProjectCloudOps', () => {
       ).rejects.toThrow('Cloud project not found on server.');
     });
 
+    it('throws "Authentication required" when getJwt returns null', async () => {
+      const deps = makeDeps({ getJwt: () => null, projects: makeProjectList([{ localId: 'local-1', cloudId: null }]) });
+      (loadProject as Mock).mockReturnValue({ state: '{}', cloudId: null });
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      await expect(
+        act(async () => {
+          await result.current.saveProjectToCloud('local-1');
+        }),
+      ).rejects.toThrow('Authentication required. Please sign in.');
+    });
+
     it('skips when cloud is not enabled', async () => {
       const deps = makeDeps();
       (isCloudEnabled as Mock).mockReturnValue(false);

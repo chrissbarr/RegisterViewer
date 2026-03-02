@@ -101,9 +101,9 @@ describe('createProject', () => {
     });
 
     const data = { version: 1, registers: [] };
-    const tokenHash = 'a'.repeat(64);
+    const jwt = 'a'.repeat(64);
 
-    const result = await createProject(data, tokenHash);
+    const result = await createProject(data, jwt);
 
     expect(mockFetch).toHaveBeenCalledOnce();
     expect(mockFetch).toHaveBeenCalledWith('https://api.example.com/api/projects', {
@@ -122,13 +122,13 @@ describe('createProject', () => {
     mockFetch.mockResolvedValue(mockErrorResponse(400, { error: 'Invalid data' }));
 
     const data = { version: 1 };
-    const tokenHash = 'a'.repeat(64);
+    const jwt = 'a'.repeat(64);
 
-    await expect(createProject(data, tokenHash)).rejects.toThrow(ApiError);
-    await expect(createProject(data, tokenHash)).rejects.toThrow('Invalid data');
+    await expect(createProject(data, jwt)).rejects.toThrow(ApiError);
+    await expect(createProject(data, jwt)).rejects.toThrow('Invalid data');
 
     try {
-      await createProject(data, tokenHash);
+      await createProject(data, jwt);
     } catch (error) {
       expect(error).toBeInstanceOf(ApiError);
       expect((error as ApiError).status).toBe(400);
@@ -139,12 +139,12 @@ describe('createProject', () => {
     mockFetch.mockResolvedValue(mockNonJsonErrorResponse(500, 'Internal Server Error'));
 
     const data = { version: 1 };
-    const tokenHash = 'a'.repeat(64);
+    const jwt = 'a'.repeat(64);
 
-    await expect(createProject(data, tokenHash)).rejects.toThrow(ApiError);
+    await expect(createProject(data, jwt)).rejects.toThrow(ApiError);
 
     try {
-      await createProject(data, tokenHash);
+      await createProject(data, jwt);
     } catch (error) {
       expect(error).toBeInstanceOf(ApiError);
       expect((error as ApiError).status).toBe(500);
@@ -219,15 +219,15 @@ describe('getProject', () => {
       }),
     });
 
-    const tokenHash = 'a'.repeat(64);
-    await getProject('ABC123DEF456', tokenHash);
+    const jwt = 'a'.repeat(64);
+    await getProject('ABC123DEF456', jwt);
 
     expect(mockFetch).toHaveBeenCalledWith(
       'https://api.example.com/api/projects/ABC123DEF456',
       {
         signal: expect.any(AbortSignal),
         headers: {
-          Authorization: `Bearer ${tokenHash}`,
+          Authorization: `Bearer ${jwt}`,
         },
       },
     );
@@ -289,9 +289,9 @@ describe('updateProject', () => {
 
     const id = 'ABC123DEF456';
     const data = { version: 1, registers: [] };
-    const tokenHash = 'a'.repeat(64);
+    const jwt = 'a'.repeat(64);
 
-    const result = await updateProject(id, data, tokenHash);
+    const result = await updateProject(id, data, jwt);
 
     expect(mockFetch).toHaveBeenCalledOnce();
     expect(mockFetch).toHaveBeenCalledWith(
@@ -379,9 +379,9 @@ describe('deleteProject', () => {
     });
 
     const id = 'ABC123DEF456';
-    const tokenHash = 'a'.repeat(64);
+    const jwt = 'a'.repeat(64);
 
-    await deleteProject(id, tokenHash);
+    await deleteProject(id, jwt);
 
     expect(mockFetch).toHaveBeenCalledOnce();
     expect(mockFetch).toHaveBeenCalledWith(
@@ -596,15 +596,15 @@ describe('listProjects', () => {
       json: async () => responseData,
     });
 
-    const tokenHash = 'a'.repeat(64);
-    const result = await listProjects(tokenHash);
+    const jwt = 'a'.repeat(64);
+    const result = await listProjects(jwt);
 
     expect(mockFetch).toHaveBeenCalledWith(
       'https://api.example.com/api/projects',
       {
         signal: expect.any(AbortSignal),
         headers: {
-          Authorization: `Bearer ${tokenHash}`,
+          Authorization: `Bearer ${jwt}`,
         },
       },
     );

@@ -67,37 +67,37 @@ final class AuthTest extends TestCase
         $this->assertSame('none', $auth['kind']);
     }
 
-    // ---- isOwnerOrUser tests ----
+    // ---- isProjectOwner tests ----
 
     #[Test]
-    public function isOwnerOrUserWithUserIdMatch(): void
+    public function isProjectOwnerWithUserIdMatch(): void
     {
         $auth = ['kind' => 'jwt', 'userId' => 42, 'email' => 'user@example.com'];
         $project = ['user_id' => 42];
-        $this->assertTrue(isOwnerOrUser($auth, $project));
+        $this->assertTrue(isProjectOwner($auth, $project));
     }
 
     #[Test]
-    public function isOwnerOrUserWithNoMatch(): void
+    public function isProjectOwnerWithNoMatch(): void
     {
         $auth = ['kind' => 'jwt', 'userId' => 99, 'email' => 'other@example.com'];
         $project = ['user_id' => 42];
-        $this->assertFalse(isOwnerOrUser($auth, $project));
+        $this->assertFalse(isProjectOwner($auth, $project));
     }
 
     #[Test]
-    public function isOwnerOrUserWithNoneKind(): void
+    public function isProjectOwnerWithNoneKind(): void
     {
         $auth = ['kind' => 'none'];
         $project = ['user_id' => null];
-        $this->assertFalse(isOwnerOrUser($auth, $project));
+        $this->assertFalse(isProjectOwner($auth, $project));
     }
 
     #[Test]
-    public function isOwnerOrUserJwtDoesNotMatchNullUserId(): void
+    public function isProjectOwnerJwtDoesNotMatchNullUserId(): void
     {
         $auth = ['kind' => 'jwt', 'userId' => 42, 'email' => 'user@example.com'];
         $project = ['user_id' => null];
-        $this->assertFalse(isOwnerOrUser($auth, $project));
+        $this->assertFalse(isProjectOwner($auth, $project));
     }
 }

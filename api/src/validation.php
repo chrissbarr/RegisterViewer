@@ -10,7 +10,7 @@ const LIMITS = [
     'MAX_NAME_LENGTH'           => 200,
     'MAX_METADATA_STRING_LENGTH' => 500,
     'MAX_PAYLOAD_SIZE'          => 512 * 1024,
-    'MAX_PROJECTS_PER_OWNER'    => 100,
+    'MAX_PROJECTS_PER_USER'     => 100,
     'VALID_ADDRESS_UNIT_BITS'   => [8, 16, 32, 64, 128],
 ];
 

@@ -209,7 +209,7 @@ final class ProjectApiTest extends TestCase
     {
         $userId = $this->createTestUser('limittest@example.com');
 
-        for ($i = 0; $i < LIMITS['MAX_PROJECTS_PER_OWNER']; $i++) {
+        for ($i = 0; $i < LIMITS['MAX_PROJECTS_PER_USER']; $i++) {
             dbCreateProject(self::$db, generatePublicId(), 'private', self::validDataJson(), null, $userId);
         }
 
@@ -229,6 +229,36 @@ final class ProjectApiTest extends TestCase
         $this->assertStringContainsString('Project limit reached', $response->body['error']);
     }
 
+    // ---- Handler 401 tests (no auth) ----
+
+    #[Test]
+    public function handleCreateProjectReturns401WhenAuthKindIsNone(): void
+    {
+        $auth = ['kind' => 'none'];
+        $body = ['data' => json_decode(self::validDataJson(), true)];
+        $parsed = [
+            'assoc'  => $body,
+            'object' => json_decode(json_encode($body)),
+        ];
+        $config = ['app_url' => 'http://localhost'];
+
+        $response = handleCreateProject(self::$db, $config, $auth, $parsed);
+
+        $this->assertSame(401, $response->status);
+        $this->assertSame('Authentication required', $response->body['error']);
+    }
+
+    #[Test]
+    public function handleListProjectsReturns401WhenAuthKindIsNone(): void
+    {
+        $auth = ['kind' => 'none'];
+
+        $response = handleListProjects(self::$db, $auth);
+
+        $this->assertSame(401, $response->status);
+        $this->assertSame('Authentication required', $response->body['error']);
+    }
+
     // ---- requireOwnership() tests ----
 
     #[Test]
@@ -243,7 +273,7 @@ final class ProjectApiTest extends TestCase
 
         $this->assertInstanceOf(ApiResponse::class, $result);
         $this->assertSame(401, $result->status);
-        $this->assertSame('Missing or invalid Authorization header', $result->body['error']);
+        $this->assertSame('Authentication required', $result->body['error']);
     }
 
     #[Test]

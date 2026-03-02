@@ -5,7 +5,7 @@ declare(strict_types=1);
 function handleListProjects(PDO $db, array $auth): ApiResponse
 {
     if ($auth['kind'] !== 'jwt') {
-        return new ApiResponse(['error' => 'Missing or invalid Authorization header'], 401);
+        return new ApiResponse(['error' => 'Authentication required'], 401);
     }
 
     $rows = dbListProjectsByUserId($db, $auth['userId']);

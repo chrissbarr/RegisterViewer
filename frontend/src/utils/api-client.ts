@@ -168,9 +168,9 @@ interface ListProjectsResponse {
   projects: ProjectListItem[];
 }
 
-export async function listProjects(authToken: string): Promise<ListProjectsResponse> {
+export async function listProjects(jwt: string): Promise<ListProjectsResponse> {
   return apiFetch<ListProjectsResponse>('/api/projects', {
-    headers: { Authorization: `Bearer ${authToken}` },
+    headers: { Authorization: `Bearer ${jwt}` },
   });
 }
 

@@ -70,16 +70,6 @@ describe('friendlyErrorMessage', () => {
     });
   });
 
-  it('translates "Owner token not found" errors', () => {
-    const err = new Error('Owner token not found for this project.');
-    expect(friendlyErrorMessage(err, 'x')).toMatch(/owner token/i);
-  });
-
-  it('translates "No auth credentials available" errors', () => {
-    const err = new Error('No auth credentials available for project.');
-    expect(friendlyErrorMessage(err, 'x')).toMatch(/owner token/i);
-  });
-
   it('passes through other Error messages', () => {
     const err = new Error('Something specific happened.');
     expect(friendlyErrorMessage(err, 'x')).toBe('Something specific happened.');

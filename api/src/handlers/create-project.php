@@ -14,7 +14,7 @@ function handleCreateProject(PDO $db, array $config, array $auth, array $parsed)
 
     // Per-user project limit to prevent storage abuse
     $userProjectCount = dbCountProjectsByUserId($db, $userId);
-    if ($userProjectCount >= LIMITS['MAX_PROJECTS_PER_OWNER']) {
+    if ($userProjectCount >= LIMITS['MAX_PROJECTS_PER_USER']) {
         return new ApiResponse(['error' => 'Project limit reached. Delete existing projects before creating new ones.'], 429);
     }
 

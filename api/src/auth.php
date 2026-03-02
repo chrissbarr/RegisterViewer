@@ -54,9 +54,9 @@ function extractAuth(array $config, ?PDO $db = null): array
 }
 
 /**
- * Check if the auth context owns a project (by user_id).
+ * Check if the authenticated user owns a project (by user_id).
  */
-function isOwnerOrUser(array $auth, array $project): bool
+function isProjectOwner(array $auth, array $project): bool
 {
     if ($auth['kind'] === 'jwt') {
         return $project['user_id'] !== null && (int) $project['user_id'] === $auth['userId'];
@@ -73,11 +73,11 @@ function isOwnerOrUser(array $auth, array $project): bool
 function requireOwnership(PDO $db, string $id, array $auth): array|ApiResponse
 {
     if ($auth['kind'] === 'none') {
-        return new ApiResponse(['error' => 'Missing or invalid Authorization header'], 401);
+        return new ApiResponse(['error' => 'Authentication required'], 401);
     }
 
     $project = dbGetProjectForAuth($db, $id);
-    if ($project === null || !isOwnerOrUser($auth, $project)) {
+    if ($project === null || !isProjectOwner($auth, $project)) {
         return new ApiResponse(['error' => 'Project not found'], 404);
     }
 
