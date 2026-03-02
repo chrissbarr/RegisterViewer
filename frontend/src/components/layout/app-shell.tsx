@@ -76,6 +76,8 @@ function AppShellInner({ cloudInit }: AppShellProps) {
         patchProjectState(id, serializeState(pendingStateRef.current), pendingStateRef.current.project?.title);
         pendingStateRef.current = null;
       }
+      // Best-effort cloud sync flush (fire-and-forget on unload)
+      cloudActions.flushSync().catch(() => {});
     };
     window.addEventListener('beforeunload', flush);
     window.addEventListener('pagehide', flush);
@@ -84,7 +86,7 @@ function AppShellInner({ cloudInit }: AppShellProps) {
       window.removeEventListener('pagehide', flush);
       flush();
     };
-  }, []);
+  }, [cloudActions]);
 
   // Keyboard shortcut: Ctrl+B toggles sidebar collapse
   const collapsedRef = useRef(preferences.sidebarCollapsed);

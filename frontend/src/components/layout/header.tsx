@@ -6,7 +6,8 @@ import { ProjectSettingsDialog } from '../common/project-settings-dialog';
 import { ImportResultDialog } from '../common/import-result-dialog';
 import { Toast } from '../common/toast';
 import { GithubIcon, MenuIcon } from 'lucide-react';
-import { SaveButton } from '../common/save-button';
+import { SyncStatusIndicator } from '../common/sync-status-indicator';
+import { useCloudSync } from '../../context/cloud-sync-context';
 import { ShareButton } from '../common/share-button';
 import { MyProjectsDialog } from '../projects/my-projects-dialog';
 import { LoginDialog } from '../auth/login-dialog';
@@ -41,6 +42,7 @@ export function Header() {
   const [myProjectsOpen, setMyProjectsOpen] = useState(false);
   const [importFeedback, setImportFeedback] = useState<ImportFeedback | null>(null);
   const { createNewProject, switchProject } = useProjectStorageActions();
+  const cloud = useCloudSync();
 
   function applyImportedData(json: string, showSuccessToast = true) {
     const result = importFromJson(json);
@@ -160,7 +162,7 @@ export function Header() {
         </h1>
         <div className="flex items-center gap-2">
           <ShareButton />
-          {cloudEnabled && <SaveButton />}
+          {cloudEnabled && <SyncStatusIndicator status={cloud.syncStatus} />}
           <DropdownMenu
             items={menuItems}
             triggerLabel="Application menu"
