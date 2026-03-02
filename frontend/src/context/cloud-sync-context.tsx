@@ -31,7 +31,8 @@ import {
   getProject,
 } from '../utils/api-client';
 import { useAuth, useAuthActions } from './auth-context';
-import { buildProjectUrl, createProject, loadProject } from '../utils/project-storage';
+import { buildProjectUrl, createProject, loadProject, purgeCloudProjects, getMostRecentProjectId } from '../utils/project-storage';
+import { ACTIVE_PROJECT_SESSION_KEY } from '../utils/project-storage';
 import { EMPTY_SERIALIZED_STATE, exportToObject, deserializeState } from '../utils/storage';
 import { saveProjectToCloudImpl } from '../utils/cloud-operations';
 import { clearCloudUrl } from '../utils/cloud-url';
@@ -195,7 +196,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   const appState = useAppState();
   const dispatch = useAppDispatch();
   const { activeLocalId, projects } = useProjectStorage();
-  const { updateCloudMetadata, createNewProject } = useProjectStorageActions();
+  const { updateCloudMetadata, createNewProject, refreshProjectList, switchProject } = useProjectStorageActions();
   const { user: authUser } = useAuth();
   const { getJwt } = useAuthActions();
 
@@ -475,10 +476,11 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const wasNull = prevAuthUserRef.current === null;
+    const wasLoggedIn = prevAuthUserRef.current !== null;
     prevAuthUserRef.current = authUser;
 
     if (wasNull && authUser) {
-      // Retry any pending cloud operation that was deferred
+      // Sign-in: retry any pending cloud operation that was deferred
       if (pendingCloudOpRef.current) {
         const op = pendingCloudOpRef.current;
         pendingCloudOpRef.current = null;
@@ -492,7 +494,30 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       // Sync cloud projects (pull metadata + upload local-only)
       void syncCloudProjectsRef.current?.();
     }
-  }, [authUser, rawActiveOps]);
+
+    if (wasLoggedIn && !authUser) {
+      // Sign-out: purge cloud projects from localStorage
+      const purgedIds = purgeCloudProjects();
+      refreshProjectList();
+
+      // If active project was purged, switch to a remaining project or create new
+      if (activeLocalIdRef.current && purgedIds.includes(activeLocalIdRef.current)) {
+        const remaining = getMostRecentProjectId();
+        if (remaining) {
+          switchProject(remaining);
+        } else {
+          const newId = createNewProject();
+          switchProject(newId);
+        }
+      }
+
+      // Reset cloud sync state
+      if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+      setInternal({ ...initialInternalState });
+      clearCloudUrl();
+      sessionStorage.removeItem(ACTIVE_PROJECT_SESSION_KEY);
+    }
+  }, [authUser, rawActiveOps, refreshProjectList, switchProject, createNewProject]);
 
   // By-localId cloud operations (used by My Projects dialog)
   const projectOps = useProjectCloudOps({
