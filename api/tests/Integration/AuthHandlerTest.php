@@ -9,11 +9,6 @@ final class AuthHandlerTest extends TestCase
 {
     private static ?PDO $db = null;
     private const JWT_CONFIG = ['jwt_secret' => 'test-jwt-secret-not-for-production'];
-    /** Raw 64-char hex owner token (simulates what the browser stores). */
-    private const OWNER_TOKEN = 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2';
-    /** SHA-256 hash of OWNER_TOKEN (what the server stores in projects.owner_token_hash). */
-    private const OWNER_HASH = 'fa0cacfe1122ac62b0f70e4db95790326bae5a5c38924f315282cc4fd55b4986';
-
     private static function validDataJson(): string
     {
         return json_encode([
@@ -203,31 +198,7 @@ final class AuthHandlerTest extends TestCase
     }
 
     #[Test]
-    public function verifyCodeAutoLinksProjects(): void
-    {
-        $email = 'linker@example.com';
-        $this->createLoginCode($email, '123456');
-
-        // Create an anonymous project with the owner hash
-        $projectId = generatePublicId();
-        dbCreateProject(self::$db, $projectId, self::OWNER_HASH, 'private', self::validDataJson(), null);
-
-        $response = handleAuthVerifyCode(self::$db, self::JWT_CONFIG, [
-            'email'      => $email,
-            'code'       => '123456',
-            'ownerToken' => self::OWNER_TOKEN,
-        ]);
-
-        $this->assertSame(200, $response->status);
-        $userId = $response->body['user']['id'];
-
-        // Project should now be linked to the user
-        $project = dbGetProjectForAuth(self::$db, $projectId);
-        $this->assertSame($userId, (int) $project['user_id']);
-    }
-
-    #[Test]
-    public function verifyCodeIgnoresInvalidOwnerToken(): void
+    public function verifyCodeIgnoresOwnerTokenInBody(): void
     {
         $email = 'ignore@example.com';
         $this->createLoginCode($email, '123456');
@@ -235,10 +206,10 @@ final class AuthHandlerTest extends TestCase
         $response = handleAuthVerifyCode(self::$db, self::JWT_CONFIG, [
             'email'      => $email,
             'code'       => '123456',
-            'ownerToken' => 'not-a-valid-token',
+            'ownerToken' => 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2',
         ]);
 
-        // Should succeed — invalid hash is silently ignored
+        // Should succeed — ownerToken is simply ignored now
         $this->assertSame(200, $response->status);
         $this->assertArrayHasKey('token', $response->body);
     }
@@ -397,9 +368,9 @@ final class AuthHandlerTest extends TestCase
     }
 
     #[Test]
-    public function authMeRejectsTokenHashAuth(): void
+    public function authMeRejectsNonJwtAuth(): void
     {
-        $auth = ['kind' => 'token', 'tokenHash' => self::OWNER_HASH];
+        $auth = ['kind' => 'none'];
 
         $response = handleAuthMe(self::$db, self::JWT_CONFIG, $auth);
 
@@ -507,7 +478,7 @@ final class AuthHandlerTest extends TestCase
     #[Test]
     public function logoutRejectsNonJwtAuth(): void
     {
-        $auth = ['kind' => 'token', 'tokenHash' => self::OWNER_HASH];
+        $auth = ['kind' => 'none'];
         $response = handleAuthLogout(self::$db, $auth);
         $this->assertSame(401, $response->status);
     }

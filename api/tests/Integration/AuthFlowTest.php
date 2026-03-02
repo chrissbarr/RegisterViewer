@@ -9,7 +9,6 @@ final class AuthFlowTest extends TestCase
 {
     private static ?PDO $db = null;
     private const JWT_CONFIG = ['jwt_secret' => 'test-jwt-secret-not-for-production'];
-    private const OWNER_HASH = '4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e';
 
     private static function validDataJson(): string
     {
@@ -191,47 +190,6 @@ final class AuthFlowTest extends TestCase
         $this->assertSame(2, dbCountRecentLoginCodes(self::$db, $email));
     }
 
-    // ---- Project Linking ----
-
-    #[Test]
-    public function linkProjectsByOwnerToken(): void
-    {
-        $id1 = generatePublicId();
-        $id2 = generatePublicId();
-        dbCreateProject(self::$db, $id1, self::OWNER_HASH, 'private', self::validDataJson(), null);
-        dbCreateProject(self::$db, $id2, self::OWNER_HASH, 'private', self::validDataJson(), null);
-
-        // Verify no user_id initially
-        $p1 = dbGetProjectForAuth(self::$db, $id1);
-        $this->assertNull($p1['user_id']);
-
-        // Create user and link
-        $userId = dbCreateUser(self::$db, 'linker@example.com');
-        $linked = dbLinkProjectsByOwnerToken(self::$db, self::OWNER_HASH, $userId);
-        $this->assertSame(2, $linked);
-
-        // Verify user_id is set
-        $p1After = dbGetProjectForAuth(self::$db, $id1);
-        $this->assertSame($userId, (int) $p1After['user_id']);
-    }
-
-    #[Test]
-    public function linkProjectsSkipsAlreadyLinked(): void
-    {
-        $userId1 = dbCreateUser(self::$db, 'first@example.com');
-        $userId2 = dbCreateUser(self::$db, 'second@example.com');
-
-        $id = generatePublicId();
-        dbCreateProject(self::$db, $id, self::OWNER_HASH, 'private', self::validDataJson(), null, $userId1);
-
-        // Linking with a different user should not overwrite
-        $linked = dbLinkProjectsByOwnerToken(self::$db, self::OWNER_HASH, $userId2);
-        $this->assertSame(0, $linked);
-
-        $project = dbGetProjectForAuth(self::$db, $id);
-        $this->assertSame($userId1, (int) $project['user_id']);
-    }
-
     // ---- List by User ID ----
 
     #[Test]
@@ -240,13 +198,13 @@ final class AuthFlowTest extends TestCase
         $userId = dbCreateUser(self::$db, 'lister@example.com');
         $id1 = generatePublicId();
         $id2 = generatePublicId();
-        dbCreateProject(self::$db, $id1, self::OWNER_HASH, 'private', self::validDataJson(), null, $userId);
-        dbCreateProject(self::$db, $id2, self::OWNER_HASH, 'unlisted', self::validDataJson(), null, $userId);
+        dbCreateProject(self::$db, $id1, 'private', self::validDataJson(), null, $userId);
+        dbCreateProject(self::$db, $id2, 'unlisted', self::validDataJson(), null, $userId);
 
         // Different user's project should not appear
         $otherUser = dbCreateUser(self::$db, 'other@example.com');
         $id3 = generatePublicId();
-        dbCreateProject(self::$db, $id3, 'bb' . str_repeat('00', 31), 'private', self::validDataJson(), null, $otherUser);
+        dbCreateProject(self::$db, $id3, 'private', self::validDataJson(), null, $otherUser);
 
         $projects = dbListProjectsByUserId(self::$db, $userId);
         $this->assertCount(2, $projects);
@@ -263,7 +221,7 @@ final class AuthFlowTest extends TestCase
     {
         $userId = dbCreateUser(self::$db, 'creator@example.com');
         $id = generatePublicId();
-        dbCreateProject(self::$db, $id, self::OWNER_HASH, 'private', self::validDataJson(), null, $userId);
+        dbCreateProject(self::$db, $id, 'private', self::validDataJson(), null, $userId);
 
         $project = dbGetProjectForAuth(self::$db, $id);
         $this->assertSame($userId, (int) $project['user_id']);
@@ -274,17 +232,13 @@ final class AuthFlowTest extends TestCase
     {
         $userId = dbCreateUser(self::$db, 'owner@example.com');
         $id = generatePublicId();
-        dbCreateProject(self::$db, $id, self::OWNER_HASH, 'private', self::validDataJson(), null, $userId);
+        dbCreateProject(self::$db, $id, 'private', self::validDataJson(), null, $userId);
 
         $project = dbGetProjectForAuth(self::$db, $id);
 
         // JWT auth should match
         $jwtAuth = ['kind' => 'jwt', 'userId' => $userId, 'email' => 'owner@example.com'];
         $this->assertTrue(isOwnerOrUser($jwtAuth, $project));
-
-        // Token auth should also match
-        $tokenAuth = ['kind' => 'token', 'tokenHash' => self::OWNER_HASH];
-        $this->assertTrue(isOwnerOrUser($tokenAuth, $project));
 
         // Wrong user should not match
         $wrongAuth = ['kind' => 'jwt', 'userId' => 999, 'email' => 'wrong@example.com'];

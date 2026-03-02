@@ -23,7 +23,6 @@ vi.mock('../utils/cloud-url', () => ({
     cloudId: null,
     visibility: 'private',
     cloudSavedAt: null,
-    ownerToken: null,
   },
   withMutationLock: vi.fn(async (_ref: unknown, fn: () => Promise<unknown>) => fn()),
 }));
@@ -78,7 +77,7 @@ function makeDeps(overrides: Record<string, unknown> = {}) {
     internalRef,
     setInternal: vi.fn() as Mock,
     initialInternalState: initial,
-    getJwt: (overrides.getJwt as (() => string | null)) ?? (() => null),
+    getJwt: (overrides.getJwt as (() => string | null)) ?? (() => 'mock-jwt'),
   };
 }
 
@@ -97,7 +96,6 @@ describe('useProjectCloudOps', () => {
         kind: 'created',
         cloudId: 'new-cloud',
         timestamp: '2026-01-01T00:00:00Z',
-        ownerToken: 'token-1',
       });
 
       const { result } = renderHook(() => useProjectCloudOps(deps));
@@ -109,7 +107,6 @@ describe('useProjectCloudOps', () => {
       expect(deps.updateCloudMetadata).toHaveBeenCalledWith('local-1', {
         cloudId: 'new-cloud',
         cloudSavedAt: '2026-01-01T00:00:00Z',
-        ownerToken: 'token-1',
       });
       expect(setCloudUrl).toHaveBeenCalledWith('new-cloud');
       expect(deps.setInternal).toHaveBeenCalled();
@@ -181,7 +178,6 @@ describe('useProjectCloudOps', () => {
         kind: 'created',
         cloudId: 'new-cloud',
         timestamp: '2026-01-01T00:00:00Z',
-        ownerToken: 'token-1',
       });
 
       const { result } = renderHook(() => useProjectCloudOps(deps));
@@ -207,12 +203,11 @@ describe('useProjectCloudOps', () => {
         await result.current.deleteProjectFromCloud('cloud-1');
       });
 
-      expect(deleteProjectFromCloudImpl).toHaveBeenCalledWith('cloud-1', null);
+      expect(deleteProjectFromCloudImpl).toHaveBeenCalledWith('cloud-1', 'mock-jwt');
       expect(deps.updateCloudMetadata).toHaveBeenCalledWith('local-1', {
         cloudId: null,
         visibility: 'private',
         cloudSavedAt: null,
-        ownerToken: null,
       });
     });
 
@@ -256,7 +251,7 @@ describe('useProjectCloudOps', () => {
         await result.current.setProjectVisibility('local-1', 'unlisted');
       });
 
-      expect(patchVisibilityImpl).toHaveBeenCalledWith('cloud-1', 'unlisted', null);
+      expect(patchVisibilityImpl).toHaveBeenCalledWith('cloud-1', 'unlisted', 'mock-jwt');
       expect(deps.updateCloudMetadata).toHaveBeenCalledWith('local-1', { visibility: 'unlisted' });
     });
 
@@ -300,7 +295,6 @@ describe('useProjectCloudOps', () => {
         cloudId: null,
         visibility: 'private',
         cloudSavedAt: null,
-        ownerToken: null,
       });
     });
 

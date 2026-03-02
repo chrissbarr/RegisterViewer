@@ -16,14 +16,6 @@ function handleAuthVerifyCode(PDO $db, array $config, array $body): ApiResponse
         return new ApiResponse(['error' => 'code must be a 6-digit string'], 400);
     }
 
-    // Optional: raw owner token for auto-linking projects (SEC-12: verify possession
-    // by requiring the raw token, not just the hash — server computes hash)
-    $rawOwnerToken = $body['ownerToken'] ?? null;
-    $ownerTokenHash = null;
-    if (is_string($rawOwnerToken) && preg_match('/^[0-9a-f]{64}$/', $rawOwnerToken)) {
-        $ownerTokenHash = hash('sha256', $rawOwnerToken);
-    }
-
     // Global rate limit: max 100 verify attempts per minute across all users (PERF-15)
     $globalAttempts = dbCountAllRecentVerifyAttempts($db, 60);
     if ($globalAttempts >= 100) {
@@ -64,11 +56,6 @@ function handleAuthVerifyCode(PDO $db, array $config, array $body): ApiResponse
         // Find or create user
         $user = dbFindOrCreateUser($db, $email);
         $userId = (int) $user['id'];
-
-        // Auto-link anonymous projects to this user account
-        if ($ownerTokenHash !== null) {
-            dbLinkProjectsByOwnerToken($db, $ownerTokenHash, $userId);
-        }
 
         $db->commit();
     } catch (\Throwable $e) {

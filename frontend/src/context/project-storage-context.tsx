@@ -23,7 +23,6 @@ interface CloudMetadataUpdates {
   cloudId?: string | null;
   cloudSavedAt?: string | null;
   visibility?: 'private' | 'unlisted';
-  ownerToken?: string | null;
 }
 
 interface ProjectStorageActions {

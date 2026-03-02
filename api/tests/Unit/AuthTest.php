@@ -8,26 +8,10 @@ use PHPUnit\Framework\Attributes\Test;
 
 final class AuthTest extends TestCase
 {
-    private const VALID_HASH = '4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e';
-
     protected function tearDown(): void
     {
         unset($_SERVER['HTTP_AUTHORIZATION']);
         unset($_SERVER['REDIRECT_HTTP_AUTHORIZATION']);
-    }
-
-    #[Test]
-    public function isOwnerMatchingHash(): void
-    {
-        $project = ['owner_token_hash' => self::VALID_HASH];
-        $this->assertTrue(isOwner(self::VALID_HASH, $project));
-    }
-
-    #[Test]
-    public function isOwnerNonMatchingHash(): void
-    {
-        $project = ['owner_token_hash' => self::VALID_HASH];
-        $this->assertFalse(isOwner(str_repeat('00', 32), $project));
     }
 
     // ---- extractAuth tests ----
@@ -35,12 +19,12 @@ final class AuthTest extends TestCase
     private const JWT_CONFIG = ['jwt_secret' => 'test-secret-for-auth-tests-32char'];
 
     #[Test]
-    public function extractAuthReturnsTokenKindForHexHash(): void
+    public function extractAuthReturnsNoneForHexHash(): void
     {
-        $_SERVER['HTTP_AUTHORIZATION'] = 'Bearer ' . self::VALID_HASH;
+        $hash = '4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e';
+        $_SERVER['HTTP_AUTHORIZATION'] = 'Bearer ' . $hash;
         $auth = extractAuth(self::JWT_CONFIG);
-        $this->assertSame('token', $auth['kind']);
-        $this->assertSame(self::VALID_HASH, $auth['tokenHash']);
+        $this->assertSame('none', $auth['kind']);
     }
 
     #[Test]
@@ -86,18 +70,10 @@ final class AuthTest extends TestCase
     // ---- isOwnerOrUser tests ----
 
     #[Test]
-    public function isOwnerOrUserWithTokenMatch(): void
-    {
-        $auth = ['kind' => 'token', 'tokenHash' => self::VALID_HASH];
-        $project = ['owner_token_hash' => self::VALID_HASH, 'user_id' => null];
-        $this->assertTrue(isOwnerOrUser($auth, $project));
-    }
-
-    #[Test]
     public function isOwnerOrUserWithUserIdMatch(): void
     {
         $auth = ['kind' => 'jwt', 'userId' => 42, 'email' => 'user@example.com'];
-        $project = ['owner_token_hash' => self::VALID_HASH, 'user_id' => 42];
+        $project = ['user_id' => 42];
         $this->assertTrue(isOwnerOrUser($auth, $project));
     }
 
@@ -105,7 +81,7 @@ final class AuthTest extends TestCase
     public function isOwnerOrUserWithNoMatch(): void
     {
         $auth = ['kind' => 'jwt', 'userId' => 99, 'email' => 'other@example.com'];
-        $project = ['owner_token_hash' => self::VALID_HASH, 'user_id' => 42];
+        $project = ['user_id' => 42];
         $this->assertFalse(isOwnerOrUser($auth, $project));
     }
 
@@ -113,7 +89,7 @@ final class AuthTest extends TestCase
     public function isOwnerOrUserWithNoneKind(): void
     {
         $auth = ['kind' => 'none'];
-        $project = ['owner_token_hash' => self::VALID_HASH, 'user_id' => null];
+        $project = ['user_id' => null];
         $this->assertFalse(isOwnerOrUser($auth, $project));
     }
 
@@ -121,7 +97,7 @@ final class AuthTest extends TestCase
     public function isOwnerOrUserJwtDoesNotMatchNullUserId(): void
     {
         $auth = ['kind' => 'jwt', 'userId' => 42, 'email' => 'user@example.com'];
-        $project = ['owner_token_hash' => self::VALID_HASH, 'user_id' => null];
+        $project = ['user_id' => null];
         $this->assertFalse(isOwnerOrUser($auth, $project));
     }
 }

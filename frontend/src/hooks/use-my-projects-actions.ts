@@ -36,7 +36,6 @@ export function useMyProjectsActions(
   const [downloadingLocalId, setDownloadingLocalId] = useState<string | null>(null);
   const [deleteCloudConfirm, setDeleteCloudConfirm] = useState<CloudDeleteConfirm | null>(null);
   const [cloudError, setCloudError] = useState<string | null>(null);
-  const [saveToCloudLocalId, setSaveToCloudLocalId] = useState<string | null>(null);
   const [settingsLocalId, setSettingsLocalId] = useState<string | null>(null);
   const [shareLocalId, setShareLocalId] = useState<string | null>(null);
 
@@ -77,7 +76,7 @@ export function useMyProjectsActions(
       setDownloadingLocalId(localId);
       try {
         const jwt = getJwt();
-        const result = await fetchAndParseCloudProject(project.cloudId, jwt ? { tokenHash: '', jwt } : undefined);
+        const result = await fetchAndParseCloudProject(project.cloudId, jwt ?? undefined);
         const serializedValues: Record<string, string> = {};
         for (const [id, value] of Object.entries(result.values)) {
           serializedValues[id] = '0x' + value.toString(16);
@@ -129,16 +128,9 @@ export function useMyProjectsActions(
     }
   }, [setProjectVisibility, announce]);
 
-  const handleSaveToCloud = useCallback((localId: string) => {
-    setSaveToCloudLocalId(localId);
-  }, []);
-
   const [savingCloudLocalId, setSavingCloudLocalId] = useState<string | null>(null);
 
-  const handleConfirmSaveToCloud = useCallback(async () => {
-    const localId = saveToCloudLocalId;
-    setSaveToCloudLocalId(null);
-    if (!localId) return;
+  const handleSaveToCloud = useCallback(async (localId: string) => {
     setSavingCloudLocalId(localId);
     try {
       await saveProjectToCloud(localId);
@@ -148,7 +140,7 @@ export function useMyProjectsActions(
     } finally {
       setSavingCloudLocalId(null);
     }
-  }, [saveToCloudLocalId, saveProjectToCloud, announce]);
+  }, [saveProjectToCloud, announce]);
 
   const handleRemoveFromCloud = useCallback((localId: string) => {
     const project = projects.find(p => p.localId === localId);
@@ -232,7 +224,6 @@ export function useMyProjectsActions(
   const dismissShare = useCallback(() => setShareLocalId(null), []);
 
   const dismissCloudError = useCallback(() => setCloudError(null), []);
-  const dismissSaveToCloud = useCallback(() => setSaveToCloudLocalId(null), []);
   const dismissDeleteCloudConfirm = useCallback(() => setDeleteCloudConfirm(null), []);
 
   return {
@@ -259,16 +250,13 @@ export function useMyProjectsActions(
     dismissShare,
 
     // Cloud confirmation state + actions
-    handleConfirmSaveToCloud,
     handleConfirmCloudDelete,
-    isSaveToCloudOpen: saveToCloudLocalId !== null,
     isDeleteCloudConfirmOpen: deleteCloudConfirm !== null,
     cloudError,
     savingCloudLocalId,
     downloadingLocalId,
     staleCloudIds,
     dismissCloudError,
-    dismissSaveToCloud,
     dismissDeleteCloudConfirm,
   } as const;
 }

@@ -2,7 +2,6 @@ import { useCallback, useMemo, type Dispatch, type MutableRefObject, type SetSta
 import { exportToObject, serializeState } from '../utils/storage';
 import { isCloudEnabled, ApiError } from '../utils/api-client';
 import { fetchAndParseCloudProject } from '../utils/cloud-project-loader';
-import { checkOwnership } from '../utils/owner-token';
 import { friendlyErrorMessage } from '../utils/friendly-error';
 import { buildProjectUrl } from '../utils/project-storage';
 import { setCloudUrl, clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock } from '../utils/cloud-url';
@@ -31,7 +30,6 @@ interface ActiveProjectCloudOpsDeps {
     cloudId: string | null;
     cloudSavedAt: string | null;
     visibility: Visibility;
-    ownerToken: string | null;
   }>) => void;
   createNewProject: (name: string, state: ReturnType<typeof serializeState>) => string;
   getJwt: () => string | null;
@@ -62,7 +60,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
     getJwt, dispatch, initialInternalState,
   } = deps;
 
-  const applyCreatedResult = useCallback((result: { cloudId: string; timestamp: string; ownerToken: string }) => {
+  const applyCreatedResult = useCallback((result: { cloudId: string; timestamp: string }) => {
     let currentLocalId = activeLocalIdRef.current;
 
     // When forking a shared project, no local project exists yet — create one
@@ -75,7 +73,6 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
     updateCloudMetadata(currentLocalId, {
       cloudId: result.cloudId,
       cloudSavedAt: result.timestamp,
-      ownerToken: result.ownerToken,
     });
 
     const shareUrl = buildProjectUrl(result.cloudId);
@@ -102,6 +99,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
         setInternal((prev) => ({ ...prev, status: 'saving', error: null }));
         const jsonPayload = exportToObject(appStateRef.current);
         const jwt = getJwt();
+        if (!jwt) throw new Error('Authentication required. Please sign in.');
         const result = await saveProjectToCloudImpl(jsonPayload, existingCloudId, jwt);
 
         if (result.kind === 'not-found') {
@@ -150,6 +148,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
       try {
         const jsonPayload = exportToObject(appStateRef.current);
         const jwt = getJwt();
+        if (!jwt) throw new Error('Authentication required. Please sign in.');
         const result = await saveProjectToCloudImpl(jsonPayload, null, jwt);
         if (result.kind !== 'created') throw new Error('Failed to save copy.');
         applyCreatedResult(result);
@@ -166,6 +165,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
       setInternal((prev) => ({ ...prev, status: 'deleting', error: null }));
       try {
         const jwt = getJwt();
+        if (!jwt) throw new Error('Authentication required. Please sign in.');
         await deleteProjectFromCloudImpl(cloudId, jwt);
 
         const currentLocalId = activeLocalIdRef.current;
@@ -188,6 +188,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
     if (cloudId && isOwner) {
       try {
         const jwt = getJwt();
+        if (!jwt) throw new Error('Authentication required. Please sign in.');
         await patchVisibilityImpl(cloudId, v, jwt);
 
         const currentLocalId = activeLocalIdRef.current;
@@ -210,7 +211,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
       setInternal((prev) => ({ ...prev, status: 'loading', error: null, cloudId }));
       try {
         const jwt = getJwt();
-        const importResult = await fetchAndParseCloudProject(cloudId, jwt ? { tokenHash: '', jwt } : undefined);
+        const importResult = await fetchAndParseCloudProject(cloudId, jwt ?? undefined);
 
         dispatch({
           type: 'IMPORT_STATE',
@@ -220,9 +221,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
           addressUnitBits: importResult.addressUnitBits,
         });
 
-        // Use server-reported isOwner (accounts for JWT auth cross-device),
-        // fall back to local ownerToken check when no auth was sent.
-        const isOwner = importResult.isOwner || checkOwnership(cloudId);
+        const isOwner = importResult.isOwner;
         const shareUrl = buildProjectUrl(cloudId);
 
         // Signal the version-tracking useEffect to capture lastSavedVersion

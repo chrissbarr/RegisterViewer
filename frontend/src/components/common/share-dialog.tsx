@@ -1,7 +1,6 @@
 import { useMemo, useState, useCallback, useDeferredValue, useEffect } from 'react';
 import { Dialog } from './dialog';
 import { CopyButton } from './copy-button';
-import { FirstTimeCloudPrompt } from './first-time-cloud-prompt';
 import { useAppState } from '../../context/app-context';
 import { buildSnapshotUrl } from '../../utils/snapshot-url';
 import { isCloudEnabled } from '../../utils/api-client';
@@ -24,7 +23,6 @@ export function ShareDialog({ open, onClose, projectLocalId }: ShareDialogProps)
   const cloud = useCloudSync();
   const cloudActions = useCloudSyncActions();
   const { projects } = useProjectStorage();
-  const [showFirstTimePrompt, setShowFirstTimePrompt] = useState(false);
   const [isSavingByLocalId, setIsSavingByLocalId] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   // Bumped after save/visibility mutations to force cloudInfo memo to re-read manifest
@@ -34,7 +32,6 @@ export function ShareDialog({ open, onClose, projectLocalId }: ShareDialogProps)
   useEffect(() => {
     if (open) {
       setSaveError(null);
-      setShowFirstTimePrompt(false);
     }
   }, [open]);
 
@@ -102,15 +99,6 @@ export function ShareDialog({ open, onClose, projectLocalId }: ShareDialogProps)
   }, [projectLocalId, cloudActions]);
 
   const handleSaveToCloud = useCallback(() => {
-    if (!hasCloudProject) {
-      setShowFirstTimePrompt(true);
-      return;
-    }
-    doSave();
-  }, [hasCloudProject, doSave]);
-
-  const handleConfirmFirstSave = useCallback(() => {
-    setShowFirstTimePrompt(false);
     doSave();
   }, [doSave]);
 
@@ -127,65 +115,56 @@ export function ShareDialog({ open, onClose, projectLocalId }: ShareDialogProps)
   }, [projectLocalId, cloudActions]);
 
   return (
-    <>
-      <Dialog open={open} onClose={onClose} title="Share">
-        <div className="space-y-5">
-          {/* Snapshot URL section */}
-          <div>
-            <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-              Snapshot URL
-            </h3>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
-              Contains the full project data encoded in the URL. No server needed.
-            </p>
-            {snapshotUrl ? (
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    readOnly
-                    value={snapshotUrl}
-                    className="flex-1 min-w-0 px-3 py-1.5 text-xs rounded-md border
-                      border-gray-300 dark:border-gray-600
-                      bg-gray-50 dark:bg-gray-900
-                      text-gray-700 dark:text-gray-300
-                      truncate"
-                    onClick={(e) => (e.target as HTMLInputElement).select()}
-                  />
-                  <CopyButton value={snapshotUrl} label="Copy snapshot URL" />
-                </div>
-                <p className={`text-xs ${isUrlLong ? 'text-amber-600 dark:text-amber-400' : 'text-gray-500 dark:text-gray-400'}`}>
-                  {charCount.toLocaleString()} characters
-                  {isUrlLong && ' — URL is long and may not work in all browsers or messaging apps.'}
-                </p>
+    <Dialog open={open} onClose={onClose} title="Share">
+      <div className="space-y-5">
+        {/* Snapshot URL section */}
+        <div>
+          <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+            Snapshot URL
+          </h3>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+            Contains the full project data encoded in the URL. No server needed.
+          </p>
+          {snapshotUrl ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  readOnly
+                  value={snapshotUrl}
+                  className="flex-1 min-w-0 px-3 py-1.5 text-xs rounded-md border
+                    border-gray-300 dark:border-gray-600
+                    bg-gray-50 dark:bg-gray-900
+                    text-gray-700 dark:text-gray-300
+                    truncate"
+                  onClick={(e) => (e.target as HTMLInputElement).select()}
+                />
+                <CopyButton value={snapshotUrl} label="Copy snapshot URL" />
               </div>
-            ) : (
-              <p className="text-xs text-red-500">Failed to generate snapshot URL.</p>
-            )}
-          </div>
-
-          {/* Cloud link section */}
-          {isCloudEnabled() && (
-            <CloudLinkSection
-              hasCloudProject={hasCloudProject}
-              cloudUrl={cloudInfo.shareUrl}
-              visibility={cloudInfo.visibility}
-              isSaving={cloudInfo.isSaving}
-              error={saveError}
-              onSaveToCloud={handleSaveToCloud}
-              onMakeUnlisted={handleMakeUnlisted}
-            />
+              <p className={`text-xs ${isUrlLong ? 'text-amber-600 dark:text-amber-400' : 'text-gray-500 dark:text-gray-400'}`}>
+                {charCount.toLocaleString()} characters
+                {isUrlLong && ' — URL is long and may not work in all browsers or messaging apps.'}
+              </p>
+            </div>
+          ) : (
+            <p className="text-xs text-red-500">Failed to generate snapshot URL.</p>
           )}
         </div>
-      </Dialog>
 
-      {/* First-time cloud save confirmation */}
-      <FirstTimeCloudPrompt
-        open={showFirstTimePrompt}
-        onClose={() => setShowFirstTimePrompt(false)}
-        onConfirm={handleConfirmFirstSave}
-      />
-    </>
+        {/* Cloud link section */}
+        {isCloudEnabled() && (
+          <CloudLinkSection
+            hasCloudProject={hasCloudProject}
+            cloudUrl={cloudInfo.shareUrl}
+            visibility={cloudInfo.visibility}
+            isSaving={cloudInfo.isSaving}
+            error={saveError}
+            onSaveToCloud={handleSaveToCloud}
+            onMakeUnlisted={handleMakeUnlisted}
+          />
+        )}
+      </div>
+    </Dialog>
   );
 }
 

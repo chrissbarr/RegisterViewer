@@ -199,9 +199,6 @@ export function MyProjectsDialog({ open, onClose }: MyProjectsDialogProps) {
     />
 
     <MyProjectsCloudDialogs
-      isSaveToCloudOpen={actions.isSaveToCloudOpen}
-      onDismissSaveToCloud={actions.dismissSaveToCloud}
-      onConfirmSaveToCloud={actions.handleConfirmSaveToCloud}
       isDeleteCloudConfirmOpen={actions.isDeleteCloudConfirmOpen}
       onDismissDeleteCloudConfirm={actions.dismissDeleteCloudConfirm}
       onConfirmCloudDelete={actions.handleConfirmCloudDelete}

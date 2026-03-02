@@ -93,9 +93,9 @@ describe('fetchAndParseCloudProject', () => {
     mockGetProject.mockResolvedValue(apiResponse as any);
     mockImportFromObject.mockRestore();
 
-    await fetchAndParseCloudProject('ABC123DEF456', { tokenHash: '', jwt: 'test-jwt-token' });
+    await fetchAndParseCloudProject('ABC123DEF456', 'test-jwt-token');
 
-    expect(mockGetProject).toHaveBeenCalledWith('ABC123DEF456', { tokenHash: '', jwt: 'test-jwt-token' });
+    expect(mockGetProject).toHaveBeenCalledWith('ABC123DEF456', 'test-jwt-token');
   });
 
   it('throws when importFromObject returns null', async () => {

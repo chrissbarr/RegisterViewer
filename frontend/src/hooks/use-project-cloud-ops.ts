@@ -23,7 +23,6 @@ interface ProjectCloudOpsDeps<T extends CloudSyncInternalSlice> {
     cloudId: string | null;
     cloudSavedAt: string | null;
     visibility: Visibility;
-    ownerToken: string | null;
   }>) => void;
   projects: ProjectListEntry[];
   activeLocalIdRef: MutableRefObject<string | null>;
@@ -63,6 +62,7 @@ export function useProjectCloudOps<T extends CloudSyncInternalSlice>(deps: Proje
       const existingCloudId = entry?.cloudId ?? project.cloudId;
 
       const jwt = getJwt();
+      if (!jwt) throw new Error('Authentication required. Please sign in.');
       const result = await saveProjectToCloudImpl(jsonPayload, existingCloudId, jwt);
 
       if (result.kind === 'not-found') {
@@ -73,7 +73,6 @@ export function useProjectCloudOps<T extends CloudSyncInternalSlice>(deps: Proje
         updateCloudMetadata(localId, {
           cloudId: result.cloudId,
           cloudSavedAt: result.timestamp,
-          ownerToken: result.ownerToken,
         });
 
         // If this is the active project, update cloud state + URL
@@ -97,6 +96,7 @@ export function useProjectCloudOps<T extends CloudSyncInternalSlice>(deps: Proje
   const deleteProjectFromCloud = useCallback(async (cloudId: string) => {
     await withMutationLock(mutationLockRef, async () => {
       const jwt = getJwt();
+      if (!jwt) throw new Error('Authentication required. Please sign in.');
       await deleteProjectFromCloudImpl(cloudId, jwt);
 
       const entry = projects.find(p => p.cloudId === cloudId);
@@ -117,6 +117,7 @@ export function useProjectCloudOps<T extends CloudSyncInternalSlice>(deps: Proje
     if (!entry?.cloudId) return;
 
     const jwt = getJwt();
+    if (!jwt) throw new Error('Authentication required. Please sign in.');
     await patchVisibilityImpl(entry.cloudId, v, jwt);
 
     updateCloudMetadata(localId, { visibility: v });

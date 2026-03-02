@@ -1,11 +1,7 @@
-import { FirstTimeCloudPrompt } from '../common/first-time-cloud-prompt';
 import { ConfirmationDialog } from '../common/confirmation-dialog';
 import { Toast } from '../common/toast';
 
 interface MyProjectsCloudDialogsProps {
-  isSaveToCloudOpen: boolean;
-  onDismissSaveToCloud: () => void;
-  onConfirmSaveToCloud: () => void;
   isDeleteCloudConfirmOpen: boolean;
   onDismissDeleteCloudConfirm: () => void;
   onConfirmCloudDelete: () => void;
@@ -14,9 +10,6 @@ interface MyProjectsCloudDialogsProps {
 }
 
 export function MyProjectsCloudDialogs({
-  isSaveToCloudOpen,
-  onDismissSaveToCloud,
-  onConfirmSaveToCloud,
   isDeleteCloudConfirmOpen,
   onDismissDeleteCloudConfirm,
   onConfirmCloudDelete,
@@ -25,13 +18,6 @@ export function MyProjectsCloudDialogs({
 }: MyProjectsCloudDialogsProps) {
   return (
     <>
-      {/* First-time cloud save confirmation */}
-      <FirstTimeCloudPrompt
-        open={isSaveToCloudOpen}
-        onClose={onDismissSaveToCloud}
-        onConfirm={onConfirmSaveToCloud}
-      />
-
       {/* Cloud delete confirmation dialog */}
       <ConfirmationDialog
         open={isDeleteCloudConfirmOpen}

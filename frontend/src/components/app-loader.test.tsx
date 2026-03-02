@@ -28,12 +28,6 @@ vi.mock('../utils/cloud-project-loader', () => ({
   fetchAndParseCloudProject: vi.fn(),
 }));
 
-vi.mock('../utils/owner-token', () => ({
-  checkOwnership: vi.fn(() => false),
-  getOwnerTokenForProject: vi.fn(() => null),
-  hashOwnerToken: vi.fn(async () => 'mock-token-hash'),
-}));
-
 vi.mock('../utils/project-resolution', () => ({
   resolveInitialProject: vi.fn(() => ({ type: 'create-default' })),
 }));
@@ -72,7 +66,6 @@ import { createSeedRegisters } from '../utils/seed-data';
 import { decompressSnapshot } from '../utils/snapshot-url';
 import { isCloudEnabled } from '../utils/api-client';
 import { fetchAndParseCloudProject } from '../utils/cloud-project-loader';
-import { checkOwnership, getOwnerTokenForProject, hashOwnerToken } from '../utils/owner-token';
 import { resolveInitialProject } from '../utils/project-resolution';
 import {
   runMigrationIfNeeded,
@@ -135,9 +128,6 @@ beforeEach(() => {
   (deserializeState as Mock).mockReturnValue(TEST_APP_STATE);
   (loadProject as Mock).mockReturnValue(null);
   (getMostRecentProjectId as Mock).mockReturnValue(null);
-  (checkOwnership as Mock).mockReturnValue(false);
-  (getOwnerTokenForProject as Mock).mockReturnValue(null);
-  (hashOwnerToken as Mock).mockResolvedValue('mock-token-hash');
   (decompressSnapshot as Mock).mockReturnValue('{}');
   (importFromJson as Mock).mockReturnValue(null);
   (fetchAndParseCloudProject as Mock).mockRejectedValue(new Error('Not called'));
@@ -156,7 +146,6 @@ describe('AppLoader', () => {
       (fetchAndParseCloudProject as Mock).mockImplementation(
         () => new Promise(() => {}), // never resolves
       );
-      (getOwnerTokenForProject as Mock).mockReturnValue(null);
 
       render(<AppLoader />);
 
@@ -166,7 +155,6 @@ describe('AppLoader', () => {
     it('shows a spinner SVG during loading', () => {
       (resolveInitialProject as Mock).mockReturnValue({ type: 'cloud', cloudId: 'cloud-abc' });
       (fetchAndParseCloudProject as Mock).mockImplementation(() => new Promise(() => {}));
-      (getOwnerTokenForProject as Mock).mockReturnValue(null);
 
       const { container } = render(<AppLoader />);
       const svgs = container.querySelectorAll('svg');
@@ -287,9 +275,7 @@ describe('AppLoader', () => {
     it('fetches cloud project and renders AppShell', async () => {
       const importResult = makeImportResult();
       (resolveInitialProject as Mock).mockReturnValue({ type: 'cloud', cloudId: 'cloud-abc123' });
-      (getOwnerTokenForProject as Mock).mockReturnValue(null);
       (fetchAndParseCloudProject as Mock).mockResolvedValue(importResult);
-      (checkOwnership as Mock).mockReturnValue(false);
 
       render(<AppLoader />);
 
@@ -300,12 +286,10 @@ describe('AppLoader', () => {
       expect(fetchAndParseCloudProject).toHaveBeenCalledWith('cloud-abc123', undefined);
     });
 
-    it('passes isOwner=true when ownership is confirmed', async () => {
-      const importResult = makeImportResult();
+    it('passes isOwner from server response', async () => {
+      const importResult = makeImportResult({ isOwner: true });
       (resolveInitialProject as Mock).mockReturnValue({ type: 'cloud', cloudId: 'cloud-abc123' });
-      (getOwnerTokenForProject as Mock).mockReturnValue(null);
       (fetchAndParseCloudProject as Mock).mockResolvedValue(importResult);
-      (checkOwnership as Mock).mockReturnValue(true);
 
       render(<AppLoader />);
 
@@ -316,30 +300,10 @@ describe('AppLoader', () => {
       });
     });
 
-    it('sends auth token hash when owner token exists', async () => {
-      const importResult = makeImportResult();
+    it('sends JWT when available in localStorage', async () => {
+      const importResult = makeImportResult({ isOwner: true });
       (resolveInitialProject as Mock).mockReturnValue({ type: 'cloud', cloudId: 'cloud-abc123' });
-      (getOwnerTokenForProject as Mock).mockReturnValue('owner-secret');
-      (hashOwnerToken as Mock).mockResolvedValue('hashed-token');
       (fetchAndParseCloudProject as Mock).mockResolvedValue(importResult);
-      (checkOwnership as Mock).mockReturnValue(true);
-
-      render(<AppLoader />);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('app-shell')).toBeInTheDocument();
-      });
-
-      expect(hashOwnerToken).toHaveBeenCalledWith('owner-secret');
-      expect(fetchAndParseCloudProject).toHaveBeenCalledWith('cloud-abc123', { tokenHash: 'hashed-token', jwt: undefined });
-    });
-
-    it('sends JWT when available in localStorage (cross-device path)', async () => {
-      const importResult = makeImportResult();
-      (resolveInitialProject as Mock).mockReturnValue({ type: 'cloud', cloudId: 'cloud-abc123' });
-      (getOwnerTokenForProject as Mock).mockReturnValue(null);
-      (fetchAndParseCloudProject as Mock).mockResolvedValue({ ...importResult, isOwner: true });
-      (checkOwnership as Mock).mockReturnValue(false);
 
       localStorage.setItem('register-viewer-jwt', 'test-jwt-token');
       try {
@@ -349,8 +313,7 @@ describe('AppLoader', () => {
           expect(screen.getByTestId('app-shell')).toBeInTheDocument();
         });
 
-        expect(fetchAndParseCloudProject).toHaveBeenCalledWith('cloud-abc123', { tokenHash: '', jwt: 'test-jwt-token' });
-        // isOwner should be true from server response despite local checkOwnership returning false
+        expect(fetchAndParseCloudProject).toHaveBeenCalledWith('cloud-abc123', 'test-jwt-token');
         expect(screen.getByTestId('app-shell').dataset.isOwner).toBe('true');
       } finally {
         localStorage.removeItem('register-viewer-jwt');
@@ -359,7 +322,6 @@ describe('AppLoader', () => {
 
     it('shows error state when cloud fetch fails', async () => {
       (resolveInitialProject as Mock).mockReturnValue({ type: 'cloud', cloudId: 'cloud-abc123' });
-      (getOwnerTokenForProject as Mock).mockReturnValue(null);
       (fetchAndParseCloudProject as Mock).mockRejectedValue(new Error('Project not found'));
 
       render(<AppLoader />);
@@ -373,7 +335,6 @@ describe('AppLoader', () => {
 
     it('shows generic error message for non-Error rejections', async () => {
       (resolveInitialProject as Mock).mockReturnValue({ type: 'cloud', cloudId: 'cloud-abc123' });
-      (getOwnerTokenForProject as Mock).mockReturnValue(null);
       (fetchAndParseCloudProject as Mock).mockRejectedValue('string error');
 
       render(<AppLoader />);
@@ -387,7 +348,6 @@ describe('AppLoader', () => {
 
     it('renders Continue button in error state', async () => {
       (resolveInitialProject as Mock).mockReturnValue({ type: 'cloud', cloudId: 'cloud-abc123' });
-      (getOwnerTokenForProject as Mock).mockReturnValue(null);
       (fetchAndParseCloudProject as Mock).mockRejectedValue(new Error('Fetch failed'));
 
       render(<AppLoader />);
@@ -434,14 +394,14 @@ describe('AppLoader', () => {
       (resolveInitialProject as Mock).mockReturnValue({ type: 'local', localId: 'local-abc' });
       (loadProject as Mock).mockReturnValue(stored);
       (deserializeState as Mock).mockReturnValue(TEST_APP_STATE);
-      (checkOwnership as Mock).mockReturnValue(true);
 
       render(<AppLoader />);
 
       await waitFor(() => {
         const shell = screen.getByTestId('app-shell');
         expect(shell.dataset.cloudId).toBe('cloud-xyz');
-        expect(shell.dataset.isOwner).toBe('true');
+        // isOwner defaults to false; server re-evaluation promotes it after mount
+        expect(shell.dataset.isOwner).toBe('false');
       });
     });
 
@@ -467,7 +427,6 @@ describe('AppLoader', () => {
   describe('error state UI', () => {
     it('renders error heading and message', async () => {
       (resolveInitialProject as Mock).mockReturnValue({ type: 'cloud', cloudId: 'cloud-abc123' });
-      (getOwnerTokenForProject as Mock).mockReturnValue(null);
       (fetchAndParseCloudProject as Mock).mockRejectedValue(new Error('Custom error message'));
 
       render(<AppLoader />);

@@ -1,6 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, type ReactNode } from 'react';
 import { isCloudEnabled, sendLoginCode as apiSendLoginCode, verifyLoginCode as apiVerifyLoginCode, getAuthMe, postAuthLogout } from '../utils/api-client';
-import { getOrCreateOwnerToken } from '../utils/owner-token';
 
 /** localStorage key for the JWT token. Exported for use by AppLoader (pre-context). */
 export const JWT_STORAGE_KEY = 'register-viewer-jwt';
@@ -100,8 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const verifyCode = useCallback(async (email: string, code: string) => {
-    const ownerToken = getOrCreateOwnerToken();
-    const res = await apiVerifyLoginCode(email, code, ownerToken);
+    const res = await apiVerifyLoginCode(email, code);
     storeJwt(res.token);
     setUser(res.user);
   }, []);

@@ -18,24 +18,15 @@ vi.mock('./api-client', () => ({
   deleteProject: vi.fn(),
 }));
 
-vi.mock('./owner-token', () => ({
-  getOrCreateOwnerToken: vi.fn(() => 'mock-owner-token'),
-  hashOwnerToken: vi.fn(async () => 'mock-token-hash'),
-  getOwnerTokenForProject: vi.fn(() => 'mock-project-token'),
-}));
-
 import { ApiError, createProject, updateProject, patchProjectVisibility, deleteProject } from './api-client';
-import { getOrCreateOwnerToken, hashOwnerToken, getOwnerTokenForProject } from './owner-token';
 
 beforeEach(() => {
   vi.clearAllMocks();
-  (getOrCreateOwnerToken as Mock).mockReturnValue('mock-owner-token');
-  (hashOwnerToken as Mock).mockResolvedValue('mock-token-hash');
-  (getOwnerTokenForProject as Mock).mockReturnValue('mock-project-token');
 });
 
 describe('saveProjectToCloudImpl', () => {
   const payload = { version: 1, registers: [] };
+  const jwt = 'test-jwt-token';
 
   it('creates a new project when no existingCloudId', async () => {
     (createProject as Mock).mockResolvedValue({
@@ -43,16 +34,14 @@ describe('saveProjectToCloudImpl', () => {
       createdAt: '2024-01-01T00:00:00Z',
     });
 
-    const result = await saveProjectToCloudImpl(payload, null);
+    const result = await saveProjectToCloudImpl(payload, null, jwt);
 
     expect(result).toEqual({
       kind: 'created',
       cloudId: 'cloud-new',
       timestamp: '2024-01-01T00:00:00Z',
-      ownerToken: 'mock-owner-token',
     });
-    expect(getOrCreateOwnerToken).toHaveBeenCalled();
-    expect(createProject).toHaveBeenCalledWith(payload, { tokenHash: 'mock-token-hash', jwt: undefined, ownerToken: 'mock-owner-token' });
+    expect(createProject).toHaveBeenCalledWith(payload, jwt);
   });
 
   it('updates existing project when existingCloudId provided', async () => {
@@ -61,15 +50,14 @@ describe('saveProjectToCloudImpl', () => {
       updatedAt: '2024-01-02T00:00:00Z',
     });
 
-    const result = await saveProjectToCloudImpl(payload, 'cloud-abc');
+    const result = await saveProjectToCloudImpl(payload, 'cloud-abc', jwt);
 
     expect(result).toEqual({
       kind: 'updated',
       cloudId: 'cloud-abc',
       timestamp: '2024-01-02T00:00:00Z',
     });
-    expect(getOwnerTokenForProject).toHaveBeenCalledWith('cloud-abc');
-    expect(updateProject).toHaveBeenCalledWith('cloud-abc', payload, { tokenHash: 'mock-token-hash', jwt: undefined });
+    expect(updateProject).toHaveBeenCalledWith('cloud-abc', payload, jwt);
   });
 
   it('returns not-found when update gets 404', async () => {
@@ -77,165 +65,59 @@ describe('saveProjectToCloudImpl', () => {
       new ApiError(404, { error: 'Not found' }),
     );
 
-    const result = await saveProjectToCloudImpl(payload, 'cloud-gone');
+    const result = await saveProjectToCloudImpl(payload, 'cloud-gone', jwt);
 
     expect(result).toEqual({ kind: 'not-found' });
-  });
-
-  it('throws when owner token missing for update', async () => {
-    (getOwnerTokenForProject as Mock).mockReturnValue(null);
-
-    await expect(saveProjectToCloudImpl(payload, 'cloud-abc')).rejects.toThrow(
-      'No auth credentials available for project.',
-    );
   });
 
   it('throws on network error during update', async () => {
     (updateProject as Mock).mockRejectedValue(new Error('Network error'));
 
-    await expect(saveProjectToCloudImpl(payload, 'cloud-abc')).rejects.toThrow('Network error');
+    await expect(saveProjectToCloudImpl(payload, 'cloud-abc', jwt)).rejects.toThrow('Network error');
   });
 
   it('throws on network error during create', async () => {
     (createProject as Mock).mockRejectedValue(new Error('Network error'));
 
-    await expect(saveProjectToCloudImpl(payload, null)).rejects.toThrow('Network error');
-  });
-
-  it('passes JWT to createProject when provided', async () => {
-    (createProject as Mock).mockResolvedValue({
-      id: 'cloud-jwt',
-      createdAt: '2024-01-01T00:00:00Z',
-    });
-
-    await saveProjectToCloudImpl(payload, null, 'my-jwt-token');
-
-    expect(createProject).toHaveBeenCalledWith(payload, { tokenHash: 'mock-token-hash', jwt: 'my-jwt-token', ownerToken: 'mock-owner-token' });
-  });
-
-  it('passes JWT to updateProject when provided', async () => {
-    (updateProject as Mock).mockResolvedValue({
-      id: 'cloud-abc',
-      updatedAt: '2024-01-02T00:00:00Z',
-    });
-
-    await saveProjectToCloudImpl(payload, 'cloud-abc', 'my-jwt-token');
-
-    expect(updateProject).toHaveBeenCalledWith('cloud-abc', payload, { tokenHash: 'mock-token-hash', jwt: 'my-jwt-token' });
-  });
-
-  it('allows JWT-only auth when owner token is missing for update', async () => {
-    (getOwnerTokenForProject as Mock).mockReturnValue(null);
-    (hashOwnerToken as Mock).mockResolvedValue('');
-    (updateProject as Mock).mockResolvedValue({
-      id: 'cloud-abc',
-      updatedAt: '2024-01-02T00:00:00Z',
-    });
-
-    const result = await saveProjectToCloudImpl(payload, 'cloud-abc', 'my-jwt');
-
-    expect(result).toEqual({
-      kind: 'updated',
-      cloudId: 'cloud-abc',
-      timestamp: '2024-01-02T00:00:00Z',
-    });
-    expect(updateProject).toHaveBeenCalledWith('cloud-abc', payload, { tokenHash: '', jwt: 'my-jwt' });
+    await expect(saveProjectToCloudImpl(payload, null, jwt)).rejects.toThrow('Network error');
   });
 });
 
 describe('deleteProjectFromCloudImpl', () => {
+  const jwt = 'test-jwt-token';
+
   it('deletes a cloud project', async () => {
     (deleteProject as Mock).mockResolvedValue(undefined);
 
-    await deleteProjectFromCloudImpl('cloud-del');
+    await deleteProjectFromCloudImpl('cloud-del', jwt);
 
-    expect(getOwnerTokenForProject).toHaveBeenCalledWith('cloud-del');
-    expect(deleteProject).toHaveBeenCalledWith('cloud-del', { tokenHash: 'mock-token-hash', jwt: undefined });
-  });
-
-  it('throws when owner token missing', async () => {
-    (getOwnerTokenForProject as Mock).mockReturnValue(null);
-
-    await expect(deleteProjectFromCloudImpl('cloud-del')).rejects.toThrow(
-      'No auth credentials available for project.',
-    );
-    expect(deleteProject).not.toHaveBeenCalled();
+    expect(deleteProject).toHaveBeenCalledWith('cloud-del', jwt);
   });
 
   it('propagates API errors', async () => {
     (deleteProject as Mock).mockRejectedValue(new Error('Server error'));
 
-    await expect(deleteProjectFromCloudImpl('cloud-del')).rejects.toThrow('Server error');
-  });
-
-  it('passes JWT to deleteProject when provided', async () => {
-    (deleteProject as Mock).mockResolvedValue(undefined);
-
-    await deleteProjectFromCloudImpl('cloud-del', 'my-jwt');
-
-    expect(deleteProject).toHaveBeenCalledWith('cloud-del', { tokenHash: 'mock-token-hash', jwt: 'my-jwt' });
-  });
-
-  it('allows JWT-only auth when owner token is missing', async () => {
-    (getOwnerTokenForProject as Mock).mockReturnValue(null);
-    (hashOwnerToken as Mock).mockResolvedValue('');
-    (deleteProject as Mock).mockResolvedValue(undefined);
-
-    await deleteProjectFromCloudImpl('cloud-del', 'my-jwt');
-
-    expect(deleteProject).toHaveBeenCalledWith('cloud-del', { tokenHash: '', jwt: 'my-jwt' });
+    await expect(deleteProjectFromCloudImpl('cloud-del', jwt)).rejects.toThrow('Server error');
   });
 });
 
 describe('patchVisibilityImpl', () => {
+  const jwt = 'test-jwt-token';
+
   it('patches visibility via PATCH endpoint', async () => {
     (patchProjectVisibility as Mock).mockResolvedValue({
       id: 'cloud-vis',
       updatedAt: '2024-01-03T00:00:00Z',
     });
 
-    await patchVisibilityImpl('cloud-vis', 'unlisted');
+    await patchVisibilityImpl('cloud-vis', 'unlisted', jwt);
 
-    expect(getOwnerTokenForProject).toHaveBeenCalledWith('cloud-vis');
-    expect(patchProjectVisibility).toHaveBeenCalledWith('cloud-vis', 'unlisted', { tokenHash: 'mock-token-hash', jwt: undefined });
-  });
-
-  it('throws when owner token missing', async () => {
-    (getOwnerTokenForProject as Mock).mockReturnValue(null);
-
-    await expect(patchVisibilityImpl('cloud-vis', 'unlisted')).rejects.toThrow(
-      'No auth credentials available for project.',
-    );
-    expect(patchProjectVisibility).not.toHaveBeenCalled();
+    expect(patchProjectVisibility).toHaveBeenCalledWith('cloud-vis', 'unlisted', jwt);
   });
 
   it('propagates API errors', async () => {
     (patchProjectVisibility as Mock).mockRejectedValue(new Error('Server error'));
 
-    await expect(patchVisibilityImpl('cloud-vis', 'private')).rejects.toThrow('Server error');
-  });
-
-  it('passes JWT to patchProjectVisibility when provided', async () => {
-    (patchProjectVisibility as Mock).mockResolvedValue({
-      id: 'cloud-vis',
-      updatedAt: '2024-01-03T00:00:00Z',
-    });
-
-    await patchVisibilityImpl('cloud-vis', 'unlisted', 'my-jwt');
-
-    expect(patchProjectVisibility).toHaveBeenCalledWith('cloud-vis', 'unlisted', { tokenHash: 'mock-token-hash', jwt: 'my-jwt' });
-  });
-
-  it('allows JWT-only auth when owner token is missing', async () => {
-    (getOwnerTokenForProject as Mock).mockReturnValue(null);
-    (hashOwnerToken as Mock).mockResolvedValue('');
-    (patchProjectVisibility as Mock).mockResolvedValue({
-      id: 'cloud-vis',
-      updatedAt: '2024-01-03T00:00:00Z',
-    });
-
-    await patchVisibilityImpl('cloud-vis', 'unlisted', 'my-jwt');
-
-    expect(patchProjectVisibility).toHaveBeenCalledWith('cloud-vis', 'unlisted', { tokenHash: '', jwt: 'my-jwt' });
+    await expect(patchVisibilityImpl('cloud-vis', 'private', jwt)).rejects.toThrow('Server error');
   });
 });

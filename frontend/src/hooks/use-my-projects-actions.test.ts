@@ -240,64 +240,29 @@ describe('useMyProjectsActions', () => {
   });
 
   describe('save to cloud flow', () => {
-    it('handleSaveToCloud opens confirmation', async () => {
-      const onClose = vi.fn();
-      const { result } = await renderWithOpen(onClose);
-
-      act(() => {
-        result.current.handleSaveToCloud('local-1');
-      });
-
-      expect(result.current.isSaveToCloudOpen).toBe(true);
-    });
-
-    it('handleConfirmSaveToCloud saves and announces', async () => {
+    it('handleSaveToCloud saves directly and announces', async () => {
       const onClose = vi.fn();
       mockCloudActions.saveProjectToCloud.mockResolvedValue(undefined);
       const { result } = await renderWithOpen(onClose);
 
-      act(() => {
-        result.current.handleSaveToCloud('local-1');
-      });
-
       await act(async () => {
-        await result.current.handleConfirmSaveToCloud();
+        await result.current.handleSaveToCloud('local-1');
       });
 
       expect(mockCloudActions.saveProjectToCloud).toHaveBeenCalledWith('local-1');
       expect(mockAnnounce).toHaveBeenCalledWith('Saved to cloud');
-      expect(result.current.isSaveToCloudOpen).toBe(false);
     });
 
-    it('handleConfirmSaveToCloud sets cloudError on failure', async () => {
+    it('handleSaveToCloud sets cloudError on failure', async () => {
       const onClose = vi.fn();
       mockCloudActions.saveProjectToCloud.mockRejectedValue(new Error('Save failed'));
       const { result } = await renderWithOpen(onClose);
 
-      act(() => {
-        result.current.handleSaveToCloud('local-1');
-      });
-
       await act(async () => {
-        await result.current.handleConfirmSaveToCloud();
+        await result.current.handleSaveToCloud('local-1');
       });
 
       expect(result.current.cloudError).toBe('Save failed');
-    });
-
-    it('dismissSaveToCloud clears confirmation', async () => {
-      const onClose = vi.fn();
-      const { result } = await renderWithOpen(onClose);
-
-      act(() => {
-        result.current.handleSaveToCloud('local-1');
-      });
-      expect(result.current.isSaveToCloudOpen).toBe(true);
-
-      act(() => {
-        result.current.dismissSaveToCloud();
-      });
-      expect(result.current.isSaveToCloudOpen).toBe(false);
     });
   });
 

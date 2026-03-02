@@ -9,8 +9,6 @@ final class ProjectApiTest extends TestCase
 {
     private static ?PDO $db = null;
 
-    private const OWNER_HASH = '4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e';
-    private const OTHER_HASH = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
     private const JWT_CONFIG = ['jwt_secret' => 'test-jwt-secret-not-for-production'];
 
     private static function validDataJson(): string
@@ -55,18 +53,25 @@ final class ProjectApiTest extends TestCase
         }
     }
 
+    /** Helper: create a test user and return the user ID. */
+    private function createTestUser(string $email = 'test@example.com'): int
+    {
+        return dbCreateUser(self::$db, $email);
+    }
+
     #[Test]
     public function createAndGetProject(): void
     {
+        $userId = $this->createTestUser();
         $id = generatePublicId();
-        dbCreateProject(self::$db, $id, self::OWNER_HASH, 'private', self::validDataJson(), null);
+        dbCreateProject(self::$db, $id, 'private', self::validDataJson(), null, $userId);
 
         $project = dbGetProject(self::$db, $id);
         $this->assertNotNull($project);
         $this->assertSame($id, $project['public_id']);
-        $this->assertSame(self::OWNER_HASH, $project['owner_token_hash']);
         $this->assertSame('private', $project['visibility']);
         $this->assertNotEmpty($project['data']);
+        $this->assertSame($userId, (int) $project['user_id']);
     }
 
     #[Test]
@@ -79,14 +84,15 @@ final class ProjectApiTest extends TestCase
     #[Test]
     public function getProjectForAuthReturnsLimitedColumns(): void
     {
+        $userId = $this->createTestUser();
         $id = generatePublicId();
-        dbCreateProject(self::$db, $id, self::OWNER_HASH, 'unlisted', self::validDataJson(), null);
+        dbCreateProject(self::$db, $id, 'unlisted', self::validDataJson(), null, $userId);
 
         $project = dbGetProjectForAuth(self::$db, $id);
         $this->assertNotNull($project);
         $this->assertSame($id, $project['public_id']);
-        $this->assertSame(self::OWNER_HASH, $project['owner_token_hash']);
         $this->assertSame('unlisted', $project['visibility']);
+        $this->assertSame($userId, (int) $project['user_id']);
         // Should NOT include data column
         $this->assertArrayNotHasKey('data', $project);
     }
@@ -94,8 +100,9 @@ final class ProjectApiTest extends TestCase
     #[Test]
     public function updateProjectChangesData(): void
     {
+        $userId = $this->createTestUser();
         $id = generatePublicId();
-        dbCreateProject(self::$db, $id, self::OWNER_HASH, 'private', self::validDataJson(), null);
+        dbCreateProject(self::$db, $id, 'private', self::validDataJson(), null, $userId);
 
         $newData = json_encode([
             'version' => 1,
@@ -115,8 +122,9 @@ final class ProjectApiTest extends TestCase
     #[Test]
     public function patchVisibility(): void
     {
+        $userId = $this->createTestUser();
         $id = generatePublicId();
-        dbCreateProject(self::$db, $id, self::OWNER_HASH, 'private', self::validDataJson(), null);
+        dbCreateProject(self::$db, $id, 'private', self::validDataJson(), null, $userId);
 
         dbPatchVisibility(self::$db, $id, 'unlisted');
 
@@ -127,8 +135,9 @@ final class ProjectApiTest extends TestCase
     #[Test]
     public function deleteProject(): void
     {
+        $userId = $this->createTestUser();
         $id = generatePublicId();
-        dbCreateProject(self::$db, $id, self::OWNER_HASH, 'private', self::validDataJson(), null);
+        dbCreateProject(self::$db, $id, 'private', self::validDataJson(), null, $userId);
 
         dbDeleteProject(self::$db, $id);
 
@@ -137,41 +146,11 @@ final class ProjectApiTest extends TestCase
     }
 
     #[Test]
-    public function listProjectsByOwner(): void
-    {
-        $id1 = generatePublicId();
-        $id2 = generatePublicId();
-
-        dbCreateProject(self::$db, $id1, self::OWNER_HASH, 'private', self::validDataJson(), null);
-        dbCreateProject(self::$db, $id2, self::OWNER_HASH, 'unlisted', self::validDataJson(), null);
-        // Different owner — should not appear
-        dbCreateProject(self::$db, generatePublicId(), self::OTHER_HASH, 'private', self::validDataJson(), null);
-
-        $projects = dbListProjectsByOwner(self::$db, self::OWNER_HASH);
-        $this->assertCount(2, $projects);
-
-        $ids = array_column($projects, 'public_id');
-        $this->assertContains($id1, $ids);
-        $this->assertContains($id2, $ids);
-    }
-
-    #[Test]
-    public function listProjectsReturnsIsoTimestamps(): void
-    {
-        $id = generatePublicId();
-        dbCreateProject(self::$db, $id, self::OWNER_HASH, 'private', self::validDataJson(), null);
-
-        $projects = dbListProjectsByOwner(self::$db, self::OWNER_HASH);
-        $this->assertCount(1, $projects);
-        $this->assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/', $projects[0]['created_at_iso']);
-        $this->assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/', $projects[0]['updated_at_iso']);
-    }
-
-    #[Test]
     public function getProjectTimestamps(): void
     {
+        $userId = $this->createTestUser();
         $id = generatePublicId();
-        dbCreateProject(self::$db, $id, self::OWNER_HASH, 'private', self::validDataJson(), null);
+        dbCreateProject(self::$db, $id, 'private', self::validDataJson(), null, $userId);
 
         $timestamps = dbGetProjectTimestamps(self::$db, $id);
         $this->assertNotNull($timestamps);
@@ -182,30 +161,21 @@ final class ProjectApiTest extends TestCase
     #[Test]
     public function duplicatePublicIdThrowsException(): void
     {
+        $userId = $this->createTestUser();
         $id = generatePublicId();
-        dbCreateProject(self::$db, $id, self::OWNER_HASH, 'private', self::validDataJson(), null);
+        dbCreateProject(self::$db, $id, 'private', self::validDataJson(), null, $userId);
 
         $this->expectException(\PDOException::class);
-        dbCreateProject(self::$db, $id, self::OTHER_HASH, 'private', self::validDataJson(), null);
-    }
-
-    #[Test]
-    public function isOwnerIntegration(): void
-    {
-        $id = generatePublicId();
-        dbCreateProject(self::$db, $id, self::OWNER_HASH, 'private', self::validDataJson(), null);
-
-        $project = dbGetProjectForAuth(self::$db, $id);
-        $this->assertTrue(isOwner(self::OWNER_HASH, $project));
-        $this->assertFalse(isOwner(self::OTHER_HASH, $project));
+        dbCreateProject(self::$db, $id, 'private', self::validDataJson(), null, $userId);
     }
 
     #[Test]
     public function storedDataPreservesEmptyObject(): void
     {
+        $userId = $this->createTestUser();
         $id = generatePublicId();
         $dataJson = '{"version":1,"registers":[{"name":"R","width":8,"fields":[]}],"registerValues":{}}';
-        dbCreateProject(self::$db, $id, self::OWNER_HASH, 'private', $dataJson, null);
+        dbCreateProject(self::$db, $id, 'private', $dataJson, null, $userId);
 
         $project = dbGetProject(self::$db, $id);
         $this->assertStringContainsString('"registerValues":{}', $project['data']);
@@ -214,18 +184,15 @@ final class ProjectApiTest extends TestCase
     #[Test]
     public function countProjectsByUserIdReturnsCorrectCount(): void
     {
-        $userId = dbCreateUser(self::$db, 'counter@example.com');
+        $userId = $this->createTestUser('counter@example.com');
 
-        // Create 3 projects under this user with different token hashes
         for ($i = 0; $i < 3; $i++) {
-            $hash = str_repeat(dechex($i), 64);
-            $hash = substr($hash, 0, 64);
-            dbCreateProject(self::$db, generatePublicId(), $hash, 'private', self::validDataJson(), null, $userId);
+            dbCreateProject(self::$db, generatePublicId(), 'private', self::validDataJson(), null, $userId);
         }
 
         // Create 1 project under a different user
-        $otherUserId = dbCreateUser(self::$db, 'other@example.com');
-        dbCreateProject(self::$db, generatePublicId(), self::OTHER_HASH, 'private', self::validDataJson(), null, $otherUserId);
+        $otherUserId = $this->createTestUser('other@example.com');
+        dbCreateProject(self::$db, generatePublicId(), 'private', self::validDataJson(), null, $otherUserId);
 
         $this->assertSame(3, dbCountProjectsByUserId(self::$db, $userId));
         $this->assertSame(1, dbCountProjectsByUserId(self::$db, $otherUserId));
@@ -240,25 +207,14 @@ final class ProjectApiTest extends TestCase
     #[Test]
     public function createProjectEnforcesPerUserLimit(): void
     {
-        $userId = dbCreateUser(self::$db, 'limittest@example.com');
-
-        // Seed projects under this user across two different token hashes
-        // to simulate multi-device usage. Use the actual LIMITS constant.
-        $hash1 = str_repeat('a', 64);
-        $hash2 = str_repeat('b', 64);
+        $userId = $this->createTestUser('limittest@example.com');
 
         for ($i = 0; $i < LIMITS['MAX_PROJECTS_PER_OWNER']; $i++) {
-            $hash = $i % 2 === 0 ? $hash1 : $hash2;
-            dbCreateProject(self::$db, generatePublicId(), $hash, 'private', self::validDataJson(), null, $userId);
+            dbCreateProject(self::$db, generatePublicId(), 'private', self::validDataJson(), null, $userId);
         }
 
-        // Neither token hash alone has hit the limit (each has 50),
-        // but the user has 100 total. A new create with a fresh token hash
-        // should be rejected by the per-user check.
-        $freshRawToken = str_repeat('c', 64);
         $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => 'limittest@example.com'];
         $body = [
-            'ownerToken' => $freshRawToken,
             'data' => json_decode(self::validDataJson(), true),
         ];
         $parsed = [
@@ -273,13 +229,14 @@ final class ProjectApiTest extends TestCase
         $this->assertStringContainsString('Project limit reached', $response->body['error']);
     }
 
-    // ---- TEST-03: requireOwnership() tests ----
+    // ---- requireOwnership() tests ----
 
     #[Test]
     public function requireOwnershipReturns401ForNoAuth(): void
     {
+        $userId = $this->createTestUser();
         $id = generatePublicId();
-        dbCreateProject(self::$db, $id, self::OWNER_HASH, 'private', self::validDataJson(), null);
+        dbCreateProject(self::$db, $id, 'private', self::validDataJson(), null, $userId);
 
         $auth = ['kind' => 'none'];
         $result = requireOwnership(self::$db, $id, $auth);
@@ -292,7 +249,7 @@ final class ProjectApiTest extends TestCase
     #[Test]
     public function requireOwnershipReturns404ForNonexistentProject(): void
     {
-        $auth = ['kind' => 'token', 'tokenHash' => self::OWNER_HASH];
+        $auth = ['kind' => 'jwt', 'userId' => 1, 'email' => 'test@example.com'];
         $result = requireOwnership(self::$db, 'nonexistent12', $auth);
 
         $this->assertInstanceOf(ApiResponse::class, $result);
@@ -300,38 +257,11 @@ final class ProjectApiTest extends TestCase
     }
 
     #[Test]
-    public function requireOwnershipReturns404ForWrongTokenHash(): void
-    {
-        $id = generatePublicId();
-        dbCreateProject(self::$db, $id, self::OWNER_HASH, 'private', self::validDataJson(), null);
-
-        $auth = ['kind' => 'token', 'tokenHash' => self::OTHER_HASH];
-        $result = requireOwnership(self::$db, $id, $auth);
-
-        $this->assertInstanceOf(ApiResponse::class, $result);
-        $this->assertSame(404, $result->status);
-    }
-
-    #[Test]
-    public function requireOwnershipReturnsProjectForMatchingTokenHash(): void
-    {
-        $id = generatePublicId();
-        dbCreateProject(self::$db, $id, self::OWNER_HASH, 'private', self::validDataJson(), null);
-
-        $auth = ['kind' => 'token', 'tokenHash' => self::OWNER_HASH];
-        $result = requireOwnership(self::$db, $id, $auth);
-
-        $this->assertIsArray($result);
-        $this->assertSame($id, $result['public_id']);
-        $this->assertSame(self::OWNER_HASH, $result['owner_token_hash']);
-    }
-
-    #[Test]
     public function requireOwnershipReturnsProjectForMatchingJwtUserId(): void
     {
-        $userId = dbCreateUser(self::$db, 'owner-jwt@example.com');
+        $userId = $this->createTestUser('owner-jwt@example.com');
         $id = generatePublicId();
-        dbCreateProject(self::$db, $id, self::OWNER_HASH, 'private', self::validDataJson(), null, $userId);
+        dbCreateProject(self::$db, $id, 'private', self::validDataJson(), null, $userId);
 
         $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => 'owner-jwt@example.com'];
         $result = requireOwnership(self::$db, $id, $auth);
@@ -343,10 +273,10 @@ final class ProjectApiTest extends TestCase
     #[Test]
     public function requireOwnershipReturns404ForWrongJwtUserId(): void
     {
-        $userId = dbCreateUser(self::$db, 'real-owner@example.com');
-        $otherId = dbCreateUser(self::$db, 'not-owner@example.com');
+        $userId = $this->createTestUser('real-owner@example.com');
+        $otherId = $this->createTestUser('not-owner@example.com');
         $id = generatePublicId();
-        dbCreateProject(self::$db, $id, self::OWNER_HASH, 'private', self::validDataJson(), null, $userId);
+        dbCreateProject(self::$db, $id, 'private', self::validDataJson(), null, $userId);
 
         $auth = ['kind' => 'jwt', 'userId' => $otherId, 'email' => 'not-owner@example.com'];
         $result = requireOwnership(self::$db, $id, $auth);
@@ -355,7 +285,7 @@ final class ProjectApiTest extends TestCase
         $this->assertSame(404, $result->status);
     }
 
-    // ---- TEST-04: JWT-authenticated handler operations ----
+    // ---- JWT-authenticated handler operations ----
 
     private function makeParsedBody(array $data, ?string $visibility = null): array
     {
@@ -373,9 +303,9 @@ final class ProjectApiTest extends TestCase
     #[Test]
     public function handleUpdateProjectWithJwtAuth(): void
     {
-        $userId = dbCreateUser(self::$db, 'jwt-update@example.com');
+        $userId = $this->createTestUser('jwt-update@example.com');
         $id = generatePublicId();
-        dbCreateProject(self::$db, $id, self::OWNER_HASH, 'private', self::validDataJson(), null, $userId);
+        dbCreateProject(self::$db, $id, 'private', self::validDataJson(), null, $userId);
 
         $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => 'jwt-update@example.com'];
         $newData = ['version' => 1, 'registers' => [['name' => 'UPDATED', 'width' => 8, 'fields' => []]], 'registerValues' => new \stdClass()];
@@ -395,10 +325,10 @@ final class ProjectApiTest extends TestCase
     #[Test]
     public function handleUpdateProjectRejects404ForWrongJwtUser(): void
     {
-        $ownerId = dbCreateUser(self::$db, 'real@example.com');
-        $otherId = dbCreateUser(self::$db, 'imposter@example.com');
+        $ownerId = $this->createTestUser('real@example.com');
+        $otherId = $this->createTestUser('imposter@example.com');
         $id = generatePublicId();
-        dbCreateProject(self::$db, $id, self::OWNER_HASH, 'private', self::validDataJson(), null, $ownerId);
+        dbCreateProject(self::$db, $id, 'private', self::validDataJson(), null, $ownerId);
 
         $auth = ['kind' => 'jwt', 'userId' => $otherId, 'email' => 'imposter@example.com'];
         $parsed = $this->makeParsedBody(['version' => 1, 'registers' => [], 'registerValues' => new \stdClass()]);
@@ -411,9 +341,9 @@ final class ProjectApiTest extends TestCase
     #[Test]
     public function handleDeleteProjectWithJwtAuth(): void
     {
-        $userId = dbCreateUser(self::$db, 'jwt-delete@example.com');
+        $userId = $this->createTestUser('jwt-delete@example.com');
         $id = generatePublicId();
-        dbCreateProject(self::$db, $id, self::OWNER_HASH, 'private', self::validDataJson(), null, $userId);
+        dbCreateProject(self::$db, $id, 'private', self::validDataJson(), null, $userId);
 
         $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => 'jwt-delete@example.com'];
 
@@ -426,10 +356,10 @@ final class ProjectApiTest extends TestCase
     #[Test]
     public function handleDeleteProjectRejects404ForWrongJwtUser(): void
     {
-        $ownerId = dbCreateUser(self::$db, 'owner@example.com');
-        $otherId = dbCreateUser(self::$db, 'stranger@example.com');
+        $ownerId = $this->createTestUser('owner@example.com');
+        $otherId = $this->createTestUser('stranger@example.com');
         $id = generatePublicId();
-        dbCreateProject(self::$db, $id, self::OWNER_HASH, 'private', self::validDataJson(), null, $ownerId);
+        dbCreateProject(self::$db, $id, 'private', self::validDataJson(), null, $ownerId);
 
         $auth = ['kind' => 'jwt', 'userId' => $otherId, 'email' => 'stranger@example.com'];
 
@@ -443,9 +373,9 @@ final class ProjectApiTest extends TestCase
     #[Test]
     public function handlePatchProjectWithJwtAuth(): void
     {
-        $userId = dbCreateUser(self::$db, 'jwt-patch@example.com');
+        $userId = $this->createTestUser('jwt-patch@example.com');
         $id = generatePublicId();
-        dbCreateProject(self::$db, $id, self::OWNER_HASH, 'private', self::validDataJson(), null, $userId);
+        dbCreateProject(self::$db, $id, 'private', self::validDataJson(), null, $userId);
 
         $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => 'jwt-patch@example.com'];
 
@@ -462,10 +392,10 @@ final class ProjectApiTest extends TestCase
     #[Test]
     public function handlePatchProjectRejects404ForWrongJwtUser(): void
     {
-        $ownerId = dbCreateUser(self::$db, 'patchowner@example.com');
-        $otherId = dbCreateUser(self::$db, 'patchother@example.com');
+        $ownerId = $this->createTestUser('patchowner@example.com');
+        $otherId = $this->createTestUser('patchother@example.com');
         $id = generatePublicId();
-        dbCreateProject(self::$db, $id, self::OWNER_HASH, 'private', self::validDataJson(), null, $ownerId);
+        dbCreateProject(self::$db, $id, 'private', self::validDataJson(), null, $ownerId);
 
         $auth = ['kind' => 'jwt', 'userId' => $otherId, 'email' => 'patchother@example.com'];
 
@@ -480,14 +410,14 @@ final class ProjectApiTest extends TestCase
     #[Test]
     public function handleListProjectsWithJwtAuth(): void
     {
-        $userId = dbCreateUser(self::$db, 'jwt-list@example.com');
+        $userId = $this->createTestUser('jwt-list@example.com');
         $id1 = generatePublicId();
         $id2 = generatePublicId();
-        dbCreateProject(self::$db, $id1, self::OWNER_HASH, 'private', self::validDataJson(), null, $userId);
-        dbCreateProject(self::$db, $id2, self::OTHER_HASH, 'unlisted', self::validDataJson(), null, $userId);
+        dbCreateProject(self::$db, $id1, 'private', self::validDataJson(), null, $userId);
+        dbCreateProject(self::$db, $id2, 'unlisted', self::validDataJson(), null, $userId);
         // Another user's project — should not appear
-        $otherUserId = dbCreateUser(self::$db, 'other-list@example.com');
-        dbCreateProject(self::$db, generatePublicId(), self::OTHER_HASH, 'private', self::validDataJson(), null, $otherUserId);
+        $otherUserId = $this->createTestUser('other-list@example.com');
+        dbCreateProject(self::$db, generatePublicId(), 'private', self::validDataJson(), null, $otherUserId);
 
         $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => 'jwt-list@example.com'];
         $response = handleListProjects(self::$db, $auth);
@@ -497,5 +427,21 @@ final class ProjectApiTest extends TestCase
         $ids = array_column($response->body['projects'], 'id');
         $this->assertContains($id1, $ids);
         $this->assertContains($id2, $ids);
+    }
+
+    #[Test]
+    public function handleListProjectsReturnsIsoTimestamps(): void
+    {
+        $userId = $this->createTestUser();
+        $id = generatePublicId();
+        dbCreateProject(self::$db, $id, 'private', self::validDataJson(), null, $userId);
+
+        $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => 'test@example.com'];
+        $response = handleListProjects(self::$db, $auth);
+
+        $this->assertSame(200, $response->status);
+        $this->assertCount(1, $response->body['projects']);
+        $this->assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/', $response->body['projects'][0]['createdAt']);
+        $this->assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/', $response->body['projects'][0]['updatedAt']);
     }
 }

@@ -74,7 +74,6 @@ function makeStoredProject(overrides: Partial<StoredLocalProject> = {}): StoredL
     createdAt: '2024-01-01T00:00:00Z',
     localSavedAt: '2024-01-01T00:00:00Z',
     cloudSavedAt: null,
-    ownerToken: null,
     state: {
       registers: [],
       activeRegisterId: null,
@@ -469,26 +468,6 @@ describe('ProjectStorageProvider', () => {
       expect(toProjectListEntry).toHaveBeenCalled();
     });
 
-    it('forwards ownerToken to project record but not to manifest', () => {
-      const entry = makeManifestEntry();
-      const manifest = { version: 1, projects: [entry] };
-      (loadManifest as Mock).mockReturnValue(manifest);
-
-      const { result } = renderProjectStorage();
-
-      act(() => {
-        result.current.actions.updateCloudMetadata(TEST_LOCAL_ID, {
-          ownerToken: 'secret-token',
-        });
-      });
-
-      // ownerToken is NOT a manifest field — entry should be unchanged
-      expect(entry).not.toHaveProperty('ownerToken');
-      // But updateProjectMetadata receives it for the full project record
-      expect(updateProjectMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, {
-        ownerToken: 'secret-token',
-      });
-    });
   });
 
   describe('refreshProjectList', () => {

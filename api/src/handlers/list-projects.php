@@ -4,13 +4,11 @@ declare(strict_types=1);
 
 function handleListProjects(PDO $db, array $auth): ApiResponse
 {
-    if ($auth['kind'] === 'jwt') {
-        $rows = dbListProjectsByUserId($db, $auth['userId']);
-    } elseif ($auth['kind'] === 'token') {
-        $rows = dbListProjectsByOwner($db, $auth['tokenHash']);
-    } else {
+    if ($auth['kind'] !== 'jwt') {
         return new ApiResponse(['error' => 'Missing or invalid Authorization header'], 401);
     }
+
+    $rows = dbListProjectsByUserId($db, $auth['userId']);
 
     $projects = array_map(fn(array $row) => [
         'id'         => $row['public_id'],

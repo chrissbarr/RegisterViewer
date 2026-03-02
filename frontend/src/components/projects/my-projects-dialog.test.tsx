@@ -340,51 +340,19 @@ describe('MyProjectsDialog interactions', () => {
   });
 
   describe('cloud operations — save to cloud', () => {
-    it('clicking "Save to cloud" opens the FirstTimeCloudPrompt confirmation dialog', async () => {
+    it('clicking "Save to cloud" calls saveProjectToCloud directly', async () => {
       mockCloudEnabled = true;
       mockProjects = [makeProject({ localId: 'p1', name: 'My Project', isCloudSaved: false })];
       render(<MyProjectsDialog open={true} onClose={vi.fn()} />);
 
-      // Drain async effects (syncCloudProjects) before interacting
       await waitFor(() => expect(mockSyncCloudProjects).toHaveBeenCalled());
 
       fireEvent.click(screen.getByRole('button', { name: 'Save project My Project to cloud' }));
-
-      // FirstTimeCloudPrompt renders a ConfirmationDialog with title "Save to Cloud"
-      expect(screen.getByRole('heading', { name: 'Save to Cloud' })).toBeInTheDocument();
-    });
-
-    it('confirming the save-to-cloud dialog calls saveProjectToCloud', async () => {
-      mockCloudEnabled = true;
-      mockProjects = [makeProject({ localId: 'p1', name: 'My Project', isCloudSaved: false })];
-      render(<MyProjectsDialog open={true} onClose={vi.fn()} />);
-
-      // Drain async effects (syncCloudProjects) before interacting
-      await waitFor(() => expect(mockSyncCloudProjects).toHaveBeenCalled());
-
-      fireEvent.click(screen.getByRole('button', { name: 'Save project My Project to cloud' }));
-
-      // Confirm inside the FirstTimeCloudPrompt
-      fireEvent.click(screen.getByRole('button', { name: 'Save to Cloud' }));
 
       await waitFor(() => {
         expect(mockSaveProjectToCloud).toHaveBeenCalledWith('p1');
       });
       expect(mockAnnounce).toHaveBeenCalledWith('Saved to cloud');
-    });
-
-    it('cancelling the save-to-cloud dialog does not call saveProjectToCloud', async () => {
-      mockCloudEnabled = true;
-      mockProjects = [makeProject({ localId: 'p1', name: 'My Project', isCloudSaved: false })];
-      render(<MyProjectsDialog open={true} onClose={vi.fn()} />);
-
-      // Drain async effects (syncCloudProjects) before interacting
-      await waitFor(() => expect(mockSyncCloudProjects).toHaveBeenCalled());
-
-      fireEvent.click(screen.getByRole('button', { name: 'Save project My Project to cloud' }));
-      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-
-      expect(mockSaveProjectToCloud).not.toHaveBeenCalled();
     });
   });
 
