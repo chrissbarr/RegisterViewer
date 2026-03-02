@@ -2,7 +2,6 @@ import { useRef, useEffect } from 'react';
 
 interface DeleteConfirmationProps {
   projectName: string;
-  isCloudSaved: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -14,7 +13,6 @@ interface DeleteConfirmationProps {
  */
 export function DeleteConfirmation({
   projectName,
-  isCloudSaved,
   onConfirm,
   onCancel,
 }: DeleteConfirmationProps) {
@@ -25,9 +23,7 @@ export function DeleteConfirmation({
     cancelRef.current?.focus();
   }, []);
 
-  const description = isCloudSaved
-    ? 'Delete local copy? Cloud copy will remain.'
-    : 'Delete this project?';
+  const description = 'Delete this project?';
 
   return (
     <div

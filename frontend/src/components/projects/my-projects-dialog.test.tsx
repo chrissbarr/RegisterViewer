@@ -35,10 +35,8 @@ const mockRefreshProjectList = vi.fn();
 const mockGetActiveProject = vi.fn(() => null);
 const mockSetVisibility = vi.fn();
 const mockAnnounce = vi.fn();
-const mockSaveProjectToCloud = vi.fn().mockResolvedValue(undefined);
 const mockDeleteProjectFromCloud = vi.fn().mockResolvedValue(undefined);
-const mockUnlinkCloudProject = vi.fn();
-const mockSyncCloudProjects = vi.fn().mockResolvedValue({ updatedCount: 0, staleCloudIds: [], placeholdersCreated: 0 });
+const mockSyncCloudProjects = vi.fn().mockResolvedValue({ updatedCount: 0, staleCloudIds: [], placeholdersCreated: 0, uploadedCount: 0 });
 
 let mockProjects: ProjectListEntry[] = [];
 let mockActiveLocalId: string | null = null;
@@ -77,7 +75,7 @@ vi.mock('../../context/cloud-sync-context', () => ({
   }),
   useCloudSyncActions: () => ({
     saveToCloud: vi.fn(),
-    saveProjectToCloud: mockSaveProjectToCloud,
+    saveProjectToCloud: vi.fn().mockResolvedValue(undefined),
     deleteFromCloud: vi.fn(),
     deleteProjectFromCloud: mockDeleteProjectFromCloud,
     setVisibility: mockSetVisibility,
@@ -87,7 +85,6 @@ vi.mock('../../context/cloud-sync-context', () => ({
     dismissError: vi.fn(),
     initFromProject: vi.fn(),
     syncCloudProjects: mockSyncCloudProjects,
-    unlinkCloudProject: mockUnlinkCloudProject,
   }),
 }));
 
@@ -131,9 +128,8 @@ describe('MyProjectsDialog', () => {
     mockProjects = [];
     mockActiveLocalId = null;
     mockCloudEnabled = false;
-    mockSaveProjectToCloud.mockResolvedValue(undefined);
     mockDeleteProjectFromCloud.mockResolvedValue(undefined);
-    mockSyncCloudProjects.mockResolvedValue({ updatedCount: 0, staleCloudIds: [], placeholdersCreated: 0 });
+    mockSyncCloudProjects.mockResolvedValue({ updatedCount: 0, staleCloudIds: [], placeholdersCreated: 0, uploadedCount: 0 });
   });
 
   it('renders project list', () => {
@@ -206,9 +202,8 @@ describe('MyProjectsDialog interactions', () => {
     mockProjects = [];
     mockActiveLocalId = null;
     mockCloudEnabled = false;
-    mockSaveProjectToCloud.mockResolvedValue(undefined);
     mockDeleteProjectFromCloud.mockResolvedValue(undefined);
-    mockSyncCloudProjects.mockResolvedValue({ updatedCount: 0, staleCloudIds: [], placeholdersCreated: 0 });
+    mockSyncCloudProjects.mockResolvedValue({ updatedCount: 0, staleCloudIds: [], placeholdersCreated: 0, uploadedCount: 0 });
   });
 
   describe('creating a new project', () => {
@@ -339,52 +334,8 @@ describe('MyProjectsDialog interactions', () => {
     });
   });
 
-  describe('cloud operations — save to cloud', () => {
-    it('clicking "Save to cloud" calls saveProjectToCloud directly', async () => {
-      mockCloudEnabled = true;
-      mockProjects = [makeProject({ localId: 'p1', name: 'My Project', isCloudSaved: false })];
-      render(<MyProjectsDialog open={true} onClose={vi.fn()} />);
-
-      await waitFor(() => expect(mockSyncCloudProjects).toHaveBeenCalled());
-
-      fireEvent.click(screen.getByRole('button', { name: 'Save project My Project to cloud' }));
-
-      await waitFor(() => {
-        expect(mockSaveProjectToCloud).toHaveBeenCalledWith('p1');
-      });
-      expect(mockAnnounce).toHaveBeenCalledWith('Saved to cloud');
-    });
-  });
-
-  describe('cloud operations — unlink from cloud', () => {
-    it('clicking "Remove link" for a stale cloud project calls unlinkCloudProject immediately', async () => {
-      mockCloudEnabled = true;
-      // Make syncCloudProjects return a stale cloud ID so the project is marked stale
-      mockSyncCloudProjects.mockResolvedValue({ updatedCount: 0, staleCloudIds: ['cloud-123'], placeholdersCreated: 0 });
-      mockProjects = [
-        makeProject({
-          localId: 'p1',
-          name: 'Stale Project',
-          cloudId: 'cloud-123',
-          isCloudSaved: true,
-        }),
-      ];
-      render(<MyProjectsDialog open={true} onClose={vi.fn()} />);
-
-      // Wait for the async syncCloudProjects to resolve and staleCloudIds state to update
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: 'Remove link' })).toBeInTheDocument();
-      });
-
-      fireEvent.click(screen.getByRole('button', { name: 'Remove link' }));
-
-      expect(mockUnlinkCloudProject).toHaveBeenCalledWith('p1');
-      expect(mockAnnounce).toHaveBeenCalledWith('Cloud link removed');
-    });
-  });
-
-  describe('cloud operations — remove from cloud', () => {
-    it('clicking "Remove from cloud" shows the confirmation dialog', async () => {
+  describe('delete also removes cloud copy', () => {
+    it('deleting a cloud-backed project calls deleteProjectFromCloud', async () => {
       mockCloudEnabled = true;
       mockProjects = [
         makeProject({
@@ -396,58 +347,15 @@ describe('MyProjectsDialog interactions', () => {
       ];
       render(<MyProjectsDialog open={true} onClose={vi.fn()} />);
 
-      // Drain async effects (syncCloudProjects) before interacting
       await waitFor(() => expect(mockSyncCloudProjects).toHaveBeenCalled());
 
-      fireEvent.click(screen.getByRole('button', { name: 'Remove project Cloud Project from cloud' }));
-
-      expect(screen.getByRole('heading', { name: 'Remove from Cloud' })).toBeInTheDocument();
-      expect(screen.getByText(/This will delete the cloud copy/)).toBeInTheDocument();
-    });
-
-    it('confirming "Remove from Cloud" calls deleteProjectFromCloud', async () => {
-      mockCloudEnabled = true;
-      mockProjects = [
-        makeProject({
-          localId: 'p1',
-          name: 'Cloud Project',
-          cloudId: 'cloud-abc',
-          isCloudSaved: true,
-        }),
-      ];
-      render(<MyProjectsDialog open={true} onClose={vi.fn()} />);
-
-      // Drain async effects (syncCloudProjects) before interacting
-      await waitFor(() => expect(mockSyncCloudProjects).toHaveBeenCalled());
-
-      fireEvent.click(screen.getByRole('button', { name: 'Remove project Cloud Project from cloud' }));
-      fireEvent.click(screen.getByRole('button', { name: 'Remove from Cloud' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Delete project Cloud Project' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Delete project Cloud Project' }));
 
       await waitFor(() => {
         expect(mockDeleteProjectFromCloud).toHaveBeenCalledWith('cloud-abc');
       });
-      expect(mockAnnounce).toHaveBeenCalledWith('Removed from cloud');
-    });
-
-    it('cancelling the remove-from-cloud dialog does not call deleteProjectFromCloud', async () => {
-      mockCloudEnabled = true;
-      mockProjects = [
-        makeProject({
-          localId: 'p1',
-          name: 'Cloud Project',
-          cloudId: 'cloud-abc',
-          isCloudSaved: true,
-        }),
-      ];
-      render(<MyProjectsDialog open={true} onClose={vi.fn()} />);
-
-      // Drain async effects (syncCloudProjects) before interacting
-      await waitFor(() => expect(mockSyncCloudProjects).toHaveBeenCalled());
-
-      fireEvent.click(screen.getByRole('button', { name: 'Remove project Cloud Project from cloud' }));
-      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-
-      expect(mockDeleteProjectFromCloud).not.toHaveBeenCalled();
+      expect(mockDeleteLocalProject).toHaveBeenCalledWith('p1');
     });
   });
 });

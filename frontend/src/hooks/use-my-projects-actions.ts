@@ -13,12 +13,6 @@ import type { ProjectSettingsData } from '../components/common/project-settings-
 import type { Visibility } from '../types/project';
 import { projectDisplayName } from '../utils/project-helpers';
 
-interface CloudDeleteConfirm {
-  localId: string;
-  cloudId: string;
-  name: string;
-}
-
 export function useMyProjectsActions(
   open: boolean,
   onClose: () => void,
@@ -26,34 +20,29 @@ export function useMyProjectsActions(
 ) {
   const { activeLocalId, projects } = useProjectStorage();
   const { createNewProject, switchProject, deleteLocalProject, renameProject, refreshProjectList } = useProjectStorageActions();
-  const { setProjectVisibility, syncCloudProjects, deleteProjectFromCloud, unlinkCloudProject, saveProjectToCloud } = useCloudSyncActions();
+  const { setProjectVisibility, syncCloudProjects, deleteProjectFromCloud } = useCloudSyncActions();
   const { getJwt } = useAuthActions();
   const announce = useAnnounce();
 
   const dispatch = useAppDispatch();
 
-  const [staleCloudIds, setStaleCloudIds] = useState<string[]>([]);
   const [downloadingLocalId, setDownloadingLocalId] = useState<string | null>(null);
-  const [deleteCloudConfirm, setDeleteCloudConfirm] = useState<CloudDeleteConfirm | null>(null);
   const [cloudError, setCloudError] = useState<string | null>(null);
   const [settingsLocalId, setSettingsLocalId] = useState<string | null>(null);
   const [shareLocalId, setShareLocalId] = useState<string | null>(null);
 
-  // Refresh project list and sync with cloud when dialog opens;
-  // cleanup clears stale IDs when dialog closes.
+  // Refresh project list and sync with cloud when dialog opens
   useEffect(() => {
     if (!open) return;
     refreshProjectList();
     if (isCloudEnabled()) {
       syncCloudProjects().then((result) => {
-        setStaleCloudIds(result.staleCloudIds);
         if (result.placeholdersCreated > 0) refreshProjectList();
       }).catch((err) => {
         setCloudError(friendlyErrorMessage(err, 'Failed to sync cloud projects.'));
       });
     }
     return () => {
-      setStaleCloudIds([]);
       setSettingsLocalId(null);
       setShareLocalId(null);
     };
@@ -109,11 +98,19 @@ export function useMyProjectsActions(
     onClose();
   }, [projects, switchProject, announce, onClose, getJwt, setCloudError]);
 
-  const handleDelete = useCallback((localId: string) => {
+  const handleDelete = useCallback(async (localId: string) => {
     const project = projects.find(p => p.localId === localId);
+    // Delete from cloud first if cloud-backed
+    if (project?.cloudId) {
+      try {
+        await deleteProjectFromCloud(project.cloudId);
+      } catch {
+        // Best-effort — delete locally regardless
+      }
+    }
     deleteLocalProject(localId);
     announce(`Project "${projectDisplayName(project?.name)}" deleted`);
-  }, [deleteLocalProject, announce, projects]);
+  }, [deleteLocalProject, deleteProjectFromCloud, announce, projects]);
 
   const handleRename = useCallback((localId: string, name: string) => {
     renameProject(localId, name);
@@ -132,56 +129,6 @@ export function useMyProjectsActions(
       setCloudError(friendlyErrorMessage(err, 'Failed to change visibility.'));
     }
   }, [setProjectVisibility, announce]);
-
-  const [savingCloudLocalId, setSavingCloudLocalId] = useState<string | null>(null);
-
-  const handleSaveToCloud = useCallback(async (localId: string) => {
-    setSavingCloudLocalId(localId);
-    try {
-      await saveProjectToCloud(localId);
-      announce('Saved to cloud');
-    } catch (err) {
-      setCloudError(friendlyErrorMessage(err, 'Failed to save to cloud.'));
-    } finally {
-      setSavingCloudLocalId(null);
-    }
-  }, [saveProjectToCloud, announce]);
-
-  const handleRemoveFromCloud = useCallback((localId: string) => {
-    const project = projects.find(p => p.localId === localId);
-    if (project?.isCloudSaved && project.cloudId) {
-      setDeleteCloudConfirm({
-        localId,
-        cloudId: project.cloudId,
-        name: projectDisplayName(project.name),
-      });
-    }
-  }, [projects]);
-
-  const handleConfirmCloudDelete = useCallback(async () => {
-    if (!deleteCloudConfirm) return;
-    try {
-      await deleteProjectFromCloud(deleteCloudConfirm.cloudId);
-      refreshProjectList();
-      announce('Removed from cloud');
-    } catch (err) {
-      setCloudError(friendlyErrorMessage(err, 'Failed to delete from cloud.'));
-    }
-    setDeleteCloudConfirm(null);
-  }, [deleteCloudConfirm, deleteProjectFromCloud, refreshProjectList, announce]);
-
-  const handleUnlinkCloud = useCallback((localId: string) => {
-    unlinkCloudProject(localId);
-    setStaleCloudIds((prev) => {
-      const project = projects.find(p => p.localId === localId);
-      if (project?.cloudId) {
-        return prev.filter(id => id !== project.cloudId);
-      }
-      return prev;
-    });
-    refreshProjectList();
-    announce('Cloud link removed');
-  }, [unlinkCloudProject, refreshProjectList, announce, projects]);
 
   const handleSettings = useCallback((localId: string) => {
     setSettingsLocalId(localId);
@@ -229,7 +176,6 @@ export function useMyProjectsActions(
   const dismissShare = useCallback(() => setShareLocalId(null), []);
 
   const dismissCloudError = useCallback(() => setCloudError(null), []);
-  const dismissDeleteCloudConfirm = useCallback(() => setDeleteCloudConfirm(null), []);
 
   return {
     // Item actions
@@ -239,9 +185,6 @@ export function useMyProjectsActions(
     handleRename,
     handleShare,
     handleChangeVisibility,
-    handleSaveToCloud,
-    handleRemoveFromCloud,
-    handleUnlinkCloud,
 
     // Settings
     handleSettings,
@@ -254,14 +197,9 @@ export function useMyProjectsActions(
     shareLocalId,
     dismissShare,
 
-    // Cloud confirmation state + actions
-    handleConfirmCloudDelete,
-    isDeleteCloudConfirmOpen: deleteCloudConfirm !== null,
+    // Cloud state
     cloudError,
-    savingCloudLocalId,
     downloadingLocalId,
-    staleCloudIds,
     dismissCloudError,
-    dismissDeleteCloudConfirm,
   } as const;
 }

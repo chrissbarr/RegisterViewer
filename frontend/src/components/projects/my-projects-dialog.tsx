@@ -4,12 +4,12 @@ import { Dialog } from '../common/dialog';
 import { ProjectSettingsDialog } from '../common/project-settings-dialog';
 import { ShareDialog } from '../common/share-dialog';
 import { ProjectListItem } from './project-list-item';
-import { MyProjectsCloudDialogs } from './my-projects-cloud-dialogs';
 import { useProjectStorage } from '../../context/project-storage-context';
 import { useAuth } from '../../context/auth-context';
 import { useMyProjectsActions } from '../../hooks/use-my-projects-actions';
 import { isCloudEnabled } from '../../utils/api-client';
 import { getStorageUsage, hasLocalData } from '../../utils/project-storage';
+import { Toast } from '../common/toast';
 import { projectDisplayName } from '../../utils/project-helpers';
 
 const FILTER_THRESHOLD = 8;
@@ -144,22 +144,19 @@ export function MyProjectsDialog({ open, onClose }: MyProjectsDialogProps) {
           <ul className="space-y-2" role="list">
             {filteredProjects.map((project) => {
               const isPlaceholder = placeholderIds.has(project.localId);
+              const isSignedIn = !!auth.user;
               return (
                 <ProjectListItem
                   key={project.localId}
                   project={project}
                   isActive={project.localId === activeLocalId}
-                  isStaleCloud={project.cloudId !== null && actions.staleCloudIds.includes(project.cloudId)}
+                  isStub={isPlaceholder}
                   onOpen={actions.handleOpen}
                   onSettings={isPlaceholder ? undefined : actions.handleSettings}
-                  onShare={actions.handleShare}
+                  onShare={isSignedIn ? actions.handleShare : undefined}
                   onDelete={actions.handleDelete}
                   onRename={actions.handleRename}
-                  onChangeVisibility={actions.handleChangeVisibility}
-                  onUnlinkCloud={actions.handleUnlinkCloud}
-                  onSaveToCloud={isCloudEnabled() && !isPlaceholder ? actions.handleSaveToCloud : undefined}
-                  onRemoveFromCloud={isCloudEnabled() ? actions.handleRemoveFromCloud : undefined}
-                  isSavingToCloud={project.localId === actions.savingCloudLocalId}
+                  onChangeVisibility={isSignedIn ? actions.handleChangeVisibility : undefined}
                   isDownloading={project.localId === actions.downloadingLocalId}
                 />
               );
@@ -198,13 +195,14 @@ export function MyProjectsDialog({ open, onClose }: MyProjectsDialogProps) {
       onClose={actions.dismissShare}
     />
 
-    <MyProjectsCloudDialogs
-      isDeleteCloudConfirmOpen={actions.isDeleteCloudConfirmOpen}
-      onDismissDeleteCloudConfirm={actions.dismissDeleteCloudConfirm}
-      onConfirmCloudDelete={actions.handleConfirmCloudDelete}
-      cloudError={actions.cloudError}
-      onDismissCloudError={actions.dismissCloudError}
-    />
+    {actions.cloudError && (
+      <Toast
+        message={actions.cloudError}
+        variant="error"
+        duration={5000}
+        onDismiss={actions.dismissCloudError}
+      />
+    )}
     </>
   );
 }
