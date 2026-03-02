@@ -268,6 +268,35 @@ export function getMostRecentProjectId(manifest?: ProjectManifest): string | nul
   return sorted[0].localId;
 }
 
+/** Purge all cloud-backed projects from localStorage. Returns purged localIds. */
+export function purgeCloudProjects(): string[] {
+  const manifest = loadManifest();
+  const purged: string[] = [];
+  const kept: ProjectManifestEntry[] = [];
+
+  for (const entry of manifest.projects) {
+    if (entry.cloudId !== null) {
+      localStorage.removeItem(projectStorageKey(entry.localId));
+      purged.push(entry.localId);
+    } else {
+      kept.push(entry);
+    }
+  }
+
+  saveManifest({ ...manifest, projects: kept });
+  return purged;
+}
+
+/** Check if a project has full data in localStorage (not just a manifest stub). */
+export function hasLocalData(localId: string): boolean {
+  return localStorage.getItem(projectStorageKey(localId)) !== null;
+}
+
+/** Remove per-project localStorage key but keep manifest entry (convert to stub). */
+export function evictProjectData(localId: string): void {
+  localStorage.removeItem(projectStorageKey(localId));
+}
+
 /** Estimate localStorage usage */
 export function getStorageUsage(): { usedBytes: number; estimatedTotalBytes: number; percent: number } {
   let usedBytes = 0;

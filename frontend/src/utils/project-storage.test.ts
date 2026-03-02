@@ -13,6 +13,9 @@ import {
   toProjectListEntry,
   projectStorageKey,
   invalidateManifestCache,
+  purgeCloudProjects,
+  hasLocalData,
+  evictProjectData,
 } from './project-storage';
 import { DEFAULT_PROJECT_NAME, type StoredLocalProject, type ProjectManifest, type ProjectManifestEntry } from '../types/project';
 import type { SerializedAppState } from '../types/register';
@@ -465,6 +468,52 @@ describe('runMigrationIfNeeded', () => {
     expect(localStorage.getItem('register-viewer-state')).toBeNull();
     // Should still create a manifest
     expect(localStorage.getItem('register-viewer-manifest')).not.toBeNull();
+  });
+});
+
+describe('purgeCloudProjects', () => {
+  it('removes manifest entries and per-project keys for cloud-backed projects', () => {
+    createProject(makeSerializedState(), 'Cloud 1', { cloudId: 'c1', visibility: 'private', cloudSavedAt: '2024-01-01' });
+    createProject(makeSerializedState(), 'Cloud 2', { cloudId: 'c2', visibility: 'private', cloudSavedAt: '2024-01-01' });
+    createProject(makeSerializedState(), 'Local Only');
+
+    const purged = purgeCloudProjects();
+    expect(purged).toHaveLength(2);
+
+    const manifest = loadManifest();
+    expect(manifest.projects).toHaveLength(1);
+    expect(manifest.projects[0].name).toBe('Local Only');
+  });
+
+  it('returns empty array when no cloud projects exist', () => {
+    createProject(makeSerializedState(), 'Local');
+    const purged = purgeCloudProjects();
+    expect(purged).toHaveLength(0);
+    expect(loadManifest().projects).toHaveLength(1);
+  });
+});
+
+describe('hasLocalData', () => {
+  it('returns true when per-project key exists', () => {
+    const id = createProject(makeSerializedState(), 'Test');
+    expect(hasLocalData(id)).toBe(true);
+  });
+
+  it('returns false when per-project key does not exist', () => {
+    expect(hasLocalData('nonexistent')).toBe(false);
+  });
+});
+
+describe('evictProjectData', () => {
+  it('removes per-project localStorage key', () => {
+    const id = createProject(makeSerializedState(), 'Test');
+    expect(hasLocalData(id)).toBe(true);
+    evictProjectData(id);
+    expect(hasLocalData(id)).toBe(false);
+  });
+
+  it('does not throw for nonexistent project', () => {
+    expect(() => evictProjectData('nonexistent')).not.toThrow();
   });
 });
 
