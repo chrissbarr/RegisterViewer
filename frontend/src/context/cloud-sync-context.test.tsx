@@ -36,6 +36,7 @@ vi.mock('../utils/cloud-project-loader', () => ({
   fetchAndParseCloudProject: vi.fn(),
 }));
 
+
 vi.mock('../utils/project-storage', () => ({
   loadManifest: vi.fn(() => ({ version: 1, projects: [] })),
   saveManifest: vi.fn(),
@@ -982,6 +983,39 @@ describe('CloudSyncProvider', () => {
           await result.current.actions.syncCloudProjects();
         }),
       ).rejects.toThrow('Network error');
+    });
+
+    it('uploads local-only projects to cloud during sync', async () => {
+      (loadManifest as Mock).mockReturnValue({
+        version: 1,
+        projects: [
+          makeManifestEntry({ localId: 'local-only-1', cloudId: null }),
+        ],
+      });
+      (apiListProjects as Mock).mockResolvedValue({ projects: [] });
+      (loadProject as Mock).mockReturnValue({
+        localId: 'local-only-1',
+        state: makeState(),
+      });
+      (apiCreateProject as Mock).mockResolvedValue({
+        id: 'cloud-uploaded',
+        shareUrl: 'https://example.com/#/p/cloud-uploaded',
+        createdAt: '2024-03-01T00:00:00Z',
+      });
+
+      const { result } = renderCloudSync();
+
+      let syncResult: { uploadedCount: number };
+      await act(async () => {
+        syncResult = await result.current.actions.syncCloudProjects();
+      });
+
+      expect(syncResult!.uploadedCount).toBe(1);
+      expect(apiCreateProject).toHaveBeenCalled();
+      expect(updateProjectMetadata).toHaveBeenCalledWith('local-only-1', {
+        cloudId: 'cloud-uploaded',
+        cloudSavedAt: '2024-03-01T00:00:00Z',
+      });
     });
   });
 

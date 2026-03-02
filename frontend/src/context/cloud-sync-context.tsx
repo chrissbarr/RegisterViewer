@@ -31,8 +31,9 @@ import {
   getProject,
 } from '../utils/api-client';
 import { useAuth, useAuthActions } from './auth-context';
-import { buildProjectUrl, createProject } from '../utils/project-storage';
-import { EMPTY_SERIALIZED_STATE } from '../utils/storage';
+import { buildProjectUrl, createProject, loadProject } from '../utils/project-storage';
+import { EMPTY_SERIALIZED_STATE, exportToObject, deserializeState } from '../utils/storage';
+import { saveProjectToCloudImpl } from '../utils/cloud-operations';
 import { clearCloudUrl } from '../utils/cloud-url';
 import { useDirtyTracking } from '../hooks/use-dirty-tracking';
 import { useActiveProjectCloudOps } from '../hooks/use-active-project-cloud-ops';
@@ -62,6 +63,8 @@ interface SyncResult {
   staleCloudIds: string[];
   /** Number of cloud-only projects that were added as local placeholders */
   placeholdersCreated: number;
+  /** Number of local-only projects uploaded to cloud */
+  uploadedCount: number;
 }
 
 interface CloudSyncActions {
@@ -380,23 +383,11 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
 
   // Auth-transition effect: when the user transitions from logged-out (null)
   // to logged-in (non-null), retry any pending cloud operation that was
-  // deferred because a JWT was not available at the time of the request.
+  // deferred because a JWT was not available at the time of the request,
+  // and sync cloud projects (pull metadata + upload local-only).
+  // Note: syncCloudProjects ref is used to avoid forward-reference issues.
   const prevAuthUserRef = useRef(authUser);
-  useEffect(() => {
-    const wasNull = prevAuthUserRef.current === null;
-    prevAuthUserRef.current = authUser;
-
-    if (wasNull && authUser && pendingCloudOpRef.current) {
-      const op = pendingCloudOpRef.current;
-      pendingCloudOpRef.current = null;
-      setLoginRequired(false);
-      if (op === 'save') {
-        void rawActiveOps.saveToCloud();
-      } else if (op === 'fork') {
-        void rawActiveOps.fork();
-      }
-    }
-  }, [authUser, rawActiveOps]);
+  const syncCloudProjectsRef = useRef<(() => Promise<SyncResult>) | null>(null);
 
   const initFromProject = useCallback(
     (cloudId: string | null, isOwner: boolean) => {
@@ -430,10 +421,11 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const syncCloudProjects = useCallback(async (): Promise<SyncResult> => {
-    if (!isCloudEnabled()) return { updatedCount: 0, staleCloudIds: [], placeholdersCreated: 0 };
+    const emptyResult: SyncResult = { updatedCount: 0, staleCloudIds: [], placeholdersCreated: 0, uploadedCount: 0 };
+    if (!isCloudEnabled()) return emptyResult;
 
     const jwt = getJwt();
-    if (!jwt) return { updatedCount: 0, staleCloudIds: [], placeholdersCreated: 0 };
+    if (!jwt) return emptyResult;
     const response = await listProjects(jwt);
 
     const { patches, staleCloudIds, cloudOnlyProjects } = computeSyncPatches(projectsRef.current, response.projects);
@@ -453,8 +445,54 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       });
     }
 
-    return { updatedCount: patches.length, staleCloudIds, placeholdersCreated: cloudOnlyProjects.length };
+    // Upload local-only projects to cloud
+    const localOnlyEntries = projectsRef.current.filter(p => p.cloudId === null);
+    let uploadedCount = 0;
+    for (const entry of localOnlyEntries) {
+      const project = loadProject(entry.localId);
+      if (!project) continue;
+      try {
+        const projectState = deserializeState(project.state);
+        const jsonPayload = exportToObject(projectState);
+        const result = await saveProjectToCloudImpl(jsonPayload, null, jwt);
+        if (result.kind === 'created') {
+          updateCloudMetadata(entry.localId, {
+            cloudId: result.cloudId,
+            cloudSavedAt: result.timestamp,
+          });
+          uploadedCount++;
+        }
+      } catch {
+        // Best-effort — will retry on next sync
+      }
+    }
+
+    return { updatedCount: patches.length, staleCloudIds, placeholdersCreated: cloudOnlyProjects.length, uploadedCount };
   }, [updateCloudMetadata, getJwt]);
+
+  // Keep syncCloudProjects ref up-to-date for the auth-transition effect
+  syncCloudProjectsRef.current = syncCloudProjects;
+
+  useEffect(() => {
+    const wasNull = prevAuthUserRef.current === null;
+    prevAuthUserRef.current = authUser;
+
+    if (wasNull && authUser) {
+      // Retry any pending cloud operation that was deferred
+      if (pendingCloudOpRef.current) {
+        const op = pendingCloudOpRef.current;
+        pendingCloudOpRef.current = null;
+        setLoginRequired(false);
+        if (op === 'save') {
+          void rawActiveOps.saveToCloud();
+        } else if (op === 'fork') {
+          void rawActiveOps.fork();
+        }
+      }
+      // Sync cloud projects (pull metadata + upload local-only)
+      void syncCloudProjectsRef.current?.();
+    }
+  }, [authUser, rawActiveOps]);
 
   // By-localId cloud operations (used by My Projects dialog)
   const projectOps = useProjectCloudOps({
