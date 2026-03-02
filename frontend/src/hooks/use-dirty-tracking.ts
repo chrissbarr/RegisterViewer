@@ -43,9 +43,19 @@ export function useDirtyTracking<T extends InternalSlice>(
   const dataVersionRef = useRef(0);
   const needsVersionSyncRef = useRef(false);
   const [isDirty, setIsDirty] = useState(false);
+  // Sentinel: use Symbol() so the first effect run always detects a data change
+  const prevDataDepsRef = useRef<{ r: unknown; v: unknown; p: unknown; a: unknown }>({ r: Symbol(), v: Symbol(), p: Symbol(), a: Symbol() });
 
   useEffect(() => {
-    dataVersionRef.current++;
+    // Only bump version when actual data deps changed (not cloudId/lastSavedVersion)
+    const prev = prevDataDepsRef.current;
+    const dataChanged = prev.r !== dataDeps.registers || prev.v !== dataDeps.registerValues
+      || prev.p !== dataDeps.project || prev.a !== dataDeps.addressUnitBits;
+    prevDataDepsRef.current = { r: dataDeps.registers, v: dataDeps.registerValues, p: dataDeps.project, a: dataDeps.addressUnitBits };
+
+    if (dataChanged) {
+      dataVersionRef.current++;
+    }
 
     if (needsVersionSyncRef.current) {
       needsVersionSyncRef.current = false;
@@ -54,8 +64,6 @@ export function useDirtyTracking<T extends InternalSlice>(
       return;
     }
 
-    // Only trigger a re-render when isDirty status actually changes.
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: ref-based version counter must sync to state
     setIsDirty(internal.cloudId !== null
       && internal.lastSavedVersion >= 0
       && dataVersionRef.current !== internal.lastSavedVersion);

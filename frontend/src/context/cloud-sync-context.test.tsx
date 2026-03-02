@@ -164,6 +164,8 @@ beforeEach(() => {
   (exportToObject as Mock).mockReturnValue({ version: 1, registers: [], values: {} });
   // getProject is called by the ownership re-evaluation effect; default to a resolved promise
   (apiGetProject as Mock).mockResolvedValue({ id: 'test', data: '{}', createdAt: '', updatedAt: '', isOwner: false });
+  // listProjects is called by syncCloudProjects on mount/sign-in; default to empty list
+  (apiListProjects as Mock).mockResolvedValue({ projects: [] });
 });
 
 // ── Tests ────────────────────────────────────────────────────────────

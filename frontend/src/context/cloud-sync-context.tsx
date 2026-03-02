@@ -34,7 +34,7 @@ import { useAuth, useAuthActions } from './auth-context';
 import { buildProjectUrl, createProject, loadProject, purgeCloudProjects, getMostRecentProjectId, evictProjectData, ACTIVE_PROJECT_SESSION_KEY } from '../utils/project-storage';
 import { EMPTY_SERIALIZED_STATE, exportToObject, deserializeState } from '../utils/storage';
 import { saveProjectToCloudImpl } from '../utils/cloud-operations';
-import { clearCloudUrl } from '../utils/cloud-url';
+import { clearCloudUrl, setCloudUrl } from '../utils/cloud-url';
 import { useDirtyTracking } from '../hooks/use-dirty-tracking';
 import { useActiveProjectCloudOps } from '../hooks/use-active-project-cloud-ops';
 import { useProjectCloudOps } from '../hooks/use-project-cloud-ops';
@@ -226,6 +226,10 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
 
   const prevActiveLocalIdRef = useRef<string | null>(null);
 
+  // Derive the active project's cloudId so the effect re-runs when it changes
+  // (e.g., after auto-upload sets a cloudId on a previously local-only project).
+  const activeCloudId = projects.find(p => p.localId === activeLocalId)?.cloudId ?? null;
+
   useEffect(() => {
     if (!activeLocalId) return;
 
@@ -257,19 +261,22 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       setInternal({ ...initialInternalState });
       clearCloudUrl();
     } else {
+      // Signal dirty tracking to capture the version after its next bump,
+      // so that re-syncing from a freshly-uploaded project starts clean.
+      needsVersionSyncRef.current = true;
+      setCloudUrl(cloudId);
       setInternal((prev) => ({
         ...prev,
         cloudId,
         isOwner,
         shareUrl: buildProjectUrl(cloudId),
-        lastSavedVersion: dataVersionRef.current,
         lastCloudSavedAt: null,
         error: null,
         visibility: entry?.visibility ?? 'private',
       }));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- dataVersionRef is a ref (stable)
-  }, [activeLocalId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- dataVersionRef is a ref (stable); activeCloudId triggers re-eval when cloudId changes after upload
+  }, [activeLocalId, activeCloudId]);
 
   // Ref to avoid stale closures in save/fork callbacks
   const appStateRef = useRef(appState);
@@ -491,12 +498,18 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   syncCloudProjectsRef.current = syncCloudProjects;
   flushSyncRef.current = flushSync;
 
+  const hasRunInitialSyncRef = useRef(false);
+
   useEffect(() => {
     const wasNull = prevAuthUserRef.current === null;
     const wasLoggedIn = prevAuthUserRef.current !== null;
     prevAuthUserRef.current = authUser;
 
-    if (wasNull && authUser) {
+    // Trigger sync when user signs in (null→user) OR on first mount if already authenticated
+    const shouldSync = (wasNull && authUser) || (!hasRunInitialSyncRef.current && authUser);
+
+    if (shouldSync) {
+      hasRunInitialSyncRef.current = true;
       // Sign-in: retry any pending cloud operation that was deferred
       if (pendingCloudOpRef.current) {
         const op = pendingCloudOpRef.current;
@@ -509,10 +522,11 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
         }
       }
       // Sync cloud projects (pull metadata + upload local-only)
-      void syncCloudProjectsRef.current?.();
+      syncCloudProjectsRef.current?.().catch(() => { /* best-effort on mount/sign-in */ });
     }
 
     if (wasLoggedIn && !authUser) {
+      hasRunInitialSyncRef.current = false;
       // Sign-out: purge cloud projects from localStorage
       const purgedIds = purgeCloudProjects();
       refreshProjectList();
