@@ -4,8 +4,8 @@ import { useMyProjectsActions } from './use-my-projects-actions';
 import { DEFAULT_PROJECT_NAME } from '../types/project';
 
 const mockProjects = [
-  { localId: 'local-1', name: 'Project A', isCloudSaved: true, cloudId: 'cloud-1', visibility: 'private', createdAt: '2026-01-01', localSavedAt: '2026-01-01', cloudSavedAt: '2026-01-01' },
-  { localId: 'local-2', name: 'Project B', isCloudSaved: false, cloudId: null, visibility: 'private', createdAt: '2026-01-01', localSavedAt: '2026-01-01', cloudSavedAt: null },
+  { localId: 'local-1', name: 'Project A', storage: 'cloud', cloudId: 'cloud-1', visibility: 'private', createdAt: '2026-01-01', localSavedAt: '2026-01-01', cloudSavedAt: '2026-01-01' },
+  { localId: 'local-2', name: 'Project B', storage: 'local', cloudId: null, visibility: 'private', createdAt: '2026-01-01', localSavedAt: '2026-01-01', cloudSavedAt: null },
 ];
 
 const mockStorageActions = {

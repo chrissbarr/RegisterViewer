@@ -54,7 +54,7 @@ vi.mock('../utils/project-storage', () => ({
     createdAt: e.createdAt ?? '2024-01-01T00:00:00Z',
     localSavedAt: e.localSavedAt ?? '2024-01-01T00:00:00Z',
     cloudSavedAt: e.cloudSavedAt ?? null,
-    isCloudSaved: e.cloudId != null,
+    storage: e.storage ?? 'local',
   })),
   getMostRecentProjectId: vi.fn(() => null),
   invalidateManifestCache: vi.fn(),

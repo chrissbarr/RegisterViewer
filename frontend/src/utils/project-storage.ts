@@ -242,7 +242,7 @@ export function patchProjectState(localId: string, state: SerializedAppState, na
 /** Update metadata fields on a project (name, cloudId, visibility, etc.) */
 export function updateProjectMetadata(
   localId: string,
-  updates: Partial<Pick<StoredLocalProject, 'name' | 'cloudId' | 'visibility' | 'cloudSavedAt'>>,
+  updates: Partial<Pick<StoredLocalProject, 'name' | 'cloudId' | 'visibility' | 'cloudSavedAt' | 'storage'>>,
 ): void {
   const project = loadProject(localId);
   if (!project) return;

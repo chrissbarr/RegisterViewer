@@ -23,6 +23,7 @@ interface CloudMetadataUpdates {
   cloudId?: string | null;
   cloudSavedAt?: string | null;
   visibility?: 'private' | 'unlisted';
+  storage?: 'local' | 'cloud';
 }
 
 interface ProjectStorageActions {
