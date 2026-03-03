@@ -495,8 +495,8 @@ describe('migration: storage field', () => {
 
 describe('purgeCloudProjects', () => {
   it('removes manifest entries and per-project keys for cloud-backed projects', () => {
-    createProject(makeSerializedState(), 'Cloud 1', { cloudId: 'c1', visibility: 'private', cloudSavedAt: '2024-01-01' });
-    createProject(makeSerializedState(), 'Cloud 2', { cloudId: 'c2', visibility: 'private', cloudSavedAt: '2024-01-01' });
+    createProject(makeSerializedState(), 'Cloud 1', { cloudId: 'c1', visibility: 'private', cloudSavedAt: '2024-01-01', storage: 'cloud' });
+    createProject(makeSerializedState(), 'Cloud 2', { cloudId: 'c2', visibility: 'private', cloudSavedAt: '2024-01-01', storage: 'cloud' });
     createProject(makeSerializedState(), 'Local Only');
 
     const purged = purgeCloudProjects();
@@ -505,6 +505,22 @@ describe('purgeCloudProjects', () => {
     const manifest = loadManifest();
     expect(manifest.projects).toHaveLength(1);
     expect(manifest.projects[0].name).toBe('Local Only');
+  });
+
+  it('only purges projects with storage=cloud', () => {
+    // Create a cloud project (storage: 'cloud', cloudId: 'abc123')
+    createProject(makeSerializedState(), 'Cloud Project', { cloudId: 'abc123', visibility: 'private', cloudSavedAt: '2024-01-01', storage: 'cloud' });
+    // Create a local project (storage: 'local')
+    createProject(makeSerializedState(), 'Local Project');
+
+    const purged = purgeCloudProjects();
+    expect(purged).toHaveLength(1);
+
+    // Assert only 1 project remains (the local one)
+    const manifest = loadManifest();
+    expect(manifest.projects).toHaveLength(1);
+    expect(manifest.projects[0].name).toBe('Local Project');
+    expect(manifest.projects[0].storage).toBe('local');
   });
 
   it('returns empty array when no cloud projects exist', () => {

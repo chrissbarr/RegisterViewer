@@ -268,7 +268,7 @@ export function purgeCloudProjects(): string[] {
   const kept: ProjectManifestEntry[] = [];
 
   for (const entry of manifest.projects) {
-    if (entry.cloudId !== null) {
+    if (entry.storage === 'cloud') {
       localStorage.removeItem(projectStorageKey(entry.localId));
       purged.push(entry.localId);
     } else {
