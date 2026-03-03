@@ -326,7 +326,6 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
 
   // --- Cloud auto-sync (debounced after dirty) ---
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const retryCountRef = useRef(0);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('local-only');
 
   // Derive whether auto-sync should be active
@@ -348,18 +347,10 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       setSyncStatus('syncing');
       try {
         await rawActiveOps.saveToCloud();
-        retryCountRef.current = 0;
         setSyncStatus('saved');
       } catch {
-        retryCountRef.current++;
         setSyncStatus('offline');
-        // Exponential backoff retry
-        if (retryCountRef.current <= 5) {
-          const backoff = Math.min(1000 * 2 ** (retryCountRef.current - 1), 30000);
-          syncTimerRef.current = setTimeout(() => {
-            setSyncStatus((prev) => prev === 'offline' ? 'offline' : prev);
-          }, backoff);
-        }
+        // No automatic retry — the next user edit will trigger a fresh sync attempt
       }
     }, CLOUD_SYNC_DEBOUNCE_MS);
 
