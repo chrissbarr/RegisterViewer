@@ -219,10 +219,12 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   );
 
   // Sync cloud state when active project changes (handles project switch)
+  // Assigned during render (not in useEffect) so that initFromProject's
+  // synchronous ref write in a child effect isn't clobbered by a parent
+  // sync effect running later in the same commit — which also breaks under
+  // React StrictMode's double-invocation of effects.
   const internalRef = useRef(internal);
-  useEffect(() => {
-    internalRef.current = internal;
-  }, [internal]);
+  internalRef.current = internal;
 
   const prevActiveLocalIdRef = useRef<string | null>(null);
 
@@ -433,9 +435,8 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
           lastCloudSavedAt: null,
           error: null,
         };
-        // Synchronously update ref so the activeLocalId effect's guard
-        // (cloudId === internalRef.current.cloudId) sees this immediately,
-        // preventing it from overwriting isOwner with a stale local check.
+        // Synchronous ref write so the activeLocalId effect's guard
+        // (cloudId === internalRef.current.cloudId) sees this in the same commit.
         internalRef.current = next;
         setInternal(next);
       }

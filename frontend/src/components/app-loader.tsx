@@ -165,7 +165,7 @@ export function AppLoader() {
         if (project) {
           const appState = deserializeState(project.state);
           const cloudInit = project.cloudId
-            ? { projectId: project.cloudId, isOwner: false }
+            ? { projectId: project.cloudId, isOwner: !!readStartupJwt() }
             : undefined;
           setState({ phase: 'ready', initialState: appState, localId: resolution.localId, cloudInit });
         } else {
