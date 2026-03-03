@@ -74,7 +74,7 @@ interface CloudSyncActions {
   loadCloudProject: (cloudId: string) => Promise<void>;
   fork: () => Promise<void>;
   dismissError: () => void;
-  initFromProject: (cloudId: string | null, isOwner: boolean) => void;
+  initFromProject: (cloudId: string | null, isOwner: boolean, storage?: 'local' | 'cloud') => void;
   syncCloudProjects: () => Promise<SyncResult>;
   unlinkCloudProject: (localId: string) => void;
   /** Cancel pending cloud operation that was waiting for login. */
@@ -90,6 +90,7 @@ const CloudSyncActionsContext = createContext<CloudSyncActions | null>(null);
 export interface InternalCloudSyncState {
   cloudId: string | null;
   isOwner: boolean;
+  storage: 'local' | 'cloud';
   status: 'idle' | 'saving' | 'loading' | 'deleting';
   error: string | null;
   shareUrl: string | null;
@@ -160,6 +161,7 @@ function computeSyncPatches(
 const initialInternalState: InternalCloudSyncState = {
   cloudId: null,
   isOwner: false,
+  storage: 'local',
   status: 'idle',
   error: null,
   shareUrl: null,
@@ -272,6 +274,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
         ...prev,
         cloudId,
         isOwner,
+        storage: entry?.storage ?? 'cloud',
         shareUrl: buildProjectUrl(cloudId),
         lastCloudSavedAt: null,
         error: null,
@@ -326,7 +329,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('local-only');
 
   // Derive whether auto-sync should be active
-  const canAutoSync = internal.cloudId !== null && internal.isOwner && !!authUser;
+  const canAutoSync = internal.storage === 'cloud' && internal.isOwner && !!authUser;
 
   useEffect(() => {
     if (!canAutoSync) {
@@ -411,9 +414,9 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   const flushSyncRef = useRef<(() => Promise<void>) | null>(null);
 
   const initFromProject = useCallback(
-    (cloudId: string | null, isOwner: boolean) => {
+    (cloudId: string | null, isOwner: boolean, storage: 'local' | 'cloud' = cloudId ? 'cloud' : 'local') => {
       if (cloudId === null) {
-        const next = { ...initialInternalState };
+        const next = { ...initialInternalState, storage };
         internalRef.current = next;
         setInternal(next);
         clearCloudUrl();
@@ -422,6 +425,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
           ...internalRef.current,
           cloudId,
           isOwner,
+          storage,
           shareUrl: buildProjectUrl(cloudId),
           lastSavedVersion: dataVersionRef.current,
           lastCloudSavedAt: null,
