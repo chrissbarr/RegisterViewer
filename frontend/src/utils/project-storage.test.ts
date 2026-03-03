@@ -474,6 +474,25 @@ describe('runMigrationIfNeeded', () => {
   });
 });
 
+describe('migration: storage field', () => {
+  it('adds storage field based on cloudId', () => {
+    const legacyManifest = {
+      version: 1,
+      projects: [
+        { localId: 'a', cloudId: 'abc123', name: 'Cloud', visibility: 'private', createdAt: '2026-01-01T00:00:00Z', localSavedAt: '2026-01-01T00:00:00Z', cloudSavedAt: '2026-01-01T00:00:00Z' },
+        { localId: 'b', cloudId: null, name: 'Local', visibility: 'private', createdAt: '2026-01-01T00:00:00Z', localSavedAt: '2026-01-01T00:00:00Z', cloudSavedAt: null },
+      ],
+    };
+    localStorage.setItem('register-viewer-manifest', JSON.stringify(legacyManifest));
+
+    runMigrationIfNeeded();
+
+    const manifest = loadManifest();
+    expect(manifest.projects[0].storage).toBe('cloud');
+    expect(manifest.projects[1].storage).toBe('local');
+  });
+});
+
 describe('purgeCloudProjects', () => {
   it('removes manifest entries and per-project keys for cloud-backed projects', () => {
     createProject(makeSerializedState(), 'Cloud 1', { cloudId: 'c1', visibility: 'private', cloudSavedAt: '2024-01-01' });

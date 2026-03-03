@@ -339,6 +339,17 @@ export function runMigrationIfNeeded(): void {
     saveManifest({ version: 1, projects: [] });
   }
 
+  // Backfill storage field for manifests created before this field existed
+  const preOrphanManifest = loadManifest();
+  let needsSave = false;
+  for (const entry of preOrphanManifest.projects) {
+    if (!('storage' in entry)) {
+      (entry as ProjectManifestEntry).storage = entry.cloudId !== null ? 'cloud' : 'local';
+      needsSave = true;
+    }
+  }
+  if (needsSave) saveManifest(preOrphanManifest);
+
   // Run orphan recovery once at startup (not on every loadManifest call)
   const manifest = loadManifest();
   const before = manifest.projects.length;
