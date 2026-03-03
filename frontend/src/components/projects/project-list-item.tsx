@@ -96,6 +96,7 @@ export function ProjectListItem({
         {confirmingDelete ? (
           <DeleteConfirmation
             projectName={displayName}
+            isCloud={project.storage === 'cloud'}
             onConfirm={handleDelete}
             onCancel={handleCancelDelete}
           />

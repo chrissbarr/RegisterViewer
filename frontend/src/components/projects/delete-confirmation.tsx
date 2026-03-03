@@ -2,6 +2,7 @@ import { useRef, useEffect } from 'react';
 
 interface DeleteConfirmationProps {
   projectName: string;
+  isCloud: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -13,6 +14,7 @@ interface DeleteConfirmationProps {
  */
 export function DeleteConfirmation({
   projectName,
+  isCloud,
   onConfirm,
   onCancel,
 }: DeleteConfirmationProps) {
@@ -34,6 +36,11 @@ export function DeleteConfirmation({
       <span className="text-xs text-gray-500 dark:text-gray-400 text-right">
         {description}
       </span>
+      {isCloud && (
+        <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+          This will also delete the cloud copy. Shared links will stop working.
+        </p>
+      )}
       <div className="flex items-center gap-1">
         <button
           onClick={onConfirm}
