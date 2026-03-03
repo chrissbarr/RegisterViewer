@@ -136,7 +136,9 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
           }));
         }
       } catch (err) {
-        setInternal((prev) => ({ ...prev, status: 'idle', error: friendlyErrorMessage(err, 'Failed to save project.') }));
+        const next = { ...internalRef.current, status: 'idle' as const, error: friendlyErrorMessage(err, 'Failed to save project.') };
+        internalRef.current = next;
+        setInternal(next);
       }
     });
   }, [updateCloudMetadata, applyCreatedResult, mutationLockRef, dataVersionRef, getJwt, internalRef, appStateRef, activeLocalIdRef, setInternal]);

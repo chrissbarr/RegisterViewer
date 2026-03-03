@@ -241,9 +241,13 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     if (prevLocalId && prevLocalId !== activeLocalId) {
       const prevEntry = projectsRef.current.find(p => p.localId === prevLocalId);
       if (prevEntry?.cloudId) {
-        // Flush pending sync first, then evict
-        flushSyncRef.current?.().catch(() => {}).finally(() => {
+        // Flush pending sync first, then evict — only on success and only if
+        // the user hasn't navigated back to this project in the meantime.
+        flushSyncRef.current?.().then(() => {
+          if (activeLocalIdRef.current === prevLocalId) return; // user navigated back
           evictProjectData(prevLocalId);
+        }).catch(() => {
+          // Flush failed — keep local data as safety net
         });
       }
     }
@@ -372,10 +376,10 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     if (!cloudId || !isOwner || dataVersionRef.current === lastSavedVersion) return;
     const jwt = getJwt();
     if (!jwt) return;
-    try {
-      await rawActiveOps.saveToCloud();
-    } catch {
-      // Best-effort on unload — data is safe in localStorage
+    await rawActiveOps.saveToCloud();
+    // saveToCloud catches internally and sets error state — propagate as rejection
+    if (internalRef.current.error) {
+      throw new Error('Cloud sync failed');
     }
   }, [getJwt, rawActiveOps, dataVersionRef]);
 

@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import type { ReactNode } from 'react';
 import { CloudSyncProvider, useCloudSync, useCloudSyncActions } from './cloud-sync-context';
 import { AppProvider } from './app-context';
-import { ProjectStorageProvider } from './project-storage-context';
+import { ProjectStorageProvider, useProjectStorageActions } from './project-storage-context';
 import { useAppDispatch } from './app-context';
 import { makeState, makeRegister } from '../test/helpers';
 import type { ProjectManifestEntry } from '../types/project';
@@ -45,6 +45,7 @@ vi.mock('../utils/project-storage', () => ({
   createProject: vi.fn(),
   deleteProject: vi.fn(),
   updateProjectMetadata: vi.fn(),
+  evictProjectData: vi.fn(),
   toProjectListEntry: vi.fn((e: Record<string, unknown>) => ({
     localId: e.localId,
     name: e.name ?? 'Test Project',
@@ -94,6 +95,7 @@ import {
   loadManifest,
   loadProject,
   updateProjectMetadata,
+  evictProjectData,
 } from '../utils/project-storage';
 import { exportToObject, deserializeState } from '../utils/storage';
 
@@ -1188,6 +1190,143 @@ describe('CloudSyncProvider', () => {
 
       expect(result.current.state.loginRequired).toBe(true);
       expect(apiCreateProject).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('eviction on project switch', () => {
+    const PREV_LOCAL_ID = 'prev-local';
+    const NEXT_LOCAL_ID = 'next-local';
+
+    function renderWithProjectSwitch() {
+      return renderHook(
+        () => ({
+          state: useCloudSync(),
+          actions: useCloudSyncActions(),
+          storageActions: useProjectStorageActions(),
+          dispatch: useAppDispatch(),
+        }),
+        {
+          wrapper: ({ children }: { children: ReactNode }) => {
+            const initialState = makeState({
+              registers: [makeRegister({ id: 'reg-1' })],
+              registerValues: { 'reg-1': 0xFFn },
+            });
+            return (
+              <AppProvider savedState={initialState}>
+                <ProjectStorageProvider initialLocalId={PREV_LOCAL_ID}>
+                  <CloudSyncProvider>{children}</CloudSyncProvider>
+                </ProjectStorageProvider>
+              </AppProvider>
+            );
+          },
+        },
+      );
+    }
+
+    it('does not evict when flush fails', async () => {
+      // Ensure JWT is available so flushSync doesn't short-circuit at the JWT check
+      authMock.getJwt.mockReturnValue('mock-jwt');
+
+      // Setup: previous project is cloud-backed
+      (loadManifest as Mock).mockReturnValue({
+        version: 1,
+        projects: [
+          makeManifestEntry({ localId: PREV_LOCAL_ID, cloudId: 'cloud-prev' }),
+          makeManifestEntry({ localId: NEXT_LOCAL_ID, cloudId: null, name: 'Next' }),
+        ],
+      });
+      // loadProject is called by switchProject; return valid data for the next project
+      (loadProject as Mock).mockReturnValue({
+        localId: NEXT_LOCAL_ID,
+        state: makeState(),
+      });
+
+      // Make the cloud save fail (flushSync calls rawActiveOps.saveToCloud → update)
+      (apiUpdateProject as Mock).mockRejectedValue(new Error('Network error'));
+
+      // Suppress getProject (ownership re-evaluation)
+      (apiGetProject as Mock).mockReturnValue(new Promise(() => {}));
+
+      const { result } = renderWithProjectSwitch();
+
+      // Initialize the cloud state so flushSync has a cloudId + isOwner
+      await act(async () => {
+        result.current.actions.initFromProject('cloud-prev', true);
+      });
+
+      // Make data dirty so flushSync actually attempts a save
+      act(() => {
+        result.current.dispatch({
+          type: 'SET_REGISTER_VALUE',
+          registerId: 'reg-1',
+          value: 0x42n,
+        });
+      });
+
+      // Switch to a different project — triggers eviction effect
+      await act(async () => {
+        result.current.storageActions.switchProject(NEXT_LOCAL_ID);
+      });
+
+      // Wait for flushSync promise to settle
+      await act(async () => {
+        await new Promise(r => setTimeout(r, 50));
+      });
+
+      // Eviction should NOT have happened because flush failed
+      expect(evictProjectData).not.toHaveBeenCalled();
+    });
+
+    it('does not evict if user navigated back to the same project', async () => {
+      // Setup: previous project is cloud-backed
+      (loadManifest as Mock).mockReturnValue({
+        version: 1,
+        projects: [
+          makeManifestEntry({ localId: PREV_LOCAL_ID, cloudId: 'cloud-prev' }),
+          makeManifestEntry({ localId: NEXT_LOCAL_ID, cloudId: null, name: 'Next' }),
+        ],
+      });
+
+      // loadProject returns valid data for both projects
+      (loadProject as Mock).mockImplementation((id: string) => ({
+        localId: id,
+        state: makeState(),
+      }));
+
+      // Make flushSync take time (slow save)
+      let resolveFlush: (() => void) | undefined;
+      (apiUpdateProject as Mock).mockImplementation(
+        () => new Promise<void>((resolve) => { resolveFlush = resolve; }),
+      );
+
+      // Suppress getProject (ownership re-evaluation)
+      (apiGetProject as Mock).mockReturnValue(new Promise(() => {}));
+
+      const { result } = renderWithProjectSwitch();
+
+      // Initialize cloud state so flushSync has a cloudId + isOwner
+      await act(async () => {
+        result.current.actions.initFromProject('cloud-prev', true);
+      });
+
+      // Switch away from prev project
+      await act(async () => {
+        result.current.storageActions.switchProject(NEXT_LOCAL_ID);
+      });
+
+      // Quickly switch back before flush completes
+      await act(async () => {
+        result.current.storageActions.switchProject(PREV_LOCAL_ID);
+      });
+
+      // Now resolve the flush
+      await act(async () => {
+        resolveFlush?.();
+        await new Promise(r => setTimeout(r, 50));
+      });
+
+      // Eviction should NOT have happened because user is back on prev project
+      expect(evictProjectData).not.toHaveBeenCalledWith(PREV_LOCAL_ID);
     });
   });
 
