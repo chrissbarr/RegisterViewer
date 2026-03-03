@@ -239,7 +239,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     prevActiveLocalIdRef.current = activeLocalId;
     if (prevLocalId && prevLocalId !== activeLocalId) {
       const prevEntry = projectsRef.current.find(p => p.localId === prevLocalId);
-      if (prevEntry?.cloudId) {
+      if (prevEntry?.storage === 'cloud') {
         // Flush pending sync first, then evict — only on success and only if
         // the user hasn't navigated back to this project in the meantime.
         flushSyncRef.current?.().then(() => {
