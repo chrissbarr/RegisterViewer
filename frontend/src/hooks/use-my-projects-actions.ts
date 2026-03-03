@@ -20,7 +20,7 @@ export function useMyProjectsActions(
 ) {
   const { activeLocalId, projects } = useProjectStorage();
   const { createNewProject, switchProject, deleteLocalProject, renameProject, refreshProjectList } = useProjectStorageActions();
-  const { setProjectVisibility, syncCloudProjects, deleteProjectFromCloud } = useCloudSyncActions();
+  const { setProjectVisibility, syncCloudProjects, deleteProjectFromCloud, saveProjectToCloud } = useCloudSyncActions();
   const { getJwt } = useAuthActions();
   const announce = useAnnounce();
 
@@ -176,6 +176,30 @@ export function useMyProjectsActions(
   const dismissSettings = useCallback(() => setSettingsLocalId(null), []);
   const dismissShare = useCallback(() => setShareLocalId(null), []);
 
+  const handleSaveToCloud = useCallback(async (localId: string) => {
+    const jwt = getJwt();
+    if (!jwt) return;
+    try {
+      await saveProjectToCloud(localId);
+      refreshProjectList();
+      announce('Project saved to cloud');
+    } catch (err) {
+      setCloudError(friendlyErrorMessage(err, 'Failed to save project to cloud.'));
+    }
+  }, [getJwt, saveProjectToCloud, refreshProjectList, announce]);
+
+  const handleRemoveFromCloud = useCallback(async (localId: string) => {
+    const project = projects.find(p => p.localId === localId);
+    if (!project?.cloudId) return;
+    try {
+      await deleteProjectFromCloud(project.cloudId);
+      refreshProjectList();
+      announce('Project removed from cloud');
+    } catch (err) {
+      setCloudError(friendlyErrorMessage(err, 'Failed to remove project from cloud.'));
+    }
+  }, [projects, deleteProjectFromCloud, refreshProjectList, announce]);
+
   const dismissCloudError = useCallback(() => setCloudError(null), []);
 
   return {
@@ -186,6 +210,8 @@ export function useMyProjectsActions(
     handleRename,
     handleShare,
     handleChangeVisibility,
+    handleSaveToCloud,
+    handleRemoveFromCloud,
 
     // Settings
     handleSettings,

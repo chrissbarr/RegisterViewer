@@ -23,6 +23,7 @@ vi.mock('../utils/cloud-url', () => ({
     cloudId: null,
     visibility: 'private',
     cloudSavedAt: null,
+    storage: 'local',
   },
   withMutationLock: vi.fn(async (_ref: unknown, fn: () => Promise<unknown>) => fn()),
 }));
@@ -107,6 +108,7 @@ describe('useProjectCloudOps', () => {
       expect(deps.updateCloudMetadata).toHaveBeenCalledWith('local-1', {
         cloudId: 'new-cloud',
         cloudSavedAt: '2026-01-01T00:00:00Z',
+        storage: 'cloud',
       });
       expect(setCloudUrl).toHaveBeenCalledWith('new-cloud');
       expect(deps.setInternal).toHaveBeenCalled();
@@ -127,6 +129,7 @@ describe('useProjectCloudOps', () => {
 
       expect(deps.updateCloudMetadata).toHaveBeenCalledWith('local-1', {
         cloudSavedAt: '2026-01-02T00:00:00Z',
+        storage: 'cloud',
       });
       // Should NOT set cloud URL for updates
       expect(setCloudUrl).not.toHaveBeenCalled();
@@ -221,6 +224,7 @@ describe('useProjectCloudOps', () => {
         cloudId: null,
         visibility: 'private',
         cloudSavedAt: null,
+        storage: 'local',
       });
     });
 
@@ -308,6 +312,7 @@ describe('useProjectCloudOps', () => {
         cloudId: null,
         visibility: 'private',
         cloudSavedAt: null,
+        storage: 'local',
       });
     });
 

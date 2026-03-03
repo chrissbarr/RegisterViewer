@@ -23,6 +23,7 @@ interface ProjectCloudOpsDeps<T extends CloudSyncInternalSlice> {
     cloudId: string | null;
     cloudSavedAt: string | null;
     visibility: Visibility;
+    storage: 'local' | 'cloud';
   }>) => void;
   projects: ProjectListEntry[];
   activeLocalIdRef: MutableRefObject<string | null>;
@@ -73,6 +74,7 @@ export function useProjectCloudOps<T extends CloudSyncInternalSlice>(deps: Proje
         updateCloudMetadata(localId, {
           cloudId: result.cloudId,
           cloudSavedAt: result.timestamp,
+          storage: 'cloud',
         });
 
         // If this is the active project, update cloud state + URL
@@ -88,7 +90,7 @@ export function useProjectCloudOps<T extends CloudSyncInternalSlice>(deps: Proje
           }));
         }
       } else {
-        updateCloudMetadata(localId, { cloudSavedAt: result.timestamp });
+        updateCloudMetadata(localId, { cloudSavedAt: result.timestamp, storage: 'cloud' });
       }
     });
   }, [updateCloudMetadata, projects, mutationLockRef, activeLocalIdRef, dataVersionRef, setInternal, getJwt]);

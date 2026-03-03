@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FolderOpen, Settings, Link, Trash2 } from 'lucide-react';
+import { FolderOpen, Settings, Link, Trash2, CloudUpload, CloudOff } from 'lucide-react';
 import type { ProjectListEntry, Visibility } from '../../types/project';
 import { formatRelativeTime } from '../../utils/format';
 import { projectDisplayName } from '../../utils/project-helpers';
@@ -17,6 +17,8 @@ interface ProjectListItemProps {
   onRename: (localId: string, name: string) => void;
   onChangeVisibility?: (localId: string, v: Visibility) => void;
   onSettings?: (localId: string) => void;
+  onSaveToCloud?: (localId: string) => void;
+  onRemoveFromCloud?: (localId: string) => void;
   isDownloading?: boolean;
 }
 
@@ -30,6 +32,8 @@ export function ProjectListItem({
   onRename,
   onChangeVisibility,
   onSettings,
+  onSaveToCloud,
+  onRemoveFromCloud,
   isDownloading,
 }: ProjectListItemProps) {
   const displayName = projectDisplayName(project.name);
@@ -136,6 +140,32 @@ export function ProjectListItem({
                   transition-colors"
               >
                 <Link size={16} aria-hidden="true" />
+              </button>
+            )}
+            {onSaveToCloud && (
+              <button
+                onClick={() => onSaveToCloud(project.localId)}
+                title={`Save to cloud`}
+                aria-label={`Save project ${displayName} to cloud`}
+                className="p-1 rounded text-gray-400 dark:text-gray-500
+                  hover:text-blue-600 dark:hover:text-blue-400
+                  hover:bg-gray-100 dark:hover:bg-gray-700
+                  transition-colors"
+              >
+                <CloudUpload size={16} aria-hidden="true" />
+              </button>
+            )}
+            {onRemoveFromCloud && (
+              <button
+                onClick={() => onRemoveFromCloud(project.localId)}
+                title={`Remove from cloud`}
+                aria-label={`Remove project ${displayName} from cloud`}
+                className="p-1 rounded text-gray-400 dark:text-gray-500
+                  hover:text-blue-600 dark:hover:text-blue-400
+                  hover:bg-gray-100 dark:hover:bg-gray-700
+                  transition-colors"
+              >
+                <CloudOff size={16} aria-hidden="true" />
               </button>
             )}
             <button

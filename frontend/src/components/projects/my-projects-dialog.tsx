@@ -157,6 +157,8 @@ export function MyProjectsDialog({ open, onClose }: MyProjectsDialogProps) {
                   onDelete={actions.handleDelete}
                   onRename={actions.handleRename}
                   onChangeVisibility={isSignedIn ? actions.handleChangeVisibility : undefined}
+                  onSaveToCloud={isSignedIn && project.storage !== 'cloud' ? actions.handleSaveToCloud : undefined}
+                  onRemoveFromCloud={isSignedIn && project.storage === 'cloud' ? actions.handleRemoveFromCloud : undefined}
                   isDownloading={project.localId === actions.downloadingLocalId}
                 />
               );
