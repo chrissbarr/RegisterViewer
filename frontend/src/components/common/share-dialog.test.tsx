@@ -63,12 +63,17 @@ vi.mock('../common/announcer', () => ({
   useAnnounce: () => vi.fn(),
 }));
 
+vi.mock('../../context/auth-context', () => ({
+  useAuth: vi.fn(() => ({ user: null })),
+}));
+
 // ── Imports for mocked modules ───────────────────────────────────────
 
 import { isCloudEnabled } from '../../utils/api-client';
 import { useAppState } from '../../context/app-context';
 import { useCloudSync, useCloudSyncActions } from '../../context/cloud-sync-context';
 import { useProjectStorage } from '../../context/project-storage-context';
+import { useAuth } from '../../context/auth-context';
 import { loadProject } from '../../utils/project-storage';
 import { buildSnapshotUrl } from '../../utils/snapshot-url';
 import { deserializeState } from '../../utils/storage';
@@ -122,6 +127,7 @@ beforeEach(() => {
   });
   (loadProject as Mock).mockReturnValue(null);
   (useProjectStorage as Mock).mockReturnValue({ activeLocalId: null, projects: [] });
+  (useAuth as Mock).mockReturnValue({ user: { id: 'u1', email: 'test@example.com' } });
   (buildSnapshotUrl as Mock).mockReturnValue('https://example.com/#data=abc123');
   (deserializeState as Mock).mockImplementation((data: unknown) => data);
 });
@@ -340,8 +346,17 @@ describe('ShareDialog', () => {
     it('renders callout text prompting user to save', () => {
       renderShareDialog();
       expect(
-        screen.getByText('Save to the cloud for a short, permanent link.'),
+        screen.getByText('Save to Cloud to share this project via link.'),
       ).toBeInTheDocument();
+    });
+
+    it('renders sign-in prompt when user is not signed in', () => {
+      (useAuth as Mock).mockReturnValue({ user: null });
+      renderShareDialog();
+      expect(
+        screen.getByText('Sign in to share this project via link.'),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Save to Cloud' })).not.toBeInTheDocument();
     });
 
     it('calls saveToCloud directly when clicking Save to Cloud (active project path)', async () => {
