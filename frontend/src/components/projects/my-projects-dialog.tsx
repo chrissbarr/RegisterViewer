@@ -58,7 +58,7 @@ export function MyProjectsDialog({ open, onClose }: MyProjectsDialogProps) {
   const placeholderIds = useMemo(() => {
     const ids = new Set<string>();
     for (const p of projects) {
-      if (p.isCloudSaved && !hasLocalData(p.localId)) {
+      if (p.storage === 'cloud' && !hasLocalData(p.localId)) {
         ids.add(p.localId);
       }
     }

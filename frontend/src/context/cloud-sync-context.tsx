@@ -465,6 +465,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
         cloudId: sp.id,
         visibility: sp.visibility,
         cloudSavedAt: sp.updatedAt,
+        storage: 'cloud',
       });
     }
 

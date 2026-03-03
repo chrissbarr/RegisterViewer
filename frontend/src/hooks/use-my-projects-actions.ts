@@ -77,6 +77,7 @@ export function useMyProjectsActions(
           createdAt: project.createdAt,
           localSavedAt: new Date().toISOString(),
           cloudSavedAt: project.cloudSavedAt,
+          storage: project.storage,
           state: {
             registers: result.registers,
             activeRegisterId: result.registers[0]?.id ?? null,

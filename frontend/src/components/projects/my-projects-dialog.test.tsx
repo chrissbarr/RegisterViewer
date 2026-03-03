@@ -22,7 +22,7 @@ function makeProject(overrides: Partial<ProjectListEntry> = {}): ProjectListEntr
     createdAt: '2025-01-01T00:00:00Z',
     localSavedAt: '2025-01-01T00:00:00Z',
     cloudSavedAt: null,
-    isCloudSaved: false,
+    storage: 'local',
     ...overrides,
   };
 }
@@ -342,7 +342,7 @@ describe('MyProjectsDialog interactions', () => {
           localId: 'p1',
           name: 'Cloud Project',
           cloudId: 'cloud-abc',
-          isCloudSaved: true,
+          storage: 'cloud',
         }),
       ];
       render(<MyProjectsDialog open={true} onClose={vi.fn()} />);

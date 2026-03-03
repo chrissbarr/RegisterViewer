@@ -38,6 +38,7 @@ function makeStoredProject(overrides?: Partial<StoredLocalProject>): StoredLocal
     createdAt: '2026-01-01T00:00:00.000Z',
     localSavedAt: '2026-01-01T00:00:00.000Z',
     cloudSavedAt: null,
+    storage: 'local',
     state: makeSerializedState(),
     ...overrides,
   };
@@ -72,6 +73,7 @@ describe('loadManifest', () => {
         createdAt: '2026-01-01T00:00:00.000Z',
         localSavedAt: '2026-01-01T00:00:00.000Z',
         cloudSavedAt: null,
+        storage: 'local',
       }],
     };
     localStorage.setItem('register-viewer-manifest', JSON.stringify(stored));
@@ -111,6 +113,7 @@ describe('loadManifest', () => {
         createdAt: '2026-01-01T00:00:00.000Z',
         localSavedAt: '2026-01-01T00:00:00.000Z',
         cloudSavedAt: null,
+        storage: 'local',
       }],
     };
     localStorage.setItem('register-viewer-manifest', JSON.stringify(manifestData));
@@ -527,9 +530,10 @@ describe('toProjectListEntry', () => {
       createdAt: '2026-01-01T00:00:00.000Z',
       localSavedAt: '2026-01-01T00:00:00.000Z',
       cloudSavedAt: null,
+      storage: 'local',
     };
     const result = toProjectListEntry(entry);
-    expect(result.isCloudSaved).toBe(false);
+    expect(result.storage).toBe('local');
     expect(result.localId).toBe('id-1');
     expect(result.name).toBe('Test');
   });
@@ -543,9 +547,10 @@ describe('toProjectListEntry', () => {
       createdAt: '2026-01-01T00:00:00.000Z',
       localSavedAt: '2026-01-01T00:00:00.000Z',
       cloudSavedAt: '2026-01-02T00:00:00.000Z',
+      storage: 'cloud',
     };
     const result = toProjectListEntry(entry);
-    expect(result.isCloudSaved).toBe(true);
+    expect(result.storage).toBe('cloud');
     expect(result.cloudId).toBe('abc123def456');
     expect(result.visibility).toBe('unlisted');
   });

@@ -13,6 +13,7 @@ export interface ProjectManifestEntry {
   createdAt: string;        // ISO 8601
   localSavedAt: string;     // ISO 8601
   cloudSavedAt: string | null;
+  storage: 'local' | 'cloud';
 }
 
 /** The manifest stored at `register-viewer-manifest` */
@@ -30,6 +31,7 @@ export interface StoredLocalProject {
   createdAt: string;
   localSavedAt: string;
   cloudSavedAt: string | null;
+  storage: 'local' | 'cloud';
   state: import('./register').SerializedAppState;
 }
 
@@ -42,7 +44,7 @@ export interface ProjectListEntry {
   createdAt: string;
   localSavedAt: string;
   cloudSavedAt: string | null;
-  isCloudSaved: boolean;      // derived: cloudId !== null
+  storage: 'local' | 'cloud';
 }
 
 /** Global preferences stored at `register-viewer-prefs` */

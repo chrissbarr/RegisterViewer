@@ -61,7 +61,7 @@ function makeProjectList(entries: Array<{ localId: string; cloudId?: string | nu
     createdAt: '2026-01-01T00:00:00Z',
     localSavedAt: '2026-01-01T00:00:00Z',
     cloudSavedAt: null,
-    isCloudSaved: (p.cloudId ?? null) !== null,
+    storage: (p.cloudId ?? null) !== null ? 'cloud' as const : 'local' as const,
   }));
 }
 

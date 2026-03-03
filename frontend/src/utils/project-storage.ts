@@ -51,6 +51,7 @@ function toManifestEntry(project: StoredLocalProject): ProjectManifestEntry {
     createdAt: project.createdAt,
     localSavedAt: project.localSavedAt,
     cloudSavedAt: project.cloudSavedAt,
+    storage: project.storage ?? 'local',
   };
 }
 
@@ -58,7 +59,6 @@ function toManifestEntry(project: StoredLocalProject): ProjectManifestEntry {
 export function toProjectListEntry(entry: ProjectManifestEntry): ProjectListEntry {
   return {
     ...entry,
-    isCloudSaved: entry.cloudId !== null,
   };
 }
 
@@ -171,6 +171,7 @@ interface CreateProjectCloudMeta {
   cloudId: string;
   visibility: import('../types/project').Visibility;
   cloudSavedAt: string;
+  storage?: 'local' | 'cloud';
 }
 
 /** Create a new project with initial state, returns the localId */
@@ -185,6 +186,7 @@ export function createProject(initialState: SerializedAppState, name?: string, c
     createdAt: now,
     localSavedAt: now,
     cloudSavedAt: cloudMeta?.cloudSavedAt ?? null,
+    storage: cloudMeta?.storage ?? 'local',
     state: initialState,
   };
   saveProject(project);

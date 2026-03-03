@@ -23,7 +23,7 @@ vi.mock('../utils/project-storage', () => ({
     createdAt: e.createdAt ?? '2024-01-01T00:00:00Z',
     localSavedAt: e.localSavedAt ?? '2024-01-01T00:00:00Z',
     cloudSavedAt: e.cloudSavedAt ?? null,
-    isCloudSaved: e.cloudId !== null,
+    storage: e.storage ?? 'local',
   })),
   getMostRecentProjectId: vi.fn(() => null),
   ACTIVE_PROJECT_SESSION_KEY: 'register-viewer-active-project',
@@ -61,6 +61,7 @@ function makeManifestEntry(overrides: Partial<ProjectManifestEntry> = {}): Proje
     createdAt: '2024-01-01T00:00:00Z',
     localSavedAt: '2024-01-01T00:00:00Z',
     cloudSavedAt: null,
+    storage: 'local',
     ...overrides,
   };
 }
@@ -74,6 +75,7 @@ function makeStoredProject(overrides: Partial<StoredLocalProject> = {}): StoredL
     createdAt: '2024-01-01T00:00:00Z',
     localSavedAt: '2024-01-01T00:00:00Z',
     cloudSavedAt: null,
+    storage: 'local',
     state: {
       registers: [],
       activeRegisterId: null,
