@@ -31,9 +31,8 @@ import {
   getProject,
 } from '../utils/api-client';
 import { useAuth, useAuthActions } from './auth-context';
-import { buildProjectUrl, createProject, loadProject, purgeCloudProjects, getMostRecentProjectId, evictProjectData, ACTIVE_PROJECT_SESSION_KEY } from '../utils/project-storage';
-import { EMPTY_SERIALIZED_STATE, exportToObject, deserializeState } from '../utils/storage';
-import { saveProjectToCloudImpl } from '../utils/cloud-operations';
+import { buildProjectUrl, createProject, purgeCloudProjects, getMostRecentProjectId, evictProjectData, ACTIVE_PROJECT_SESSION_KEY } from '../utils/project-storage';
+import { EMPTY_SERIALIZED_STATE } from '../utils/storage';
 import { clearCloudUrl, setCloudUrl } from '../utils/cloud-url';
 import { useDirtyTracking } from '../hooks/use-dirty-tracking';
 import { useActiveProjectCloudOps } from '../hooks/use-active-project-cloud-ops';
@@ -63,8 +62,6 @@ interface SyncResult {
   staleCloudIds: string[];
   /** Number of cloud-only projects that were added as local placeholders */
   placeholdersCreated: number;
-  /** Number of local-only projects uploaded to cloud */
-  uploadedCount: number;
 }
 
 interface CloudSyncActions {
@@ -444,7 +441,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const syncCloudProjects = useCallback(async (): Promise<SyncResult> => {
-    const emptyResult: SyncResult = { updatedCount: 0, staleCloudIds: [], placeholdersCreated: 0, uploadedCount: 0 };
+    const emptyResult: SyncResult = { updatedCount: 0, staleCloudIds: [], placeholdersCreated: 0 };
     if (!isCloudEnabled()) return emptyResult;
 
     const jwt = getJwt();
@@ -469,29 +466,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       });
     }
 
-    // Upload local-only projects to cloud
-    const localOnlyEntries = projectsRef.current.filter(p => p.cloudId === null);
-    let uploadedCount = 0;
-    for (const entry of localOnlyEntries) {
-      const project = loadProject(entry.localId);
-      if (!project) continue;
-      try {
-        const projectState = deserializeState(project.state);
-        const jsonPayload = exportToObject(projectState);
-        const result = await saveProjectToCloudImpl(jsonPayload, null, jwt);
-        if (result.kind === 'created') {
-          updateCloudMetadata(entry.localId, {
-            cloudId: result.cloudId,
-            cloudSavedAt: result.timestamp,
-          });
-          uploadedCount++;
-        }
-      } catch {
-        // Best-effort — will retry on next sync
-      }
-    }
-
-    return { updatedCount: patches.length, staleCloudIds, placeholdersCreated: cloudOnlyProjects.length, uploadedCount };
+    return { updatedCount: patches.length, staleCloudIds, placeholdersCreated: cloudOnlyProjects.length };
   }, [updateCloudMetadata, getJwt]);
 
   // Keep refs up-to-date for the auth-transition and eviction effects

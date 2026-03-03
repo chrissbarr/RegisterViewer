@@ -36,7 +36,7 @@ const mockGetActiveProject = vi.fn(() => null);
 const mockSetVisibility = vi.fn();
 const mockAnnounce = vi.fn();
 const mockDeleteProjectFromCloud = vi.fn().mockResolvedValue(undefined);
-const mockSyncCloudProjects = vi.fn().mockResolvedValue({ updatedCount: 0, staleCloudIds: [], placeholdersCreated: 0, uploadedCount: 0 });
+const mockSyncCloudProjects = vi.fn().mockResolvedValue({ updatedCount: 0, staleCloudIds: [], placeholdersCreated: 0 });
 
 let mockProjects: ProjectListEntry[] = [];
 let mockActiveLocalId: string | null = null;
@@ -129,7 +129,7 @@ describe('MyProjectsDialog', () => {
     mockActiveLocalId = null;
     mockCloudEnabled = false;
     mockDeleteProjectFromCloud.mockResolvedValue(undefined);
-    mockSyncCloudProjects.mockResolvedValue({ updatedCount: 0, staleCloudIds: [], placeholdersCreated: 0, uploadedCount: 0 });
+    mockSyncCloudProjects.mockResolvedValue({ updatedCount: 0, staleCloudIds: [], placeholdersCreated: 0 });
   });
 
   it('renders project list', () => {
@@ -203,7 +203,7 @@ describe('MyProjectsDialog interactions', () => {
     mockActiveLocalId = null;
     mockCloudEnabled = false;
     mockDeleteProjectFromCloud.mockResolvedValue(undefined);
-    mockSyncCloudProjects.mockResolvedValue({ updatedCount: 0, staleCloudIds: [], placeholdersCreated: 0, uploadedCount: 0 });
+    mockSyncCloudProjects.mockResolvedValue({ updatedCount: 0, staleCloudIds: [], placeholdersCreated: 0 });
   });
 
   describe('creating a new project', () => {

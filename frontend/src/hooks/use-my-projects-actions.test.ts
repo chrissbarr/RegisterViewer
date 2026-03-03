@@ -18,7 +18,7 @@ const mockStorageActions = {
 
 const mockCloudActions = {
   setProjectVisibility: vi.fn(),
-  syncCloudProjects: vi.fn(() => Promise.resolve({ staleCloudIds: [], updatedCount: 0, placeholdersCreated: 0, uploadedCount: 0 })),
+  syncCloudProjects: vi.fn(() => Promise.resolve({ staleCloudIds: [], updatedCount: 0, placeholdersCreated: 0 })),
   deleteProjectFromCloud: vi.fn(),
 };
 
@@ -69,7 +69,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   (isCloudEnabled as Mock).mockReturnValue(true);
   mockStorageActions.createNewProject.mockReturnValue('new-id');
-  mockCloudActions.syncCloudProjects.mockResolvedValue({ staleCloudIds: [], updatedCount: 0, placeholdersCreated: 0, uploadedCount: 0 });
+  mockCloudActions.syncCloudProjects.mockResolvedValue({ staleCloudIds: [], updatedCount: 0, placeholdersCreated: 0 });
 });
 
 /** Render the hook with open=true and flush the async cloud-sync useEffect. */
