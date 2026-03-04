@@ -116,7 +116,7 @@ function buildDeps() {
     }),
     updateCloudMetadata: vi.fn(),
     createNewProject: vi.fn(() => 'new-local-id'),
-    getJwt: vi.fn(() => TEST_JWT),
+    getJwt: vi.fn((): string | null => TEST_JWT),
     dispatch: vi.fn(),
     initialInternalState: { ...INITIAL_INTERNAL_STATE },
   };
@@ -376,11 +376,11 @@ describe('useActiveProjectCloudOps', () => {
       const { result } = renderHook(() => useActiveProjectCloudOps(deps));
 
       await act(async () => {
-        await result.current.setVisibility('public');
+        await result.current.setVisibility('unlisted');
       });
 
-      expect(patchVisibilityImpl).toHaveBeenCalledWith(TEST_CLOUD_ID, 'public', TEST_JWT);
-      expect(deps.updateCloudMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, { visibility: 'public' });
+      expect(patchVisibilityImpl).toHaveBeenCalledWith(TEST_CLOUD_ID, 'unlisted', TEST_JWT);
+      expect(deps.updateCloudMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, { visibility: 'unlisted' });
       // Optimistic update — setInternal is called with the new visibility
       expect(deps.setInternal).toHaveBeenCalled();
     });
@@ -398,13 +398,13 @@ describe('useActiveProjectCloudOps', () => {
       const { result } = renderHook(() => useActiveProjectCloudOps(deps));
 
       await act(async () => {
-        await result.current.setVisibility('public');
+        await result.current.setVisibility('unlisted');
       });
 
-      // First call is the optimistic update to 'public'
+      // First call is the optimistic update to 'unlisted'
       const firstCall = deps.setInternal.mock.calls[0][0];
       const optimisticState = typeof firstCall === 'function' ? firstCall(INITIAL_INTERNAL_STATE) : firstCall;
-      expect(optimisticState).toMatchObject({ visibility: 'public' });
+      expect(optimisticState).toMatchObject({ visibility: 'unlisted' });
 
       // Second call reverts to 'private' and sets error
       const revertCall = deps.setInternal.mock.calls[1][0];

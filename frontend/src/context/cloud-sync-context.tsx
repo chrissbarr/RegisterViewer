@@ -221,11 +221,11 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     setInternal,
   );
 
-  // Sync cloud state when active project changes (handles project switch)
-  // Assigned during render (not in useEffect) so that initFromProject's
-  // synchronous ref write in a child effect isn't clobbered by a parent
-  // sync effect running later in the same commit — which also breaks under
-  // React StrictMode's double-invocation of effects.
+  // IMPORTANT: Assigned during render (not in useEffect) so that initFromProject's
+  // synchronous ref write in a child effect isn't clobbered by a parent sync effect
+  // running later in the same commit — which also breaks under React StrictMode's
+  // double-invocation of effects. Do not move to useEffect without verifying the
+  // initFromProject race described in the CloudSyncProvider docstring.
   const internalRef = useRef(internal);
   internalRef.current = internal;
 
@@ -249,8 +249,10 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       if (prevEntry?.storage === 'cloud' && prevEntry.cloudId) {
         // Flush pending sync first, then evict — only on success and only if
         // the user hasn't navigated back to this project in the meantime.
+        // Skip during sign-out to avoid racing with purgeCloudProjects.
         flushSyncRef.current?.().then(() => {
           if (activeLocalIdRef.current === prevLocalId) return; // user navigated back
+          if (isSigningOutRef.current) return; // sign-out purge handles cleanup
           evictProjectData(prevLocalId);
         }).catch(() => {
           // Flush failed — keep local data as safety net
@@ -309,7 +311,8 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     getProject(internal.cloudId, jwt)
       .then((res) => {
-        if (!cancelled && res.isOwner) {
+        // Verify user is still authenticated when response arrives (SEC-M3)
+        if (!cancelled && res.isOwner && getJwt()) {
           setInternal((prev) => prev.cloudId === internal.cloudId ? { ...prev, isOwner: true } : prev);
         }
       })
@@ -495,6 +498,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   flushSyncRef.current = flushSync;
 
   const hasRunInitialSyncRef = useRef(false);
+  const isSigningOutRef = useRef(false);
 
   useEffect(() => {
     const wasNull = prevAuthUserRef.current === null;
@@ -523,6 +527,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
 
     if (wasLoggedIn && !authUser) {
       hasRunInitialSyncRef.current = false;
+      isSigningOutRef.current = true;
       // Sign-out: purge cloud projects from localStorage
       const purgedIds = purgeCloudProjects();
       refreshProjectList();
@@ -543,6 +548,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       setInternal({ ...initialInternalState });
       clearCloudUrl();
       sessionStorage.removeItem(ACTIVE_PROJECT_SESSION_KEY);
+      isSigningOutRef.current = false;
     }
   }, [authUser, rawActiveOps, refreshProjectList, switchProject, createNewProject]);
 

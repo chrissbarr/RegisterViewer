@@ -20,11 +20,13 @@ function makeInternal(overrides: Partial<{ cloudId: string | null; lastSavedVers
   };
 }
 
+type InternalState = { cloudId: string | null; lastSavedVersion: number };
+
 describe('useDirtyTracking', () => {
-  let setInternal: ReturnType<typeof vi.fn>;
+  let setInternal: ReturnType<typeof vi.fn<(updater: (prev: InternalState) => InternalState) => void>>;
 
   beforeEach(() => {
-    setInternal = vi.fn();
+    setInternal = vi.fn<(updater: (prev: InternalState) => InternalState) => void>();
   });
 
   // ── 1. Initial state: not dirty ─────────────────────────────────

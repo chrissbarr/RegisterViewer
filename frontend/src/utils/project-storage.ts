@@ -124,6 +124,8 @@ function isValidStoredProject(obj: unknown): obj is StoredLocalProject {
   return (
     typeof p.localId === 'string' &&
     typeof p.name === 'string' &&
+    (p.cloudId === null || typeof p.cloudId === 'string') &&
+    typeof p.createdAt === 'string' &&
     typeof p.state === 'object' && p.state !== null &&
     Array.isArray((p.state as Record<string, unknown>).registers) &&
     typeof (p.state as Record<string, unknown>).registerValues === 'object'
@@ -137,8 +139,10 @@ export function loadProject(localId: string): StoredLocalProject | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!isValidStoredProject(parsed)) return null;
-    // Backfill storage for pre-migration records loaded directly from localStorage
-    if (!parsed.storage) parsed.storage = parsed.cloudId ? 'cloud' : 'local';
+    // Backfill or correct storage for pre-migration records
+    if (parsed.storage !== 'local' && parsed.storage !== 'cloud') {
+      parsed.storage = parsed.cloudId ? 'cloud' : 'local';
+    }
     return parsed;
   } catch (err) {
     if (import.meta.env.DEV) {
@@ -253,8 +257,7 @@ export function updateProjectMetadata(
 ): void {
   const project = loadProject(localId);
   if (!project) return;
-  Object.assign(project, updates);
-  saveProject(project);
+  saveProject({ ...project, ...updates });
 }
 
 /** Get the most recently saved project's localId.
@@ -359,8 +362,9 @@ export function runMigrationIfNeeded(): void {
   const preOrphanManifest = loadManifest();
   let needsSave = false;
   for (const entry of preOrphanManifest.projects) {
-    // Cast to partial — old localStorage data may lack `storage`
-    if (!('storage' in (entry as Partial<ProjectManifestEntry>))) {
+    // Cast to partial — old localStorage data may lack or have invalid `storage`
+    const s = (entry as Partial<ProjectManifestEntry>).storage;
+    if (s !== 'local' && s !== 'cloud') {
       entry.storage = entry.cloudId !== null ? 'cloud' : 'local';
       needsSave = true;
     }
