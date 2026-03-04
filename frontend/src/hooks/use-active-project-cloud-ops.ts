@@ -38,7 +38,8 @@ interface ActiveProjectCloudOpsDeps {
 }
 
 interface ActiveProjectCloudOps {
-  saveToCloud: () => Promise<void>;
+  /** Returns false if the save was dropped because the mutation lock was held. */
+  saveToCloud: () => Promise<boolean>;
   fork: () => Promise<void>;
   deleteFromCloud: () => Promise<void>;
   setVisibility: (v: Visibility) => Promise<void>;
@@ -89,9 +90,9 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
     }));
   }, [updateCloudMetadata, createNewProject, dataVersionRef, activeLocalIdRef, appStateRef, setInternal]);
 
-  const saveToCloud = useCallback(async () => {
-    if (!isCloudEnabled()) return;
-    await withMutationLock(mutationLockRef, async () => {
+  const saveToCloud = useCallback(async (): Promise<boolean> => {
+    if (!isCloudEnabled()) return true;
+    const lockResult = await withMutationLock(mutationLockRef, async () => {
       try {
         const { cloudId, isOwner } = internalRef.current;
         const existingCloudId = (cloudId && isOwner) ? cloudId : null;
@@ -141,6 +142,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
         setInternal(next);
       }
     });
+    return lockResult.executed;
   }, [updateCloudMetadata, applyCreatedResult, mutationLockRef, dataVersionRef, getJwt, internalRef, appStateRef, activeLocalIdRef, setInternal]);
 
   const fork = useCallback(async () => {

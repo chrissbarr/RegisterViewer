@@ -65,7 +65,8 @@ interface SyncResult {
 }
 
 interface CloudSyncActions {
-  saveToCloud: () => Promise<void>;
+  /** Returns false if the save was dropped because a mutation lock was held. */
+  saveToCloud: () => Promise<boolean | undefined>;
   saveProjectToCloud: (localId: string) => Promise<void>;
   deleteFromCloud: () => Promise<void>;
   deleteProjectFromCloud: (cloudId: string) => Promise<void>;
@@ -348,19 +349,26 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     }
 
     let cancelled = false;
-    syncTimerRef.current = setTimeout(async () => {
+    const attemptSync = async () => {
       if (cancelled) return;
       const jwt = getJwt();
       if (!jwt) return;
       setSyncStatus('syncing');
       try {
-        await rawActiveOps.saveToCloud();
-        if (!cancelled) setSyncStatus('saved');
+        const executed = await rawActiveOps.saveToCloud();
+        if (cancelled) return;
+        if (!executed) {
+          // Mutation lock was held — reschedule so data isn't silently dropped
+          syncTimerRef.current = setTimeout(attemptSync, CLOUD_SYNC_DEBOUNCE_MS);
+          return;
+        }
+        setSyncStatus('saved');
       } catch {
         if (!cancelled) setSyncStatus('offline');
         // No automatic retry — the next user edit will trigger a fresh sync attempt
       }
-    }, CLOUD_SYNC_DEBOUNCE_MS);
+    };
+    syncTimerRef.current = setTimeout(attemptSync, CLOUD_SYNC_DEBOUNCE_MS);
 
     return () => {
       cancelled = true;

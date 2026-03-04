@@ -18,22 +18,26 @@ export const CLEARED_CLOUD_METADATA = {
   storage: 'local' as const,
 };
 
+export type MutationLockResult<T> =
+  | { executed: true; result: T }
+  | { executed: false };
+
 /**
  * Execute `fn` only if the lock ref is not already held.
  * Acquires the lock before running and releases it in `finally`.
- * Returns `undefined` (without calling `fn`) when the lock is already held.
+ * Returns `{ executed: false }` when the lock is already held so callers
+ * can detect dropped operations and retry if appropriate.
  */
 export async function withMutationLock<T>(
   ref: MutableRefObject<boolean>,
   fn: () => Promise<T>,
-): Promise<T | undefined> {
+): Promise<MutationLockResult<T>> {
   if (ref.current) {
-    console.warn('[cloud-sync] mutation dropped — another operation is in progress');
-    return;
+    return { executed: false };
   }
   ref.current = true;
   try {
-    return await fn();
+    return { executed: true, result: await fn() };
   } finally {
     ref.current = false;
   }

@@ -10,7 +10,7 @@ describe('withMutationLock', () => {
   it('executes fn and returns its result when lock is free', async () => {
     const ref = makeRef(false);
     const result = await withMutationLock(ref, async () => 42);
-    expect(result).toBe(42);
+    expect(result).toEqual({ executed: true, result: 42 });
   });
 
   it('sets the lock before calling fn and releases it after', async () => {
@@ -25,26 +25,14 @@ describe('withMutationLock', () => {
     expect(ref.current).toBe(false);
   });
 
-  it('drops the operation and returns undefined when lock is already held', async () => {
+  it('returns executed: false without calling fn when lock is already held', async () => {
     const ref = makeRef(true);
     const fn = vi.fn(async () => 'should not run');
 
     const result = await withMutationLock(ref, fn);
 
-    expect(result).toBeUndefined();
+    expect(result).toEqual({ executed: false });
     expect(fn).not.toHaveBeenCalled();
-  });
-
-  it('logs a console.warn when dropping an operation', async () => {
-    const ref = makeRef(true);
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
-    await withMutationLock(ref, async () => {});
-
-    expect(warnSpy).toHaveBeenCalledWith(
-      '[cloud-sync] mutation dropped — another operation is in progress',
-    );
-    warnSpy.mockRestore();
   });
 
   it('releases the lock even when fn throws', async () => {
