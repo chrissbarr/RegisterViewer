@@ -168,7 +168,12 @@ export function saveProject(project: StoredLocalProject): void {
   saveManifest(manifest);
 }
 
-/** Optional cloud metadata for creating a project that is already cloud-linked */
+/**
+ * Optional cloud metadata for creating a project that is already cloud-linked.
+ * Used by `syncCloudProjects` to create lightweight local placeholders (cloud-only stubs)
+ * for server projects that have no local counterpart. These stubs use `EMPTY_SERIALIZED_STATE`
+ * as their initial state; actual project data is fetched lazily when the user opens the project.
+ */
 interface CreateProjectCloudMeta {
   cloudId: string;
   visibility: import('../types/project').Visibility;
@@ -326,7 +331,16 @@ function migrateLegacyState(): void {
   }
 }
 
-/** Run migration from legacy storage format. Call once on startup. */
+/**
+ * Run migration from legacy storage format. Call once on startup.
+ *
+ * Migration steps (idempotent):
+ * 1. Convert legacy single-project state to manifest format
+ * 2. Remove legacy localStorage keys
+ * 3. Ensure manifest exists
+ * 4. Backfill `storage` field for pre-existing manifest entries (cloud if cloudId, local otherwise)
+ * 5. Recover orphaned project keys not tracked in the manifest
+ */
 export function runMigrationIfNeeded(): void {
   migrateLegacyState();
 

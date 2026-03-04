@@ -1335,6 +1335,66 @@ describe('CloudSyncProvider', () => {
     });
   });
 
+  describe('SEC-H2 regression: non-owned cloud projects must not be evicted', () => {
+    const PREV_LOCAL_ID = 'prev-local';
+    const NEXT_LOCAL_ID = 'next-local';
+
+    it('does not evict a shared project (storage=local) on project switch', async () => {
+      // Shared project loaded via link: has cloudId but storage='local'
+      (loadManifest as Mock).mockReturnValue({
+        version: 1,
+        projects: [
+          makeManifestEntry({ localId: PREV_LOCAL_ID, cloudId: 'shared-cloud', storage: 'local' }),
+          makeManifestEntry({ localId: NEXT_LOCAL_ID, cloudId: null, name: 'Next' }),
+        ],
+      });
+      (loadProject as Mock).mockImplementation((id: string) => ({
+        localId: id,
+        state: makeState(),
+      }));
+      (apiGetProject as Mock).mockReturnValue(new Promise(() => {}));
+
+      const { result } = renderHook(
+        () => ({
+          state: useCloudSync(),
+          actions: useCloudSyncActions(),
+          storageActions: useProjectStorageActions(),
+        }),
+        {
+          wrapper: ({ children }: { children: ReactNode }) => {
+            const initialState = makeState({
+              registers: [makeRegister({ id: 'reg-1' })],
+            });
+            return (
+              <AppProvider savedState={initialState}>
+                <ProjectStorageProvider initialLocalId={PREV_LOCAL_ID}>
+                  <CloudSyncProvider>{children}</CloudSyncProvider>
+                </ProjectStorageProvider>
+              </AppProvider>
+            );
+          },
+        },
+      );
+
+      // Initialize as non-owner shared project
+      await act(async () => {
+        result.current.actions.initFromProject('shared-cloud', false, 'local');
+      });
+
+      // Switch to another project
+      await act(async () => {
+        result.current.storageActions.switchProject(NEXT_LOCAL_ID);
+      });
+
+      await act(async () => {
+        await new Promise(r => setTimeout(r, 50));
+      });
+
+      // Should NOT evict because storage='local' (non-owned)
+      expect(evictProjectData).not.toHaveBeenCalled();
+    });
+  });
+
   describe('SEC-N02 regression: ownership inference', () => {
     it('does not grant ownership to authenticated users for non-owned projects', () => {
       // Simulate: user is logged in with a JWT

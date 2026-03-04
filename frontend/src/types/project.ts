@@ -13,6 +13,11 @@ export interface ProjectManifestEntry {
   createdAt: string;        // ISO 8601
   localSavedAt: string;     // ISO 8601
   cloudSavedAt: string | null;
+  /**
+   * Persistence strategy. `'local'` = local-only or shared/non-owned cloud project.
+   * `'cloud'` = user-owned cloud-backed project (eligible for auto-sync, eviction, sign-out purge).
+   * Only set to `'cloud'` when the user explicitly saves to cloud AND owns the project.
+   */
   storage: 'local' | 'cloud';
 }
 
