@@ -1333,6 +1333,84 @@ describe('CloudSyncProvider', () => {
       // Eviction should NOT have happened because user is back on prev project
       expect(evictProjectData).not.toHaveBeenCalledWith(PREV_LOCAL_ID);
     });
+
+    it('flush-before-evict saves the previous project state, not the new project state', async () => {
+      // Regression: switchProject dispatches LOAD_STATE + sets activeLocalId in
+      // the same commit. By the time the project-switch effect calls flushSync,
+      // appStateRef already points to the *new* project's state. Without the
+      // stateOverride fix, exportToObject would serialize the wrong project.
+      authMock.getJwt.mockReturnValue('mock-jwt');
+
+      (loadManifest as Mock).mockReturnValue({
+        version: 1,
+        projects: [
+          makeManifestEntry({ localId: PREV_LOCAL_ID, cloudId: 'cloud-prev', storage: 'cloud' }),
+          makeManifestEntry({ localId: NEXT_LOCAL_ID, cloudId: null, name: 'Next' }),
+        ],
+      });
+
+      // Return distinct states so we can tell which one was saved
+      const prevProjectState = makeState({
+        registers: [makeRegister({ id: 'reg-1' })],
+        registerValues: { 'reg-1': 0xAAn },
+      });
+      const nextProjectState = makeState({
+        registers: [makeRegister({ id: 'reg-2' })],
+        registerValues: { 'reg-2': 0xBBn },
+      });
+      (loadProject as Mock).mockImplementation((id: string) => ({
+        localId: id,
+        state: id === NEXT_LOCAL_ID ? nextProjectState : prevProjectState,
+      }));
+
+      // Cloud update succeeds
+      (apiUpdateProject as Mock).mockResolvedValue({ id: 'cloud-prev', updatedAt: '2026-01-01T00:00:00Z' });
+      (apiGetProject as Mock).mockReturnValue(new Promise(() => {}));
+
+      const { result } = renderWithProjectSwitch();
+
+      // Initialize cloud state for the previous project
+      await act(async () => {
+        result.current.actions.initFromProject('cloud-prev', true, 'cloud');
+      });
+
+      // Make data dirty so flushSync actually attempts a save
+      act(() => {
+        result.current.dispatch({
+          type: 'SET_REGISTER_VALUE',
+          registerId: 'reg-1',
+          value: 0x42n,
+        });
+      });
+
+      // Clear exportToObject call history before the switch
+      (exportToObject as Mock).mockClear();
+
+      // Track what state exportToObject receives during the flush
+      const capturedStates: unknown[] = [];
+      (exportToObject as Mock).mockImplementation((state: unknown) => {
+        capturedStates.push(state);
+        return { version: 1, registers: [], values: {} };
+      });
+
+      // Switch to the next project — triggers flush-before-evict
+      await act(async () => {
+        result.current.storageActions.switchProject(NEXT_LOCAL_ID);
+      });
+
+      // Wait for flush promise to settle
+      await act(async () => {
+        await new Promise(r => setTimeout(r, 50));
+      });
+
+      // exportToObject should have been called with the PREVIOUS project's
+      // state (containing reg-1 with value 0x42), NOT the next project's state.
+      expect(capturedStates.length).toBeGreaterThanOrEqual(1);
+      const flushedState = capturedStates[0] as { registers: Array<{ id: string }>; registerValues: Record<string, bigint> };
+      // The previous project had reg-1; the new project has reg-2.
+      // If the bug were present, we'd see reg-2 here instead.
+      expect(flushedState.registers[0]?.id).toBe('reg-1');
+    });
   });
 
   describe('SEC-H2 regression: non-owned cloud projects must not be evicted', () => {

@@ -46,6 +46,7 @@ import { useLoginGuard } from '../hooks/use-login-guard';
 import { useAuthTransition } from '../hooks/use-auth-transition';
 import { computeSyncPatches } from '../utils/cloud-sync';
 import { DEFAULT_PROJECT_NAME, type Visibility } from '../types/project';
+import type { AppState } from '../types/register';
 
 export type { SyncStatus };
 
@@ -180,6 +181,22 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     appStateRef.current = appState;
   }, [appState]);
 
+  // Snapshot of the current project's latest app state, updated during render.
+  // When activeLocalId changes in the same commit as LOAD_STATE (both fired
+  // by switchProject), appStateRef already holds the *new* project's state by
+  // the time the project-switch effect runs. This ref preserves the *previous*
+  // project's last state so flush-before-evict saves the correct data.
+  const lastStableStateRef = useRef<{ localId: string | null; state: AppState }>({
+    localId: activeLocalId,
+    state: appState,
+  });
+  if (activeLocalId === lastStableStateRef.current.localId) {
+    // Still on the same project — keep the snapshot fresh
+    lastStableStateRef.current.state = appState;
+  }
+  // When activeLocalId changes, we intentionally do NOT update the snapshot
+  // here — it preserves the previous project's state for the effect to use.
+
   // Active-project cloud operations (save, fork, delete, visibility, load)
   const rawActiveOps = useActiveProjectCloudOps({
     internalRef, appStateRef, activeLocalIdRef,
@@ -274,7 +291,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
 
   // Keep refs up-to-date for the auth-transition and eviction effects
   const syncCloudProjectsRef = useRef<(() => Promise<SyncResult>) | null>(null);
-  const flushSyncRef = useRef<(() => Promise<void>) | null>(null);
+  const flushSyncRef = useRef<((stateOverride?: AppState) => Promise<void>) | null>(null);
   syncCloudProjectsRef.current = syncCloudProjects;
   flushSyncRef.current = flushSync;
 
@@ -312,12 +329,21 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     const prevLocalId = prevActiveLocalIdRef.current;
     prevActiveLocalIdRef.current = activeLocalId;
     if (prevLocalId && prevLocalId !== activeLocalId) {
+      // Grab the previous project's state snapshot before updating the ref.
+      // After switchProject, appStateRef already holds the *new* project's state,
+      // so we pass the snapshot to flushSync to save the correct data.
+      const prevState = lastStableStateRef.current.localId === prevLocalId
+        ? lastStableStateRef.current.state
+        : undefined;
+      // Update the snapshot ref for the new project
+      lastStableStateRef.current = { localId: activeLocalId, state: appState };
+
       const prevEntry = projectsRef.current.find(p => p.localId === prevLocalId);
       if (prevEntry?.storage === 'cloud' && prevEntry.cloudId) {
         // Flush pending sync first, then evict — only on success and only if
         // the user hasn't navigated back to this project in the meantime.
         // Skip during sign-out to avoid racing with purgeCloudProjects.
-        flushSyncRef.current?.().then(() => {
+        flushSyncRef.current?.(prevState).then(() => {
           if (activeLocalIdRef.current === prevLocalId) return; // user navigated back
           if (isSigningOutRef.current) return; // sign-out purge handles cleanup
           evictProjectData(prevLocalId);
@@ -358,7 +384,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
         visibility: entry?.visibility ?? 'private',
       }));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- dataVersionRef is a ref (stable); activeCloudId triggers re-eval when cloudId changes after upload
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- dataVersionRef is a ref (stable); activeCloudId triggers re-eval when cloudId changes after upload; appState is intentionally read only during project transitions (render-time ref handles steady-state updates)
   }, [activeLocalId, activeCloudId]);
 
   // Re-evaluate ownership when auth state changes or the active cloud project

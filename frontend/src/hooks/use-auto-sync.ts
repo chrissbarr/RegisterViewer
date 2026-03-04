@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { CLOUD_SYNC_DEBOUNCE_MS } from '../constants';
 import type { InternalCloudSyncState } from '../context/cloud-sync-context';
+import type { AppState } from '../types/register';
 
 /**
  * Cloud auto-sync status for the active project.
@@ -19,12 +20,15 @@ interface UseAutoSyncDeps {
   dataVersionRef: MutableRefObject<number>;
   canAutoSync: boolean;
   getJwt: () => string | null;
-  saveToCloud: () => Promise<boolean>;
+  saveToCloud: (stateOverride?: AppState) => Promise<boolean>;
 }
 
 interface UseAutoSyncResult {
   syncStatus: SyncStatus;
-  flushSync: () => Promise<void>;
+  /** Flush pending cloud sync immediately. When `stateOverride` is provided
+   *  it is forwarded to `saveToCloud` so the caller can supply a snapshot of
+   *  the *previous* project's state (used by flush-before-evict). */
+  flushSync: (stateOverride?: AppState) => Promise<void>;
   syncTimerRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
 }
 
@@ -93,7 +97,7 @@ export function useAutoSync(deps: UseAutoSyncDeps): UseAutoSyncResult {
 
   const syncStatus = deriveSyncStatus(canAutoSync, isDirty, asyncOverride);
 
-  const flushSync = useCallback(async () => {
+  const flushSync = useCallback(async (stateOverride?: AppState) => {
     if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
     // Derive dirty status from refs so this callback is referentially stable
     // (isDirty in the dep array caused a stale-closure duplicate PUT).
@@ -101,7 +105,7 @@ export function useAutoSync(deps: UseAutoSyncDeps): UseAutoSyncResult {
     if (!cloudId || !isOwner || dataVersionRef.current === lastSavedVersion) return;
     const jwt = getJwt();
     if (!jwt) return;
-    await saveToCloud();
+    await saveToCloud(stateOverride);
     // saveToCloud catches internally and sets error state — propagate as rejection
     if (internalRef.current.error) {
       throw new Error('Cloud sync failed');

@@ -38,8 +38,11 @@ interface ActiveProjectCloudOpsDeps {
 }
 
 interface ActiveProjectCloudOps {
-  /** Returns false if the save was dropped because the mutation lock was held. */
-  saveToCloud: () => Promise<boolean>;
+  /** Returns false if the save was dropped because the mutation lock was held.
+   *  When `stateOverride` is provided it is serialized instead of the live
+   *  `appStateRef` — used by flush-before-evict to save the *previous*
+   *  project's state after `appStateRef` already points to the new project. */
+  saveToCloud: (stateOverride?: AppState) => Promise<boolean>;
   fork: () => Promise<void>;
   deleteFromCloud: () => Promise<void>;
   setVisibility: (v: Visibility) => Promise<void>;
@@ -90,7 +93,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
     }));
   }, [updateCloudMetadata, createNewProject, dataVersionRef, activeLocalIdRef, appStateRef, setInternal]);
 
-  const saveToCloud = useCallback(async (): Promise<boolean> => {
+  const saveToCloud = useCallback(async (stateOverride?: AppState): Promise<boolean> => {
     if (!isCloudEnabled()) return true;
     const lockResult = await withMutationLock(mutationLockRef, async () => {
       try {
@@ -98,7 +101,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
         const existingCloudId = (cloudId && isOwner) ? cloudId : null;
 
         setInternal((prev) => ({ ...prev, status: 'saving', error: null }));
-        const jsonPayload = exportToObject(appStateRef.current);
+        const jsonPayload = exportToObject(stateOverride ?? appStateRef.current);
         const jwt = getJwt();
         if (!jwt) throw new Error('Authentication required. Please sign in.');
         const result = await saveProjectToCloudImpl(jsonPayload, existingCloudId, jwt);
