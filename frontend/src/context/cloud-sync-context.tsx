@@ -129,7 +129,10 @@ function computeSyncPatches(
   const localCloudIds = new Set(projects.filter(p => p.cloudId).map(p => p.cloudId!));
 
   for (const entry of projects) {
-    if (!entry.cloudId) continue;
+    // Only sync metadata for owned cloud projects (storage === 'cloud').
+    // Shared/non-owned projects loaded via link have storage === 'local'
+    // and should not have their metadata overwritten by sync.
+    if (!entry.cloudId || entry.storage !== 'cloud') continue;
 
     const serverProject = serverMap.get(entry.cloudId);
     if (serverProject) {
@@ -242,7 +245,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     prevActiveLocalIdRef.current = activeLocalId;
     if (prevLocalId && prevLocalId !== activeLocalId) {
       const prevEntry = projectsRef.current.find(p => p.localId === prevLocalId);
-      if (prevEntry?.storage === 'cloud') {
+      if (prevEntry?.storage === 'cloud' && prevEntry.cloudId) {
         // Flush pending sync first, then evict — only on success and only if
         // the user hasn't navigated back to this project in the meantime.
         flushSyncRef.current?.().then(() => {
@@ -277,7 +280,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
         ...prev,
         cloudId,
         isOwner,
-        storage: entry?.storage ?? 'cloud',
+        storage: entry?.storage ?? 'local',
         shareUrl: buildProjectUrl(cloudId),
         lastCloudSavedAt: null,
         error: null,
@@ -420,7 +423,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   const flushSyncRef = useRef<(() => Promise<void>) | null>(null);
 
   const initFromProject = useCallback(
-    (cloudId: string | null, isOwner: boolean, storage: 'local' | 'cloud' = cloudId ? 'cloud' : 'local') => {
+    (cloudId: string | null, isOwner: boolean, storage: 'local' | 'cloud' = cloudId && isOwner ? 'cloud' : 'local') => {
       if (cloudId === null) {
         const next = { ...initialInternalState, storage };
         internalRef.current = next;

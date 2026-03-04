@@ -112,6 +112,7 @@ function makeManifestEntry(overrides: Partial<ProjectManifestEntry> = {}) {
     createdAt: '2024-01-01T00:00:00Z',
     localSavedAt: '2024-01-01T00:00:00Z',
     cloudSavedAt: null as string | null,
+    storage: 'local' as const,
     ...overrides,
   };
 }
@@ -910,6 +911,7 @@ describe('CloudSyncProvider', () => {
             cloudId: 'cloud-1',
             cloudSavedAt: '2024-01-01T00:00:00Z',
             visibility: 'private',
+            storage: 'cloud',
           }),
         ],
       });
@@ -944,7 +946,7 @@ describe('CloudSyncProvider', () => {
       (loadManifest as Mock).mockReturnValue({
         version: 1,
         projects: [
-          makeManifestEntry({ cloudId: 'cloud-stale' }),
+          makeManifestEntry({ cloudId: 'cloud-stale', storage: 'cloud' }),
         ],
       });
       (apiListProjects as Mock).mockResolvedValue({
@@ -960,6 +962,41 @@ describe('CloudSyncProvider', () => {
 
       expect(syncResult!.updatedCount).toBe(0);
       expect(syncResult!.staleCloudIds).toEqual(['cloud-stale']);
+    });
+
+    it('does not sync metadata for shared projects with cloudId but storage=local', async () => {
+      (loadManifest as Mock).mockReturnValue({
+        version: 1,
+        projects: [
+          makeManifestEntry({
+            cloudId: 'shared-cloud-id',
+            cloudSavedAt: '2024-01-01T00:00:00Z',
+            visibility: 'private',
+            storage: 'local',
+          }),
+        ],
+      });
+      (apiListProjects as Mock).mockResolvedValue({
+        projects: [
+          {
+            id: 'shared-cloud-id',
+            visibility: 'unlisted',
+            createdAt: '2024-01-01T00:00:00Z',
+            updatedAt: '2024-02-01T00:00:00Z',
+          },
+        ],
+      });
+
+      const { result } = renderCloudSync();
+
+      let syncResult: { updatedCount: number; staleCloudIds: string[]; placeholdersCreated: number };
+      await act(async () => {
+        syncResult = await result.current.actions.syncCloudProjects();
+      });
+
+      expect(syncResult!.updatedCount).toBe(0);
+      expect(updateProjectMetadata).not.toHaveBeenCalled();
+      expect(syncResult!.staleCloudIds).not.toContain('shared-cloud-id');
     });
 
     it('returns empty result when cloud is disabled', async () => {
