@@ -1,0 +1,253 @@
+import { renderHook, act } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { useAutoSync, deriveSyncStatus } from './use-auto-sync';
+
+vi.mock('../constants', () => ({
+  CLOUD_SYNC_DEBOUNCE_MS: 100, // fast for tests
+}));
+
+// ── Helpers ──────────────────────────────────────────────────────────
+
+function makeInternalRef(overrides: Partial<Parameters<typeof useAutoSync>[0]['internalRef']['current']> = {}) {
+  return {
+    current: {
+      cloudId: 'cloud-abc',
+      isOwner: true,
+      storage: 'cloud' as const,
+      lastSavedVersion: 1,
+      error: null,
+      ...overrides,
+    },
+  };
+}
+
+function makeDeps(overrides: Partial<Parameters<typeof useAutoSync>[0]> = {}) {
+  return {
+    isDirty: false,
+    internalRef: makeInternalRef(),
+    dataVersionRef: { current: 2 },
+    canAutoSync: true,
+    getJwt: vi.fn(() => 'mock-jwt'),
+    saveToCloud: vi.fn(() => Promise.resolve(true)),
+    ...overrides,
+  };
+}
+
+// ── Tests ────────────────────────────────────────────────────────────
+
+describe('useAutoSync', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('returns local-only when canAutoSync is false', () => {
+    const { result } = renderHook(() => useAutoSync(makeDeps({ canAutoSync: false })));
+    expect(result.current.syncStatus).toBe('local-only');
+  });
+
+  it('returns saved when not dirty and canAutoSync', () => {
+    const { result } = renderHook(() => useAutoSync(makeDeps({ isDirty: false, canAutoSync: true })));
+    expect(result.current.syncStatus).toBe('saved');
+  });
+
+  it('schedules save after debounce when dirty', async () => {
+    const saveToCloud = vi.fn(() => Promise.resolve(true as const));
+    const deps = makeDeps({ isDirty: true, canAutoSync: true, saveToCloud });
+
+    renderHook(() => useAutoSync(deps));
+
+    // Save should not have been called yet
+    expect(saveToCloud).not.toHaveBeenCalled();
+
+    // Advance past debounce
+    await act(async () => {
+      vi.advanceTimersByTime(150);
+      // Let microtasks flush
+      await Promise.resolve();
+    });
+
+    expect(saveToCloud).toHaveBeenCalledTimes(1);
+  });
+
+  it('sets offline status when save rejects', async () => {
+    const saveToCloud = vi.fn(() => Promise.reject(new Error('network error')));
+    const deps = makeDeps({ isDirty: true, canAutoSync: true, saveToCloud });
+
+    const { result } = renderHook(() => useAutoSync(deps));
+
+    await act(async () => {
+      vi.advanceTimersByTime(150);
+      await Promise.resolve();
+    });
+
+    expect(result.current.syncStatus).toBe('offline');
+  });
+
+  it('reschedules when mutation lock was held (saveToCloud returns false)', async () => {
+    let callCount = 0;
+    const saveToCloud = vi.fn(() => {
+      callCount++;
+      return Promise.resolve(callCount === 1 ? false : true);
+    });
+    const deps = makeDeps({ isDirty: true, canAutoSync: true, saveToCloud });
+
+    renderHook(() => useAutoSync(deps));
+
+    // First attempt — returns false (lock held)
+    await act(async () => {
+      vi.advanceTimersByTime(150);
+      await Promise.resolve();
+    });
+
+    expect(saveToCloud).toHaveBeenCalledTimes(1);
+
+    // Second attempt after reschedule
+    await act(async () => {
+      vi.advanceTimersByTime(150);
+      await Promise.resolve();
+    });
+
+    expect(saveToCloud).toHaveBeenCalledTimes(2);
+  });
+
+  it('skips save when no JWT available', async () => {
+    const saveToCloud = vi.fn(() => Promise.resolve(true as const));
+    const deps = makeDeps({
+      isDirty: true,
+      canAutoSync: true,
+      saveToCloud,
+      getJwt: vi.fn(() => null),
+    });
+
+    renderHook(() => useAutoSync(deps));
+
+    await act(async () => {
+      vi.advanceTimersByTime(150);
+      await Promise.resolve();
+    });
+
+    expect(saveToCloud).not.toHaveBeenCalled();
+  });
+
+  describe('flushSync', () => {
+    it('calls saveToCloud immediately when dirty', async () => {
+      const saveToCloud = vi.fn(() => Promise.resolve(true as const));
+      const internalRef = makeInternalRef({ lastSavedVersion: 1 });
+      const deps = makeDeps({
+        isDirty: false,
+        canAutoSync: true,
+        saveToCloud,
+        internalRef,
+        dataVersionRef: { current: 2 }, // different from lastSavedVersion → dirty
+      });
+
+      const { result } = renderHook(() => useAutoSync(deps));
+
+      await act(async () => {
+        await result.current.flushSync();
+      });
+
+      expect(saveToCloud).toHaveBeenCalledTimes(1);
+    });
+
+    it('skips when versions match', async () => {
+      const saveToCloud = vi.fn(() => Promise.resolve(true as const));
+      const internalRef = makeInternalRef({ lastSavedVersion: 2 });
+      const deps = makeDeps({
+        saveToCloud,
+        internalRef,
+        dataVersionRef: { current: 2 }, // same → not dirty
+      });
+
+      const { result } = renderHook(() => useAutoSync(deps));
+
+      await act(async () => {
+        await result.current.flushSync();
+      });
+
+      expect(saveToCloud).not.toHaveBeenCalled();
+    });
+
+    it('throws when saveToCloud sets error', async () => {
+      const saveToCloud = vi.fn(() => Promise.resolve(true as const));
+      const internalRef = makeInternalRef({ lastSavedVersion: 1, error: null });
+      const deps = makeDeps({
+        saveToCloud,
+        internalRef,
+        dataVersionRef: { current: 2 },
+      });
+
+      // After save, simulate error being set
+      saveToCloud.mockImplementation(async () => {
+        internalRef.current.error = 'Save failed';
+        return true;
+      });
+
+      const { result } = renderHook(() => useAutoSync(deps));
+
+      await expect(
+        act(async () => {
+          await result.current.flushSync();
+        }),
+      ).rejects.toThrow('Cloud sync failed');
+    });
+
+    it('skips when no cloudId', async () => {
+      const saveToCloud = vi.fn(() => Promise.resolve(true as const));
+      const deps = makeDeps({
+        saveToCloud,
+        internalRef: makeInternalRef({ cloudId: null }),
+        dataVersionRef: { current: 2 },
+      });
+
+      const { result } = renderHook(() => useAutoSync(deps));
+
+      await act(async () => {
+        await result.current.flushSync();
+      });
+
+      expect(saveToCloud).not.toHaveBeenCalled();
+    });
+
+    it('skips when not owner', async () => {
+      const saveToCloud = vi.fn(() => Promise.resolve(true as const));
+      const deps = makeDeps({
+        saveToCloud,
+        internalRef: makeInternalRef({ isOwner: false }),
+        dataVersionRef: { current: 2 },
+      });
+
+      const { result } = renderHook(() => useAutoSync(deps));
+
+      await act(async () => {
+        await result.current.flushSync();
+      });
+
+      expect(saveToCloud).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('deriveSyncStatus', () => {
+  it.each([
+    [false, false, null, 'local-only'],
+    [false, true, null, 'local-only'],
+    [false, true, 'syncing' as const, 'local-only'],
+    [false, false, 'offline' as const, 'local-only'],
+    [true, false, null, 'saved'],
+    [true, false, 'offline' as const, 'saved'],
+    [true, true, 'syncing' as const, 'syncing'],
+    [true, false, 'syncing' as const, 'syncing'],
+    [true, true, 'offline' as const, 'offline'],
+    [true, true, null, 'saved'],
+  ] as const)(
+    'deriveSyncStatus(%s, %s, %s) → %s',
+    (canAutoSync, isDirty, asyncOverride, expected) => {
+      expect(deriveSyncStatus(canAutoSync, isDirty, asyncOverride)).toBe(expected);
+    },
+  );
+});

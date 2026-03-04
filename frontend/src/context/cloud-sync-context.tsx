@@ -1,22 +1,26 @@
 /**
  * CloudSyncProvider — cloud save/load/fork/delete/sync for the active project.
  *
- * Cloud operations are split across three hooks:
+ * Cloud operations are split across six hooks:
  * - **Active-project ops** (`useActiveProjectCloudOps`): `saveToCloud`,
  *   `deleteFromCloud`, `setVisibility`, `fork`, `loadCloudProject` — operate
  *   on the currently-loaded project using in-memory `appState` via refs.
  * - **By-localId ops** (`useProjectCloudOps`): operates on any project by
  *   `localId`, reading state from localStorage. Used by the My Projects dialog.
- * - **This provider**: orchestrates state, refs, effects, and delegates to the
- *   two hooks above. Also owns `initFromProject`, `dismissError`, and
- *   `syncCloudProjects`.
+ * - **Auto-sync** (`useAutoSync`): debounced dirty→save cycle with status
+ *   tracking and `flushSync` for beforeunload.
+ * - **Login guard** (`useLoginGuard`): JWT-guarded save/fork with deferred
+ *   retry after login.
+ * - **Auth transition** (`useAuthTransition`): sign-in retry, cloud project
+ *   sync, and sign-out cleanup.
+ * - **Dirty tracking** (`useDirtyTracking`): generation-counter `isDirty`.
+ *
+ * This provider orchestrates state, refs, and delegates to the hooks above.
+ * Also owns `initFromProject`, `dismissError`, and `syncCloudProjects`.
  *
  * Both operation hooks delegate shared API logic to `cloud-operations.ts`.
  *
  * Key patterns:
- * - **Generation-counter dirty tracking** (`useDirtyTracking`): a ref-based
- *   version counter increments on data changes; `isDirty` is derived by
- *   comparing current version vs `lastSavedVersion`.
  * - **Ref-synced state**: `internalRef` and `appStateRef` are kept in sync
  *   via useEffect so that useCallback closures always read fresh state
  *   without needing the state in their dependency arrays.
@@ -31,24 +35,19 @@ import {
   getProject,
 } from '../utils/api-client';
 import { useAuth, useAuthActions } from './auth-context';
-import { buildProjectUrl, createProject, purgeCloudProjects, getMostRecentProjectId, evictProjectData, ACTIVE_PROJECT_SESSION_KEY } from '../utils/project-storage';
+import { buildProjectUrl, createProject, evictProjectData } from '../utils/project-storage';
 import { EMPTY_SERIALIZED_STATE } from '../utils/storage';
 import { clearCloudUrl, setCloudUrl } from '../utils/cloud-url';
 import { useDirtyTracking } from '../hooks/use-dirty-tracking';
 import { useActiveProjectCloudOps } from '../hooks/use-active-project-cloud-ops';
 import { useProjectCloudOps } from '../hooks/use-project-cloud-ops';
+import { useAutoSync, type SyncStatus } from '../hooks/use-auto-sync';
+import { useLoginGuard } from '../hooks/use-login-guard';
+import { useAuthTransition } from '../hooks/use-auth-transition';
 import { computeSyncPatches } from '../utils/cloud-sync';
 import { DEFAULT_PROJECT_NAME, type Visibility } from '../types/project';
-import { CLOUD_SYNC_DEBOUNCE_MS } from '../constants';
 
-/**
- * Cloud auto-sync status for the active project.
- * - `saved`: cloud is up to date with local state
- * - `syncing`: a cloud save is in progress
- * - `offline`: last sync attempt failed (network/server error)
- * - `local-only`: project is not cloud-backed (no auto-sync)
- */
-export type SyncStatus = 'saved' | 'syncing' | 'offline' | 'local-only';
+export type { SyncStatus };
 
 interface CloudSyncState {
   cloudId: string | null;
@@ -65,7 +64,7 @@ interface CloudSyncState {
   syncStatus: SyncStatus;
 }
 
-interface SyncResult {
+export interface SyncResult {
   updatedCount: number;
   staleCloudIds: string[];
   /** Number of cloud-only projects that were added as local placeholders */
@@ -175,102 +174,11 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   const internalRef = useRef(internal);
   internalRef.current = internal;
 
-  const prevActiveLocalIdRef = useRef<string | null>(null);
-
-  // Derive the active project's cloudId so the effect re-runs when it changes
-  // (e.g., after auto-upload sets a cloudId on a previously local-only project).
-  const activeCloudId = useMemo(
-    () => projects.find(p => p.localId === activeLocalId)?.cloudId ?? null,
-    [projects, activeLocalId],
-  );
-
-  useEffect(() => {
-    if (!activeLocalId) return;
-
-    // Evict previous cloud project's data from localStorage on switch
-    const prevLocalId = prevActiveLocalIdRef.current;
-    prevActiveLocalIdRef.current = activeLocalId;
-    if (prevLocalId && prevLocalId !== activeLocalId) {
-      const prevEntry = projectsRef.current.find(p => p.localId === prevLocalId);
-      if (prevEntry?.storage === 'cloud' && prevEntry.cloudId) {
-        // Flush pending sync first, then evict — only on success and only if
-        // the user hasn't navigated back to this project in the meantime.
-        // Skip during sign-out to avoid racing with purgeCloudProjects.
-        flushSyncRef.current?.().then(() => {
-          if (activeLocalIdRef.current === prevLocalId) return; // user navigated back
-          if (isSigningOutRef.current) return; // sign-out purge handles cleanup
-          evictProjectData(prevLocalId);
-        }).catch(() => {
-          // Flush failed — keep local data as safety net
-        });
-      }
-    }
-
-    const entry = projectsRef.current.find(p => p.localId === activeLocalId);
-    const cloudId = entry?.cloudId ?? null;
-    // Skip if cloudId hasn't changed (avoid redundant state updates)
-    if (cloudId === internalRef.current.cloudId) return;
-    // Clear any pending cloud operation from the previous project
-    pendingCloudOpRef.current = null;
-    setLoginRequired(false);
-    // Default to false; the auth re-evaluation effect (below)
-    // will asynchronously promote isOwner via a server round-trip when the
-    // user is authenticated.
-    const isOwner = false;
-    if (cloudId === null) {
-      setInternal({ ...initialInternalState });
-      clearCloudUrl();
-    } else {
-      // Signal dirty tracking to capture the version after its next bump,
-      // so that re-syncing from a freshly-uploaded project starts clean.
-      needsVersionSyncRef.current = true;
-      setCloudUrl(cloudId);
-      setInternal((prev) => ({
-        ...prev,
-        cloudId,
-        isOwner,
-        storage: entry?.storage ?? 'local',
-        shareUrl: buildProjectUrl(cloudId),
-        lastCloudSavedAt: null,
-        error: null,
-        visibility: entry?.visibility ?? 'private',
-      }));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- dataVersionRef is a ref (stable); activeCloudId triggers re-eval when cloudId changes after upload
-  }, [activeLocalId, activeCloudId]);
-
   // Ref to avoid stale closures in save/fork callbacks
   const appStateRef = useRef(appState);
   useEffect(() => {
     appStateRef.current = appState;
   }, [appState]);
-
-  // Re-evaluate ownership when auth state changes or the active cloud project
-  // changes while authenticated. Covers: (1) JWT validated after startup,
-  // (2) project switch while already authenticated (e.g., via My Projects).
-  useEffect(() => {
-    if (!internal.cloudId || internal.isOwner || !authUser) return;
-
-    const jwt = getJwt();
-    if (!jwt) return;
-
-    let cancelled = false;
-    getProject(internal.cloudId, jwt)
-      .then((res) => {
-        // Verify user is still authenticated when response arrives (SEC-M3)
-        if (!cancelled && res.isOwner && getJwt()) {
-          setInternal((prev) => prev.cloudId === internal.cloudId ? { ...prev, isOwner: true } : prev);
-        }
-      })
-      .catch(() => { /* best-effort; ownership stays false */ });
-    return () => { cancelled = true; };
-  }, [authUser, getJwt, internal.cloudId, internal.isOwner]);
-
-  // Login-before-save: when a cloud op is attempted without a JWT,
-  // store the pending op type and show the login dialog. After login,
-  // the auth-transition effect retries the operation automatically.
-  const [loginRequired, setLoginRequired] = useState(false);
-  const pendingCloudOpRef = useRef<'save' | 'fork' | null>(null);
 
   // Active-project cloud operations (save, fork, delete, visibility, load)
   const rawActiveOps = useActiveProjectCloudOps({
@@ -280,104 +188,29 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     getJwt, dispatch, initialInternalState,
   });
 
-  // --- Cloud auto-sync (debounced after dirty) ---
-  const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [syncStatus, setSyncStatus] = useState<SyncStatus>('local-only');
+  // Login guard: JWT-guarded save/fork with deferred retry
+  const loginGuard = useLoginGuard({
+    getJwt,
+    rawSave: rawActiveOps.saveToCloud,
+    rawFork: rawActiveOps.fork,
+  });
 
-  // Derive whether auto-sync should be active
+  // Auto-sync engine (debounced dirty→save)
   const canAutoSync = internal.storage === 'cloud' && internal.isOwner && !!authUser;
-
-  useEffect(() => {
-    if (!canAutoSync) {
-      setSyncStatus('local-only');
-      return;
-    }
-    if (!isDirty) {
-      setSyncStatus('saved');
-      return;
-    }
-
-    let cancelled = false;
-    const attemptSync = async () => {
-      if (cancelled) return;
-      const jwt = getJwt();
-      if (!jwt) return;
-      setSyncStatus('syncing');
-      try {
-        const executed = await rawActiveOps.saveToCloud();
-        if (cancelled) return;
-        if (!executed) {
-          // Mutation lock was held — reschedule so data isn't silently dropped
-          syncTimerRef.current = setTimeout(attemptSync, CLOUD_SYNC_DEBOUNCE_MS);
-          return;
-        }
-        setSyncStatus('saved');
-      } catch {
-        if (!cancelled) setSyncStatus('offline');
-        // No automatic retry — the next user edit will trigger a fresh sync attempt
-      }
-    };
-    syncTimerRef.current = setTimeout(attemptSync, CLOUD_SYNC_DEBOUNCE_MS);
-
-    return () => {
-      cancelled = true;
-      if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
-    };
-  }, [isDirty, canAutoSync, getJwt, rawActiveOps]);
-
-  const flushSync = useCallback(async () => {
-    if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
-    // Derive dirty status from refs so this callback is referentially stable
-    // (isDirty in the dep array caused a stale-closure duplicate PUT).
-    const { cloudId, isOwner, lastSavedVersion } = internalRef.current;
-    if (!cloudId || !isOwner || dataVersionRef.current === lastSavedVersion) return;
-    const jwt = getJwt();
-    if (!jwt) return;
-    await rawActiveOps.saveToCloud();
-    // saveToCloud catches internally and sets error state — propagate as rejection
-    if (internalRef.current.error) {
-      throw new Error('Cloud sync failed');
-    }
-  }, [getJwt, rawActiveOps, dataVersionRef]);
-
-  // Wrap save/fork with JWT guards
-  const saveToCloud = useCallback(async () => {
-    if (!getJwt()) {
-      pendingCloudOpRef.current = 'save';
-      setLoginRequired(true);
-      return;
-    }
-    return rawActiveOps.saveToCloud();
-  }, [getJwt, rawActiveOps]);
-
-  const forkProject = useCallback(async () => {
-    if (!getJwt()) {
-      pendingCloudOpRef.current = 'fork';
-      setLoginRequired(true);
-      return;
-    }
-    return rawActiveOps.fork();
-  }, [getJwt, rawActiveOps]);
+  const { syncStatus, flushSync, syncTimerRef } = useAutoSync({
+    isDirty,
+    internalRef,
+    dataVersionRef,
+    canAutoSync,
+    getJwt,
+    saveToCloud: rawActiveOps.saveToCloud,
+  });
 
   const activeOps = useMemo(() => ({
     ...rawActiveOps,
-    saveToCloud,
-    fork: forkProject,
-  }), [rawActiveOps, saveToCloud, forkProject]);
-
-  const cancelPendingOp = useCallback(() => {
-    pendingCloudOpRef.current = null;
-    setLoginRequired(false);
-  }, []);
-
-  // Auth-transition effect: when the user transitions from logged-out (null)
-  // to logged-in (non-null), retry any pending cloud operation that was
-  // deferred because a JWT was not available at the time of the request,
-  // and sync cloud projects (pull metadata from server).
-  // Note: syncCloudProjects ref is used to avoid forward-reference issues.
-  const prevAuthUserRef = useRef(authUser);
-  const syncCloudProjectsRef = useRef<(() => Promise<SyncResult>) | null>(null);
-  const flushSyncRef = useRef<(() => Promise<void>) | null>(null);
+    saveToCloud: loginGuard.saveToCloud,
+    fork: loginGuard.fork,
+  }), [rawActiveOps, loginGuard.saveToCloud, loginGuard.fork]);
 
   const initFromProject = useCallback(
     (cloudId: string | null, isOwner: boolean, storage: 'local' | 'cloud' = cloudId && isOwner ? 'cloud' : 'local') => {
@@ -440,63 +273,113 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   }, [updateCloudMetadata, getJwt]);
 
   // Keep refs up-to-date for the auth-transition and eviction effects
+  const syncCloudProjectsRef = useRef<(() => Promise<SyncResult>) | null>(null);
+  const flushSyncRef = useRef<(() => Promise<void>) | null>(null);
   syncCloudProjectsRef.current = syncCloudProjects;
   flushSyncRef.current = flushSync;
 
-  const hasRunInitialSyncRef = useRef(false);
-  const isSigningOutRef = useRef(false);
+  // Auth transition: sign-in retry, cloud sync, sign-out cleanup
+  const { isSigningOutRef } = useAuthTransition({
+    authUser,
+    pendingCloudOpRef: loginGuard.pendingCloudOpRef,
+    setLoginRequired: loginGuard.setLoginRequired,
+    rawSave: rawActiveOps.saveToCloud,
+    rawFork: rawActiveOps.fork,
+    syncCloudProjectsRef,
+    syncTimerRef,
+    activeLocalIdRef,
+    setInternal,
+    initialInternalState,
+    refreshProjectList,
+    switchProject,
+    createNewProject,
+  });
+
+  // --- Active project switch: eviction + cloudId tracking ---
+  const prevActiveLocalIdRef = useRef<string | null>(null);
+
+  // Derive the active project's cloudId so the effect re-runs when it changes
+  // (e.g., after auto-upload sets a cloudId on a previously local-only project).
+  const activeCloudId = useMemo(
+    () => projects.find(p => p.localId === activeLocalId)?.cloudId ?? null,
+    [projects, activeLocalId],
+  );
 
   useEffect(() => {
-    const wasNull = prevAuthUserRef.current === null;
-    const wasLoggedIn = prevAuthUserRef.current !== null;
-    prevAuthUserRef.current = authUser;
+    if (!activeLocalId) return;
 
-    // Trigger sync when user signs in (null→user) OR on first mount if already authenticated
-    const shouldSync = (wasNull && authUser) || (!hasRunInitialSyncRef.current && authUser);
-
-    if (shouldSync) {
-      hasRunInitialSyncRef.current = true;
-      // Sign-in: retry any pending cloud operation that was deferred
-      if (pendingCloudOpRef.current) {
-        const op = pendingCloudOpRef.current;
-        pendingCloudOpRef.current = null;
-        setLoginRequired(false);
-        if (op === 'save') {
-          void rawActiveOps.saveToCloud();
-        } else if (op === 'fork') {
-          void rawActiveOps.fork();
-        }
+    // Evict previous cloud project's data from localStorage on switch
+    const prevLocalId = prevActiveLocalIdRef.current;
+    prevActiveLocalIdRef.current = activeLocalId;
+    if (prevLocalId && prevLocalId !== activeLocalId) {
+      const prevEntry = projectsRef.current.find(p => p.localId === prevLocalId);
+      if (prevEntry?.storage === 'cloud' && prevEntry.cloudId) {
+        // Flush pending sync first, then evict — only on success and only if
+        // the user hasn't navigated back to this project in the meantime.
+        // Skip during sign-out to avoid racing with purgeCloudProjects.
+        flushSyncRef.current?.().then(() => {
+          if (activeLocalIdRef.current === prevLocalId) return; // user navigated back
+          if (isSigningOutRef.current) return; // sign-out purge handles cleanup
+          evictProjectData(prevLocalId);
+        }).catch(() => {
+          // Flush failed — keep local data as safety net
+        });
       }
-      // Sync cloud projects (pull metadata from server)
-      syncCloudProjectsRef.current?.().catch(() => { /* best-effort on mount/sign-in */ });
     }
 
-    if (wasLoggedIn && !authUser) {
-      hasRunInitialSyncRef.current = false;
-      isSigningOutRef.current = true;
-      // Sign-out: purge cloud projects from localStorage
-      const purgedIds = purgeCloudProjects();
-      refreshProjectList();
-
-      // If active project was purged, switch to a remaining project or create new
-      if (activeLocalIdRef.current && purgedIds.includes(activeLocalIdRef.current)) {
-        const remaining = getMostRecentProjectId();
-        if (remaining) {
-          switchProject(remaining);
-        } else {
-          const newId = createNewProject();
-          switchProject(newId);
-        }
-      }
-
-      // Reset cloud sync state
-      if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    const entry = projectsRef.current.find(p => p.localId === activeLocalId);
+    const cloudId = entry?.cloudId ?? null;
+    // Skip if cloudId hasn't changed (avoid redundant state updates)
+    if (cloudId === internalRef.current.cloudId) return;
+    // Clear any pending cloud operation from the previous project
+    loginGuard.pendingCloudOpRef.current = null;
+    loginGuard.setLoginRequired(false);
+    // Default to false; the auth re-evaluation effect (below)
+    // will asynchronously promote isOwner via a server round-trip when the
+    // user is authenticated.
+    const isOwner = false;
+    if (cloudId === null) {
       setInternal({ ...initialInternalState });
       clearCloudUrl();
-      sessionStorage.removeItem(ACTIVE_PROJECT_SESSION_KEY);
-      isSigningOutRef.current = false;
+    } else {
+      // Signal dirty tracking to capture the version after its next bump,
+      // so that re-syncing from a freshly-uploaded project starts clean.
+      needsVersionSyncRef.current = true;
+      setCloudUrl(cloudId);
+      setInternal((prev) => ({
+        ...prev,
+        cloudId,
+        isOwner,
+        storage: entry?.storage ?? 'local',
+        shareUrl: buildProjectUrl(cloudId),
+        lastCloudSavedAt: null,
+        error: null,
+        visibility: entry?.visibility ?? 'private',
+      }));
     }
-  }, [authUser, rawActiveOps, refreshProjectList, switchProject, createNewProject]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- dataVersionRef is a ref (stable); activeCloudId triggers re-eval when cloudId changes after upload
+  }, [activeLocalId, activeCloudId]);
+
+  // Re-evaluate ownership when auth state changes or the active cloud project
+  // changes while authenticated. Covers: (1) JWT validated after startup,
+  // (2) project switch while already authenticated (e.g., via My Projects).
+  useEffect(() => {
+    if (!internal.cloudId || internal.isOwner || !authUser) return;
+
+    const jwt = getJwt();
+    if (!jwt) return;
+
+    let cancelled = false;
+    getProject(internal.cloudId, jwt)
+      .then((res) => {
+        // Verify user is still authenticated when response arrives (SEC-M3)
+        if (!cancelled && res.isOwner && getJwt()) {
+          setInternal((prev) => prev.cloudId === internal.cloudId ? { ...prev, isOwner: true } : prev);
+        }
+      })
+      .catch(() => { /* best-effort; ownership stays false */ });
+    return () => { cancelled = true; };
+  }, [authUser, getJwt, internal.cloudId, internal.isOwner]);
 
   // By-localId cloud operations (used by My Projects dialog)
   const projectOps = useProjectCloudOps({
@@ -514,10 +397,12 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   const actions = useMemo(
     () => ({
       ...activeOps,
-      dismissError, initFromProject, syncCloudProjects, cancelPendingOp, flushSync,
+      dismissError, initFromProject, syncCloudProjects,
+      cancelPendingOp: loginGuard.cancelPendingOp,
+      flushSync,
       ...projectOps,
     }),
-    [activeOps, dismissError, initFromProject, syncCloudProjects, cancelPendingOp, flushSync, projectOps],
+    [activeOps, dismissError, initFromProject, syncCloudProjects, loginGuard.cancelPendingOp, flushSync, projectOps],
   );
 
   const providedState: CloudSyncState = useMemo(
@@ -530,7 +415,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       shareUrl: internal.shareUrl,
       lastCloudSavedAt: internal.lastCloudSavedAt,
       visibility: internal.visibility,
-      loginRequired,
+      loginRequired: loginGuard.loginRequired,
       syncStatus,
     }),
     [
@@ -542,7 +427,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       internal.shareUrl,
       internal.lastCloudSavedAt,
       internal.visibility,
-      loginRequired,
+      loginGuard.loginRequired,
       syncStatus,
     ],
   );
