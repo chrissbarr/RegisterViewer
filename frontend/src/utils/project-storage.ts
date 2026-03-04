@@ -343,8 +343,9 @@ export function runMigrationIfNeeded(): void {
   const preOrphanManifest = loadManifest();
   let needsSave = false;
   for (const entry of preOrphanManifest.projects) {
-    if (!('storage' in entry)) {
-      (entry as ProjectManifestEntry).storage = entry.cloudId !== null ? 'cloud' : 'local';
+    // Cast to partial — old localStorage data may lack `storage`
+    if (!('storage' in (entry as Partial<ProjectManifestEntry>))) {
+      entry.storage = entry.cloudId !== null ? 'cloud' : 'local';
       needsSave = true;
     }
   }
