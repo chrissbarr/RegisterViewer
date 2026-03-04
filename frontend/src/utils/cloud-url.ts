@@ -27,6 +27,12 @@ export type MutationLockResult<T> =
  * Acquires the lock before running and releases it in `finally`.
  * Returns `{ executed: false }` when the lock is already held so callers
  * can detect dropped operations and retry if appropriate.
+ *
+ * **Why a mutation lock?** Cloud operations (save, delete, fork, visibility)
+ * mutate both server and local state. Running two concurrently (e.g., auto-sync
+ * fires while the user clicks "Save") could produce inconsistent state — the
+ * second write might use stale cloudId/metadata from before the first completes.
+ * A simple ref-based lock serializes operations without complex queueing.
  */
 export async function withMutationLock<T>(
   ref: MutableRefObject<boolean>,

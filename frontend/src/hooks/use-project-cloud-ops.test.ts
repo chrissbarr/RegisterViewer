@@ -69,9 +69,10 @@ function makeProjectList(entries: Array<{ localId: string; cloudId?: string | nu
 function makeDeps(overrides: Record<string, unknown> = {}) {
   const initial = makeInitialState();
   const internalRef = { current: overrides.internalState as typeof initial ?? initial };
+  const projects = (overrides.projects as ProjectListEntry[]) ?? makeProjectList([{ localId: 'local-1', cloudId: 'cloud-1' }]);
   return {
     updateCloudMetadata: vi.fn() as Mock,
-    projects: (overrides.projects as ProjectListEntry[]) ?? makeProjectList([{ localId: 'local-1', cloudId: 'cloud-1' }]),
+    projectsRef: { current: projects },
     activeLocalIdRef: { current: (overrides.activeLocalId as string) ?? 'local-1' },
     dataVersionRef: { current: 1 },
     mutationLockRef: { current: false },

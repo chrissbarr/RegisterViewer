@@ -40,17 +40,8 @@ export interface StoredLocalProject {
   state: import('./register').SerializedAppState;
 }
 
-/** UI-safe view type for project list display */
-export interface ProjectListEntry {
-  localId: string;
-  cloudId: string | null;
-  name: string;
-  visibility: Visibility;
-  createdAt: string;
-  localSavedAt: string;
-  cloudSavedAt: string | null;
-  storage: 'local' | 'cloud';
-}
+/** UI-safe view type for project list display (identical to manifest entry) */
+export type ProjectListEntry = ProjectManifestEntry;
 
 /** Global preferences stored at `register-viewer-prefs` */
 export interface GlobalPreferences {

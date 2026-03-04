@@ -25,7 +25,7 @@ interface ProjectCloudOpsDeps<T extends CloudSyncInternalSlice> {
     visibility: Visibility;
     storage: 'local' | 'cloud';
   }>) => void;
-  projects: ProjectListEntry[];
+  projectsRef: MutableRefObject<ProjectListEntry[]>;
   activeLocalIdRef: MutableRefObject<string | null>;
   dataVersionRef: MutableRefObject<number>;
   mutationLockRef: MutableRefObject<boolean>;
@@ -48,7 +48,7 @@ interface ProjectCloudOps {
  * Used primarily by the My Projects dialog.
  */
 export function useProjectCloudOps<T extends CloudSyncInternalSlice>(deps: ProjectCloudOpsDeps<T>): ProjectCloudOps {
-  const { updateCloudMetadata, projects, activeLocalIdRef, dataVersionRef, mutationLockRef, internalRef, setInternal, initialInternalState, getJwt } = deps;
+  const { updateCloudMetadata, projectsRef, activeLocalIdRef, dataVersionRef, mutationLockRef, internalRef, setInternal, initialInternalState, getJwt } = deps;
 
   const saveProjectToCloud = useCallback(async (localId: string) => {
     if (!isCloudEnabled()) return;
@@ -59,7 +59,7 @@ export function useProjectCloudOps<T extends CloudSyncInternalSlice>(deps: Proje
       const projectState = deserializeState(project.state);
       const jsonPayload = exportToObject(projectState);
 
-      const entry = projects.find(p => p.localId === localId);
+      const entry = projectsRef.current.find(p => p.localId === localId);
       const existingCloudId = entry?.cloudId ?? project.cloudId;
 
       const jwt = getJwt();
@@ -94,7 +94,7 @@ export function useProjectCloudOps<T extends CloudSyncInternalSlice>(deps: Proje
         updateCloudMetadata(localId, { cloudSavedAt: result.timestamp, storage: 'cloud' });
       }
     });
-  }, [updateCloudMetadata, projects, mutationLockRef, activeLocalIdRef, dataVersionRef, setInternal, getJwt]);
+  }, [updateCloudMetadata, projectsRef, mutationLockRef, activeLocalIdRef, dataVersionRef, setInternal, getJwt]);
 
   const deleteProjectFromCloud = useCallback(async (cloudId: string) => {
     await withMutationLock(mutationLockRef, async () => {
@@ -102,7 +102,7 @@ export function useProjectCloudOps<T extends CloudSyncInternalSlice>(deps: Proje
       if (!jwt) throw new Error('Authentication required. Please sign in.');
       await deleteProjectFromCloudImpl(cloudId, jwt);
 
-      const entry = projects.find(p => p.cloudId === cloudId);
+      const entry = projectsRef.current.find(p => p.cloudId === cloudId);
       if (entry) {
         updateCloudMetadata(entry.localId, CLEARED_CLOUD_METADATA);
       }
@@ -113,10 +113,10 @@ export function useProjectCloudOps<T extends CloudSyncInternalSlice>(deps: Proje
         setInternal({ ...initialInternalState });
       }
     });
-  }, [updateCloudMetadata, projects, mutationLockRef, internalRef, setInternal, initialInternalState, getJwt]);
+  }, [updateCloudMetadata, projectsRef, mutationLockRef, internalRef, setInternal, initialInternalState, getJwt]);
 
   const setProjectVisibility = useCallback(async (localId: string, v: Visibility) => {
-    const entry = projects.find(p => p.localId === localId);
+    const entry = projectsRef.current.find(p => p.localId === localId);
     if (!entry?.cloudId) return;
 
     const jwt = getJwt();
@@ -129,10 +129,10 @@ export function useProjectCloudOps<T extends CloudSyncInternalSlice>(deps: Proje
     if (localId === activeLocalIdRef.current) {
       setInternal((prev) => ({ ...prev, visibility: v }));
     }
-  }, [updateCloudMetadata, projects, activeLocalIdRef, setInternal, getJwt]);
+  }, [updateCloudMetadata, projectsRef, activeLocalIdRef, setInternal, getJwt]);
 
   const unlinkCloudProject = useCallback((localId: string) => {
-    const entry = projects.find(p => p.localId === localId);
+    const entry = projectsRef.current.find(p => p.localId === localId);
     if (!entry || !entry.cloudId) return;
 
     const cloudId = entry.cloudId;
@@ -143,7 +143,7 @@ export function useProjectCloudOps<T extends CloudSyncInternalSlice>(deps: Proje
       clearCloudUrl();
       setInternal({ ...initialInternalState });
     }
-  }, [updateCloudMetadata, projects, internalRef, setInternal, initialInternalState]);
+  }, [updateCloudMetadata, projectsRef, internalRef, setInternal, initialInternalState]);
 
   return useMemo(
     () => ({ saveProjectToCloud, deleteProjectFromCloud, setProjectVisibility, unlinkCloudProject }),

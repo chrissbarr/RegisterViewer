@@ -37,9 +37,17 @@ import { clearCloudUrl, setCloudUrl } from '../utils/cloud-url';
 import { useDirtyTracking } from '../hooks/use-dirty-tracking';
 import { useActiveProjectCloudOps } from '../hooks/use-active-project-cloud-ops';
 import { useProjectCloudOps } from '../hooks/use-project-cloud-ops';
-import { DEFAULT_PROJECT_NAME, type ProjectListEntry, type Visibility } from '../types/project';
+import { computeSyncPatches } from '../utils/cloud-sync';
+import { DEFAULT_PROJECT_NAME, type Visibility } from '../types/project';
 import { CLOUD_SYNC_DEBOUNCE_MS } from '../constants';
 
+/**
+ * Cloud auto-sync status for the active project.
+ * - `saved`: cloud is up to date with local state
+ * - `syncing`: a cloud save is in progress
+ * - `offline`: last sync attempt failed (network/server error)
+ * - `local-only`: project is not cloud-backed (no auto-sync)
+ */
 export type SyncStatus = 'saved' | 'syncing' | 'offline' | 'local-only';
 
 interface CloudSyncState {
@@ -98,68 +106,6 @@ export interface InternalCloudSyncState {
   lastCloudSavedAt: string | null;
   lastSavedVersion: number;
   visibility: Visibility;
-}
-
-interface SyncPatch {
-  localId: string;
-  cloudSavedAt?: string;
-  visibility?: Visibility;
-}
-
-interface ServerProject {
-  id: string;
-  title: string | null;
-  visibility: Visibility;
-  updatedAt: string;
-}
-
-interface SyncPatchResult {
-  patches: SyncPatch[];
-  staleCloudIds: string[];
-  /** Server projects that have no matching local entry */
-  cloudOnlyProjects: ServerProject[];
-}
-
-function computeSyncPatches(
-  projects: ProjectListEntry[],
-  serverProjects: ReadonlyArray<ServerProject>,
-): SyncPatchResult {
-  const serverMap = new Map(serverProjects.map(p => [p.id, p]));
-  const patches: SyncPatch[] = [];
-  const staleCloudIds: string[] = [];
-  const localCloudIds = new Set(projects.filter(p => p.cloudId).map(p => p.cloudId!));
-
-  for (const entry of projects) {
-    // Only sync metadata for owned cloud projects (storage === 'cloud').
-    // Shared/non-owned projects loaded via link have storage === 'local'
-    // and should not have their metadata overwritten by sync.
-    if (!entry.cloudId || entry.storage !== 'cloud') continue;
-
-    const serverProject = serverMap.get(entry.cloudId);
-    if (serverProject) {
-      const patch: SyncPatch = { localId: entry.localId };
-      let hasUpdate = false;
-
-      const serverTime = new Date(serverProject.updatedAt).getTime();
-      const localCloudTime = entry.cloudSavedAt ? new Date(entry.cloudSavedAt).getTime() : 0;
-      if (serverTime > localCloudTime) {
-        patch.cloudSavedAt = serverProject.updatedAt;
-        hasUpdate = true;
-      }
-      if (serverProject.visibility !== entry.visibility) {
-        patch.visibility = serverProject.visibility;
-        hasUpdate = true;
-      }
-      if (hasUpdate) patches.push(patch);
-    } else {
-      staleCloudIds.push(entry.cloudId);
-    }
-  }
-
-  // Find server projects with no local counterpart
-  const cloudOnlyProjects = serverProjects.filter(sp => !localCloudIds.has(sp.id));
-
-  return { patches, staleCloudIds, cloudOnlyProjects };
 }
 
 const initialInternalState: InternalCloudSyncState = {
@@ -555,7 +501,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   // By-localId cloud operations (used by My Projects dialog)
   const projectOps = useProjectCloudOps({
     updateCloudMetadata,
-    projects,
+    projectsRef,
     activeLocalIdRef,
     dataVersionRef,
     mutationLockRef,
