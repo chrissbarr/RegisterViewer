@@ -551,3 +551,146 @@ test.describe('Cloud: Delete removes cloud copy', () => {
     }).toBeGreaterThanOrEqual(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Test: Sign in does NOT auto-upload local projects
+// ---------------------------------------------------------------------------
+
+test.describe('Cloud: No auto-upload on sign-in', () => {
+  test('signing in does not automatically upload existing local projects', async ({ page }) => {
+    const requests: { method: string; url: string }[] = [];
+
+    // Start anonymous — create a local project
+    await mockCloudApi(page, {
+      onRequest: (method, url) => {
+        requests.push({ method, url });
+      },
+    });
+    await resetApp(page);
+
+    // Now set up auth (simulates signing in)
+    await setupMockAuth(page);
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'STATUS_REG' })).toBeVisible({ timeout: 10000 });
+
+    // Wait a beat for any async operations to settle
+    await page.waitForTimeout(3000);
+
+    // No POST to /api/projects should have been made (no auto-upload)
+    const postRequests = requests.filter(r => r.method === 'POST' && /\/api\/projects\/?$/.test(new URL(r.url).pathname));
+    expect(postRequests).toHaveLength(0);
+
+    // No sync indicator should be visible (project is still local-only)
+    await expect(page.getByTitle('Saved to cloud')).not.toBeVisible();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test: Remove from Cloud returns project to local-only
+// ---------------------------------------------------------------------------
+
+test.describe('Cloud: Remove from Cloud', () => {
+  test('removing from cloud returns project to local-only state', async ({ page }) => {
+    await setupMockAuth(page);
+    await mockCloudApi(page);
+    await resetApp(page);
+
+    // Save to cloud first
+    await saveActiveProjectToCloud(page);
+    await waitForCloudSync(page);
+
+    // Open My Projects and click "Remove from cloud"
+    await openMyProjects(page);
+    const dialog = page.getByRole('dialog');
+    await dialog.getByTitle('Remove from cloud').click();
+
+    // Close dialog
+    await page.keyboard.press('Escape');
+    await expect(dialog).not.toBeVisible();
+
+    // Sync indicator should disappear (project is local-only again)
+    await expect(page.getByTitle('Saved to cloud')).not.toBeVisible({ timeout: 5000 });
+
+    // Project data should still be visible (not lost)
+    await expect(page.getByRole('heading', { name: 'STATUS_REG' })).toBeVisible();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test: Sign out purges cloud projects from localStorage
+// ---------------------------------------------------------------------------
+
+test.describe('Cloud: Sign-out purge', () => {
+  test('signing out purges cloud projects and loads default project', async ({ page }) => {
+    await setupMockAuth(page);
+    await mockCloudApi(page);
+
+    // Mock the logout endpoint
+    await page.route(/\/api\/auth\/logout/, async (route) => {
+      await route.fulfill({ status: 204, body: '' });
+    });
+
+    await resetApp(page);
+
+    // Save to cloud so the project has storage: 'cloud'
+    await saveActiveProjectToCloud(page);
+    await waitForCloudSync(page);
+
+    // Sign out via the application menu
+    await page.getByRole('button', { name: 'Application menu' }).click();
+    await page.getByRole('button', { name: 'Sign out' }).click();
+
+    // Cloud project was purged; app creates a new blank project
+    await expect(page.getByText('No register selected')).toBeVisible({ timeout: 10000 });
+
+    // Sync indicator should not be visible (no longer cloud-backed)
+    await expect(page.getByTitle('Saved to cloud')).not.toBeVisible();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test: Delete confirmation shows cloud warning
+// ---------------------------------------------------------------------------
+
+test.describe('Cloud: Delete confirmation cloud warning', () => {
+  test('delete confirmation warns about cloud copy for cloud-backed project', async ({ page }) => {
+    await setupMockAuth(page);
+    await mockCloudApi(page);
+    await resetApp(page);
+
+    // Save to cloud first
+    await saveActiveProjectToCloud(page);
+
+    // Open My Projects and click the delete button to trigger confirmation
+    await openMyProjects(page);
+    const dialog = page.getByRole('dialog');
+    await dialog.getByRole('button', { name: /Delete project/ }).click();
+
+    // Cloud warning should be visible in the confirmation
+    await expect(dialog.getByText('This will also delete the cloud copy')).toBeVisible();
+
+    // Cancel to verify this is just a confirmation check
+    await dialog.getByRole('button', { name: 'Cancel deletion' }).click();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test: Share dialog prompts Save to Cloud for signed-in local project
+// ---------------------------------------------------------------------------
+
+test.describe('Cloud: Share dialog save-to-cloud prompt', () => {
+  test('share dialog shows Save to Cloud prompt for local-only project when signed in', async ({ page }) => {
+    await setupMockAuth(page);
+    await mockCloudApi(page);
+    await resetApp(page);
+
+    // Project is local-only (not saved to cloud yet)
+    // Open share dialog
+    await openShareDialog(page);
+    const dialog = page.getByRole('dialog');
+
+    // State D: signed in, local project — should show save-to-cloud prompt
+    await expect(dialog.getByText('Save to Cloud to share this project via link.')).toBeVisible();
+    await expect(dialog.getByRole('button', { name: 'Save to Cloud' })).toBeVisible();
+  });
+});
