@@ -83,7 +83,11 @@ function AppShellInner({ cloudInit }: AppShellProps) {
         patchProjectState(id, serializeState(pendingStateRef.current), pendingStateRef.current.project?.title);
         pendingStateRef.current = null;
       }
-      // Best-effort cloud sync flush (fire-and-forget on unload)
+      // Best-effort cloud sync flush (fire-and-forget on unload).
+      // The async PUT may not complete before the browser kills the page, but
+      // local data is always safe (synchronous patchProjectState above). The
+      // cloud copy will catch up via auto-sync on next app load. sendBeacon
+      // is not viable because the API requires PUT with JWT Authorization header.
       cloudActionsRef.current.flushSync().catch(() => {});
     };
     window.addEventListener('beforeunload', flush);

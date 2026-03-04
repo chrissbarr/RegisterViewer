@@ -214,6 +214,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
     async (cloudId: string) => {
       setInternal((prev) => ({ ...prev, status: 'loading', error: null, cloudId }));
       try {
+        // JWT is intentionally optional — unauthenticated users can load public/unlisted projects
         const jwt = getJwt();
         const importResult = await fetchAndParseCloudProject(cloudId, jwt ?? undefined);
 

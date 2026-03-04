@@ -58,11 +58,13 @@ export function useMyProjectsActions(
 
   const handleOpen = useCallback(async (localId: string) => {
     const project = projects.find(p => p.localId === localId);
+    if (!project) return;
 
     // Cloud project with evicted/missing local data — fetch full data first
-    if (project?.cloudId && !hasLocalData(localId)) {
+    if (project.cloudId && !hasLocalData(localId)) {
       setDownloadingLocalId(localId);
       try {
+        // JWT is optional — unauthenticated users can open shared projects
         const jwt = getJwt();
         const result = await fetchAndParseCloudProject(project.cloudId, jwt ?? undefined);
         const serializedValues: Record<string, string> = {};
