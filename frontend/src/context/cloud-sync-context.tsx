@@ -334,10 +334,11 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     // Clear any pending cloud operation from the previous project
     loginGuard.pendingCloudOpRef.current = null;
     loginGuard.setLoginRequired(false);
-    // Default to false; the auth re-evaluation effect (below)
-    // will asynchronously promote isOwner via a server round-trip when the
-    // user is authenticated.
-    const isOwner = false;
+    // Use storage === 'cloud' as an optimistic ownership hint — cloud-storage
+    // projects were uploaded by this user. The async re-evaluation effect below
+    // still confirms via a server round-trip, but this avoids flashing the
+    // "shared project" banner on owned projects during the async gap.
+    const isOwner = entry?.storage === 'cloud';
     if (cloudId === null) {
       setInternal({ ...initialInternalState });
       clearCloudUrl();
