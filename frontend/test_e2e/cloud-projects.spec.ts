@@ -87,10 +87,25 @@ async function openShareDialog(page: Page) {
 
 /**
  * Wait for the sync indicator to show "Saved to cloud" status.
- * With auto-sync, projects are automatically uploaded after sign-in.
  */
 async function waitForCloudSync(page: Page) {
   await expect(page.getByTitle('Saved to cloud')).toBeVisible({ timeout: 10000 });
+}
+
+/**
+ * Explicitly save the active project to cloud via the My Projects dialog.
+ * In the local-first model, projects are NOT auto-uploaded on sign-in;
+ * users must click the "Save to cloud" button.
+ */
+async function saveActiveProjectToCloud(page: Page) {
+  await openMyProjects(page);
+  const dialog = page.getByRole('dialog');
+  await dialog.getByTitle('Save to cloud').click();
+  // Close the dialog
+  await page.keyboard.press('Escape');
+  await expect(dialog).not.toBeVisible();
+  // Wait for sync to complete
+  await waitForCloudSync(page);
 }
 
 /**
@@ -222,17 +237,20 @@ async function mockCloudApi(page: Page, options: {
 }
 
 // ---------------------------------------------------------------------------
-// Test: Auto-sync uploads project to cloud on sign-in
+// Test: Explicit save to cloud via My Projects dialog
 // ---------------------------------------------------------------------------
 
-test.describe('Cloud: Auto-sync on sign-in', () => {
-  test('auto-uploads project to cloud and shows sync indicator', async ({ page }) => {
+test.describe('Cloud: Explicit save to cloud', () => {
+  test('saves project to cloud via My Projects and shows sync indicator', async ({ page }) => {
     await setupMockAuth(page);
     await mockCloudApi(page);
     await resetApp(page);
 
-    // After sign-in + auto-sync, the sync indicator should show "Saved to cloud"
-    await waitForCloudSync(page);
+    // No sync indicator should be visible for a local-only project
+    await expect(page.getByTitle('Saved to cloud')).not.toBeVisible({ timeout: 2000 });
+
+    // Explicitly save to cloud via My Projects dialog
+    await saveActiveProjectToCloud(page);
 
     // The URL hash should contain a cloud project ID
     await expect(page).toHaveURL(/#\/p\/\w+/);
@@ -344,8 +362,8 @@ test.describe('Cloud: Auto-sync after edit', () => {
     });
     await resetApp(page);
 
-    // Wait for initial auto-sync (POST create)
-    await waitForCloudSync(page);
+    // Explicitly save to cloud first
+    await saveActiveProjectToCloud(page);
 
     // Clear tracked requests from the initial save
     requests.length = 0;
@@ -375,8 +393,8 @@ test.describe('Cloud: Visibility change', () => {
     await mockCloudApi(page);
     await resetApp(page);
 
-    // Wait for auto-sync to complete
-    await waitForCloudSync(page);
+    // Explicitly save to cloud first
+    await saveActiveProjectToCloud(page);
 
     // Open share dialog via header Share button
     await openShareDialog(page);
@@ -393,11 +411,11 @@ test.describe('Cloud: Visibility change', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Test: Share dialog shows "Save to Cloud" for anonymous users
+// Test: Share dialog cloud section states
 // ---------------------------------------------------------------------------
 
 test.describe('Cloud: Share dialog cloud section states', () => {
-  test('shows "Save to Cloud" button for anonymous users', async ({ page }) => {
+  test('shows sign-in prompt for anonymous users', async ({ page }) => {
     await mockCloudApi(page);
     await resetApp(page);
 
@@ -405,20 +423,19 @@ test.describe('Cloud: Share dialog cloud section states', () => {
     await openShareDialog(page);
     const dialog = page.getByRole('dialog');
 
-    // State C: not signed in — should see "Save to Cloud" prompt
-    await expect(dialog.getByText('Save to the cloud for a short, permanent link')).toBeVisible();
-    await expect(dialog.getByRole('button', { name: 'Save to Cloud' })).toBeVisible();
+    // State C: not signed in — should see sign-in prompt (no Save to Cloud button)
+    await expect(dialog.getByText('Sign in to share this project via link.')).toBeVisible();
   });
 
-  test('share dialog shows private state for auto-synced project', async ({ page }) => {
+  test('share dialog shows private state after saving to cloud', async ({ page }) => {
     await setupMockAuth(page);
     await mockCloudApi(page);
     await resetApp(page);
 
-    // Wait for auto-sync to complete
-    await waitForCloudSync(page);
+    // Explicitly save to cloud first
+    await saveActiveProjectToCloud(page);
 
-    // Open share dialog — project is already cloud-saved via auto-sync
+    // Open share dialog — project is already cloud-saved via explicit save
     await openShareDialog(page);
     const dialog = page.getByRole('dialog');
 
@@ -444,8 +461,8 @@ test.describe('Cloud: Owner opens own project via URL', () => {
     });
     await resetApp(page);
 
-    // Wait for auto-sync to establish cloud ownership
-    await waitForCloudSync(page);
+    // Explicitly save to cloud to establish cloud ownership
+    await saveActiveProjectToCloud(page);
 
     // Get the current cloud URL hash
     const url = page.url();
@@ -478,8 +495,8 @@ test.describe('Cloud: Copy cloud link', () => {
     await mockCloudApi(page);
     await resetApp(page);
 
-    // Wait for auto-sync
-    await waitForCloudSync(page);
+    // Explicitly save to cloud first
+    await saveActiveProjectToCloud(page);
 
     // Open share dialog and make unlisted
     await openShareDialog(page);
@@ -518,8 +535,8 @@ test.describe('Cloud: Delete removes cloud copy', () => {
     });
     await resetApp(page);
 
-    // Wait for auto-sync
-    await waitForCloudSync(page);
+    // Explicitly save to cloud first
+    await saveActiveProjectToCloud(page);
 
     // Open My Projects and delete the project
     await openMyProjects(page);

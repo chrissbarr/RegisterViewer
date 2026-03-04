@@ -84,6 +84,7 @@ export function useProjectCloudOps<T extends CloudSyncInternalSlice>(deps: Proje
             ...prev,
             cloudId: result.cloudId,
             isOwner: true,
+            storage: 'cloud',
             shareUrl: buildProjectUrl(result.cloudId),
             lastCloudSavedAt: result.timestamp,
             lastSavedVersion: dataVersionRef.current,
