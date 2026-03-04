@@ -137,6 +137,8 @@ export function loadProject(localId: string): StoredLocalProject | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!isValidStoredProject(parsed)) return null;
+    // Backfill storage for pre-migration records loaded directly from localStorage
+    if (!parsed.storage) parsed.storage = parsed.cloudId ? 'cloud' : 'local';
     return parsed;
   } catch (err) {
     if (import.meta.env.DEV) {

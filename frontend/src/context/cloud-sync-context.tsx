@@ -407,7 +407,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   // Auth-transition effect: when the user transitions from logged-out (null)
   // to logged-in (non-null), retry any pending cloud operation that was
   // deferred because a JWT was not available at the time of the request,
-  // and sync cloud projects (pull metadata + upload local-only).
+  // and sync cloud projects (pull metadata from server).
   // Note: syncCloudProjects ref is used to avoid forward-reference issues.
   const prevAuthUserRef = useRef(authUser);
   const syncCloudProjectsRef = useRef<(() => Promise<SyncResult>) | null>(null);
@@ -500,7 +500,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
           void rawActiveOps.fork();
         }
       }
-      // Sync cloud projects (pull metadata + upload local-only)
+      // Sync cloud projects (pull metadata from server)
       syncCloudProjectsRef.current?.().catch(() => { /* best-effort on mount/sign-in */ });
     }
 
