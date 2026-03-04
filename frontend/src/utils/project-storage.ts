@@ -198,7 +198,7 @@ export function createProject(initialState: SerializedAppState, name?: string, c
 /** Delete a project from localStorage and manifest */
 export function deleteProject(localId: string): void {
   // Remove from localStorage
-  localStorage.removeItem(projectStorageKey(localId));
+  evictProjectData(localId);
 
   // Update manifest
   const manifest = loadManifest();
@@ -271,7 +271,7 @@ export function purgeCloudProjects(): string[] {
 
   for (const entry of manifest.projects) {
     if (entry.storage === 'cloud') {
-      localStorage.removeItem(projectStorageKey(entry.localId));
+      evictProjectData(entry.localId);
       purged.push(entry.localId);
     } else {
       kept.push(entry);

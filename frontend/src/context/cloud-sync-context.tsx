@@ -229,7 +229,10 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
 
   // Derive the active project's cloudId so the effect re-runs when it changes
   // (e.g., after auto-upload sets a cloudId on a previously local-only project).
-  const activeCloudId = projects.find(p => p.localId === activeLocalId)?.cloudId ?? null;
+  const activeCloudId = useMemo(
+    () => projects.find(p => p.localId === activeLocalId)?.cloudId ?? null,
+    [projects, activeLocalId],
+  );
 
   useEffect(() => {
     if (!activeLocalId) return;
@@ -341,20 +344,23 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    let cancelled = false;
     syncTimerRef.current = setTimeout(async () => {
+      if (cancelled) return;
       const jwt = getJwt();
       if (!jwt) return;
       setSyncStatus('syncing');
       try {
         await rawActiveOps.saveToCloud();
-        setSyncStatus('saved');
+        if (!cancelled) setSyncStatus('saved');
       } catch {
-        setSyncStatus('offline');
+        if (!cancelled) setSyncStatus('offline');
         // No automatic retry — the next user edit will trigger a fresh sync attempt
       }
     }, CLOUD_SYNC_DEBOUNCE_MS);
 
     return () => {
+      cancelled = true;
       if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
     };
   }, [isDirty, canAutoSync, getJwt, rawActiveOps]);

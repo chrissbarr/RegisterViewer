@@ -65,6 +65,7 @@ export function MyProjectsDialog({ open, onClose }: MyProjectsDialogProps) {
     return ids;
   }, [projects]);
 
+  const isSignedIn = !!auth.user;
   const showFilter = projects.length > FILTER_THRESHOLD;
 
   return (
@@ -144,7 +145,6 @@ export function MyProjectsDialog({ open, onClose }: MyProjectsDialogProps) {
           <ul className="space-y-2" role="list">
             {filteredProjects.map((project) => {
               const isPlaceholder = placeholderIds.has(project.localId);
-              const isSignedIn = !!auth.user;
               return (
                 <ProjectListItem
                   key={project.localId}

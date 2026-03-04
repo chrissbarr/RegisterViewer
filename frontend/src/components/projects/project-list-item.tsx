@@ -39,6 +39,9 @@ export function ProjectListItem({
   const displayName = projectDisplayName(project.name);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
+  const iconBtnClass = `p-1 rounded text-gray-400 dark:text-gray-500
+    hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors`;
+
   const handleDelete = () => {
     onDelete(project.localId);
     setConfirmingDelete(false);
@@ -108,11 +111,8 @@ export function ProjectListItem({
                 disabled={isDownloading}
                 title={`Open project ${displayName}`}
                 aria-label={`Open project ${displayName}`}
-                className="p-1 rounded text-gray-400 dark:text-gray-500
-                  hover:text-blue-600 dark:hover:text-blue-400
-                  hover:bg-gray-100 dark:hover:bg-gray-700
-                  disabled:opacity-50 disabled:cursor-not-allowed
-                  transition-colors"
+                className={`${iconBtnClass} hover:text-blue-600 dark:hover:text-blue-400
+                  disabled:opacity-50 disabled:cursor-not-allowed`}
               >
                 <FolderOpen size={16} className={isDownloading ? 'animate-pulse' : undefined} aria-hidden="true" />
               </button>
@@ -122,10 +122,7 @@ export function ProjectListItem({
                 onClick={() => onSettings(project.localId)}
                 title={`Project settings for ${displayName}`}
                 aria-label={`Project settings for ${displayName}`}
-                className="p-1 rounded text-gray-400 dark:text-gray-500
-                  hover:text-blue-600 dark:hover:text-blue-400
-                  hover:bg-gray-100 dark:hover:bg-gray-700
-                  transition-colors"
+                className={`${iconBtnClass} hover:text-blue-600 dark:hover:text-blue-400`}
               >
                 <Settings size={16} aria-hidden="true" />
               </button>
@@ -135,10 +132,7 @@ export function ProjectListItem({
                 onClick={() => onShare(project.localId)}
                 title={`Share project ${displayName}`}
                 aria-label={`Share project ${displayName}`}
-                className="p-1 rounded text-gray-400 dark:text-gray-500
-                  hover:text-blue-600 dark:hover:text-blue-400
-                  hover:bg-gray-100 dark:hover:bg-gray-700
-                  transition-colors"
+                className={`${iconBtnClass} hover:text-blue-600 dark:hover:text-blue-400`}
               >
                 <Link size={16} aria-hidden="true" />
               </button>
@@ -148,10 +142,7 @@ export function ProjectListItem({
                 onClick={() => onSaveToCloud(project.localId)}
                 title={`Save to cloud`}
                 aria-label={`Save project ${displayName} to cloud`}
-                className="p-1 rounded text-gray-400 dark:text-gray-500
-                  hover:text-blue-600 dark:hover:text-blue-400
-                  hover:bg-gray-100 dark:hover:bg-gray-700
-                  transition-colors"
+                className={`${iconBtnClass} hover:text-blue-600 dark:hover:text-blue-400`}
               >
                 <CloudUpload size={16} aria-hidden="true" />
               </button>
@@ -161,10 +152,7 @@ export function ProjectListItem({
                 onClick={() => onRemoveFromCloud(project.localId)}
                 title={`Remove from cloud`}
                 aria-label={`Remove project ${displayName} from cloud`}
-                className="p-1 rounded text-gray-400 dark:text-gray-500
-                  hover:text-blue-600 dark:hover:text-blue-400
-                  hover:bg-gray-100 dark:hover:bg-gray-700
-                  transition-colors"
+                className={`${iconBtnClass} hover:text-blue-600 dark:hover:text-blue-400`}
               >
                 <CloudOff size={16} aria-hidden="true" />
               </button>
@@ -173,10 +161,7 @@ export function ProjectListItem({
               onClick={() => setConfirmingDelete(true)}
               title={`Delete project ${displayName}`}
               aria-label={`Delete project ${displayName}`}
-              className="p-1 rounded text-gray-400 dark:text-gray-500
-                hover:text-red-600 dark:hover:text-red-400
-                hover:bg-gray-100 dark:hover:bg-gray-700
-                transition-colors"
+              className={`${iconBtnClass} hover:text-red-600 dark:hover:text-red-400`}
             >
               <Trash2 size={16} aria-hidden="true" />
             </button>
