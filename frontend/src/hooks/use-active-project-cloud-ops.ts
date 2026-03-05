@@ -4,7 +4,7 @@ import { isCloudEnabled, ApiError } from '../utils/api-client';
 import { fetchAndParseCloudProject } from '../utils/cloud-project-loader';
 import { friendlyErrorMessage } from '../utils/friendly-error';
 import { buildProjectUrl } from '../utils/project-storage';
-import { setCloudUrl, clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock } from '../utils/cloud-url';
+import { setCloudUrl, clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock, requireJwt } from '../utils/cloud-url';
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
 import { DEFAULT_PROJECT_NAME, type Visibility } from '../types/project';
 import type { AppState, RegisterDef, ProjectMetadata, AddressUnitBits } from '../types/register';
@@ -106,8 +106,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
 
         setInternal((prev) => ({ ...prev, status: 'saving', error: null }));
         const jsonPayload = exportToObject(stateOverride ?? appStateRef.current);
-        const jwt = getJwt();
-        if (!jwt) throw new Error('Authentication required. Please sign in.');
+        const jwt = requireJwt(getJwt);
         const result = await saveProjectToCloudImpl(jsonPayload, existingCloudId, jwt);
 
         if (result.kind === 'not-found') {
@@ -169,8 +168,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
       setInternal((prev) => ({ ...prev, status: 'saving', error: null }));
       try {
         const jsonPayload = exportToObject(appStateRef.current);
-        const jwt = getJwt();
-        if (!jwt) throw new Error('Authentication required. Please sign in.');
+        const jwt = requireJwt(getJwt);
         const result = await saveProjectToCloudImpl(jsonPayload, null, jwt);
         if (result.kind !== 'created') throw new Error('Failed to save copy.');
         applyCreatedResult(result);
@@ -186,8 +184,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
     await withMutationLock(mutationLockRef, async () => {
       setInternal((prev) => ({ ...prev, status: 'deleting', error: null }));
       try {
-        const jwt = getJwt();
-        if (!jwt) throw new Error('Authentication required. Please sign in.');
+        const jwt = requireJwt(getJwt);
         await deleteProjectFromCloudImpl(cloudId, jwt);
 
         const currentLocalId = activeLocalIdRef.current;
@@ -209,8 +206,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
 
     if (cloudId && isOwner) {
       try {
-        const jwt = getJwt();
-        if (!jwt) throw new Error('Authentication required. Please sign in.');
+        const jwt = requireJwt(getJwt);
         await patchVisibilityImpl(cloudId, v, jwt);
 
         const currentLocalId = activeLocalIdRef.current;

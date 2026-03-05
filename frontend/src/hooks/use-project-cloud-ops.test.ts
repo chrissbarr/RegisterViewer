@@ -16,15 +16,10 @@ vi.mock('../utils/project-storage', () => ({
   buildProjectUrl: vi.fn((id: string) => `https://app/#/p/${id}`),
 }));
 
-vi.mock('../utils/cloud-url', () => ({
+vi.mock('../utils/cloud-url', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../utils/cloud-url')>()),
   setCloudUrl: vi.fn(),
   clearCloudUrl: vi.fn(),
-  CLEARED_CLOUD_METADATA: {
-    cloudId: null,
-    visibility: 'private',
-    cloudSavedAt: null,
-    storage: 'local',
-  },
   withMutationLock: vi.fn(async (_ref: unknown, fn: () => Promise<unknown>) => fn()),
 }));
 
@@ -44,6 +39,7 @@ function makeInitialState() {
   return {
     cloudId: null as string | null,
     isOwner: false,
+    storage: 'local' as const,
     status: 'idle' as const,
     error: null as string | null,
     shareUrl: null as string | null,

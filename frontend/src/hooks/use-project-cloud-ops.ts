@@ -2,23 +2,12 @@ import { useCallback, useMemo, type MutableRefObject, type SetStateAction, type 
 import { exportToObject, deserializeState } from '../utils/storage';
 import { isCloudEnabled } from '../utils/api-client';
 import { loadProject, buildProjectUrl } from '../utils/project-storage';
-import { setCloudUrl, clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock } from '../utils/cloud-url';
+import { setCloudUrl, clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock, requireJwt } from '../utils/cloud-url';
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
 import type { Visibility, ProjectListEntry } from '../types/project';
+import type { InternalCloudSyncState } from '../context/cloud-sync-context';
 
-/** Minimal slice of internal cloud-sync state needed by project operations. */
-interface CloudSyncInternalSlice {
-  cloudId: string | null;
-  isOwner: boolean;
-  status: 'idle' | 'saving' | 'loading' | 'deleting';
-  error: string | null;
-  shareUrl: string | null;
-  lastCloudSavedAt: string | null;
-  lastSavedVersion: number;
-  visibility: Visibility;
-}
-
-interface ProjectCloudOpsDeps<T extends CloudSyncInternalSlice> {
+interface ProjectCloudOpsDeps {
   updateCloudMetadata: (localId: string, updates: Partial<{
     cloudId: string | null;
     cloudSavedAt: string | null;
@@ -29,9 +18,9 @@ interface ProjectCloudOpsDeps<T extends CloudSyncInternalSlice> {
   activeLocalIdRef: MutableRefObject<string | null>;
   dataVersionRef: MutableRefObject<number>;
   mutationLockRef: MutableRefObject<boolean>;
-  internalRef: MutableRefObject<T>;
-  setInternal: Dispatch<SetStateAction<T>>;
-  initialInternalState: T;
+  internalRef: MutableRefObject<InternalCloudSyncState>;
+  setInternal: Dispatch<SetStateAction<InternalCloudSyncState>>;
+  initialInternalState: InternalCloudSyncState;
   getJwt: () => string | null;
 }
 
@@ -47,7 +36,7 @@ interface ProjectCloudOps {
  * without depending on the currently active project's app state.
  * Used primarily by the My Projects dialog.
  */
-export function useProjectCloudOps<T extends CloudSyncInternalSlice>(deps: ProjectCloudOpsDeps<T>): ProjectCloudOps {
+export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
   const { updateCloudMetadata, projectsRef, activeLocalIdRef, dataVersionRef, mutationLockRef, internalRef, setInternal, initialInternalState, getJwt } = deps;
 
   const saveProjectToCloud = useCallback(async (localId: string) => {
@@ -62,8 +51,7 @@ export function useProjectCloudOps<T extends CloudSyncInternalSlice>(deps: Proje
       const entry = projectsRef.current.find(p => p.localId === localId);
       const existingCloudId = entry?.cloudId ?? project.cloudId;
 
-      const jwt = getJwt();
-      if (!jwt) throw new Error('Authentication required. Please sign in.');
+      const jwt = requireJwt(getJwt);
       const result = await saveProjectToCloudImpl(jsonPayload, existingCloudId, jwt);
 
       if (result.kind === 'not-found') {
@@ -98,8 +86,7 @@ export function useProjectCloudOps<T extends CloudSyncInternalSlice>(deps: Proje
 
   const deleteProjectFromCloud = useCallback(async (cloudId: string) => {
     await withMutationLock(mutationLockRef, async () => {
-      const jwt = getJwt();
-      if (!jwt) throw new Error('Authentication required. Please sign in.');
+      const jwt = requireJwt(getJwt);
       await deleteProjectFromCloudImpl(cloudId, jwt);
 
       const entry = projectsRef.current.find(p => p.cloudId === cloudId);
@@ -119,8 +106,7 @@ export function useProjectCloudOps<T extends CloudSyncInternalSlice>(deps: Proje
     const entry = projectsRef.current.find(p => p.localId === localId);
     if (!entry?.cloudId) return;
 
-    const jwt = getJwt();
-    if (!jwt) throw new Error('Authentication required. Please sign in.');
+    const jwt = requireJwt(getJwt);
     await patchVisibilityImpl(entry.cloudId, v, jwt);
 
     updateCloudMetadata(localId, { visibility: v });

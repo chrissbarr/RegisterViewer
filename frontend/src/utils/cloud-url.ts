@@ -1,5 +1,15 @@
 import type { MutableRefObject } from 'react';
 
+/**
+ * Retrieve the JWT from the auth provider, throwing if unavailable.
+ * Eliminates the repeated `const jwt = getJwt(); if (!jwt) throw ...` pattern.
+ */
+export function requireJwt(getJwt: () => string | null): string {
+  const jwt = getJwt();
+  if (!jwt) throw new Error('Authentication required. Please sign in.');
+  return jwt;
+}
+
 /** Navigate the browser hash to a cloud project URL without a page reload. */
 export function setCloudUrl(cloudId: string): void {
   history.replaceState(null, '', `#/p/${cloudId}`);
