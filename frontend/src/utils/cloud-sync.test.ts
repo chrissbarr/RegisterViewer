@@ -1,0 +1,177 @@
+import { describe, it, expect } from 'vitest';
+import { computeSyncPatches, type ServerProject } from './cloud-sync';
+import type { ProjectListEntry } from '../types/project';
+
+function makeEntry(overrides: Partial<ProjectListEntry> & { localId: string }): ProjectListEntry {
+  return {
+    cloudId: null,
+    name: 'Test',
+    visibility: 'private',
+    createdAt: '2024-01-01T00:00:00Z',
+    localSavedAt: '2024-01-01T00:00:00Z',
+    cloudSavedAt: null,
+    storage: 'local',
+    ...overrides,
+  };
+}
+
+function makeServer(overrides: Partial<ServerProject> & { id: string }): ServerProject {
+  return {
+    title: 'Server Project',
+    visibility: 'private',
+    updatedAt: '2024-01-02T00:00:00Z',
+    ...overrides,
+  };
+}
+
+describe('computeSyncPatches', () => {
+  it('returns empty result when both lists are empty', () => {
+    const result = computeSyncPatches([], []);
+    expect(result.patches).toEqual([]);
+    expect(result.staleCloudIds).toEqual([]);
+    expect(result.cloudOnlyProjects).toEqual([]);
+  });
+
+  it('returns no patches when local and server are in sync', () => {
+    const local = [makeEntry({
+      localId: 'l1',
+      cloudId: 'c1',
+      storage: 'cloud',
+      cloudSavedAt: '2024-01-02T00:00:00Z',
+      visibility: 'private',
+    })];
+    const server = [makeServer({ id: 'c1', visibility: 'private', updatedAt: '2024-01-02T00:00:00Z' })];
+
+    const result = computeSyncPatches(local, server);
+    expect(result.patches).toEqual([]);
+    expect(result.staleCloudIds).toEqual([]);
+    expect(result.cloudOnlyProjects).toEqual([]);
+  });
+
+  it('generates cloudSavedAt patch when server is newer', () => {
+    const local = [makeEntry({
+      localId: 'l1',
+      cloudId: 'c1',
+      storage: 'cloud',
+      cloudSavedAt: '2024-01-01T00:00:00Z',
+      visibility: 'private',
+    })];
+    const server = [makeServer({ id: 'c1', updatedAt: '2024-01-03T00:00:00Z', visibility: 'private' })];
+
+    const result = computeSyncPatches(local, server);
+    expect(result.patches).toEqual([{ localId: 'l1', cloudSavedAt: '2024-01-03T00:00:00Z' }]);
+  });
+
+  it('generates visibility patch when server visibility differs', () => {
+    const local = [makeEntry({
+      localId: 'l1',
+      cloudId: 'c1',
+      storage: 'cloud',
+      cloudSavedAt: '2024-01-02T00:00:00Z',
+      visibility: 'private',
+    })];
+    const server = [makeServer({ id: 'c1', updatedAt: '2024-01-02T00:00:00Z', visibility: 'unlisted' })];
+
+    const result = computeSyncPatches(local, server);
+    expect(result.patches).toEqual([{ localId: 'l1', visibility: 'unlisted' }]);
+  });
+
+  it('generates combined patch when both timestamp and visibility differ', () => {
+    const local = [makeEntry({
+      localId: 'l1',
+      cloudId: 'c1',
+      storage: 'cloud',
+      cloudSavedAt: '2024-01-01T00:00:00Z',
+      visibility: 'private',
+    })];
+    const server = [makeServer({ id: 'c1', updatedAt: '2024-01-05T00:00:00Z', visibility: 'unlisted' })];
+
+    const result = computeSyncPatches(local, server);
+    expect(result.patches).toEqual([{
+      localId: 'l1',
+      cloudSavedAt: '2024-01-05T00:00:00Z',
+      visibility: 'unlisted',
+    }]);
+  });
+
+  it('identifies stale cloud IDs (local has cloudId not on server)', () => {
+    const local = [makeEntry({
+      localId: 'l1',
+      cloudId: 'c-deleted',
+      storage: 'cloud',
+    })];
+    const server: ServerProject[] = [];
+
+    const result = computeSyncPatches(local, server);
+    expect(result.staleCloudIds).toEqual(['c-deleted']);
+    expect(result.patches).toEqual([]);
+  });
+
+  it('identifies cloud-only projects (on server but not local)', () => {
+    const local: ProjectListEntry[] = [];
+    const server = [makeServer({ id: 'c-new', title: 'New Project', visibility: 'unlisted' })];
+
+    const result = computeSyncPatches(local, server);
+    expect(result.cloudOnlyProjects).toEqual(server);
+  });
+
+  it('skips entries with storage !== cloud', () => {
+    const local = [makeEntry({
+      localId: 'l1',
+      cloudId: 'c1',
+      storage: 'local', // shared project loaded via link
+    })];
+    const server = [makeServer({ id: 'c1', updatedAt: '2024-06-01T00:00:00Z', visibility: 'unlisted' })];
+
+    const result = computeSyncPatches(local, server);
+    // No patches because local entry has storage=local
+    expect(result.patches).toEqual([]);
+    expect(result.staleCloudIds).toEqual([]);
+    // c1 IS in localCloudIds set (because entry has cloudId), so not cloud-only
+    expect(result.cloudOnlyProjects).toEqual([]);
+  });
+
+  it('skips entries without cloudId', () => {
+    const local = [makeEntry({ localId: 'l1', cloudId: null, storage: 'local' })];
+    const server = [makeServer({ id: 'c1' })];
+
+    const result = computeSyncPatches(local, server);
+    expect(result.patches).toEqual([]);
+    expect(result.staleCloudIds).toEqual([]);
+    expect(result.cloudOnlyProjects).toEqual(server);
+  });
+
+  it('handles mixed scenario with patches, stale, and cloud-only', () => {
+    const local = [
+      // Needs timestamp update
+      makeEntry({ localId: 'l1', cloudId: 'c1', storage: 'cloud', cloudSavedAt: '2024-01-01T00:00:00Z' }),
+      // Stale — not on server
+      makeEntry({ localId: 'l2', cloudId: 'c-gone', storage: 'cloud' }),
+      // Local-only — no cloudId
+      makeEntry({ localId: 'l3', cloudId: null, storage: 'local' }),
+    ];
+    const server = [
+      makeServer({ id: 'c1', updatedAt: '2024-06-01T00:00:00Z' }),
+      makeServer({ id: 'c-brand-new', title: 'Brand New' }),
+    ];
+
+    const result = computeSyncPatches(local, server);
+    expect(result.patches).toEqual([{ localId: 'l1', cloudSavedAt: '2024-06-01T00:00:00Z' }]);
+    expect(result.staleCloudIds).toEqual(['c-gone']);
+    expect(result.cloudOnlyProjects).toHaveLength(1);
+    expect(result.cloudOnlyProjects[0].id).toBe('c-brand-new');
+  });
+
+  it('treats null cloudSavedAt as epoch 0 for comparison', () => {
+    const local = [makeEntry({
+      localId: 'l1',
+      cloudId: 'c1',
+      storage: 'cloud',
+      cloudSavedAt: null,
+    })];
+    const server = [makeServer({ id: 'c1', updatedAt: '2024-01-01T00:00:00Z' })];
+
+    const result = computeSyncPatches(local, server);
+    expect(result.patches).toEqual([{ localId: 'l1', cloudSavedAt: '2024-01-01T00:00:00Z' }]);
+  });
+});

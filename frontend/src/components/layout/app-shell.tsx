@@ -61,21 +61,34 @@ function AppShellInner({ cloudInit }: AppShellProps) {
     const timer = setTimeout(() => {
       const id = activeLocalIdRef.current;
       if (id) {
-        patchProjectState(id, serializeState(state), state.project?.title);
+        patchProjectState(id, serializeState(state));
       }
       pendingStateRef.current = null;
     }, SAVE_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [state, activeLocalId]);
 
-  // Flush any pending save on unmount or page unload
+  // Flush any pending save on unmount or page unload.
+  // Ref-based so the effect is set up once — avoids stale-closure flush
+  // when cloudActions identity changes after a cloud save.
+  const cloudActionsRef = useRef(cloudActions);
+  useEffect(() => {
+    cloudActionsRef.current = cloudActions;
+  }, [cloudActions]);
+
   useEffect(() => {
     const flush = () => {
       const id = activeLocalIdRef.current;
       if (pendingStateRef.current !== null && id) {
-        patchProjectState(id, serializeState(pendingStateRef.current), pendingStateRef.current.project?.title);
+        patchProjectState(id, serializeState(pendingStateRef.current));
         pendingStateRef.current = null;
       }
+      // Best-effort cloud sync flush (fire-and-forget on unload).
+      // The async PUT may not complete before the browser kills the page, but
+      // local data is always safe (synchronous patchProjectState above). The
+      // cloud copy will catch up via auto-sync on next app load. sendBeacon
+      // is not viable because the API requires PUT with JWT Authorization header.
+      cloudActionsRef.current.flushSync().catch(() => {});
     };
     window.addEventListener('beforeunload', flush);
     window.addEventListener('pagehide', flush);

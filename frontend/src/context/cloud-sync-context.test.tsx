@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import type { ReactNode } from 'react';
 import { CloudSyncProvider, useCloudSync, useCloudSyncActions } from './cloud-sync-context';
 import { AppProvider } from './app-context';
-import { ProjectStorageProvider } from './project-storage-context';
+import { ProjectStorageProvider, useProjectStorageActions } from './project-storage-context';
 import { useAppDispatch } from './app-context';
 import { makeState, makeRegister } from '../test/helpers';
 import type { ProjectManifestEntry } from '../types/project';
@@ -36,6 +36,7 @@ vi.mock('../utils/cloud-project-loader', () => ({
   fetchAndParseCloudProject: vi.fn(),
 }));
 
+
 vi.mock('../utils/project-storage', () => ({
   loadManifest: vi.fn(() => ({ version: 1, projects: [] })),
   saveManifest: vi.fn(),
@@ -44,6 +45,7 @@ vi.mock('../utils/project-storage', () => ({
   createProject: vi.fn(),
   deleteProject: vi.fn(),
   updateProjectMetadata: vi.fn(),
+  evictProjectData: vi.fn(),
   toProjectListEntry: vi.fn((e: Record<string, unknown>) => ({
     localId: e.localId,
     name: e.name ?? 'Test Project',
@@ -52,7 +54,7 @@ vi.mock('../utils/project-storage', () => ({
     createdAt: e.createdAt ?? '2024-01-01T00:00:00Z',
     localSavedAt: e.localSavedAt ?? '2024-01-01T00:00:00Z',
     cloudSavedAt: e.cloudSavedAt ?? null,
-    isCloudSaved: e.cloudId != null,
+    storage: e.storage ?? 'local',
   })),
   getMostRecentProjectId: vi.fn(() => null),
   invalidateManifestCache: vi.fn(),
@@ -93,6 +95,7 @@ import {
   loadManifest,
   loadProject,
   updateProjectMetadata,
+  evictProjectData,
 } from '../utils/project-storage';
 import { exportToObject, deserializeState } from '../utils/storage';
 
@@ -109,6 +112,7 @@ function makeManifestEntry(overrides: Partial<ProjectManifestEntry> = {}) {
     createdAt: '2024-01-01T00:00:00Z',
     localSavedAt: '2024-01-01T00:00:00Z',
     cloudSavedAt: null as string | null,
+    storage: 'local' as const,
     ...overrides,
   };
 }
@@ -163,6 +167,8 @@ beforeEach(() => {
   (exportToObject as Mock).mockReturnValue({ version: 1, registers: [], values: {} });
   // getProject is called by the ownership re-evaluation effect; default to a resolved promise
   (apiGetProject as Mock).mockResolvedValue({ id: 'test', data: '{}', createdAt: '', updatedAt: '', isOwner: false });
+  // listProjects is called by syncCloudProjects on mount/sign-in; default to empty list
+  (apiListProjects as Mock).mockResolvedValue({ projects: [] });
 });
 
 // ── Tests ────────────────────────────────────────────────────────────
@@ -180,6 +186,7 @@ describe('CloudSyncProvider', () => {
         shareUrl: null,
         lastCloudSavedAt: null,
         visibility: 'private',
+        syncStatus: 'local-only',
       });
     });
   });
@@ -904,6 +911,7 @@ describe('CloudSyncProvider', () => {
             cloudId: 'cloud-1',
             cloudSavedAt: '2024-01-01T00:00:00Z',
             visibility: 'private',
+            storage: 'cloud',
           }),
         ],
       });
@@ -938,7 +946,7 @@ describe('CloudSyncProvider', () => {
       (loadManifest as Mock).mockReturnValue({
         version: 1,
         projects: [
-          makeManifestEntry({ cloudId: 'cloud-stale' }),
+          makeManifestEntry({ cloudId: 'cloud-stale', storage: 'cloud' }),
         ],
       });
       (apiListProjects as Mock).mockResolvedValue({
@@ -954,6 +962,41 @@ describe('CloudSyncProvider', () => {
 
       expect(syncResult!.updatedCount).toBe(0);
       expect(syncResult!.staleCloudIds).toEqual(['cloud-stale']);
+    });
+
+    it('does not sync metadata for shared projects with cloudId but storage=local', async () => {
+      (loadManifest as Mock).mockReturnValue({
+        version: 1,
+        projects: [
+          makeManifestEntry({
+            cloudId: 'shared-cloud-id',
+            cloudSavedAt: '2024-01-01T00:00:00Z',
+            visibility: 'private',
+            storage: 'local',
+          }),
+        ],
+      });
+      (apiListProjects as Mock).mockResolvedValue({
+        projects: [
+          {
+            id: 'shared-cloud-id',
+            visibility: 'unlisted',
+            createdAt: '2024-01-01T00:00:00Z',
+            updatedAt: '2024-02-01T00:00:00Z',
+          },
+        ],
+      });
+
+      const { result } = renderCloudSync();
+
+      let syncResult: { updatedCount: number; staleCloudIds: string[]; placeholdersCreated: number };
+      await act(async () => {
+        syncResult = await result.current.actions.syncCloudProjects();
+      });
+
+      expect(syncResult!.updatedCount).toBe(0);
+      expect(updateProjectMetadata).not.toHaveBeenCalled();
+      expect(syncResult!.staleCloudIds).not.toContain('shared-cloud-id');
     });
 
     it('returns empty result when cloud is disabled', async () => {
@@ -982,6 +1025,7 @@ describe('CloudSyncProvider', () => {
         }),
       ).rejects.toThrow('Network error');
     });
+
   });
 
   describe('unlinkCloudProject', () => {
@@ -1151,6 +1195,281 @@ describe('CloudSyncProvider', () => {
 
       expect(result.current.state.loginRequired).toBe(true);
       expect(apiCreateProject).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('eviction on project switch', () => {
+    const PREV_LOCAL_ID = 'prev-local';
+    const NEXT_LOCAL_ID = 'next-local';
+
+    function renderWithProjectSwitch() {
+      return renderHook(
+        () => ({
+          state: useCloudSync(),
+          actions: useCloudSyncActions(),
+          storageActions: useProjectStorageActions(),
+          dispatch: useAppDispatch(),
+        }),
+        {
+          wrapper: ({ children }: { children: ReactNode }) => {
+            const initialState = makeState({
+              registers: [makeRegister({ id: 'reg-1' })],
+              registerValues: { 'reg-1': 0xFFn },
+            });
+            return (
+              <AppProvider savedState={initialState}>
+                <ProjectStorageProvider initialLocalId={PREV_LOCAL_ID}>
+                  <CloudSyncProvider>{children}</CloudSyncProvider>
+                </ProjectStorageProvider>
+              </AppProvider>
+            );
+          },
+        },
+      );
+    }
+
+    it('does not evict when flush fails', async () => {
+      // Ensure JWT is available so flushSync doesn't short-circuit at the JWT check
+      authMock.getJwt.mockReturnValue('mock-jwt');
+
+      // Setup: previous project is cloud-backed
+      (loadManifest as Mock).mockReturnValue({
+        version: 1,
+        projects: [
+          makeManifestEntry({ localId: PREV_LOCAL_ID, cloudId: 'cloud-prev' }),
+          makeManifestEntry({ localId: NEXT_LOCAL_ID, cloudId: null, name: 'Next' }),
+        ],
+      });
+      // loadProject is called by switchProject; return valid data for the next project
+      (loadProject as Mock).mockReturnValue({
+        localId: NEXT_LOCAL_ID,
+        state: makeState(),
+      });
+
+      // Make the cloud save fail (flushSync calls rawActiveOps.saveToCloud → update)
+      (apiUpdateProject as Mock).mockRejectedValue(new Error('Network error'));
+
+      // Suppress getProject (ownership re-evaluation)
+      (apiGetProject as Mock).mockReturnValue(new Promise(() => {}));
+
+      const { result } = renderWithProjectSwitch();
+
+      // Initialize the cloud state so flushSync has a cloudId + isOwner
+      await act(async () => {
+        result.current.actions.initFromProject('cloud-prev', true);
+      });
+
+      // Make data dirty so flushSync actually attempts a save
+      act(() => {
+        result.current.dispatch({
+          type: 'SET_REGISTER_VALUE',
+          registerId: 'reg-1',
+          value: 0x42n,
+        });
+      });
+
+      // Switch to a different project — triggers eviction effect
+      await act(async () => {
+        result.current.storageActions.switchProject(NEXT_LOCAL_ID);
+      });
+
+      // Wait for flushSync promise to settle
+      await act(async () => {
+        await new Promise(r => setTimeout(r, 50));
+      });
+
+      // Eviction should NOT have happened because flush failed
+      expect(evictProjectData).not.toHaveBeenCalled();
+    });
+
+    it('does not evict if user navigated back to the same project', async () => {
+      // Setup: previous project is cloud-backed
+      (loadManifest as Mock).mockReturnValue({
+        version: 1,
+        projects: [
+          makeManifestEntry({ localId: PREV_LOCAL_ID, cloudId: 'cloud-prev' }),
+          makeManifestEntry({ localId: NEXT_LOCAL_ID, cloudId: null, name: 'Next' }),
+        ],
+      });
+
+      // loadProject returns valid data for both projects
+      (loadProject as Mock).mockImplementation((id: string) => ({
+        localId: id,
+        state: makeState(),
+      }));
+
+      // Make flushSync take time (slow save)
+      let resolveFlush: (() => void) | undefined;
+      (apiUpdateProject as Mock).mockImplementation(
+        () => new Promise<void>((resolve) => { resolveFlush = resolve; }),
+      );
+
+      // Suppress getProject (ownership re-evaluation)
+      (apiGetProject as Mock).mockReturnValue(new Promise(() => {}));
+
+      const { result } = renderWithProjectSwitch();
+
+      // Initialize cloud state so flushSync has a cloudId + isOwner
+      await act(async () => {
+        result.current.actions.initFromProject('cloud-prev', true);
+      });
+
+      // Switch away from prev project
+      await act(async () => {
+        result.current.storageActions.switchProject(NEXT_LOCAL_ID);
+      });
+
+      // Quickly switch back before flush completes
+      await act(async () => {
+        result.current.storageActions.switchProject(PREV_LOCAL_ID);
+      });
+
+      // Now resolve the flush
+      await act(async () => {
+        resolveFlush?.();
+        await new Promise(r => setTimeout(r, 50));
+      });
+
+      // Eviction should NOT have happened because user is back on prev project
+      expect(evictProjectData).not.toHaveBeenCalledWith(PREV_LOCAL_ID);
+    });
+
+    it('flush-before-evict saves the previous project state, not the new project state', async () => {
+      // Regression: switchProject dispatches LOAD_STATE + sets activeLocalId in
+      // the same commit. By the time the project-switch effect calls flushSync,
+      // appStateRef already points to the *new* project's state. Without the
+      // stateOverride fix, exportToObject would serialize the wrong project.
+      authMock.getJwt.mockReturnValue('mock-jwt');
+
+      (loadManifest as Mock).mockReturnValue({
+        version: 1,
+        projects: [
+          makeManifestEntry({ localId: PREV_LOCAL_ID, cloudId: 'cloud-prev', storage: 'cloud' }),
+          makeManifestEntry({ localId: NEXT_LOCAL_ID, cloudId: null, name: 'Next' }),
+        ],
+      });
+
+      // Return distinct states so we can tell which one was saved
+      const prevProjectState = makeState({
+        registers: [makeRegister({ id: 'reg-1' })],
+        registerValues: { 'reg-1': 0xAAn },
+      });
+      const nextProjectState = makeState({
+        registers: [makeRegister({ id: 'reg-2' })],
+        registerValues: { 'reg-2': 0xBBn },
+      });
+      (loadProject as Mock).mockImplementation((id: string) => ({
+        localId: id,
+        state: id === NEXT_LOCAL_ID ? nextProjectState : prevProjectState,
+      }));
+
+      // Cloud update succeeds
+      (apiUpdateProject as Mock).mockResolvedValue({ id: 'cloud-prev', updatedAt: '2026-01-01T00:00:00Z' });
+      (apiGetProject as Mock).mockReturnValue(new Promise(() => {}));
+
+      const { result } = renderWithProjectSwitch();
+
+      // Initialize cloud state for the previous project
+      await act(async () => {
+        result.current.actions.initFromProject('cloud-prev', true, 'cloud');
+      });
+
+      // Make data dirty so flushSync actually attempts a save
+      act(() => {
+        result.current.dispatch({
+          type: 'SET_REGISTER_VALUE',
+          registerId: 'reg-1',
+          value: 0x42n,
+        });
+      });
+
+      // Clear exportToObject call history before the switch
+      (exportToObject as Mock).mockClear();
+
+      // Track what state exportToObject receives during the flush
+      const capturedStates: unknown[] = [];
+      (exportToObject as Mock).mockImplementation((state: unknown) => {
+        capturedStates.push(state);
+        return { version: 1, registers: [], values: {} };
+      });
+
+      // Switch to the next project — triggers flush-before-evict
+      await act(async () => {
+        result.current.storageActions.switchProject(NEXT_LOCAL_ID);
+      });
+
+      // Wait for flush promise to settle
+      await act(async () => {
+        await new Promise(r => setTimeout(r, 50));
+      });
+
+      // exportToObject should have been called with the PREVIOUS project's
+      // state (containing reg-1 with value 0x42), NOT the next project's state.
+      expect(capturedStates.length).toBeGreaterThanOrEqual(1);
+      const flushedState = capturedStates[0] as { registers: Array<{ id: string }>; registerValues: Record<string, bigint> };
+      // The previous project had reg-1; the new project has reg-2.
+      // If the bug were present, we'd see reg-2 here instead.
+      expect(flushedState.registers[0]?.id).toBe('reg-1');
+    });
+  });
+
+  describe('SEC-H2 regression: non-owned cloud projects must not be evicted', () => {
+    const PREV_LOCAL_ID = 'prev-local';
+    const NEXT_LOCAL_ID = 'next-local';
+
+    it('does not evict a shared project (storage=local) on project switch', async () => {
+      // Shared project loaded via link: has cloudId but storage='local'
+      (loadManifest as Mock).mockReturnValue({
+        version: 1,
+        projects: [
+          makeManifestEntry({ localId: PREV_LOCAL_ID, cloudId: 'shared-cloud', storage: 'local' }),
+          makeManifestEntry({ localId: NEXT_LOCAL_ID, cloudId: null, name: 'Next' }),
+        ],
+      });
+      (loadProject as Mock).mockImplementation((id: string) => ({
+        localId: id,
+        state: makeState(),
+      }));
+      (apiGetProject as Mock).mockReturnValue(new Promise(() => {}));
+
+      const { result } = renderHook(
+        () => ({
+          state: useCloudSync(),
+          actions: useCloudSyncActions(),
+          storageActions: useProjectStorageActions(),
+        }),
+        {
+          wrapper: ({ children }: { children: ReactNode }) => {
+            const initialState = makeState({
+              registers: [makeRegister({ id: 'reg-1' })],
+            });
+            return (
+              <AppProvider savedState={initialState}>
+                <ProjectStorageProvider initialLocalId={PREV_LOCAL_ID}>
+                  <CloudSyncProvider>{children}</CloudSyncProvider>
+                </ProjectStorageProvider>
+              </AppProvider>
+            );
+          },
+        },
+      );
+
+      // Initialize as non-owner shared project
+      await act(async () => {
+        result.current.actions.initFromProject('shared-cloud', false, 'local');
+      });
+
+      // Switch to another project
+      await act(async () => {
+        result.current.storageActions.switchProject(NEXT_LOCAL_ID);
+      });
+
+      await act(async () => {
+        await new Promise(r => setTimeout(r, 50));
+      });
+
+      // Should NOT evict because storage='local' (non-owned)
+      expect(evictProjectData).not.toHaveBeenCalled();
     });
   });
 

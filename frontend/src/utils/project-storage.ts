@@ -51,6 +51,7 @@ function toManifestEntry(project: StoredLocalProject): ProjectManifestEntry {
     createdAt: project.createdAt,
     localSavedAt: project.localSavedAt,
     cloudSavedAt: project.cloudSavedAt,
+    storage: project.storage ?? 'local',
   };
 }
 
@@ -58,19 +59,9 @@ function toManifestEntry(project: StoredLocalProject): ProjectManifestEntry {
 export function toProjectListEntry(entry: ProjectManifestEntry): ProjectListEntry {
   return {
     ...entry,
-    isCloudSaved: entry.cloudId !== null,
   };
 }
 
-/**
- * Check if a project is a cloud-only placeholder (no real data yet).
- * Placeholder projects are created during cloud sync for projects that
- * exist on the server but have no local counterpart.
- */
-export function isPlaceholderProject(localId: string): boolean {
-  const project = loadProject(localId);
-  return project !== null && project.state.registers.length === 0;
-}
 
 /** Scan localStorage for orphaned project keys not in the manifest */
 function recoverOrphanedProjects(manifest: ProjectManifest): ProjectManifest {
@@ -133,6 +124,8 @@ function isValidStoredProject(obj: unknown): obj is StoredLocalProject {
   return (
     typeof p.localId === 'string' &&
     typeof p.name === 'string' &&
+    (p.cloudId === null || typeof p.cloudId === 'string') &&
+    typeof p.createdAt === 'string' &&
     typeof p.state === 'object' && p.state !== null &&
     Array.isArray((p.state as Record<string, unknown>).registers) &&
     typeof (p.state as Record<string, unknown>).registerValues === 'object'
@@ -146,6 +139,10 @@ export function loadProject(localId: string): StoredLocalProject | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!isValidStoredProject(parsed)) return null;
+    // Backfill or correct storage for pre-migration records
+    if (parsed.storage !== 'local' && parsed.storage !== 'cloud') {
+      parsed.storage = parsed.cloudId ? 'cloud' : 'local';
+    }
     return parsed;
   } catch (err) {
     if (import.meta.env.DEV) {
@@ -175,11 +172,17 @@ export function saveProject(project: StoredLocalProject): void {
   saveManifest(manifest);
 }
 
-/** Optional cloud metadata for creating a project that is already cloud-linked */
+/**
+ * Optional cloud metadata for creating a project that is already cloud-linked.
+ * Used by `syncCloudProjects` to create lightweight local placeholders (cloud-only stubs)
+ * for server projects that have no local counterpart. These stubs use `EMPTY_SERIALIZED_STATE`
+ * as their initial state; actual project data is fetched lazily when the user opens the project.
+ */
 interface CreateProjectCloudMeta {
   cloudId: string;
   visibility: import('../types/project').Visibility;
   cloudSavedAt: string;
+  storage?: 'local' | 'cloud';
 }
 
 /** Create a new project with initial state, returns the localId */
@@ -194,6 +197,7 @@ export function createProject(initialState: SerializedAppState, name?: string, c
     createdAt: now,
     localSavedAt: now,
     cloudSavedAt: cloudMeta?.cloudSavedAt ?? null,
+    storage: cloudMeta?.storage ?? 'local',
     state: initialState,
   };
   saveProject(project);
@@ -203,7 +207,7 @@ export function createProject(initialState: SerializedAppState, name?: string, c
 /** Delete a project from localStorage and manifest */
 export function deleteProject(localId: string): void {
   // Remove from localStorage
-  localStorage.removeItem(projectStorageKey(localId));
+  evictProjectData(localId);
 
   // Update manifest
   const manifest = loadManifest();
@@ -211,9 +215,10 @@ export function deleteProject(localId: string): void {
   saveManifest(manifest);
 }
 
-/** Patch only the state (and optionally name) of a project without a full read-parse cycle.
+/** Patch the state of a project without a full read-parse cycle.
+ *  Derives the manifest name from state.project.title (single source of truth).
  *  Reads the raw JSON, patches state/name/timestamp, writes back, and updates manifest cache. */
-export function patchProjectState(localId: string, state: SerializedAppState, name?: string): void {
+export function patchProjectState(localId: string, state: SerializedAppState): void {
   const key = projectStorageKey(localId);
   const raw = localStorage.getItem(key);
   if (!raw) return;
@@ -221,22 +226,21 @@ export function patchProjectState(localId: string, state: SerializedAppState, na
   try {
     const project: StoredLocalProject = JSON.parse(raw);
     const now = new Date().toISOString();
+    const name = state.project?.title?.trim() || project.name;
     const updated: StoredLocalProject = {
       ...project,
       state,
+      name,
       localSavedAt: now,
-      ...(name !== undefined ? { name } : {}),
     };
     localStorage.setItem(key, JSON.stringify(updated));
 
-    // Update manifest timestamp in cache
+    // Update manifest in cache
     const manifest = loadManifest();
     const idx = manifest.projects.findIndex(p => p.localId === localId);
     if (idx >= 0) {
       manifest.projects[idx].localSavedAt = now;
-      if (name !== undefined) {
-        manifest.projects[idx].name = name;
-      }
+      manifest.projects[idx].name = name;
       saveManifest(manifest);
     }
   } catch (err) {
@@ -249,12 +253,11 @@ export function patchProjectState(localId: string, state: SerializedAppState, na
 /** Update metadata fields on a project (name, cloudId, visibility, etc.) */
 export function updateProjectMetadata(
   localId: string,
-  updates: Partial<Pick<StoredLocalProject, 'name' | 'cloudId' | 'visibility' | 'cloudSavedAt'>>,
+  updates: Partial<Pick<StoredLocalProject, 'name' | 'cloudId' | 'visibility' | 'cloudSavedAt' | 'storage'>>,
 ): void {
   const project = loadProject(localId);
   if (!project) return;
-  Object.assign(project, updates);
-  saveProject(project);
+  saveProject({ ...project, ...updates });
 }
 
 /** Get the most recently saved project's localId.
@@ -266,6 +269,35 @@ export function getMostRecentProjectId(manifest?: ProjectManifest): string | nul
     (a, b) => new Date(b.localSavedAt).getTime() - new Date(a.localSavedAt).getTime(),
   );
   return sorted[0].localId;
+}
+
+/** Purge all cloud-backed projects from localStorage. Returns purged localIds. */
+export function purgeCloudProjects(): string[] {
+  const manifest = loadManifest();
+  const purged: string[] = [];
+  const kept: ProjectManifestEntry[] = [];
+
+  for (const entry of manifest.projects) {
+    if (entry.storage === 'cloud') {
+      evictProjectData(entry.localId);
+      purged.push(entry.localId);
+    } else {
+      kept.push(entry);
+    }
+  }
+
+  saveManifest({ ...manifest, projects: kept });
+  return purged;
+}
+
+/** Check if a project has full data in localStorage (not just a manifest stub). */
+export function hasLocalData(localId: string): boolean {
+  return localStorage.getItem(projectStorageKey(localId)) !== null;
+}
+
+/** Remove per-project localStorage key but keep manifest entry (convert to stub). */
+export function evictProjectData(localId: string): void {
+  localStorage.removeItem(projectStorageKey(localId));
 }
 
 /** Estimate localStorage usage */
@@ -302,7 +334,16 @@ function migrateLegacyState(): void {
   }
 }
 
-/** Run migration from legacy storage format. Call once on startup. */
+/**
+ * Run migration from legacy storage format. Call once on startup.
+ *
+ * Migration steps (idempotent):
+ * 1. Convert legacy single-project state to manifest format
+ * 2. Remove legacy localStorage keys
+ * 3. Ensure manifest exists
+ * 4. Backfill `storage` field for pre-existing manifest entries (cloud if cloudId, local otherwise)
+ * 5. Recover orphaned project keys not tracked in the manifest
+ */
 export function runMigrationIfNeeded(): void {
   migrateLegacyState();
 
@@ -316,6 +357,19 @@ export function runMigrationIfNeeded(): void {
   if (!localStorage.getItem(MANIFEST_KEY)) {
     saveManifest({ version: 1, projects: [] });
   }
+
+  // Backfill storage field for manifests created before this field existed
+  const preOrphanManifest = loadManifest();
+  let needsSave = false;
+  for (const entry of preOrphanManifest.projects) {
+    // Cast to partial — old localStorage data may lack or have invalid `storage`
+    const s = (entry as Partial<ProjectManifestEntry>).storage;
+    if (s !== 'local' && s !== 'cloud') {
+      entry.storage = entry.cloudId !== null ? 'cloud' : 'local';
+      needsSave = true;
+    }
+  }
+  if (needsSave) saveManifest(preOrphanManifest);
 
   // Run orphan recovery once at startup (not on every loadManifest call)
   const manifest = loadManifest();

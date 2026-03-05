@@ -4,7 +4,7 @@ import { isCloudEnabled, ApiError } from '../utils/api-client';
 import { fetchAndParseCloudProject } from '../utils/cloud-project-loader';
 import { friendlyErrorMessage } from '../utils/friendly-error';
 import { buildProjectUrl } from '../utils/project-storage';
-import { setCloudUrl, clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock } from '../utils/cloud-url';
+import { setCloudUrl, clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock, requireJwt } from '../utils/cloud-url';
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
 import { DEFAULT_PROJECT_NAME, type Visibility } from '../types/project';
 import type { AppState, RegisterDef, ProjectMetadata, AddressUnitBits } from '../types/register';
@@ -38,7 +38,11 @@ interface ActiveProjectCloudOpsDeps {
 }
 
 interface ActiveProjectCloudOps {
-  saveToCloud: () => Promise<void>;
+  /** Returns false if the save was dropped because the mutation lock was held.
+   *  When `stateOverride` is provided it is serialized instead of the live
+   *  `appStateRef` — used by flush-before-evict to save the *previous*
+   *  project's state after `appStateRef` already points to the new project. */
+  saveToCloud: (stateOverride?: AppState) => Promise<boolean>;
   fork: () => Promise<void>;
   deleteFromCloud: () => Promise<void>;
   setVisibility: (v: Visibility) => Promise<void>;
@@ -89,56 +93,73 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
     }));
   }, [updateCloudMetadata, createNewProject, dataVersionRef, activeLocalIdRef, appStateRef, setInternal]);
 
-  const saveToCloud = useCallback(async () => {
-    if (!isCloudEnabled()) return;
-    await withMutationLock(mutationLockRef, async () => {
+  const saveToCloud = useCallback(async (stateOverride?: AppState): Promise<boolean> => {
+    if (!isCloudEnabled()) return true;
+    const lockResult = await withMutationLock(mutationLockRef, async () => {
+      // Capture localId before the await — during flush-before-evict,
+      // activeLocalIdRef may already point to the new project by the
+      // time the async save completes.
+      const capturedLocalId = activeLocalIdRef.current;
       try {
         const { cloudId, isOwner } = internalRef.current;
         const existingCloudId = (cloudId && isOwner) ? cloudId : null;
 
         setInternal((prev) => ({ ...prev, status: 'saving', error: null }));
-        const jsonPayload = exportToObject(appStateRef.current);
-        const jwt = getJwt();
-        if (!jwt) throw new Error('Authentication required. Please sign in.');
+        const jsonPayload = exportToObject(stateOverride ?? appStateRef.current);
+        const jwt = requireJwt(getJwt);
         const result = await saveProjectToCloudImpl(jsonPayload, existingCloudId, jwt);
 
         if (result.kind === 'not-found') {
-          const currentLocalId = activeLocalIdRef.current;
-          if (currentLocalId) {
-            updateCloudMetadata(currentLocalId, CLEARED_CLOUD_METADATA);
+          if (capturedLocalId) {
+            updateCloudMetadata(capturedLocalId, CLEARED_CLOUD_METADATA);
           }
-          clearCloudUrl();
-          setInternal((prev) => ({
-            ...prev,
-            cloudId: null,
-            isOwner: false,
-            status: 'idle',
-            shareUrl: null,
-            lastCloudSavedAt: null,
-            visibility: 'private',
-            error: 'Cloud project not found. It may have been deleted. Use "Save to Cloud" to create a new copy.',
-          }));
+          if (activeLocalIdRef.current === capturedLocalId) {
+            clearCloudUrl();
+            setInternal((prev) => ({
+              ...prev,
+              cloudId: null,
+              isOwner: false,
+              status: 'idle',
+              shareUrl: null,
+              lastCloudSavedAt: null,
+              visibility: 'private',
+              error: 'Cloud project not found. It may have been deleted. Use "Save to Cloud" to create a new copy.',
+            }));
+          }
           return;
         }
 
         if (result.kind === 'created') {
-          applyCreatedResult(result);
-        } else {
-          const currentLocalId = activeLocalIdRef.current;
-          if (currentLocalId) {
-            updateCloudMetadata(currentLocalId, { cloudSavedAt: result.timestamp });
+          if (activeLocalIdRef.current === capturedLocalId) {
+            applyCreatedResult(result);
           }
-          setInternal((prev) => ({
-            ...prev,
-            status: 'idle',
-            lastCloudSavedAt: result.timestamp,
-            lastSavedVersion: dataVersionRef.current,
-          }));
+        } else {
+          if (capturedLocalId) {
+            updateCloudMetadata(capturedLocalId, { cloudSavedAt: result.timestamp });
+          }
+          // Only update internal state if we're still on the same project.
+          // During flush-before-evict, internal state already belongs to
+          // the new project — updating it would set the wrong timestamp
+          // and lastSavedVersion.
+          if (activeLocalIdRef.current === capturedLocalId) {
+            setInternal((prev) => ({
+              ...prev,
+              status: 'idle',
+              lastCloudSavedAt: result.timestamp,
+              lastSavedVersion: dataVersionRef.current,
+            }));
+          }
         }
       } catch (err) {
-        setInternal((prev) => ({ ...prev, status: 'idle', error: friendlyErrorMessage(err, 'Failed to save project.') }));
+        // Only surface the error if we're still on the same project
+        if (activeLocalIdRef.current === capturedLocalId) {
+          const next = { ...internalRef.current, status: 'idle' as const, error: friendlyErrorMessage(err, 'Failed to save project.') };
+          internalRef.current = next;
+          setInternal(next);
+        }
       }
     });
+    return lockResult.executed;
   }, [updateCloudMetadata, applyCreatedResult, mutationLockRef, dataVersionRef, getJwt, internalRef, appStateRef, activeLocalIdRef, setInternal]);
 
   const fork = useCallback(async () => {
@@ -147,8 +168,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
       setInternal((prev) => ({ ...prev, status: 'saving', error: null }));
       try {
         const jsonPayload = exportToObject(appStateRef.current);
-        const jwt = getJwt();
-        if (!jwt) throw new Error('Authentication required. Please sign in.');
+        const jwt = requireJwt(getJwt);
         const result = await saveProjectToCloudImpl(jsonPayload, null, jwt);
         if (result.kind !== 'created') throw new Error('Failed to save copy.');
         applyCreatedResult(result);
@@ -164,8 +184,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
     await withMutationLock(mutationLockRef, async () => {
       setInternal((prev) => ({ ...prev, status: 'deleting', error: null }));
       try {
-        const jwt = getJwt();
-        if (!jwt) throw new Error('Authentication required. Please sign in.');
+        const jwt = requireJwt(getJwt);
         await deleteProjectFromCloudImpl(cloudId, jwt);
 
         const currentLocalId = activeLocalIdRef.current;
@@ -187,8 +206,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
 
     if (cloudId && isOwner) {
       try {
-        const jwt = getJwt();
-        if (!jwt) throw new Error('Authentication required. Please sign in.');
+        const jwt = requireJwt(getJwt);
         await patchVisibilityImpl(cloudId, v, jwt);
 
         const currentLocalId = activeLocalIdRef.current;
@@ -210,6 +228,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
     async (cloudId: string) => {
       setInternal((prev) => ({ ...prev, status: 'loading', error: null, cloudId }));
       try {
+        // JWT is intentionally optional — unauthenticated users can load public/unlisted projects
         const jwt = getJwt();
         const importResult = await fetchAndParseCloudProject(cloudId, jwt ?? undefined);
 

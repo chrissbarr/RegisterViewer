@@ -85,17 +85,27 @@ async function openShareDialog(page: Page) {
   await expect(page.getByRole('dialog')).toBeVisible();
 }
 
-/** Save the current project to cloud via My Projects dialog. */
-async function saveToCloudViaMyProjects(page: Page) {
+/**
+ * Wait for the sync indicator to show "Saved to cloud" status.
+ */
+async function waitForCloudSync(page: Page) {
+  await expect(page.getByTitle('Saved to cloud')).toBeVisible({ timeout: 10000 });
+}
+
+/**
+ * Explicitly save the active project to cloud via the My Projects dialog.
+ * In the local-first model, projects are NOT auto-uploaded on sign-in;
+ * users must click the "Save to cloud" button.
+ */
+async function saveActiveProjectToCloud(page: Page) {
   await openMyProjects(page);
   const dialog = page.getByRole('dialog');
-  await dialog.getByRole('button', { name: /Save project.*to cloud/ }).click();
-  // Wait for save to complete — visibility badge appears
-  await expect(dialog.getByRole('button', { name: /Visibility: private for Example Project/ })).toBeVisible({ timeout: 5000 });
-  // Close My Projects dialog
+  await dialog.getByTitle('Save to cloud').click();
+  // Close the dialog
   await page.keyboard.press('Escape');
-  // After save, "Update cloud copy" button should appear in header
-  await expect(page.getByRole('button', { name: 'Update cloud copy' })).toBeVisible({ timeout: 5000 });
+  await expect(dialog).not.toBeVisible();
+  // Wait for sync to complete
+  await waitForCloudSync(page);
 }
 
 /**
@@ -177,7 +187,7 @@ async function mockCloudApi(page: Page, options: {
         if (method === 'GET') {
           const resp = options.getResponse ?? {
             status: 200,
-            body: { id: projectId, data: MOCK_PROJECT_DATA, createdAt: now, updatedAt: now, isOwner: false },
+            body: { id: projectId, data: MOCK_PROJECT_DATA, createdAt: now, updatedAt: now, isOwner: true },
           };
           await route.fulfill({
             status: resp.status,
@@ -227,68 +237,23 @@ async function mockCloudApi(page: Page, options: {
 }
 
 // ---------------------------------------------------------------------------
-// Test: Save to cloud (first time via My Projects dialog)
+// Test: Explicit save to cloud via My Projects dialog
 // ---------------------------------------------------------------------------
 
-test.describe('Cloud: Save to cloud', () => {
-  test('saves project to cloud via My Projects and updates UI', async ({ page }) => {
-    const now = new Date().toISOString();
-    await setupMockAuth(page);
-    await mockCloudApi(page, {
-      // List must include the created project so sync doesn't mark it stale
-      listResponse: {
-        status: 200,
-        body: {
-          projects: [{
-            id: 'mockCloud123',
-            visibility: 'private',
-            createdAt: now,
-            updatedAt: now,
-          }],
-        },
-      },
-    });
-    await resetApp(page);
-
-    // Header save button should NOT be visible for local-only projects
-    await expect(page.getByRole('button', { name: 'Save to cloud' })).not.toBeVisible();
-
-    // Save via My Projects dialog
-    await saveToCloudViaMyProjects(page);
-
-    // After saving, the save button tooltip should show "Update cloud copy"
-    await expect(page.getByRole('button', { name: 'Update cloud copy' })).toBeVisible({ timeout: 5000 });
-
-    // The URL hash should now contain a cloud project ID
-    await expect(page).toHaveURL(/#\/p\/\w+/);
-
-    // Open My Projects and verify cloud indicator
-    await openMyProjects(page);
-    const dialog = page.getByRole('dialog');
-
-    // The project should show as cloud-saved (visibility badge should appear)
-    await expect(dialog.getByRole('button', { name: /Visibility: private for Example Project/ })).toBeVisible({ timeout: 5000 });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Test: Save to cloud from My Projects dialog
-// ---------------------------------------------------------------------------
-
-test.describe('Cloud: Save to cloud from My Projects', () => {
-  test('saves project to cloud via My Projects dialog', async ({ page }) => {
+test.describe('Cloud: Explicit save to cloud', () => {
+  test('saves project to cloud via My Projects and shows sync indicator', async ({ page }) => {
     await setupMockAuth(page);
     await mockCloudApi(page);
     await resetApp(page);
 
-    await openMyProjects(page);
-    const dialog = page.getByRole('dialog');
+    // No sync indicator should be visible for a local-only project
+    await expect(page.getByTitle('Saved to cloud')).not.toBeVisible({ timeout: 2000 });
 
-    // Click the "Save to cloud" button — save executes immediately (no confirmation dialog)
-    await dialog.getByRole('button', { name: /Save project.*to cloud/ }).click();
+    // Explicitly save to cloud via My Projects dialog
+    await saveActiveProjectToCloud(page);
 
-    // Wait for the save to complete — the project should now show as cloud-saved
-    await expect(dialog.getByRole('button', { name: /Visibility: private for Example Project/ })).toBeVisible({ timeout: 5000 });
+    // The URL hash should contain a cloud project ID
+    await expect(page).toHaveURL(/#\/p\/\w+/);
   });
 });
 
@@ -353,7 +318,18 @@ test.describe('Cloud: Open shared project', () => {
 test.describe('Cloud: Fork shared project', () => {
   test('clicking "Save your own copy" creates a new cloud project', async ({ page }) => {
     await setupMockAuth(page);
-    await mockCloudApi(page);
+    await mockCloudApi(page, {
+      getResponse: {
+        status: 200,
+        body: {
+          id: 'shOrignal123',
+          data: MOCK_PROJECT_DATA,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          isOwner: false,
+        },
+      },
+    });
 
     // Open shared project
     await page.goto('/#/p/shOrignal123');
@@ -367,18 +343,15 @@ test.describe('Cloud: Fork shared project', () => {
 
     // URL should now contain a cloud project ID (the forked copy)
     await expect(page).toHaveURL(/#\/p\/\w+/);
-
-    // Save button should show "Update cloud copy" (owner of the fork)
-    await expect(page.getByRole('button', { name: 'Update cloud copy' })).toBeVisible();
   });
 });
 
 // ---------------------------------------------------------------------------
-// Test: Update existing cloud project
+// Test: Auto-sync updates cloud after editing
 // ---------------------------------------------------------------------------
 
-test.describe('Cloud: Update cloud project', () => {
-  test('updates an existing cloud project after editing', async ({ page }) => {
+test.describe('Cloud: Auto-sync after edit', () => {
+  test('auto-syncs to cloud after editing a register value', async ({ page }) => {
     const requests: { method: string; url: string }[] = [];
 
     await setupMockAuth(page);
@@ -389,8 +362,8 @@ test.describe('Cloud: Update cloud project', () => {
     });
     await resetApp(page);
 
-    // Save to cloud first via My Projects
-    await saveToCloudViaMyProjects(page);
+    // Explicitly save to cloud first
+    await saveActiveProjectToCloud(page);
 
     // Clear tracked requests from the initial save
     requests.length = 0;
@@ -399,60 +372,14 @@ test.describe('Cloud: Update cloud project', () => {
     await hexInput(page).fill('12345678');
     await hexInput(page).blur();
 
-    // Click update
-    await page.getByRole('button', { name: 'Update cloud copy' }).click();
-
-    // Wait for the PUT request to be captured by the mock
+    // Wait for the auto-sync PUT request (debounced ~3s)
     await expect.poll(() => requests.filter(r => r.method === 'PUT').length, {
-      message: 'Expected at least one PUT request after clicking update',
-      timeout: 5000,
+      message: 'Expected at least one PUT request after editing',
+      timeout: 10000,
     }).toBeGreaterThanOrEqual(1);
-  });
-});
 
-// ---------------------------------------------------------------------------
-// Test: Delete from cloud via My Projects
-// ---------------------------------------------------------------------------
-
-test.describe('Cloud: Delete from cloud', () => {
-  test('removes cloud copy while keeping local project', async ({ page }) => {
-    await setupMockAuth(page);
-    await mockCloudApi(page);
-    await resetApp(page);
-
-    // Save to cloud first via My Projects
-    await saveToCloudViaMyProjects(page);
-
-    // Open My Projects
-    await openMyProjects(page);
-    const dialog = page.getByRole('dialog');
-
-    // Click "Remove from cloud" button
-    const removeBtn = dialog.getByRole('button', { name: /Remove project.*from cloud/ });
-    await expect(removeBtn).toBeVisible();
-    await removeBtn.click();
-
-    // Confirmation dialog should appear
-    const confirmDialog = page.getByRole('alertdialog');
-    await expect(confirmDialog).toBeVisible();
-    await expect(confirmDialog.getByText('Shared links will stop working')).toBeVisible();
-
-    // Confirm removal
-    await confirmDialog.getByRole('button', { name: 'Remove from Cloud' }).click();
-
-    // Project should still exist in the list (local copy preserved)
-    await expect(dialog.getByText('1 project')).toBeVisible({ timeout: 5000 });
-
-    // But no longer cloud-saved — "Private" visibility badge should be gone
-    await expect(dialog.getByRole('button', { name: /Visibility: private for Example Project/ })).not.toBeVisible();
-
-    // Close dialog — header save button should be hidden (local-only project)
-    await page.keyboard.press('Escape');
-    await expect(page.getByRole('button', { name: 'Update cloud copy' })).not.toBeVisible();
-
-    // URL hash should be cleared
-    const url = page.url();
-    expect(url).not.toContain('#/p/');
+    // Sync indicator should return to "Saved"
+    await waitForCloudSync(page);
   });
 });
 
@@ -466,8 +393,8 @@ test.describe('Cloud: Visibility change', () => {
     await mockCloudApi(page);
     await resetApp(page);
 
-    // Save to cloud first via My Projects
-    await saveToCloudViaMyProjects(page);
+    // Explicitly save to cloud first
+    await saveActiveProjectToCloud(page);
 
     // Open share dialog via header Share button
     await openShareDialog(page);
@@ -484,103 +411,36 @@ test.describe('Cloud: Visibility change', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Test: Share dialog shows "Save to Cloud" for local-only projects
+// Test: Share dialog cloud section states
 // ---------------------------------------------------------------------------
 
 test.describe('Cloud: Share dialog cloud section states', () => {
-  test('shows "Save to Cloud" button for local-only projects', async ({ page }) => {
+  test('shows sign-in prompt for anonymous users', async ({ page }) => {
     await mockCloudApi(page);
     await resetApp(page);
 
-    // Open share dialog without saving to cloud first
+    // Open share dialog without being signed in
     await openShareDialog(page);
     const dialog = page.getByRole('dialog');
 
-    // State C: not cloud-saved — should see "Save to Cloud" button
-    await expect(dialog.getByText('Save to the cloud for a short, permanent link')).toBeVisible();
-    await expect(dialog.getByRole('button', { name: 'Save to Cloud' })).toBeVisible();
+    // State C: not signed in — should see sign-in prompt (no Save to Cloud button)
+    await expect(dialog.getByText('Sign in to share this project via link.')).toBeVisible();
   });
 
-  test('saves to cloud from Share dialog', async ({ page }) => {
+  test('share dialog shows private state after saving to cloud', async ({ page }) => {
     await setupMockAuth(page);
     await mockCloudApi(page);
     await resetApp(page);
 
-    // Open share dialog
+    // Explicitly save to cloud first
+    await saveActiveProjectToCloud(page);
+
+    // Open share dialog — project is already cloud-saved via explicit save
     await openShareDialog(page);
     const dialog = page.getByRole('dialog');
 
-    // Click "Save to Cloud" in the share dialog — save executes immediately
-    await dialog.getByRole('button', { name: 'Save to Cloud' }).click();
-
-    // After saving, dialog should show the cloud link (State B: private)
+    // State B: cloud + private — should show private indicator
     await expect(dialog.getByText('This project is private')).toBeVisible({ timeout: 5000 });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Test: Cloud sync detects stale projects on My Projects open
-// ---------------------------------------------------------------------------
-
-test.describe('Cloud: Sync detects stale cloud projects', () => {
-  test('shows warning for projects deleted from cloud server', async ({ page }) => {
-    // Mock API: create succeeds, but list returns empty (project deleted from server)
-    await setupMockAuth(page);
-    await mockCloudApi(page, {
-      listResponse: {
-        status: 200,
-        body: { projects: [] },
-      },
-    });
-
-    await resetApp(page);
-
-    // Save to cloud via My Projects
-    await saveToCloudViaMyProjects(page);
-
-    // Open My Projects — sync should detect the project is stale
-    await openMyProjects(page);
-    const dialog = page.getByRole('dialog');
-
-    // Should show "Cloud copy not found" warning
-    await expect(dialog.getByText('Cloud copy not found')).toBeVisible({ timeout: 5000 });
-
-    // Should offer "Remove link" option
-    await expect(dialog.getByText('Remove link')).toBeVisible();
-  });
-
-  test('clicking "Remove link" clears stale cloud association', async ({ page }) => {
-    await setupMockAuth(page);
-    await mockCloudApi(page, {
-      listResponse: {
-        status: 200,
-        body: { projects: [] },
-      },
-    });
-
-    await resetApp(page);
-
-    // Save to cloud first via My Projects
-    await saveToCloudViaMyProjects(page);
-
-    // Open My Projects — sync detects stale project
-    await openMyProjects(page);
-    const dialog = page.getByRole('dialog');
-    await expect(dialog.getByText('Cloud copy not found')).toBeVisible({ timeout: 5000 });
-
-    // Click "Remove link"
-    await dialog.getByText('Remove link').click();
-
-    // Warning should disappear
-    await expect(dialog.getByText('Cloud copy not found')).not.toBeVisible({ timeout: 5000 });
-
-    // Close dialog — header save button should be hidden (local-only now)
-    await page.keyboard.press('Escape');
-    await expect(page.getByRole('button', { name: 'Update cloud copy' })).not.toBeVisible();
-
-    // URL hash should be cleared
-    const url = page.url();
-    expect(url).not.toContain('#/p/');
   });
 });
 
@@ -601,8 +461,8 @@ test.describe('Cloud: Owner opens own project via URL', () => {
     });
     await resetApp(page);
 
-    // Save to cloud to establish ownership via My Projects
-    await saveToCloudViaMyProjects(page);
+    // Explicitly save to cloud to establish cloud ownership
+    await saveActiveProjectToCloud(page);
 
     // Get the current cloud URL hash
     const url = page.url();
@@ -614,96 +474,11 @@ test.describe('Cloud: Owner opens own project via URL', () => {
     // Should load the project data from the mock (CLOUD_REG from MOCK_PROJECT_DATA)
     await expect(page.getByRole('heading', { name: 'CLOUD_REG' })).toBeVisible({ timeout: 10000 });
 
-    // Should show "Update cloud copy" — proves the user is recognized as owner
-    await expect(page.getByRole('button', { name: 'Update cloud copy' })).toBeVisible({ timeout: 5000 });
+    // Sync indicator should show "Saved to cloud" (owner recognized)
+    await waitForCloudSync(page);
 
     // Shared project banner should not be visible (user is owner)
     await expect(page.getByText('Viewing a shared project')).not.toBeVisible({ timeout: 5000 });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Test: API failure scenarios
-// ---------------------------------------------------------------------------
-
-test.describe('Cloud: API failure handling', () => {
-  test('shows error toast when initial save fails (500)', async ({ page }) => {
-    await setupMockAuth(page);
-    await mockCloudApi(page, {
-      createResponse: {
-        status: 500,
-        body: { error: 'Internal server error' },
-      },
-    });
-    await resetApp(page);
-
-    // Try to save to cloud via My Projects
-    await openMyProjects(page);
-    const dialog = page.getByRole('dialog');
-    await dialog.getByRole('button', { name: /Save project.*to cloud/ }).click();
-
-    // Should show error toast (use the fixed-position toast, not the sr-only announcer)
-    const toast = page.locator('.fixed[role="alert"]');
-    await expect(toast).toBeVisible({ timeout: 5000 });
-    await expect(toast).toContainText('Internal server error');
-
-    // Header save button should not be visible (still local-only)
-    await page.keyboard.press('Escape');
-    await expect(page.getByRole('button', { name: 'Update cloud copy' })).not.toBeVisible();
-
-    // URL should NOT contain a cloud project ID
-    expect(page.url()).not.toContain('#/p/');
-  });
-
-  test('shows error toast when update fails (500)', async ({ page }) => {
-    await setupMockAuth(page);
-    await mockCloudApi(page, {
-      updateResponse: {
-        status: 500,
-        body: { error: 'Failed to update project' },
-      },
-    });
-    await resetApp(page);
-
-    // Save to cloud first (create succeeds) via My Projects
-    await saveToCloudViaMyProjects(page);
-
-    // Now click update — PUT will fail
-    await page.getByRole('button', { name: 'Update cloud copy' }).click();
-
-    // Should show error toast
-    const toast = page.locator('.fixed[role="alert"]');
-    await expect(toast).toBeVisible({ timeout: 5000 });
-    await expect(toast).toContainText('Failed to update project');
-  });
-
-  test('handles update 404 by clearing cloud state', async ({ page }) => {
-    // Create succeeds, but then update returns 404 (project deleted on server)
-    await setupMockAuth(page);
-    await mockCloudApi(page, {
-      updateResponse: {
-        status: 404,
-        body: { error: 'Not found' },
-      },
-    });
-    await resetApp(page);
-
-    // Save to cloud first via My Projects
-    await saveToCloudViaMyProjects(page);
-
-    // Click update — server returns 404
-    await page.getByRole('button', { name: 'Update cloud copy' }).click();
-
-    // Should show error about cloud project not found
-    const toast = page.locator('.fixed[role="alert"]');
-    await expect(toast).toBeVisible({ timeout: 5000 });
-    await expect(toast).toContainText(/not found/i);
-
-    // Header save button should be hidden (cloud state cleared, now local-only)
-    await expect(page.getByRole('button', { name: 'Update cloud copy' })).not.toBeVisible({ timeout: 5000 });
-
-    // URL hash should be cleared
-    expect(page.url()).not.toContain('#/p/');
   });
 });
 
@@ -720,8 +495,8 @@ test.describe('Cloud: Copy cloud link', () => {
     await mockCloudApi(page);
     await resetApp(page);
 
-    // Save to cloud via My Projects
-    await saveToCloudViaMyProjects(page);
+    // Explicitly save to cloud first
+    await saveActiveProjectToCloud(page);
 
     // Open share dialog and make unlisted
     await openShareDialog(page);
@@ -742,5 +517,180 @@ test.describe('Cloud: Copy cloud link', () => {
     const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
     expect(clipboardText).toContain('#/p/');
     expect(clipboardText).toBe(linkValue);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test: Delete project also removes cloud copy
+// ---------------------------------------------------------------------------
+
+test.describe('Cloud: Delete removes cloud copy', () => {
+  test('deleting a cloud-backed project sends DELETE to API', async ({ page }) => {
+    const requests: { method: string; url: string }[] = [];
+    await setupMockAuth(page);
+    await mockCloudApi(page, {
+      onRequest: (method, url) => {
+        requests.push({ method, url });
+      },
+    });
+    await resetApp(page);
+
+    // Explicitly save to cloud first
+    await saveActiveProjectToCloud(page);
+
+    // Open My Projects and delete the project
+    await openMyProjects(page);
+    const dialog = page.getByRole('dialog');
+    await dialog.getByRole('button', { name: /Delete project/ }).click();
+    await dialog.getByRole('button', { name: /Delete project/ }).click();
+
+    // Should have sent a DELETE request to the API
+    await expect.poll(() => requests.filter(r => r.method === 'DELETE').length, {
+      message: 'Expected a DELETE request after deleting cloud-backed project',
+      timeout: 5000,
+    }).toBeGreaterThanOrEqual(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test: Sign in does NOT auto-upload local projects
+// ---------------------------------------------------------------------------
+
+test.describe('Cloud: No auto-upload on sign-in', () => {
+  test('signing in does not automatically upload existing local projects', async ({ page }) => {
+    const requests: { method: string; url: string }[] = [];
+
+    // Start anonymous — create a local project
+    await mockCloudApi(page, {
+      onRequest: (method, url) => {
+        requests.push({ method, url });
+      },
+    });
+    await resetApp(page);
+
+    // Now set up auth (simulates signing in)
+    await setupMockAuth(page);
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'STATUS_REG' })).toBeVisible({ timeout: 10000 });
+
+    // Wait a beat for any async operations to settle
+    await page.waitForTimeout(3000);
+
+    // No POST to /api/projects should have been made (no auto-upload)
+    const postRequests = requests.filter(r => r.method === 'POST' && /\/api\/projects\/?$/.test(new URL(r.url).pathname));
+    expect(postRequests).toHaveLength(0);
+
+    // No sync indicator should be visible (project is still local-only)
+    await expect(page.getByTitle('Saved to cloud')).not.toBeVisible();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test: Remove from Cloud returns project to local-only
+// ---------------------------------------------------------------------------
+
+test.describe('Cloud: Remove from Cloud', () => {
+  test('removing from cloud returns project to local-only state', async ({ page }) => {
+    await setupMockAuth(page);
+    await mockCloudApi(page);
+    await resetApp(page);
+
+    // Save to cloud first
+    await saveActiveProjectToCloud(page);
+    await waitForCloudSync(page);
+
+    // Open My Projects and click "Remove from cloud"
+    await openMyProjects(page);
+    const dialog = page.getByRole('dialog');
+    await dialog.getByTitle('Remove from cloud').click();
+
+    // Close dialog
+    await page.keyboard.press('Escape');
+    await expect(dialog).not.toBeVisible();
+
+    // Sync indicator should disappear (project is local-only again)
+    await expect(page.getByTitle('Saved to cloud')).not.toBeVisible({ timeout: 5000 });
+
+    // Project data should still be visible (not lost)
+    await expect(page.getByRole('heading', { name: 'STATUS_REG' })).toBeVisible();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test: Sign out purges cloud projects from localStorage
+// ---------------------------------------------------------------------------
+
+test.describe('Cloud: Sign-out purge', () => {
+  test('signing out purges cloud projects and loads default project', async ({ page }) => {
+    await setupMockAuth(page);
+    await mockCloudApi(page);
+
+    // Mock the logout endpoint
+    await page.route(/\/api\/auth\/logout/, async (route) => {
+      await route.fulfill({ status: 204, body: '' });
+    });
+
+    await resetApp(page);
+
+    // Save to cloud so the project has storage: 'cloud'
+    await saveActiveProjectToCloud(page);
+    await waitForCloudSync(page);
+
+    // Sign out via the application menu
+    await page.getByRole('button', { name: 'Application menu' }).click();
+    await page.getByRole('button', { name: 'Sign out' }).click();
+
+    // Cloud project was purged; app creates a new blank project
+    await expect(page.getByText('No register selected')).toBeVisible({ timeout: 10000 });
+
+    // Sync indicator should not be visible (no longer cloud-backed)
+    await expect(page.getByTitle('Saved to cloud')).not.toBeVisible();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test: Delete confirmation shows cloud warning
+// ---------------------------------------------------------------------------
+
+test.describe('Cloud: Delete confirmation cloud warning', () => {
+  test('delete confirmation warns about cloud copy for cloud-backed project', async ({ page }) => {
+    await setupMockAuth(page);
+    await mockCloudApi(page);
+    await resetApp(page);
+
+    // Save to cloud first
+    await saveActiveProjectToCloud(page);
+
+    // Open My Projects and click the delete button to trigger confirmation
+    await openMyProjects(page);
+    const dialog = page.getByRole('dialog');
+    await dialog.getByRole('button', { name: /Delete project/ }).click();
+
+    // Cloud warning should be visible in the confirmation
+    await expect(dialog.getByText('This will also delete the cloud copy')).toBeVisible();
+
+    // Cancel to verify this is just a confirmation check
+    await dialog.getByRole('button', { name: 'Cancel deletion' }).click();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test: Share dialog prompts Save to Cloud for signed-in local project
+// ---------------------------------------------------------------------------
+
+test.describe('Cloud: Share dialog save-to-cloud prompt', () => {
+  test('share dialog shows Save to Cloud prompt for local-only project when signed in', async ({ page }) => {
+    await setupMockAuth(page);
+    await mockCloudApi(page);
+    await resetApp(page);
+
+    // Project is local-only (not saved to cloud yet)
+    // Open share dialog
+    await openShareDialog(page);
+    const dialog = page.getByRole('dialog');
+
+    // State D: signed in, local project — should show save-to-cloud prompt
+    await expect(dialog.getByText('Save to Cloud to share this project via link.')).toBeVisible();
+    await expect(dialog.getByRole('button', { name: 'Save to Cloud' })).toBeVisible();
   });
 });

@@ -43,9 +43,23 @@ export function useDirtyTracking<T extends InternalSlice>(
   const dataVersionRef = useRef(0);
   const needsVersionSyncRef = useRef(false);
   const [isDirty, setIsDirty] = useState(false);
+  // Sentinel: use Symbol() so the first effect run always detects a data change
+  const prevDataDepsRef = useRef<DataDeps>({
+    registers: Symbol(), registerValues: Symbol(), project: Symbol(), addressUnitBits: Symbol(),
+  } as unknown as DataDeps);
 
   useEffect(() => {
-    dataVersionRef.current++;
+    // Only bump version when actual data deps changed (not cloudId/lastSavedVersion)
+    const prev = prevDataDepsRef.current;
+    const dataChanged = prev.registers !== dataDeps.registers
+      || prev.registerValues !== dataDeps.registerValues
+      || prev.project !== dataDeps.project
+      || prev.addressUnitBits !== dataDeps.addressUnitBits;
+    prevDataDepsRef.current = dataDeps;
+
+    if (dataChanged) {
+      dataVersionRef.current++;
+    }
 
     if (needsVersionSyncRef.current) {
       needsVersionSyncRef.current = false;
@@ -54,11 +68,10 @@ export function useDirtyTracking<T extends InternalSlice>(
       return;
     }
 
-    // Only trigger a re-render when isDirty status actually changes.
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: ref-based version counter must sync to state
     setIsDirty(internal.cloudId !== null
       && internal.lastSavedVersion >= 0
       && dataVersionRef.current !== internal.lastSavedVersion);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- dataDeps is accessed only via its individual properties (already in the dep array); the object reference is stored for next-render comparison only
   }, [dataDeps.registers, dataDeps.registerValues, dataDeps.project, dataDeps.addressUnitBits, internal.cloudId, internal.lastSavedVersion, setInternal]);
 
   return { isDirty, dataVersionRef, needsVersionSyncRef, mutationLockRef };

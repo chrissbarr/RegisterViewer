@@ -4,12 +4,12 @@ import { Dialog } from '../common/dialog';
 import { ProjectSettingsDialog } from '../common/project-settings-dialog';
 import { ShareDialog } from '../common/share-dialog';
 import { ProjectListItem } from './project-list-item';
-import { MyProjectsCloudDialogs } from './my-projects-cloud-dialogs';
 import { useProjectStorage } from '../../context/project-storage-context';
 import { useAuth } from '../../context/auth-context';
 import { useMyProjectsActions } from '../../hooks/use-my-projects-actions';
 import { isCloudEnabled } from '../../utils/api-client';
-import { getStorageUsage, isPlaceholderProject } from '../../utils/project-storage';
+import { getStorageUsage, hasLocalData } from '../../utils/project-storage';
+import { Toast } from '../common/toast';
 import { projectDisplayName } from '../../utils/project-helpers';
 
 const FILTER_THRESHOLD = 8;
@@ -54,17 +54,18 @@ export function MyProjectsDialog({ open, onClose }: MyProjectsDialogProps) {
     );
   }, [sortedProjects, effectiveFilter]);
 
-  // Detect cloud-only placeholder projects (no local data yet)
+  // Detect cloud-only projects whose data has been evicted from localStorage
   const placeholderIds = useMemo(() => {
     const ids = new Set<string>();
     for (const p of projects) {
-      if (p.isCloudSaved && isPlaceholderProject(p.localId)) {
+      if (p.storage === 'cloud' && !hasLocalData(p.localId)) {
         ids.add(p.localId);
       }
     }
     return ids;
   }, [projects]);
 
+  const isSignedIn = !!auth.user;
   const showFilter = projects.length > FILTER_THRESHOLD;
 
   return (
@@ -149,17 +150,15 @@ export function MyProjectsDialog({ open, onClose }: MyProjectsDialogProps) {
                   key={project.localId}
                   project={project}
                   isActive={project.localId === activeLocalId}
-                  isStaleCloud={project.cloudId !== null && actions.staleCloudIds.includes(project.cloudId)}
+                  isStub={isPlaceholder}
                   onOpen={actions.handleOpen}
                   onSettings={isPlaceholder ? undefined : actions.handleSettings}
-                  onShare={actions.handleShare}
+                  onShare={isSignedIn ? actions.handleShare : undefined}
                   onDelete={actions.handleDelete}
                   onRename={actions.handleRename}
-                  onChangeVisibility={actions.handleChangeVisibility}
-                  onUnlinkCloud={actions.handleUnlinkCloud}
-                  onSaveToCloud={isCloudEnabled() && !isPlaceholder ? actions.handleSaveToCloud : undefined}
-                  onRemoveFromCloud={isCloudEnabled() ? actions.handleRemoveFromCloud : undefined}
-                  isSavingToCloud={project.localId === actions.savingCloudLocalId}
+                  onChangeVisibility={isSignedIn && project.storage === 'cloud' ? actions.handleChangeVisibility : undefined}
+                  onSaveToCloud={isSignedIn && project.storage !== 'cloud' ? actions.handleSaveToCloud : undefined}
+                  onRemoveFromCloud={isSignedIn && project.storage === 'cloud' ? actions.handleRemoveFromCloud : undefined}
                   isDownloading={project.localId === actions.downloadingLocalId}
                 />
               );
@@ -198,13 +197,14 @@ export function MyProjectsDialog({ open, onClose }: MyProjectsDialogProps) {
       onClose={actions.dismissShare}
     />
 
-    <MyProjectsCloudDialogs
-      isDeleteCloudConfirmOpen={actions.isDeleteCloudConfirmOpen}
-      onDismissDeleteCloudConfirm={actions.dismissDeleteCloudConfirm}
-      onConfirmCloudDelete={actions.handleConfirmCloudDelete}
-      cloudError={actions.cloudError}
-      onDismissCloudError={actions.dismissCloudError}
-    />
+    {actions.cloudError && (
+      <Toast
+        message={actions.cloudError}
+        variant="error"
+        duration={5000}
+        onDismiss={actions.dismissCloudError}
+      />
+    )}
     </>
   );
 }

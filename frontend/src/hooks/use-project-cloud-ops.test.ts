@@ -16,14 +16,10 @@ vi.mock('../utils/project-storage', () => ({
   buildProjectUrl: vi.fn((id: string) => `https://app/#/p/${id}`),
 }));
 
-vi.mock('../utils/cloud-url', () => ({
+vi.mock('../utils/cloud-url', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../utils/cloud-url')>()),
   setCloudUrl: vi.fn(),
   clearCloudUrl: vi.fn(),
-  CLEARED_CLOUD_METADATA: {
-    cloudId: null,
-    visibility: 'private',
-    cloudSavedAt: null,
-  },
   withMutationLock: vi.fn(async (_ref: unknown, fn: () => Promise<unknown>) => fn()),
 }));
 
@@ -43,6 +39,7 @@ function makeInitialState() {
   return {
     cloudId: null as string | null,
     isOwner: false,
+    storage: 'local' as const,
     status: 'idle' as const,
     error: null as string | null,
     shareUrl: null as string | null,
@@ -61,16 +58,17 @@ function makeProjectList(entries: Array<{ localId: string; cloudId?: string | nu
     createdAt: '2026-01-01T00:00:00Z',
     localSavedAt: '2026-01-01T00:00:00Z',
     cloudSavedAt: null,
-    isCloudSaved: (p.cloudId ?? null) !== null,
+    storage: (p.cloudId ?? null) !== null ? 'cloud' as const : 'local' as const,
   }));
 }
 
 function makeDeps(overrides: Record<string, unknown> = {}) {
   const initial = makeInitialState();
   const internalRef = { current: overrides.internalState as typeof initial ?? initial };
+  const projects = (overrides.projects as ProjectListEntry[]) ?? makeProjectList([{ localId: 'local-1', cloudId: 'cloud-1' }]);
   return {
     updateCloudMetadata: vi.fn() as Mock,
-    projects: (overrides.projects as ProjectListEntry[]) ?? makeProjectList([{ localId: 'local-1', cloudId: 'cloud-1' }]),
+    projectsRef: { current: projects },
     activeLocalIdRef: { current: (overrides.activeLocalId as string) ?? 'local-1' },
     dataVersionRef: { current: 1 },
     mutationLockRef: { current: false },
@@ -107,6 +105,7 @@ describe('useProjectCloudOps', () => {
       expect(deps.updateCloudMetadata).toHaveBeenCalledWith('local-1', {
         cloudId: 'new-cloud',
         cloudSavedAt: '2026-01-01T00:00:00Z',
+        storage: 'cloud',
       });
       expect(setCloudUrl).toHaveBeenCalledWith('new-cloud');
       expect(deps.setInternal).toHaveBeenCalled();
@@ -127,6 +126,7 @@ describe('useProjectCloudOps', () => {
 
       expect(deps.updateCloudMetadata).toHaveBeenCalledWith('local-1', {
         cloudSavedAt: '2026-01-02T00:00:00Z',
+        storage: 'cloud',
       });
       // Should NOT set cloud URL for updates
       expect(setCloudUrl).not.toHaveBeenCalled();
@@ -221,6 +221,7 @@ describe('useProjectCloudOps', () => {
         cloudId: null,
         visibility: 'private',
         cloudSavedAt: null,
+        storage: 'local',
       });
     });
 
@@ -308,6 +309,7 @@ describe('useProjectCloudOps', () => {
         cloudId: null,
         visibility: 'private',
         cloudSavedAt: null,
+        storage: 'local',
       });
     });
 

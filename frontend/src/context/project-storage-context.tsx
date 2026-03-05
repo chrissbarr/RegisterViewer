@@ -3,6 +3,7 @@ import { useAppState, useAppDispatch } from './app-context';
 import {
   loadManifest,
   loadProject,
+  saveProject,
   createProject as createProjectInStorage,
   deleteProject,
   updateProjectMetadata,
@@ -23,6 +24,7 @@ interface CloudMetadataUpdates {
   cloudId?: string | null;
   cloudSavedAt?: string | null;
   visibility?: 'private' | 'unlisted';
+  storage?: 'local' | 'cloud';
 }
 
 interface ProjectStorageActions {
@@ -118,8 +120,19 @@ export function ProjectStorageProvider({ children, initialLocalId }: ProjectStor
   }, [appState.project]);
 
   const renameProject = useCallback((localId: string, name: string) => {
-    updateProjectMetadata(localId, { name });
-    // If renaming the active project, also update AppState.project.title
+    // Update both manifest name and state.project.title in one write
+    const project = loadProject(localId);
+    if (project) {
+      saveProject({
+        ...project,
+        name,
+        state: {
+          ...project.state,
+          project: { ...project.state.project, title: name },
+        },
+      });
+    }
+    // If renaming the active project, also update in-memory AppState
     if (localId === activeLocalId) {
       dispatch({ type: 'SET_PROJECT_METADATA', project: { ...projectRef.current, title: name } });
     }

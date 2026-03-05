@@ -11,6 +11,7 @@ function makeManifestEntry(overrides?: Partial<ProjectManifestEntry>): ProjectMa
     createdAt: '2026-01-01T00:00:00.000Z',
     localSavedAt: '2026-01-01T00:00:00.000Z',
     cloudSavedAt: null,
+    storage: 'local',
     ...overrides,
   };
 }

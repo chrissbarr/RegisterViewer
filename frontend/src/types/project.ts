@@ -13,6 +13,12 @@ export interface ProjectManifestEntry {
   createdAt: string;        // ISO 8601
   localSavedAt: string;     // ISO 8601
   cloudSavedAt: string | null;
+  /**
+   * Persistence strategy. `'local'` = local-only or shared/non-owned cloud project.
+   * `'cloud'` = user-owned cloud-backed project (eligible for auto-sync, eviction, sign-out purge).
+   * Only set to `'cloud'` when the user explicitly saves to cloud AND owns the project.
+   */
+  storage: 'local' | 'cloud';
 }
 
 /** The manifest stored at `register-viewer-manifest` */
@@ -30,20 +36,12 @@ export interface StoredLocalProject {
   createdAt: string;
   localSavedAt: string;
   cloudSavedAt: string | null;
+  storage: 'local' | 'cloud';
   state: import('./register').SerializedAppState;
 }
 
-/** UI-safe view type for project list display */
-export interface ProjectListEntry {
-  localId: string;
-  cloudId: string | null;
-  name: string;
-  visibility: Visibility;
-  createdAt: string;
-  localSavedAt: string;
-  cloudSavedAt: string | null;
-  isCloudSaved: boolean;      // derived: cloudId !== null
-}
+/** UI-safe view type for project list display (identical to manifest entry) */
+export type ProjectListEntry = ProjectManifestEntry;
 
 /** Global preferences stored at `register-viewer-prefs` */
 export interface GlobalPreferences {

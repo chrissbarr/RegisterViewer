@@ -5,7 +5,6 @@ import type { Visibility } from '../../types/project';
 
 interface VisibilityBadgeProps {
   visibility: Visibility;
-  isCloudSaved: boolean;
   onChangeVisibility?: (v: Visibility) => void;
   projectName: string;
 }
@@ -15,10 +14,9 @@ const VISIBILITY_OPTIONS: { value: Visibility; label: string; description: strin
   { value: 'unlisted', label: 'Unlisted', description: 'Anyone with the link can view' },
 ];
 
-/** Visibility indicator badge. Clickable for cloud projects to change visibility. */
+/** Visibility indicator badge. Clickable when onChangeVisibility is provided. */
 export function VisibilityBadge({
   visibility,
-  isCloudSaved,
   onChangeVisibility,
   projectName,
 }: VisibilityBadgeProps) {
@@ -41,7 +39,7 @@ export function VisibilityBadge({
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isOpen]);
 
-  const canChange = isCloudSaved && onChangeVisibility;
+  const canChange = !!onChangeVisibility;
   const badgeColors = visibility === 'unlisted'
     ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400'
     : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400';
@@ -50,7 +48,6 @@ export function VisibilityBadge({
     return (
       <span
         className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${badgeColors}`}
-        title={isCloudSaved ? undefined : 'Save to cloud to set visibility'}
       >
         {visibility === 'unlisted' ? 'Unlisted' : 'Private'}
       </span>

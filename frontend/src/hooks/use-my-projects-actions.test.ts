@@ -4,8 +4,8 @@ import { useMyProjectsActions } from './use-my-projects-actions';
 import { DEFAULT_PROJECT_NAME } from '../types/project';
 
 const mockProjects = [
-  { localId: 'local-1', name: 'Project A', isCloudSaved: true, cloudId: 'cloud-1' },
-  { localId: 'local-2', name: 'Project B', isCloudSaved: false, cloudId: null },
+  { localId: 'local-1', name: 'Project A', storage: 'cloud', cloudId: 'cloud-1', visibility: 'private', createdAt: '2026-01-01', localSavedAt: '2026-01-01', cloudSavedAt: '2026-01-01' },
+  { localId: 'local-2', name: 'Project B', storage: 'local', cloudId: null, visibility: 'private', createdAt: '2026-01-01', localSavedAt: '2026-01-01', cloudSavedAt: null },
 ];
 
 const mockStorageActions = {
@@ -20,8 +20,6 @@ const mockCloudActions = {
   setProjectVisibility: vi.fn(),
   syncCloudProjects: vi.fn(() => Promise.resolve({ staleCloudIds: [], updatedCount: 0, placeholdersCreated: 0 })),
   deleteProjectFromCloud: vi.fn(),
-  unlinkCloudProject: vi.fn(),
-  saveProjectToCloud: vi.fn(),
 };
 
 const mockAnnounce = vi.fn();
@@ -54,6 +52,7 @@ vi.mock('../utils/api-client', () => ({
 vi.mock('../utils/project-storage', () => ({
   loadProject: vi.fn(() => null),
   saveProject: vi.fn(),
+  hasLocalData: vi.fn(() => true),
 }));
 
 vi.mock('../utils/cloud-project-loader', () => ({
@@ -146,12 +145,39 @@ describe('useMyProjectsActions', () => {
       expect(onClose).toHaveBeenCalled();
     });
 
-    it('handleDelete removes project and announces with name', async () => {
+    it('handleDelete deletes from cloud and locally for cloud-backed project', async () => {
+      const onClose = vi.fn();
+      mockCloudActions.deleteProjectFromCloud.mockResolvedValue(undefined);
+      const { result } = await renderWithOpen(onClose);
+
+      await act(async () => {
+        await result.current.handleDelete('local-1');
+      });
+
+      expect(mockCloudActions.deleteProjectFromCloud).toHaveBeenCalledWith('cloud-1');
+      expect(mockStorageActions.deleteLocalProject).toHaveBeenCalledWith('local-1');
+      expect(mockAnnounce).toHaveBeenCalledWith('Project "Project A" deleted');
+    });
+
+    it('handleDelete deletes locally only for non-cloud project', async () => {
       const onClose = vi.fn();
       const { result } = await renderWithOpen(onClose);
 
-      act(() => {
-        result.current.handleDelete('local-1');
+      await act(async () => {
+        await result.current.handleDelete('local-2');
+      });
+
+      expect(mockCloudActions.deleteProjectFromCloud).not.toHaveBeenCalled();
+      expect(mockStorageActions.deleteLocalProject).toHaveBeenCalledWith('local-2');
+    });
+
+    it('handleDelete still deletes locally if cloud delete fails', async () => {
+      const onClose = vi.fn();
+      mockCloudActions.deleteProjectFromCloud.mockRejectedValue(new Error('fail'));
+      const { result } = await renderWithOpen(onClose);
+
+      await act(async () => {
+        await result.current.handleDelete('local-1');
       });
 
       expect(mockStorageActions.deleteLocalProject).toHaveBeenCalledWith('local-1');
@@ -162,8 +188,8 @@ describe('useMyProjectsActions', () => {
       const onClose = vi.fn();
       const { result } = await renderWithOpen(onClose);
 
-      act(() => {
-        result.current.handleDelete('unknown-id');
+      await act(async () => {
+        await result.current.handleDelete('unknown-id');
       });
 
       expect(mockAnnounce).toHaveBeenCalledWith(`Project "${DEFAULT_PROJECT_NAME}" deleted`);
@@ -236,105 +262,6 @@ describe('useMyProjectsActions', () => {
       });
 
       expect(result.current.cloudError).toBe('Network fail');
-    });
-  });
-
-  describe('save to cloud flow', () => {
-    it('handleSaveToCloud saves directly and announces', async () => {
-      const onClose = vi.fn();
-      mockCloudActions.saveProjectToCloud.mockResolvedValue(undefined);
-      const { result } = await renderWithOpen(onClose);
-
-      await act(async () => {
-        await result.current.handleSaveToCloud('local-1');
-      });
-
-      expect(mockCloudActions.saveProjectToCloud).toHaveBeenCalledWith('local-1');
-      expect(mockAnnounce).toHaveBeenCalledWith('Saved to cloud');
-    });
-
-    it('handleSaveToCloud sets cloudError on failure', async () => {
-      const onClose = vi.fn();
-      mockCloudActions.saveProjectToCloud.mockRejectedValue(new Error('Save failed'));
-      const { result } = await renderWithOpen(onClose);
-
-      await act(async () => {
-        await result.current.handleSaveToCloud('local-1');
-      });
-
-      expect(result.current.cloudError).toBe('Save failed');
-    });
-  });
-
-  describe('cloud delete flow', () => {
-    it('handleRemoveFromCloud opens delete confirmation for cloud projects', async () => {
-      const onClose = vi.fn();
-      const { result } = await renderWithOpen(onClose);
-
-      act(() => {
-        result.current.handleRemoveFromCloud('local-1');
-      });
-
-      expect(result.current.isDeleteCloudConfirmOpen).toBe(true);
-    });
-
-    it('handleRemoveFromCloud does nothing for non-cloud projects', async () => {
-      const onClose = vi.fn();
-      const { result } = await renderWithOpen(onClose);
-
-      act(() => {
-        result.current.handleRemoveFromCloud('local-2');
-      });
-
-      expect(result.current.isDeleteCloudConfirmOpen).toBe(false);
-    });
-
-    it('handleConfirmCloudDelete deletes and announces', async () => {
-      const onClose = vi.fn();
-      mockCloudActions.deleteProjectFromCloud.mockResolvedValue(undefined);
-      const { result } = await renderWithOpen(onClose);
-
-      act(() => {
-        result.current.handleRemoveFromCloud('local-1');
-      });
-
-      await act(async () => {
-        await result.current.handleConfirmCloudDelete();
-      });
-
-      expect(mockCloudActions.deleteProjectFromCloud).toHaveBeenCalledWith('cloud-1');
-      expect(mockAnnounce).toHaveBeenCalledWith('Removed from cloud');
-      expect(result.current.isDeleteCloudConfirmOpen).toBe(false);
-    });
-
-    it('dismissDeleteCloudConfirm clears confirmation', async () => {
-      const onClose = vi.fn();
-      const { result } = await renderWithOpen(onClose);
-
-      act(() => {
-        result.current.handleRemoveFromCloud('local-1');
-      });
-
-      act(() => {
-        result.current.dismissDeleteCloudConfirm();
-      });
-
-      expect(result.current.isDeleteCloudConfirmOpen).toBe(false);
-    });
-  });
-
-  describe('unlink cloud', () => {
-    it('handleUnlinkCloud unlinks and announces', async () => {
-      const onClose = vi.fn();
-      const { result } = await renderWithOpen(onClose);
-
-      act(() => {
-        result.current.handleUnlinkCloud('local-1');
-      });
-
-      expect(mockCloudActions.unlinkCloudProject).toHaveBeenCalledWith('local-1');
-      expect(mockStorageActions.refreshProjectList).toHaveBeenCalled();
-      expect(mockAnnounce).toHaveBeenCalledWith('Cloud link removed');
     });
   });
 

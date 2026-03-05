@@ -13,6 +13,9 @@ import {
   toProjectListEntry,
   projectStorageKey,
   invalidateManifestCache,
+  purgeCloudProjects,
+  hasLocalData,
+  evictProjectData,
 } from './project-storage';
 import { DEFAULT_PROJECT_NAME, type StoredLocalProject, type ProjectManifest, type ProjectManifestEntry } from '../types/project';
 import type { SerializedAppState } from '../types/register';
@@ -35,6 +38,7 @@ function makeStoredProject(overrides?: Partial<StoredLocalProject>): StoredLocal
     createdAt: '2026-01-01T00:00:00.000Z',
     localSavedAt: '2026-01-01T00:00:00.000Z',
     cloudSavedAt: null,
+    storage: 'local',
     state: makeSerializedState(),
     ...overrides,
   };
@@ -69,6 +73,7 @@ describe('loadManifest', () => {
         createdAt: '2026-01-01T00:00:00.000Z',
         localSavedAt: '2026-01-01T00:00:00.000Z',
         cloudSavedAt: null,
+        storage: 'local',
       }],
     };
     localStorage.setItem('register-viewer-manifest', JSON.stringify(stored));
@@ -108,6 +113,7 @@ describe('loadManifest', () => {
         createdAt: '2026-01-01T00:00:00.000Z',
         localSavedAt: '2026-01-01T00:00:00.000Z',
         cloudSavedAt: null,
+        storage: 'local',
       }],
     };
     localStorage.setItem('register-viewer-manifest', JSON.stringify(manifestData));
@@ -468,6 +474,87 @@ describe('runMigrationIfNeeded', () => {
   });
 });
 
+describe('migration: storage field', () => {
+  it('adds storage field based on cloudId', () => {
+    const legacyManifest = {
+      version: 1,
+      projects: [
+        { localId: 'a', cloudId: 'abc123', name: 'Cloud', visibility: 'private', createdAt: '2026-01-01T00:00:00Z', localSavedAt: '2026-01-01T00:00:00Z', cloudSavedAt: '2026-01-01T00:00:00Z' },
+        { localId: 'b', cloudId: null, name: 'Local', visibility: 'private', createdAt: '2026-01-01T00:00:00Z', localSavedAt: '2026-01-01T00:00:00Z', cloudSavedAt: null },
+      ],
+    };
+    localStorage.setItem('register-viewer-manifest', JSON.stringify(legacyManifest));
+
+    runMigrationIfNeeded();
+
+    const manifest = loadManifest();
+    expect(manifest.projects[0].storage).toBe('cloud');
+    expect(manifest.projects[1].storage).toBe('local');
+  });
+});
+
+describe('purgeCloudProjects', () => {
+  it('removes manifest entries and per-project keys for cloud-backed projects', () => {
+    createProject(makeSerializedState(), 'Cloud 1', { cloudId: 'c1', visibility: 'private', cloudSavedAt: '2024-01-01', storage: 'cloud' });
+    createProject(makeSerializedState(), 'Cloud 2', { cloudId: 'c2', visibility: 'private', cloudSavedAt: '2024-01-01', storage: 'cloud' });
+    createProject(makeSerializedState(), 'Local Only');
+
+    const purged = purgeCloudProjects();
+    expect(purged).toHaveLength(2);
+
+    const manifest = loadManifest();
+    expect(manifest.projects).toHaveLength(1);
+    expect(manifest.projects[0].name).toBe('Local Only');
+  });
+
+  it('only purges projects with storage=cloud', () => {
+    // Create a cloud project (storage: 'cloud', cloudId: 'abc123')
+    createProject(makeSerializedState(), 'Cloud Project', { cloudId: 'abc123', visibility: 'private', cloudSavedAt: '2024-01-01', storage: 'cloud' });
+    // Create a local project (storage: 'local')
+    createProject(makeSerializedState(), 'Local Project');
+
+    const purged = purgeCloudProjects();
+    expect(purged).toHaveLength(1);
+
+    // Assert only 1 project remains (the local one)
+    const manifest = loadManifest();
+    expect(manifest.projects).toHaveLength(1);
+    expect(manifest.projects[0].name).toBe('Local Project');
+    expect(manifest.projects[0].storage).toBe('local');
+  });
+
+  it('returns empty array when no cloud projects exist', () => {
+    createProject(makeSerializedState(), 'Local');
+    const purged = purgeCloudProjects();
+    expect(purged).toHaveLength(0);
+    expect(loadManifest().projects).toHaveLength(1);
+  });
+});
+
+describe('hasLocalData', () => {
+  it('returns true when per-project key exists', () => {
+    const id = createProject(makeSerializedState(), 'Test');
+    expect(hasLocalData(id)).toBe(true);
+  });
+
+  it('returns false when per-project key does not exist', () => {
+    expect(hasLocalData('nonexistent')).toBe(false);
+  });
+});
+
+describe('evictProjectData', () => {
+  it('removes per-project localStorage key', () => {
+    const id = createProject(makeSerializedState(), 'Test');
+    expect(hasLocalData(id)).toBe(true);
+    evictProjectData(id);
+    expect(hasLocalData(id)).toBe(false);
+  });
+
+  it('does not throw for nonexistent project', () => {
+    expect(() => evictProjectData('nonexistent')).not.toThrow();
+  });
+});
+
 describe('toProjectListEntry', () => {
   it('converts manifest entry without cloud id', () => {
     const entry: ProjectManifestEntry = {
@@ -478,9 +565,10 @@ describe('toProjectListEntry', () => {
       createdAt: '2026-01-01T00:00:00.000Z',
       localSavedAt: '2026-01-01T00:00:00.000Z',
       cloudSavedAt: null,
+      storage: 'local',
     };
     const result = toProjectListEntry(entry);
-    expect(result.isCloudSaved).toBe(false);
+    expect(result.storage).toBe('local');
     expect(result.localId).toBe('id-1');
     expect(result.name).toBe('Test');
   });
@@ -494,9 +582,10 @@ describe('toProjectListEntry', () => {
       createdAt: '2026-01-01T00:00:00.000Z',
       localSavedAt: '2026-01-01T00:00:00.000Z',
       cloudSavedAt: '2026-01-02T00:00:00.000Z',
+      storage: 'cloud',
     };
     const result = toProjectListEntry(entry);
-    expect(result.isCloudSaved).toBe(true);
+    expect(result.storage).toBe('cloud');
     expect(result.cloudId).toBe('abc123def456');
     expect(result.visibility).toBe('unlisted');
   });

@@ -6,6 +6,7 @@ import { buildSnapshotUrl } from '../../utils/snapshot-url';
 import { isCloudEnabled } from '../../utils/api-client';
 import { friendlyErrorMessage } from '../../utils/friendly-error';
 import { useCloudSync, useCloudSyncActions } from '../../context/cloud-sync-context';
+import { useAuth } from '../../context/auth-context';
 import { useProjectStorage } from '../../context/project-storage-context';
 import { loadProject, buildProjectUrl } from '../../utils/project-storage';
 import { deserializeState } from '../../utils/storage';
@@ -23,6 +24,7 @@ export function ShareDialog({ open, onClose, projectLocalId }: ShareDialogProps)
   const cloud = useCloudSync();
   const cloudActions = useCloudSyncActions();
   const { projects } = useProjectStorage();
+  const { user } = useAuth();
   const [isSavingByLocalId, setIsSavingByLocalId] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   // Bumped after save/visibility mutations to force cloudInfo memo to re-read manifest
@@ -155,6 +157,7 @@ export function ShareDialog({ open, onClose, projectLocalId }: ShareDialogProps)
         {isCloudEnabled() && (
           <CloudLinkSection
             hasCloudProject={hasCloudProject}
+            isSignedIn={user !== null}
             cloudUrl={cloudInfo.shareUrl}
             visibility={cloudInfo.visibility}
             isSaving={cloudInfo.isSaving}
@@ -170,6 +173,7 @@ export function ShareDialog({ open, onClose, projectLocalId }: ShareDialogProps)
 
 interface CloudLinkSectionProps {
   hasCloudProject: boolean;
+  isSignedIn: boolean;
   cloudUrl: string | null;
   visibility: 'private' | 'unlisted';
   isSaving: boolean;
@@ -180,6 +184,7 @@ interface CloudLinkSectionProps {
 
 function CloudLinkSection({
   hasCloudProject,
+  isSignedIn,
   cloudUrl,
   visibility,
   isSaving,
@@ -244,7 +249,23 @@ function CloudLinkSection({
     );
   }
 
-  // State C: not cloud-saved — blue callout with "Save to Cloud" button
+  // State C: not cloud-saved, signed out — prompt to sign in
+  if (!isSignedIn) {
+    return (
+      <div>
+        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+          Cloud link
+        </h3>
+        <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-4 py-3">
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            Sign in to share this project via link.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // State D: not cloud-saved, signed in — prompt to save to cloud
   return (
     <div>
       <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
@@ -252,7 +273,7 @@ function CloudLinkSection({
       </h3>
       <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/50 px-4 py-3">
         <p className="text-sm text-blue-700 dark:text-blue-300 mb-3">
-          Save to the cloud for a short, permanent link.
+          Save to Cloud to share this project via link.
         </p>
         <button
           onClick={onSaveToCloud}

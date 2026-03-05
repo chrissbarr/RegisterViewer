@@ -6,18 +6,12 @@ import { useAuthActions } from '../context/auth-context';
 import { useAnnounce } from '../components/common/announcer';
 import { isCloudEnabled } from '../utils/api-client';
 import { friendlyErrorMessage } from '../utils/friendly-error';
-import { loadProject, saveProject } from '../utils/project-storage';
+import { loadProject, saveProject, hasLocalData } from '../utils/project-storage';
 import { fetchAndParseCloudProject } from '../utils/cloud-project-loader';
 import { sanitizeProjectMetadata } from '../utils/storage';
 import type { ProjectSettingsData } from '../components/common/project-settings-dialog';
 import type { Visibility } from '../types/project';
 import { projectDisplayName } from '../utils/project-helpers';
-
-interface CloudDeleteConfirm {
-  localId: string;
-  cloudId: string;
-  name: string;
-}
 
 export function useMyProjectsActions(
   open: boolean,
@@ -26,34 +20,29 @@ export function useMyProjectsActions(
 ) {
   const { activeLocalId, projects } = useProjectStorage();
   const { createNewProject, switchProject, deleteLocalProject, renameProject, refreshProjectList } = useProjectStorageActions();
-  const { setProjectVisibility, syncCloudProjects, deleteProjectFromCloud, unlinkCloudProject, saveProjectToCloud } = useCloudSyncActions();
+  const { setProjectVisibility, syncCloudProjects, deleteProjectFromCloud, saveProjectToCloud } = useCloudSyncActions();
   const { getJwt } = useAuthActions();
   const announce = useAnnounce();
 
   const dispatch = useAppDispatch();
 
-  const [staleCloudIds, setStaleCloudIds] = useState<string[]>([]);
   const [downloadingLocalId, setDownloadingLocalId] = useState<string | null>(null);
-  const [deleteCloudConfirm, setDeleteCloudConfirm] = useState<CloudDeleteConfirm | null>(null);
   const [cloudError, setCloudError] = useState<string | null>(null);
   const [settingsLocalId, setSettingsLocalId] = useState<string | null>(null);
   const [shareLocalId, setShareLocalId] = useState<string | null>(null);
 
-  // Refresh project list and sync with cloud when dialog opens;
-  // cleanup clears stale IDs when dialog closes.
+  // Refresh project list and sync with cloud when dialog opens
   useEffect(() => {
     if (!open) return;
     refreshProjectList();
     if (isCloudEnabled()) {
       syncCloudProjects().then((result) => {
-        setStaleCloudIds(result.staleCloudIds);
         if (result.placeholdersCreated > 0) refreshProjectList();
       }).catch((err) => {
         setCloudError(friendlyErrorMessage(err, 'Failed to sync cloud projects.'));
       });
     }
     return () => {
-      setStaleCloudIds([]);
       setSettingsLocalId(null);
       setShareLocalId(null);
     };
@@ -69,12 +58,13 @@ export function useMyProjectsActions(
 
   const handleOpen = useCallback(async (localId: string) => {
     const project = projects.find(p => p.localId === localId);
-    const stored = loadProject(localId);
+    if (!project) return;
 
-    // Cloud-only placeholder: stored state has no registers — fetch full data first
-    if (project?.cloudId && stored && stored.state.registers.length === 0) {
+    // Cloud project with evicted/missing local data — fetch full data first
+    if (project.cloudId && !hasLocalData(localId)) {
       setDownloadingLocalId(localId);
       try {
+        // JWT is optional — unauthenticated users can open shared projects
         const jwt = getJwt();
         const result = await fetchAndParseCloudProject(project.cloudId, jwt ?? undefined);
         const serializedValues: Record<string, string> = {};
@@ -82,7 +72,14 @@ export function useMyProjectsActions(
           serializedValues[id] = '0x' + value.toString(16);
         }
         saveProject({
-          ...stored,
+          localId,
+          cloudId: project.cloudId,
+          name: project.name,
+          visibility: project.visibility,
+          createdAt: project.createdAt,
+          localSavedAt: new Date().toISOString(),
+          cloudSavedAt: project.cloudSavedAt,
+          storage: project.storage,
           state: {
             registers: result.registers,
             activeRegisterId: result.registers[0]?.id ?? null,
@@ -104,11 +101,19 @@ export function useMyProjectsActions(
     onClose();
   }, [projects, switchProject, announce, onClose, getJwt, setCloudError]);
 
-  const handleDelete = useCallback((localId: string) => {
+  const handleDelete = useCallback(async (localId: string) => {
     const project = projects.find(p => p.localId === localId);
+    // Delete from cloud first if cloud-backed
+    if (project?.cloudId) {
+      try {
+        await deleteProjectFromCloud(project.cloudId);
+      } catch {
+        // Best-effort — delete locally regardless
+      }
+    }
     deleteLocalProject(localId);
     announce(`Project "${projectDisplayName(project?.name)}" deleted`);
-  }, [deleteLocalProject, announce, projects]);
+  }, [deleteLocalProject, deleteProjectFromCloud, announce, projects]);
 
   const handleRename = useCallback((localId: string, name: string) => {
     renameProject(localId, name);
@@ -128,56 +133,6 @@ export function useMyProjectsActions(
     }
   }, [setProjectVisibility, announce]);
 
-  const [savingCloudLocalId, setSavingCloudLocalId] = useState<string | null>(null);
-
-  const handleSaveToCloud = useCallback(async (localId: string) => {
-    setSavingCloudLocalId(localId);
-    try {
-      await saveProjectToCloud(localId);
-      announce('Saved to cloud');
-    } catch (err) {
-      setCloudError(friendlyErrorMessage(err, 'Failed to save to cloud.'));
-    } finally {
-      setSavingCloudLocalId(null);
-    }
-  }, [saveProjectToCloud, announce]);
-
-  const handleRemoveFromCloud = useCallback((localId: string) => {
-    const project = projects.find(p => p.localId === localId);
-    if (project?.isCloudSaved && project.cloudId) {
-      setDeleteCloudConfirm({
-        localId,
-        cloudId: project.cloudId,
-        name: projectDisplayName(project.name),
-      });
-    }
-  }, [projects]);
-
-  const handleConfirmCloudDelete = useCallback(async () => {
-    if (!deleteCloudConfirm) return;
-    try {
-      await deleteProjectFromCloud(deleteCloudConfirm.cloudId);
-      refreshProjectList();
-      announce('Removed from cloud');
-    } catch (err) {
-      setCloudError(friendlyErrorMessage(err, 'Failed to delete from cloud.'));
-    }
-    setDeleteCloudConfirm(null);
-  }, [deleteCloudConfirm, deleteProjectFromCloud, refreshProjectList, announce]);
-
-  const handleUnlinkCloud = useCallback((localId: string) => {
-    unlinkCloudProject(localId);
-    setStaleCloudIds((prev) => {
-      const project = projects.find(p => p.localId === localId);
-      if (project?.cloudId) {
-        return prev.filter(id => id !== project.cloudId);
-      }
-      return prev;
-    });
-    refreshProjectList();
-    announce('Cloud link removed');
-  }, [unlinkCloudProject, refreshProjectList, announce, projects]);
-
   const handleSettings = useCallback((localId: string) => {
     setSettingsLocalId(localId);
   }, []);
@@ -186,8 +141,13 @@ export function useMyProjectsActions(
     if (!settingsLocalId) return { metadata: {}, addressUnitBits: 8 };
     const project = loadProject(settingsLocalId);
     if (!project) return { metadata: {}, addressUnitBits: 8 };
+    const metadata = { ...(project.state.project ?? {}) };
+    // Fall back to manifest name if title is empty (handles legacy data)
+    if (!metadata.title && project.name) {
+      metadata.title = project.name;
+    }
     return {
-      metadata: project.state.project ?? {},
+      metadata,
       addressUnitBits: project.state.addressUnitBits ?? 8,
     };
   }, [settingsLocalId]);
@@ -223,8 +183,31 @@ export function useMyProjectsActions(
   const dismissSettings = useCallback(() => setSettingsLocalId(null), []);
   const dismissShare = useCallback(() => setShareLocalId(null), []);
 
+  const handleSaveToCloud = useCallback(async (localId: string) => {
+    const jwt = getJwt();
+    if (!jwt) return;
+    try {
+      await saveProjectToCloud(localId);
+      refreshProjectList();
+      announce('Project saved to cloud');
+    } catch (err) {
+      setCloudError(friendlyErrorMessage(err, 'Failed to save project to cloud.'));
+    }
+  }, [getJwt, saveProjectToCloud, refreshProjectList, announce]);
+
+  const handleRemoveFromCloud = useCallback(async (localId: string) => {
+    const project = projects.find(p => p.localId === localId);
+    if (!project?.cloudId) return;
+    try {
+      await deleteProjectFromCloud(project.cloudId);
+      refreshProjectList();
+      announce('Project removed from cloud');
+    } catch (err) {
+      setCloudError(friendlyErrorMessage(err, 'Failed to remove project from cloud.'));
+    }
+  }, [projects, deleteProjectFromCloud, refreshProjectList, announce]);
+
   const dismissCloudError = useCallback(() => setCloudError(null), []);
-  const dismissDeleteCloudConfirm = useCallback(() => setDeleteCloudConfirm(null), []);
 
   return {
     // Item actions
@@ -236,7 +219,6 @@ export function useMyProjectsActions(
     handleChangeVisibility,
     handleSaveToCloud,
     handleRemoveFromCloud,
-    handleUnlinkCloud,
 
     // Settings
     handleSettings,
@@ -249,14 +231,9 @@ export function useMyProjectsActions(
     shareLocalId,
     dismissShare,
 
-    // Cloud confirmation state + actions
-    handleConfirmCloudDelete,
-    isDeleteCloudConfirmOpen: deleteCloudConfirm !== null,
+    // Cloud state
     cloudError,
-    savingCloudLocalId,
     downloadingLocalId,
-    staleCloudIds,
     dismissCloudError,
-    dismissDeleteCloudConfirm,
   } as const;
 }
