@@ -61,7 +61,7 @@ function AppShellInner({ cloudInit }: AppShellProps) {
     const timer = setTimeout(() => {
       const id = activeLocalIdRef.current;
       if (id) {
-        patchProjectState(id, serializeState(state), state.project?.title);
+        patchProjectState(id, serializeState(state));
       }
       pendingStateRef.current = null;
     }, SAVE_DEBOUNCE_MS);
@@ -80,7 +80,7 @@ function AppShellInner({ cloudInit }: AppShellProps) {
     const flush = () => {
       const id = activeLocalIdRef.current;
       if (pendingStateRef.current !== null && id) {
-        patchProjectState(id, serializeState(pendingStateRef.current), pendingStateRef.current.project?.title);
+        patchProjectState(id, serializeState(pendingStateRef.current));
         pendingStateRef.current = null;
       }
       // Best-effort cloud sync flush (fire-and-forget on unload).

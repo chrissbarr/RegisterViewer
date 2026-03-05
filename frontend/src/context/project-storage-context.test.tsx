@@ -12,6 +12,7 @@ vi.mock('../utils/project-storage', () => ({
   loadManifest: vi.fn(() => ({ version: 1, projects: [] })),
   saveManifest: vi.fn(),
   loadProject: vi.fn(() => null),
+  saveProject: vi.fn(),
   createProject: vi.fn(() => 'new-local-id'),
   deleteProject: vi.fn(),
   updateProjectMetadata: vi.fn(),
@@ -40,6 +41,7 @@ vi.mock('../utils/storage', async (importOriginal) => {
 import {
   loadManifest,
   loadProject,
+  saveProject,
   createProject as createProjectInStorage,
   deleteProject as deleteProjectFromStorage,
   updateProjectMetadata,
@@ -353,17 +355,36 @@ describe('ProjectStorageProvider', () => {
   });
 
   describe('renameProject', () => {
-    it('updates project metadata with new name', () => {
+    const storedProject: StoredLocalProject = {
+      localId: TEST_LOCAL_ID,
+      cloudId: null,
+      name: 'Old Name',
+      visibility: 'private',
+      createdAt: '2024-01-01T00:00:00Z',
+      localSavedAt: '2024-01-01T00:00:00Z',
+      cloudSavedAt: null,
+      storage: 'local',
+      state: { registers: [], activeRegisterId: null, registerValues: {} },
+    };
+
+    it('saves both manifest name and state.project.title', () => {
+      (loadProject as Mock).mockReturnValueOnce(storedProject);
       const { result } = renderProjectStorage();
 
       act(() => {
         result.current.actions.renameProject(TEST_LOCAL_ID, 'New Name');
       });
 
-      expect(updateProjectMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, { name: 'New Name' });
+      expect(saveProject).toHaveBeenCalledWith(expect.objectContaining({
+        name: 'New Name',
+        state: expect.objectContaining({
+          project: expect.objectContaining({ title: 'New Name' }),
+        }),
+      }));
     });
 
     it('dispatches SET_PROJECT_METADATA when renaming active project', () => {
+      (loadProject as Mock).mockReturnValueOnce(storedProject);
       const { result } = renderWithDispatch();
 
       act(() => {
@@ -375,6 +396,7 @@ describe('ProjectStorageProvider', () => {
     });
 
     it('does not dispatch when renaming a non-active project', () => {
+      (loadProject as Mock).mockReturnValueOnce(storedProject);
       const { result } = renderWithDispatch();
       const initialProject = result.current.appState.project;
 
@@ -386,6 +408,7 @@ describe('ProjectStorageProvider', () => {
     });
 
     it('refreshes project list after rename', () => {
+      (loadProject as Mock).mockReturnValueOnce(storedProject);
       const { result } = renderProjectStorage();
       (loadManifest as Mock).mockClear();
 

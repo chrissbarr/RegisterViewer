@@ -141,8 +141,13 @@ export function useMyProjectsActions(
     if (!settingsLocalId) return { metadata: {}, addressUnitBits: 8 };
     const project = loadProject(settingsLocalId);
     if (!project) return { metadata: {}, addressUnitBits: 8 };
+    const metadata = { ...(project.state.project ?? {}) };
+    // Fall back to manifest name if title is empty (handles legacy data)
+    if (!metadata.title && project.name) {
+      metadata.title = project.name;
+    }
     return {
-      metadata: project.state.project ?? {},
+      metadata,
       addressUnitBits: project.state.addressUnitBits ?? 8,
     };
   }, [settingsLocalId]);

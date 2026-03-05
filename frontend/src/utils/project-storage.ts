@@ -215,9 +215,10 @@ export function deleteProject(localId: string): void {
   saveManifest(manifest);
 }
 
-/** Patch only the state (and optionally name) of a project without a full read-parse cycle.
+/** Patch the state of a project without a full read-parse cycle.
+ *  Derives the manifest name from state.project.title (single source of truth).
  *  Reads the raw JSON, patches state/name/timestamp, writes back, and updates manifest cache. */
-export function patchProjectState(localId: string, state: SerializedAppState, name?: string): void {
+export function patchProjectState(localId: string, state: SerializedAppState): void {
   const key = projectStorageKey(localId);
   const raw = localStorage.getItem(key);
   if (!raw) return;
@@ -225,22 +226,21 @@ export function patchProjectState(localId: string, state: SerializedAppState, na
   try {
     const project: StoredLocalProject = JSON.parse(raw);
     const now = new Date().toISOString();
+    const name = state.project?.title?.trim() || project.name;
     const updated: StoredLocalProject = {
       ...project,
       state,
+      name,
       localSavedAt: now,
-      ...(name !== undefined ? { name } : {}),
     };
     localStorage.setItem(key, JSON.stringify(updated));
 
-    // Update manifest timestamp in cache
+    // Update manifest in cache
     const manifest = loadManifest();
     const idx = manifest.projects.findIndex(p => p.localId === localId);
     if (idx >= 0) {
       manifest.projects[idx].localSavedAt = now;
-      if (name !== undefined) {
-        manifest.projects[idx].name = name;
-      }
+      manifest.projects[idx].name = name;
       saveManifest(manifest);
     }
   } catch (err) {
