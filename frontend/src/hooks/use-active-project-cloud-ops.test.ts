@@ -242,6 +242,57 @@ describe('useActiveProjectCloudOps', () => {
       expect(saveProjectToCloudImpl).not.toHaveBeenCalled();
     });
 
+    it('targets captured localId when active project changes during save', async () => {
+      const deps = makeDefaultDeps();
+      deps.internalRef.current = {
+        ...INITIAL_INTERNAL_STATE,
+        cloudId: TEST_CLOUD_ID,
+        isOwner: true,
+      };
+      // Simulate project switch during the async save
+      (saveProjectToCloudImpl as Mock).mockImplementation(async () => {
+        deps.activeLocalIdRef.current = 'switched-project';
+        return { kind: 'updated', cloudId: TEST_CLOUD_ID, timestamp: TEST_TIMESTAMP };
+      });
+
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+
+      await act(async () => {
+        await result.current.saveToCloud();
+      });
+
+      // updateCloudMetadata should target the original project, not the switched one
+      expect(deps.updateCloudMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, {
+        cloudSavedAt: TEST_TIMESTAMP,
+      });
+      // setInternal should NOT have been called with the timestamp update
+      // because the active project changed (only the 'saving' status update runs)
+      const setInternalCalls = deps.setInternal.mock.calls;
+      const hasTimestampUpdate = setInternalCalls.some((call) => {
+        const arg = call[0];
+        const state = typeof arg === 'function' ? arg(deps.internalRef.current) : arg;
+        return state.lastCloudSavedAt === TEST_TIMESTAMP && state.status === 'idle';
+      });
+      expect(hasTimestampUpdate).toBe(false);
+    });
+
+    it('skips error state when active project changes during failed save', async () => {
+      const deps = makeDefaultDeps();
+      (saveProjectToCloudImpl as Mock).mockImplementation(async () => {
+        deps.activeLocalIdRef.current = 'switched-project';
+        throw new Error('Network error');
+      });
+
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+
+      await act(async () => {
+        await result.current.saveToCloud();
+      });
+
+      // internalRef should NOT have been updated with the error
+      expect(deps.internalRef.current.error).toBeNull();
+    });
+
     it('sets error state on failure', async () => {
       const deps = makeDefaultDeps();
       (saveProjectToCloudImpl as Mock).mockRejectedValue(new Error('Network error'));

@@ -96,6 +96,10 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
   const saveToCloud = useCallback(async (stateOverride?: AppState): Promise<boolean> => {
     if (!isCloudEnabled()) return true;
     const lockResult = await withMutationLock(mutationLockRef, async () => {
+      // Capture localId before the await — during flush-before-evict,
+      // activeLocalIdRef may already point to the new project by the
+      // time the async save completes.
+      const capturedLocalId = activeLocalIdRef.current;
       try {
         const { cloudId, isOwner } = internalRef.current;
         const existingCloudId = (cloudId && isOwner) ? cloudId : null;
@@ -107,42 +111,53 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
         const result = await saveProjectToCloudImpl(jsonPayload, existingCloudId, jwt);
 
         if (result.kind === 'not-found') {
-          const currentLocalId = activeLocalIdRef.current;
-          if (currentLocalId) {
-            updateCloudMetadata(currentLocalId, CLEARED_CLOUD_METADATA);
+          if (capturedLocalId) {
+            updateCloudMetadata(capturedLocalId, CLEARED_CLOUD_METADATA);
           }
-          clearCloudUrl();
-          setInternal((prev) => ({
-            ...prev,
-            cloudId: null,
-            isOwner: false,
-            status: 'idle',
-            shareUrl: null,
-            lastCloudSavedAt: null,
-            visibility: 'private',
-            error: 'Cloud project not found. It may have been deleted. Use "Save to Cloud" to create a new copy.',
-          }));
+          if (activeLocalIdRef.current === capturedLocalId) {
+            clearCloudUrl();
+            setInternal((prev) => ({
+              ...prev,
+              cloudId: null,
+              isOwner: false,
+              status: 'idle',
+              shareUrl: null,
+              lastCloudSavedAt: null,
+              visibility: 'private',
+              error: 'Cloud project not found. It may have been deleted. Use "Save to Cloud" to create a new copy.',
+            }));
+          }
           return;
         }
 
         if (result.kind === 'created') {
-          applyCreatedResult(result);
-        } else {
-          const currentLocalId = activeLocalIdRef.current;
-          if (currentLocalId) {
-            updateCloudMetadata(currentLocalId, { cloudSavedAt: result.timestamp });
+          if (activeLocalIdRef.current === capturedLocalId) {
+            applyCreatedResult(result);
           }
-          setInternal((prev) => ({
-            ...prev,
-            status: 'idle',
-            lastCloudSavedAt: result.timestamp,
-            lastSavedVersion: dataVersionRef.current,
-          }));
+        } else {
+          if (capturedLocalId) {
+            updateCloudMetadata(capturedLocalId, { cloudSavedAt: result.timestamp });
+          }
+          // Only update internal state if we're still on the same project.
+          // During flush-before-evict, internal state already belongs to
+          // the new project — updating it would set the wrong timestamp
+          // and lastSavedVersion.
+          if (activeLocalIdRef.current === capturedLocalId) {
+            setInternal((prev) => ({
+              ...prev,
+              status: 'idle',
+              lastCloudSavedAt: result.timestamp,
+              lastSavedVersion: dataVersionRef.current,
+            }));
+          }
         }
       } catch (err) {
-        const next = { ...internalRef.current, status: 'idle' as const, error: friendlyErrorMessage(err, 'Failed to save project.') };
-        internalRef.current = next;
-        setInternal(next);
+        // Only surface the error if we're still on the same project
+        if (activeLocalIdRef.current === capturedLocalId) {
+          const next = { ...internalRef.current, status: 'idle' as const, error: friendlyErrorMessage(err, 'Failed to save project.') };
+          internalRef.current = next;
+          setInternal(next);
+        }
       }
     });
     return lockResult.executed;
