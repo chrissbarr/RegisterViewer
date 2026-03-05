@@ -1,6 +1,6 @@
 import type { ProjectListEntry, Visibility } from '../types/project';
 
-export interface SyncPatch {
+interface SyncPatch {
   localId: string;
   cloudSavedAt?: string;
   visibility?: Visibility;
@@ -13,7 +13,7 @@ export interface ServerProject {
   updatedAt: string;
 }
 
-export interface SyncPatchResult {
+interface SyncPatchResult {
   patches: SyncPatch[];
   staleCloudIds: string[];
   /** Server projects that have no matching local entry */

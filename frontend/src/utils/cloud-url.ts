@@ -18,7 +18,7 @@ export const CLEARED_CLOUD_METADATA = {
   storage: 'local' as const,
 };
 
-export type MutationLockResult<T> =
+type MutationLockResult<T> =
   | { executed: true; result: T }
   | { executed: false };
 
