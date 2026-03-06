@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { motion } from 'framer-motion';
 import { CircleCheck, OctagonAlert, Info } from 'lucide-react';
 import { useToastPortalTarget } from '../../context/toast-portal-context';
 
@@ -12,24 +13,10 @@ interface ToastProps {
 
 export function Toast({ message, variant = 'success', duration = 3000, onDismiss }: ToastProps) {
   const portalTarget = useToastPortalTarget();
-  const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    // Trigger enter animation on next frame
-    const frame = requestAnimationFrame(() => setVisible(true));
-    return () => cancelAnimationFrame(frame);
-  }, []);
-
-  useEffect(() => {
-    let inner: ReturnType<typeof setTimeout>;
-    const outer = setTimeout(() => {
-      setVisible(false);
-      inner = setTimeout(onDismiss, 200);
-    }, duration);
-    return () => {
-      clearTimeout(outer);
-      clearTimeout(inner);
-    };
+    const timer = setTimeout(onDismiss, duration);
+    return () => clearTimeout(timer);
   }, [duration, onDismiss]);
 
   const accentColor = variant === 'success'
@@ -51,12 +38,14 @@ export function Toast({ message, variant = 'success', duration = 3000, onDismiss
       : 'text-blue-400';
 
   return createPortal(
-    <div
+    <motion.div
       role={variant === 'error' ? 'alert' : 'status'}
       aria-live={variant === 'error' ? 'assertive' : 'polite'}
-      className={`fixed top-4 right-4 z-50 max-w-sm w-full pointer-events-auto
-        transition-all duration-200 ease-out
-        ${visible ? 'translate-x-0 opacity-100' : 'translate-x-4 opacity-0'}`}
+      initial={{ opacity: 0, y: -16 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -16 }}
+      transition={{ duration: 0.2, ease: 'easeOut' }}
+      className="fixed top-4 right-4 z-50 max-w-sm w-full pointer-events-auto"
     >
       <div className="flex overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg shadow-black/10 dark:shadow-black/30">
         <div className={`w-1 shrink-0 ${accentColor}`} />
@@ -65,7 +54,7 @@ export function Toast({ message, variant = 'success', duration = 3000, onDismiss
           <p className="text-sm text-gray-700 dark:text-gray-200">{message}</p>
         </div>
       </div>
-    </div>,
+    </motion.div>,
     portalTarget ?? document.body,
   );
 }

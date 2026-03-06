@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { AnimatePresence } from 'framer-motion';
 import { DropdownMenu, type MenuItem } from '../common/dropdown-menu';
 import { AboutDialog } from '../common/about-dialog';
 import { ExamplesDialog } from '../common/examples-dialog';
@@ -252,14 +253,16 @@ export function Header() {
         </div>
       </header>
 
-      {importFeedback?.kind === 'success' && (
-        <Toast
-          message={importFeedback.message}
-          variant="success"
-          duration={3000}
-          onDismiss={clearFeedback}
-        />
-      )}
+      <AnimatePresence>
+        {importFeedback?.kind === 'success' && (
+          <Toast
+            message={importFeedback.message}
+            variant="success"
+            duration={3000}
+            onDismiss={clearFeedback}
+          />
+        )}
+      </AnimatePresence>
 
       <ImportResultDialog
         open={importFeedback?.kind === 'error' || importFeedback?.kind === 'warning'}

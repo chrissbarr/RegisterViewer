@@ -171,14 +171,16 @@ function AppShellInner({ cloudInit }: AppShellProps) {
   return (
     <div className="h-screen flex flex-col bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100">
       <Header />
-      {cloud.error && (
-        <Toast
-          message={cloud.error}
-          variant="error"
-          duration={5000}
-          onDismiss={cloudActions.dismissError}
-        />
-      )}
+      <AnimatePresence>
+        {cloud.error && (
+          <Toast
+            message={cloud.error}
+            variant="error"
+            duration={5000}
+            onDismiss={cloudActions.dismissError}
+          />
+        )}
+      </AnimatePresence>
       <div className="flex flex-1 overflow-hidden relative">
         <AnimatePresence>
           {collapsed && (
