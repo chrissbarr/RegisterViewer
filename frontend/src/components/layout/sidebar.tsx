@@ -5,17 +5,23 @@ import { RegisterList } from '../register-list/register-list';
 interface Props {
   width: number;
   collapsed: boolean;
+  isResizing: boolean;
   onToggleCollapse: () => void;
 }
 
-export function Sidebar({ width, collapsed, onToggleCollapse }: Props) {
+export function Sidebar({ width, collapsed, isResizing, onToggleCollapse }: Props) {
+  // Disable animation during drag-to-resize for 1:1 cursor tracking
+  const widthTransition = isResizing
+    ? { duration: 0 }
+    : { duration: 0.2, ease: 'easeInOut' as const };
+
   return (
     <motion.aside
       animate={{
         width: collapsed ? 0 : width,
         minWidth: collapsed ? 0 : width,
       }}
-      transition={{ duration: 0.2, ease: 'easeInOut' }}
+      transition={widthTransition}
       className="border-r border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex flex-col overflow-hidden"
     >
       <motion.div

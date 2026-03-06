@@ -45,11 +45,11 @@ test.describe('Register Management', () => {
     await expect(page.getByRole('heading', { name: 'STATUS_REG' })).toBeVisible();
 
     // Click the delete button (x) on STATUS_REG
-    await page.locator('aside li').filter({ hasText: 'STATUS_REG' })
+    await page.locator('aside [role="listitem"]').filter({ hasText: 'STATUS_REG' })
       .locator('button[title="Delete register"]').click();
 
-    // Confirm the deletion (the li now shows "Delete?" instead of the register name)
-    await page.locator('aside li').filter({ hasText: 'Delete?' })
+    // Confirm the deletion (the item now shows "Delete?" instead of the register name)
+    await page.locator('aside [role="listitem"]').filter({ hasText: 'Delete?' })
       .getByRole('button', { name: 'Yes' }).click();
 
     // STATUS_REG should be gone, REG_1 should be active

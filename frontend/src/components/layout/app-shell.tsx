@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronRight } from 'lucide-react';
 import { SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MAX, type AppState } from '../../types/register';
@@ -144,11 +144,13 @@ function AppShellInner({ cloudInit }: AppShellProps) {
 
   // Drag-to-resize sidebar
   const dragRef = useRef<{ startX: number; startWidth: number; lastWidth: number } | null>(null);
+  const [isResizing, setIsResizing] = useState(false);
 
   const handleResizerPointerDown = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
     dragRef.current = { startX: e.clientX, startWidth: preferences.sidebarWidth, lastWidth: preferences.sidebarWidth };
+    setIsResizing(true);
   }, [preferences.sidebarWidth]);
 
   const handleResizerPointerMove = useCallback((e: React.PointerEvent) => {
@@ -163,6 +165,7 @@ function AppShellInner({ cloudInit }: AppShellProps) {
 
   const handleResizerPointerUp = useCallback(() => {
     dragRef.current = null;
+    setIsResizing(false);
   }, []);
 
   const collapsed = preferences.sidebarCollapsed;
@@ -209,6 +212,7 @@ function AppShellInner({ cloudInit }: AppShellProps) {
         <Sidebar
           width={sidebarWidth}
           collapsed={collapsed}
+          isResizing={isResizing}
           onToggleCollapse={() => preferencesActions.setSidebarCollapsed(!collapsed)}
         />
 
