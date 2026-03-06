@@ -123,6 +123,17 @@ export function Header() {
     });
   }
 
+  function handleNewProjectFromMyProjects() {
+    unsavedGuard.guard(() => {
+      loadAsUnsaved(
+        { registers: [], values: {}, warnings: [] },
+        'Untitled Project',
+        'new',
+      );
+      setMyProjectsOpen(false);
+    });
+  }
+
   function handleSwitchProject(localId: string) {
     unsavedGuard.guard(() => {
       switchProject(localId);
@@ -225,7 +236,7 @@ export function Header() {
             open={myProjectsOpen}
             onClose={() => setMyProjectsOpen(false)}
             onSwitchProject={handleSwitchProject}
-            onNewProject={() => { handleNewProject(); setMyProjectsOpen(false); }}
+            onNewProject={handleNewProjectFromMyProjects}
             onSaveProject={isUnsaved ? () => saveCurrentProject() : undefined}
           />
           <LoginDialog
