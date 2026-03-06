@@ -5,6 +5,7 @@ import { ExamplesDialog } from '../common/examples-dialog';
 import { ProjectSettingsDialog } from '../common/project-settings-dialog';
 import { ImportResultDialog } from '../common/import-result-dialog';
 import { Toast } from '../common/toast';
+import { UnsavedPromptDialog } from '../common/unsaved-prompt-dialog';
 import { GithubIcon, MenuIcon } from 'lucide-react';
 import { SyncStatusIndicator } from '../common/sync-status-indicator';
 import { useCloudSync } from '../../context/cloud-sync-context';
@@ -14,9 +15,9 @@ import { LoginDialog } from '../auth/login-dialog';
 import { GITHUB_URL } from '../../constants';
 import { useAppState, useAppDispatch } from '../../context/app-context';
 import { useAuth, useAuthActions } from '../../context/auth-context';
-import { useEditActions } from '../../context/edit-context';
 import { usePreferences, usePreferencesActions } from '../../context/preferences-context';
 import { useProjectStorageActions } from '../../context/project-storage-context';
+import { useUnsavedGuard } from '../../hooks/use-unsaved-guard';
 import { exportToJson, importFromJson, type ImportWarning } from '../../utils/storage';
 import { triggerFileDownload } from '../../utils/file-download';
 import { isCloudEnabled } from '../../utils/api-client';
@@ -29,7 +30,6 @@ type ImportFeedback =
 export function Header() {
   const state = useAppState();
   const dispatch = useAppDispatch();
-  const { exitEditMode } = useEditActions();
   const preferences = usePreferences();
   const preferencesActions = usePreferencesActions();
   const auth = useAuth();
@@ -41,10 +41,11 @@ export function Header() {
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   const [myProjectsOpen, setMyProjectsOpen] = useState(false);
   const [importFeedback, setImportFeedback] = useState<ImportFeedback | null>(null);
-  const { createNewProject, switchProject } = useProjectStorageActions();
+  const { loadAsUnsaved, switchProject } = useProjectStorageActions();
   const cloud = useCloudSync();
+  const unsavedGuard = useUnsavedGuard();
 
-  function applyImportedData(json: string, showSuccessToast = true) {
+  function processImport(json: string, name: string, showSuccessToast = true) {
     const result = importFromJson(json);
     if (!result) {
       setImportFeedback({ kind: 'error', message: 'Failed to import: invalid JSON or missing registers array.' });
@@ -68,13 +69,17 @@ export function Header() {
     }
 
     if (result.registers.length > 0) {
-      exitEditMode();
-      dispatch({ type: 'IMPORT_STATE', registers: result.registers, values: result.values, project: result.project, addressUnitBits: result.addressUnitBits });
+      loadAsUnsaved(result, name, 'import');
     }
   }
 
-  function handleExampleLoad(json: string) {
-    applyImportedData(json, false);
+  function handleExampleLoad(json: string, name: string) {
+    unsavedGuard.guard(() => {
+      const result = importFromJson(json);
+      if (!result || result.registers.length === 0) return;
+      loadAsUnsaved(result, name, 'example');
+      setExamplesOpen(false);
+    });
   }
 
   function handleExport() {
@@ -96,11 +101,32 @@ export function Header() {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
-      applyImportedData(reader.result as string);
+      const json = reader.result as string;
+      const name = file.name.replace(/\.json$/i, '') || 'Imported Project';
+      unsavedGuard.guard(() => {
+        processImport(json, name);
+      });
     };
     reader.readAsText(file);
     // Reset so the same file can be imported again
     e.target.value = '';
+  }
+
+  function handleNewProject() {
+    unsavedGuard.guard(() => {
+      loadAsUnsaved(
+        { registers: [], values: {}, warnings: [] },
+        'Untitled Project',
+        'new',
+      );
+    });
+  }
+
+  function handleSwitchProject(localId: string) {
+    unsavedGuard.guard(() => {
+      switchProject(localId);
+      setMyProjectsOpen(false);
+    });
   }
 
   function clearFeedback() {
@@ -110,10 +136,7 @@ export function Header() {
   const cloudEnabled = isCloudEnabled();
 
   const menuItems: MenuItem[] = [
-    { kind: 'action', label: 'New project', onAction: () => {
-      const localId = createNewProject();
-      switchProject(localId);
-    }},
+    { kind: 'action', label: 'New project', onAction: handleNewProject },
     { kind: 'action', label: 'My Projects', onAction: () => setMyProjectsOpen(true) },
     { kind: 'action', label: 'Project settings', onAction: () => setProjectSettingsOpen(true) },
     { kind: 'separator' },
@@ -197,10 +220,17 @@ export function Header() {
           <MyProjectsDialog
             open={myProjectsOpen}
             onClose={() => setMyProjectsOpen(false)}
+            onSwitchProject={handleSwitchProject}
           />
           <LoginDialog
             open={loginDialogOpen}
             onClose={() => setLoginDialogOpen(false)}
+          />
+          <UnsavedPromptDialog
+            open={unsavedGuard.promptOpen}
+            onSaveAndContinue={unsavedGuard.executePending}
+            onDiscardAndContinue={unsavedGuard.executePending}
+            onCancel={unsavedGuard.cancelPending}
           />
         </div>
       </header>

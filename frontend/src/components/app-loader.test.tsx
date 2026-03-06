@@ -39,6 +39,10 @@ vi.mock('../utils/project-storage', () => ({
   createProject: vi.fn(() => 'new-local-id'),
   getMostRecentProjectId: vi.fn(() => null),
   ACTIVE_PROJECT_SESSION_KEY: 'register-viewer-active-project',
+  UNSAVED_SESSION_SENTINEL: '__unsaved__',
+  saveUnsavedProjectState: vi.fn(),
+  loadUnsavedProject: vi.fn(() => null),
+  clearUnsavedProject: vi.fn(),
 }));
 
 vi.mock('../context/app-context', () => ({
@@ -46,12 +50,14 @@ vi.mock('../context/app-context', () => ({
 }));
 
 vi.mock('./layout/app-shell', () => ({
-  AppShell: ({ cloudInit, initialLocalId }: { cloudInit?: { projectId: string; isOwner: boolean }; initialLocalId?: string | null }) => (
+  AppShell: ({ cloudInit, initialLocalId, initialUnsaved }: { cloudInit?: { projectId: string; isOwner: boolean }; initialLocalId?: string | null; initialUnsaved?: { name: string; source: string } | null }) => (
     <div
       data-testid="app-shell"
       data-cloud-id={cloudInit?.projectId ?? ''}
       data-is-owner={String(cloudInit?.isOwner ?? false)}
       data-local-id={initialLocalId ?? ''}
+      data-unsaved-name={initialUnsaved?.name ?? ''}
+      data-unsaved-source={initialUnsaved?.source ?? ''}
     />
   ),
 }));
@@ -73,6 +79,7 @@ import {
   loadProject,
   createProject,
   getMostRecentProjectId,
+  saveUnsavedProjectState,
 } from '../utils/project-storage';
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -163,10 +170,9 @@ describe('AppLoader', () => {
   });
 
   describe('create-default branch', () => {
-    it('creates seed project and renders AppShell', async () => {
+    it('creates unsaved seed project and renders AppShell', async () => {
       (resolveInitialProject as Mock).mockReturnValue({ type: 'create-default' });
       (createSeedRegisters as Mock).mockReturnValue([TEST_REGISTER]);
-      (createProject as Mock).mockReturnValue('seed-local-id');
 
       render(<AppLoader />);
 
@@ -174,19 +180,22 @@ describe('AppLoader', () => {
         expect(screen.getByTestId('app-shell')).toBeInTheDocument();
       });
 
-      expect(createProject).toHaveBeenCalled();
+      expect(saveUnsavedProjectState).toHaveBeenCalled();
+      // Should NOT create a saved project
+      expect(createProject).not.toHaveBeenCalled();
     });
 
-    it('passes localId to AppShell', async () => {
+    it('passes unsaved data to AppShell instead of localId', async () => {
       (resolveInitialProject as Mock).mockReturnValue({ type: 'create-default' });
       (createSeedRegisters as Mock).mockReturnValue([TEST_REGISTER]);
-      (createProject as Mock).mockReturnValue('seed-local-id');
 
       render(<AppLoader />);
 
       await waitFor(() => {
         const shell = screen.getByTestId('app-shell');
-        expect(shell.dataset.localId).toBe('seed-local-id');
+        expect(shell.dataset.localId).toBe('');
+        expect(shell.dataset.unsavedName).toBe('Example Project');
+        expect(shell.dataset.unsavedSource).toBe('seed');
       });
     });
 
@@ -405,11 +414,10 @@ describe('AppLoader', () => {
       });
     });
 
-    it('falls back to seed when local project record is missing', async () => {
+    it('falls back to unsaved seed when local project record is missing', async () => {
       (resolveInitialProject as Mock).mockReturnValue({ type: 'local', localId: 'missing-id' });
       (loadProject as Mock).mockReturnValue(null); // project missing
       (createSeedRegisters as Mock).mockReturnValue([TEST_REGISTER]);
-      (createProject as Mock).mockReturnValue('fallback-seed-id');
 
       render(<AppLoader />);
 
@@ -417,10 +425,11 @@ describe('AppLoader', () => {
         expect(screen.getByTestId('app-shell')).toBeInTheDocument();
       });
 
-      // Should create a new default project
-      expect(createProject).toHaveBeenCalled();
+      // Should create an unsaved project, not a saved one
+      expect(saveUnsavedProjectState).toHaveBeenCalled();
+      expect(createProject).not.toHaveBeenCalled();
       const shell = screen.getByTestId('app-shell');
-      expect(shell.dataset.localId).toBe('fallback-seed-id');
+      expect(shell.dataset.unsavedName).toBe('Example Project');
     });
   });
 
@@ -484,7 +493,7 @@ describe('AppLoader', () => {
       expect(loadProject).toHaveBeenCalledWith('recent-id');
     });
 
-    it('creates default project when no most-recent project exists', async () => {
+    it('creates unsaved project when no most-recent project exists', async () => {
       // Start in error state
       (resolveInitialProject as Mock).mockReturnValue({ type: 'snapshot', data: 'bad-data' });
       (importFromJson as Mock).mockReturnValue(null);
@@ -492,7 +501,6 @@ describe('AppLoader', () => {
       // No most recent project
       (getMostRecentProjectId as Mock).mockReturnValue(null);
       (createSeedRegisters as Mock).mockReturnValue([TEST_REGISTER]);
-      (createProject as Mock).mockReturnValue('new-default-id');
 
       render(<AppLoader />);
 
@@ -508,10 +516,11 @@ describe('AppLoader', () => {
         expect(screen.getByTestId('app-shell')).toBeInTheDocument();
       });
 
-      expect(createProject).toHaveBeenCalled();
+      expect(saveUnsavedProjectState).toHaveBeenCalled();
+      expect(createProject).not.toHaveBeenCalled();
     });
 
-    it('creates default project when most-recent project record is missing', async () => {
+    it('creates unsaved project when most-recent project record is missing', async () => {
       // Start in error state
       (resolveInitialProject as Mock).mockReturnValue({ type: 'snapshot', data: 'bad-data' });
       (importFromJson as Mock).mockReturnValue(null);
@@ -520,7 +529,6 @@ describe('AppLoader', () => {
       (getMostRecentProjectId as Mock).mockReturnValue('ghost-id');
       (loadProject as Mock).mockReturnValue(null);
       (createSeedRegisters as Mock).mockReturnValue([TEST_REGISTER]);
-      (createProject as Mock).mockReturnValue('new-default-id');
 
       render(<AppLoader />);
 
@@ -536,7 +544,8 @@ describe('AppLoader', () => {
         expect(screen.getByTestId('app-shell')).toBeInTheDocument();
       });
 
-      expect(createProject).toHaveBeenCalled();
+      expect(saveUnsavedProjectState).toHaveBeenCalled();
+      expect(createProject).not.toHaveBeenCalled();
     });
 
     it('calls runMigrationIfNeeded in handleContinue', async () => {
@@ -545,7 +554,6 @@ describe('AppLoader', () => {
       (importFromJson as Mock).mockReturnValue(null);
       (getMostRecentProjectId as Mock).mockReturnValue(null);
       (createSeedRegisters as Mock).mockReturnValue([]);
-      (createProject as Mock).mockReturnValue('new-id');
 
       render(<AppLoader />);
 
@@ -567,7 +575,6 @@ describe('AppLoader', () => {
     it('renders AppShell inside AppProvider for ready state', async () => {
       (resolveInitialProject as Mock).mockReturnValue({ type: 'create-default' });
       (createSeedRegisters as Mock).mockReturnValue([]);
-      (createProject as Mock).mockReturnValue('some-id');
 
       render(<AppLoader />);
 

@@ -43,6 +43,17 @@ export interface StoredLocalProject {
 /** UI-safe view type for project list display (identical to manifest entry) */
 export type ProjectListEntry = ProjectManifestEntry;
 
+/** How an unsaved project was created */
+export type UnsavedProjectSource = 'seed' | 'example' | 'import' | 'new';
+
+/** Data stored at `register-viewer-unsaved` for a project not yet in My Projects */
+export interface StoredUnsavedProject {
+  name: string;
+  state: import('./register').SerializedAppState;
+  createdAt: string;        // ISO 8601
+  source: UnsavedProjectSource;
+}
+
 /** Global preferences stored at `register-viewer-prefs` */
 export interface GlobalPreferences {
   theme: 'light' | 'dark';

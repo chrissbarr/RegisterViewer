@@ -18,15 +18,17 @@ const STORAGE_WARNING_PERCENT = 80;
 interface MyProjectsDialogProps {
   open: boolean;
   onClose: () => void;
+  /** Optional guarded switch callback. When provided, handleOpen uses this instead of the default switchProject. */
+  onSwitchProject?: (localId: string) => void;
 }
 
-export function MyProjectsDialog({ open, onClose }: MyProjectsDialogProps) {
+export function MyProjectsDialog({ open, onClose, onSwitchProject }: MyProjectsDialogProps) {
   const { activeLocalId, projects } = useProjectStorage();
   const auth = useAuth();
 
   const [filter, setFilter] = useState('');
   const resetFilter = useCallback(() => setFilter(''), []);
-  const actions = useMyProjectsActions(open, onClose, resetFilter);
+  const actions = useMyProjectsActions(open, onClose, resetFilter, onSwitchProject);
 
   // Compute storage percent when dialog is open (derived, no state needed)
   const storagePercent = useMemo(

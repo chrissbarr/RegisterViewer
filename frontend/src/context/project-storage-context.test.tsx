@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import type { ReactNode } from 'react';
 import { ProjectStorageProvider, useProjectStorage, useProjectStorageActions } from './project-storage-context';
 import { AppProvider, useAppState, useAppDispatch } from './app-context';
+import { EditProvider } from './edit-context';
 import { makeState, makeRegister } from '../test/helpers';
 import type { ProjectManifestEntry, StoredLocalProject } from '../types/project';
 
@@ -28,12 +29,15 @@ vi.mock('../utils/project-storage', () => ({
   })),
   getMostRecentProjectId: vi.fn(() => null),
   ACTIVE_PROJECT_SESSION_KEY: 'register-viewer-active-project',
+  UNSAVED_SESSION_SENTINEL: '__unsaved__',
+  clearUnsavedProject: vi.fn(),
 }));
 
 vi.mock('../utils/storage', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../utils/storage')>();
   return {
     deserializeState: vi.fn((data: unknown) => data),
+    serializeState: vi.fn((state: unknown) => state),
     EMPTY_SERIALIZED_STATE: actual.EMPTY_SERIALIZED_STATE,
   };
 });
@@ -99,9 +103,11 @@ function wrapper(initialLocalId: string | null = TEST_LOCAL_ID) {
     });
     return (
       <AppProvider savedState={initialState}>
-        <ProjectStorageProvider initialLocalId={initialLocalId}>
-          {children}
-        </ProjectStorageProvider>
+        <EditProvider>
+          <ProjectStorageProvider initialLocalId={initialLocalId}>
+            {children}
+          </ProjectStorageProvider>
+        </EditProvider>
       </AppProvider>
     );
   };

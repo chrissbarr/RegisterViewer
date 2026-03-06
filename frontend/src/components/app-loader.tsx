@@ -11,18 +11,21 @@ import { friendlyErrorMessage } from '../utils/friendly-error';
 import { fetchAndParseCloudProject } from '../utils/cloud-project-loader';
 import { JWT_STORAGE_KEY } from '../context/auth-context';
 import { resolveInitialProject } from '../utils/project-resolution';
+import type { UnsavedProjectSource } from '../types/project';
 import {
   runMigrationIfNeeded,
   loadManifest,
   loadProject,
-  createProject,
   getMostRecentProjectId,
   ACTIVE_PROJECT_SESSION_KEY,
+  UNSAVED_SESSION_SENTINEL,
+  loadUnsavedProject,
+  saveUnsavedProjectState,
 } from '../utils/project-storage';
 
 type LoaderState =
   | { phase: 'loading' }
-  | { phase: 'ready'; initialState: AppState | undefined; cloudInit?: { projectId: string; isOwner: boolean }; localId?: string }
+  | { phase: 'ready'; initialState: AppState | undefined; cloudInit?: { projectId: string; isOwner: boolean }; localId?: string; unsaved?: { name: string; source: UnsavedProjectSource } }
   | { phase: 'error'; message: string };
 
 /** Build an AppState from import-style data, filling in map/sort defaults. */
@@ -60,10 +63,13 @@ function createSeedState(): AppState {
   });
 }
 
-function createDefaultProject(): { state: AppState; localId: string } {
+function createDefaultUnsavedProject(): { state: AppState; unsaved: { name: string; source: UnsavedProjectSource } } {
   const seedState = createSeedState();
-  const localId = createProject(serializeState(seedState), 'Example Project');
-  return { state: seedState, localId };
+  saveUnsavedProjectState('Example Project', serializeState(seedState), 'seed');
+  try {
+    sessionStorage.setItem(ACTIVE_PROJECT_SESSION_KEY, UNSAVED_SESSION_SENTINEL);
+  } catch { /* sessionStorage unavailable */ }
+  return { state: seedState, unsaved: { name: 'Example Project', source: 'seed' } };
 }
 
 function parseSnapshotHash(hash: string): AppState | null {
@@ -169,16 +175,42 @@ export function AppLoader() {
             : undefined;
           setState({ phase: 'ready', initialState: appState, localId: resolution.localId, cloudInit });
         } else {
-          // Project record missing — fall back to creating default
-          const { state: seedState, localId } = createDefaultProject();
-          setState({ phase: 'ready', initialState: seedState, localId });
+          // Project record missing — fall back to creating default (unsaved)
+          const { state: seedState, unsaved } = createDefaultUnsavedProject();
+          setState({ phase: 'ready', initialState: seedState, unsaved });
+        }
+        break;
+      }
+
+      case 'unsaved': {
+        const unsavedData = loadUnsavedProject();
+        if (unsavedData) {
+          const appState = deserializeState(unsavedData.state);
+          setState({
+            phase: 'ready',
+            initialState: appState,
+            unsaved: { name: unsavedData.name, source: unsavedData.source ?? 'new' },
+          });
+        } else {
+          // Unsaved data was cleared externally — fall through to most recent or seed
+          const mostRecentId = getMostRecentProjectId();
+          if (mostRecentId) {
+            const project = loadProject(mostRecentId);
+            if (project) {
+              const appState = deserializeState(project.state);
+              setState({ phase: 'ready', initialState: appState, localId: mostRecentId });
+              break;
+            }
+          }
+          const { state: seedState, unsaved } = createDefaultUnsavedProject();
+          setState({ phase: 'ready', initialState: seedState, unsaved });
         }
         break;
       }
 
       case 'create-default': {
-        const { state: seedState, localId } = createDefaultProject();
-        setState({ phase: 'ready', initialState: seedState, localId });
+        const { state: seedState, unsaved } = createDefaultUnsavedProject();
+        setState({ phase: 'ready', initialState: seedState, unsaved });
         break;
       }
     }
@@ -197,8 +229,8 @@ export function AppLoader() {
         return;
       }
     }
-    const { state: seedState, localId } = createDefaultProject();
-    setState({ phase: 'ready', initialState: seedState, localId });
+    const { state: seedState, unsaved } = createDefaultUnsavedProject();
+    setState({ phase: 'ready', initialState: seedState, unsaved });
   }, []);
 
   if (state.phase === 'loading') {
@@ -236,7 +268,7 @@ export function AppLoader() {
 
   return (
     <AppProvider savedState={state.initialState} key={state.cloudInit?.projectId ?? state.localId ?? 'default'}>
-      <AppShell cloudInit={state.cloudInit} initialLocalId={state.localId} />
+      <AppShell cloudInit={state.cloudInit} initialLocalId={state.localId} initialUnsaved={state.unsaved} />
     </AppProvider>
   );
 }
