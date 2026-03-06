@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useAppState, useAppDispatch } from '../../context/app-context';
 import { useEditState, useEditActions } from '../../context/edit-context';
 import { ValueInputBar } from './value-input-bar';
@@ -114,10 +115,13 @@ export function MainPanel() {
     </div>
   );
 
-  // Non-editor content — banner and tab bar are shared across all branches
-  let content;
+  // Determine content key and element for crossfade
+  let contentKey: string;
+  let contentElement: React.ReactNode;
+
   if (activeTab === 'map' && hasOffsets) {
-    content = (
+    contentKey = 'map';
+    contentElement = (
       <RegisterMapView
         registers={registers}
         onNavigateToRegister={handleNavigateToRegister}
@@ -126,7 +130,8 @@ export function MainPanel() {
       />
     );
   } else if (!activeRegister) {
-    content = (
+    contentKey = 'empty';
+    contentElement = (
       <div className="flex-1 flex items-center justify-center text-gray-500 dark:text-gray-500">
         <div className="text-center">
           <p className="text-lg mb-2">No register selected</p>
@@ -135,7 +140,8 @@ export function MainPanel() {
       </div>
     );
   } else {
-    content = (
+    contentKey = `register-${activeRegisterId}`;
+    contentElement = (
       <div className="flex-1 overflow-y-auto p-4">
         <div className="bg-white dark:bg-gray-900/50 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-4 space-y-3">
           <div className="flex items-start justify-between">
@@ -173,7 +179,18 @@ export function MainPanel() {
         <SharedProjectBanner />
       </div>
       {tabBar}
-      {content}
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={contentKey}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.05 }}
+          className="flex-1 flex flex-col overflow-hidden"
+        >
+          {contentElement}
+        </motion.div>
+      </AnimatePresence>
     </main>
   );
 }

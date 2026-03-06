@@ -1,4 +1,5 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronRight } from 'lucide-react';
 import { SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MAX, type AppState } from '../../types/register';
 import type { UnsavedProjectSource } from '../../types/project';
@@ -143,11 +144,13 @@ function AppShellInner({ cloudInit }: AppShellProps) {
 
   // Drag-to-resize sidebar
   const dragRef = useRef<{ startX: number; startWidth: number; lastWidth: number } | null>(null);
+  const [isResizing, setIsResizing] = useState(false);
 
   const handleResizerPointerDown = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
     dragRef.current = { startX: e.clientX, startWidth: preferences.sidebarWidth, lastWidth: preferences.sidebarWidth };
+    setIsResizing(true);
   }, [preferences.sidebarWidth]);
 
   const handleResizerPointerMove = useCallback((e: React.PointerEvent) => {
@@ -162,6 +165,7 @@ function AppShellInner({ cloudInit }: AppShellProps) {
 
   const handleResizerPointerUp = useCallback(() => {
     dragRef.current = null;
+    setIsResizing(false);
   }, []);
 
   const collapsed = preferences.sidebarCollapsed;
@@ -170,36 +174,45 @@ function AppShellInner({ cloudInit }: AppShellProps) {
   return (
     <div className="h-screen flex flex-col bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100">
       <Header />
-      {cloud.error && (
-        <Toast
-          message={cloud.error}
-          variant="error"
-          duration={5000}
-          onDismiss={cloudActions.dismissError}
-        />
-      )}
-      <div className="flex flex-1 overflow-hidden relative">
-        {collapsed && (
-          <button
-            onClick={() => preferencesActions.setSidebarCollapsed(false)}
-            className="absolute left-0 top-1/2 -translate-y-1/2 z-20
-              w-5 h-10 flex items-center justify-center
-              bg-gray-200 dark:bg-gray-800
-              hover:bg-gray-300 dark:hover:bg-gray-700
-              rounded-r-md border border-l-0
-              border-gray-300 dark:border-gray-600
-              text-gray-500 dark:text-gray-400
-              transition-colors"
-            title="Expand sidebar (Ctrl+B)"
-            aria-label="Expand sidebar"
-          >
-            <ChevronRight size={12} />
-          </button>
+      <AnimatePresence>
+        {cloud.error && (
+          <Toast
+            message={cloud.error}
+            variant="error"
+            duration={5000}
+            onDismiss={cloudActions.dismissError}
+          />
         )}
+      </AnimatePresence>
+      <div className="flex flex-1 overflow-hidden relative">
+        <AnimatePresence>
+          {collapsed && (
+            <motion.button
+              initial={{ opacity: 0, x: -8 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -8 }}
+              transition={{ duration: 0.15 }}
+              onClick={() => preferencesActions.setSidebarCollapsed(false)}
+              className="absolute left-0 top-1/2 -translate-y-1/2 z-20
+                w-5 h-10 flex items-center justify-center
+                bg-gray-200 dark:bg-gray-800
+                hover:bg-gray-300 dark:hover:bg-gray-700
+                rounded-r-md border border-l-0
+                border-gray-300 dark:border-gray-600
+                text-gray-500 dark:text-gray-400
+                transition-colors"
+              title="Expand sidebar (Ctrl+B)"
+              aria-label="Expand sidebar"
+            >
+              <ChevronRight size={12} />
+            </motion.button>
+          )}
+        </AnimatePresence>
 
         <Sidebar
           width={sidebarWidth}
           collapsed={collapsed}
+          isResizing={isResizing}
           onToggleCollapse={() => preferencesActions.setSidebarCollapsed(!collapsed)}
         />
 

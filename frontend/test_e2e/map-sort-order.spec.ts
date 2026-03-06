@@ -29,6 +29,7 @@ async function setupMapState(page: Page) {
   }, TEST_STATE);
   await page.goto('/');
   await page.getByRole('button', { name: 'Map' }).click();
+  await page.getByTestId('map-view').waitFor({ state: 'visible' });
 }
 
 /**

@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
+import { AnimatePresence } from 'framer-motion';
 import { Plus, Save, TriangleAlert } from 'lucide-react';
 import { Dialog } from '../common/dialog';
 import { ProjectSettingsDialog } from '../common/project-settings-dialog';
@@ -218,14 +219,16 @@ export function MyProjectsDialog({ open, onClose, onSwitchProject, onNewProject,
       onClose={actions.dismissShare}
     />
 
-    {actions.cloudError && (
-      <Toast
-        message={actions.cloudError}
-        variant="error"
-        duration={5000}
-        onDismiss={actions.dismissCloudError}
-      />
-    )}
+    <AnimatePresence>
+      {actions.cloudError && (
+        <Toast
+          message={actions.cloudError}
+          variant="error"
+          duration={5000}
+          onDismiss={actions.dismissCloudError}
+        />
+      )}
+    </AnimatePresence>
     </>
   );
 }

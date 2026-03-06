@@ -34,7 +34,7 @@ export function RegisterListItem({ register, isActive, hasPendingEdit, hasOverla
 
   if (confirming) {
     return (
-      <li
+      <div
         ref={setNodeRef}
         style={style}
         className="flex items-center justify-between px-3 py-2 rounded-md text-sm
@@ -66,12 +66,12 @@ export function RegisterListItem({ register, isActive, hasPendingEdit, hasOverla
             No
           </button>
         </div>
-      </li>
+      </div>
     );
   }
 
   return (
-    <li
+    <div
       ref={setNodeRef}
       style={style}
       onClick={onSelect}
@@ -131,6 +131,6 @@ export function RegisterListItem({ register, isActive, hasPendingEdit, hasOverla
       >
         &times;
       </button>
-    </li>
+    </div>
   );
 }

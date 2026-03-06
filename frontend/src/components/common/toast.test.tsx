@@ -31,7 +31,7 @@ describe('Toast', () => {
   });
 
   describe('auto-dismiss', () => {
-    it('calls onDismiss after duration + animation delay', () => {
+    it('calls onDismiss after duration', () => {
       const onDismiss = vi.fn();
       render(<Toast message="Bye" duration={3000} onDismiss={onDismiss} />);
 
@@ -39,12 +39,8 @@ describe('Toast', () => {
       act(() => { vi.advanceTimersByTime(2999); });
       expect(onDismiss).not.toHaveBeenCalled();
 
-      // Outer timer fires at 3000ms, starts 200ms exit animation
+      // Timer fires at 3000ms, calls onDismiss directly
       act(() => { vi.advanceTimersByTime(1); });
-      expect(onDismiss).not.toHaveBeenCalled();
-
-      // Inner timer fires after 200ms animation delay
-      act(() => { vi.advanceTimersByTime(200); });
       expect(onDismiss).toHaveBeenCalledOnce();
     });
 
@@ -55,7 +51,7 @@ describe('Toast', () => {
       act(() => { vi.advanceTimersByTime(999); });
       expect(onDismiss).not.toHaveBeenCalled();
 
-      act(() => { vi.advanceTimersByTime(201); });
+      act(() => { vi.advanceTimersByTime(1); });
       expect(onDismiss).toHaveBeenCalledOnce();
     });
 
@@ -71,18 +67,16 @@ describe('Toast', () => {
       expect(onDismiss).not.toHaveBeenCalled();
     });
 
-    it('cleans up inner timer if unmounted during exit animation', () => {
+    it('calls onDismiss exactly once after duration', () => {
       const onDismiss = vi.fn();
-      const { unmount } = render(<Toast message="Mid-animation" duration={3000} onDismiss={onDismiss} />);
+      render(<Toast message="Once only" duration={3000} onDismiss={onDismiss} />);
 
-      // Advance to outer timer firing (starts exit animation)
       act(() => { vi.advanceTimersByTime(3000); });
-      expect(onDismiss).not.toHaveBeenCalled();
+      expect(onDismiss).toHaveBeenCalledOnce();
 
-      // Unmount during the 200ms exit animation
-      unmount();
-      act(() => { vi.advanceTimersByTime(200); });
-      expect(onDismiss).not.toHaveBeenCalled();
+      // No additional calls after more time
+      act(() => { vi.advanceTimersByTime(5000); });
+      expect(onDismiss).toHaveBeenCalledOnce();
     });
   });
 

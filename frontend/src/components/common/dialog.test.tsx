@@ -75,16 +75,19 @@ describe('Dialog', () => {
       showModalSpy.mockRestore();
     });
 
-    it('calls close when open transitions to false', () => {
+    it('removes content when open transitions to false', async () => {
+      const onClose = vi.fn();
       const { rerender } = render(
-        <Dialog open={true} onClose={vi.fn()} title="Test">content</Dialog>,
+        <Dialog open={true} onClose={onClose} title="Test">content</Dialog>,
       );
-      const closeSpy = vi.spyOn(HTMLDialogElement.prototype, 'close');
+      expect(screen.getByText('content')).toBeInTheDocument();
       rerender(
-        <Dialog open={false} onClose={vi.fn()} title="Test">content</Dialog>,
+        <Dialog open={false} onClose={onClose} title="Test">content</Dialog>,
       );
-      expect(closeSpy).toHaveBeenCalled();
-      closeSpy.mockRestore();
+      // AnimatePresence exit removes the content from the DOM
+      await vi.waitFor(() => {
+        expect(screen.queryByText('content')).not.toBeInTheDocument();
+      });
     });
   });
 });

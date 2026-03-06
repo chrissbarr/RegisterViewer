@@ -22,6 +22,21 @@ html {
 body {
   margin: 0;
   min-height: 100vh;
+  background-color: var(--color-white);
+}
+
+.dark body {
+  background-color: var(--color-gray-950);
+}
+
+/* Bit cell toggle flash */
+@keyframes bit-flash {
+  0% { filter: brightness(1.5); }
+  100% { filter: brightness(1); }
+}
+
+.bit-flash {
+  animation: bit-flash 150ms ease-out;
 }
 
 /* Unassigned bit cells — diagonal hatch pattern */

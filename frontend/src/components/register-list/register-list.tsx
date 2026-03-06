@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
   DndContext,
   DragOverlay,
@@ -108,23 +109,34 @@ export function RegisterList() {
           </AlertBanner>
         )}
         <SortableContext items={registers.map((r) => r.id)} strategy={verticalListSortingStrategy}>
-          <ul className="p-2 space-y-1">
-            {registers.map((reg) => (
-              <RegisterListItem
-                key={reg.id}
-                register={reg}
-                isActive={reg.id === activeRegisterId}
-                hasPendingEdit={dirtyDraftIds.has(reg.id)}
-                hasOverlapWarning={overlapRegisterIds.has(reg.id)}
-                offsetDigits={offsetDigits}
-                onSelect={() => {
-                  dispatch({ type: 'SET_ACTIVE_REGISTER', registerId: reg.id });
-                  if (isEditing) enterEditMode(reg);
-                }}
-                onDelete={() => dispatch({ type: 'DELETE_REGISTER', registerId: reg.id })}
-              />
-            ))}
-          </ul>
+          <div className="p-2 space-y-1" role="list">
+            <AnimatePresence initial={false}>
+              {registers.map((reg) => (
+                <motion.div
+                  key={reg.id}
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.15 }}
+                  layout
+                  role="listitem"
+                >
+                  <RegisterListItem
+                    register={reg}
+                    isActive={reg.id === activeRegisterId}
+                    hasPendingEdit={dirtyDraftIds.has(reg.id)}
+                    hasOverlapWarning={overlapRegisterIds.has(reg.id)}
+                    offsetDigits={offsetDigits}
+                    onSelect={() => {
+                      dispatch({ type: 'SET_ACTIVE_REGISTER', registerId: reg.id });
+                      if (isEditing) enterEditMode(reg);
+                    }}
+                    onDelete={() => dispatch({ type: 'DELETE_REGISTER', registerId: reg.id })}
+                  />
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </div>
         </SortableContext>
         <DragOverlay>
           {activeRegister ? (

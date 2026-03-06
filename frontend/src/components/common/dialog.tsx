@@ -1,6 +1,9 @@
-import { useRef, useEffect, useId, type ReactNode, type RefObject } from 'react';
+import { useRef, useEffect, useId, useCallback, type ReactNode, type RefObject } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import { useToastPortalRegister } from '../../context/toast-portal-context';
+
+const DIALOG_ANIMATION_MS = 150;
 
 interface DialogProps {
   open: boolean;
@@ -24,29 +27,30 @@ export function Dialog({ open, onClose, title, children, maxWidth = 'max-w-lg', 
     return registerPortal();
   }, [open, registerPortal]);
 
+  // Open the native dialog when `open` becomes true
   useEffect(() => {
     const el = dialogRef.current;
     if (!el) return;
 
     if (open && !el.open) {
-      // Guard for jsdom which doesn't implement showModal
       if (typeof el.showModal === 'function') {
         el.showModal();
       } else {
         el.setAttribute('open', '');
       }
-
-      // Custom initial focus if provided
       if (initialFocusRef?.current) {
         requestAnimationFrame(() => initialFocusRef.current?.focus());
       }
-    } else if (!open && el.open) {
-      el.close();
     }
   }, [open, initialFocusRef]);
 
+  // Close the native dialog after exit animation completes
+  const handleExitComplete = useCallback(() => {
+    const el = dialogRef.current;
+    if (el?.open) el.close();
+  }, []);
+
   function handleClick(e: React.MouseEvent<HTMLDialogElement>) {
-    // Clicks on the <dialog> itself (backdrop area) close it
     if (e.target === dialogRef.current) {
       onClose();
     }
@@ -62,36 +66,46 @@ export function Dialog({ open, onClose, title, children, maxWidth = 'max-w-lg', 
       aria-describedby={ariaDescribedBy}
       aria-modal="true"
       className={`backdrop:bg-black/50 dark:backdrop:bg-black/70
-        bg-white dark:bg-gray-800
-        text-gray-900 dark:text-gray-100
-        border border-gray-200 dark:border-gray-700
-        rounded-xl shadow-xl
-        p-0 m-auto
+        bg-transparent border-none shadow-none p-0 m-auto
         ${maxWidth} w-[calc(100%-2rem)]
         max-h-[calc(100vh-4rem)]
         overflow-hidden`}
     >
-      {open && (
-        <div className="flex flex-col max-h-[calc(100vh-4rem)]">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
-            <h2 id={titleId} className="text-lg font-bold">
-              {title}
-            </h2>
-            <button
-              onClick={onClose}
-              aria-label="Close dialog"
-              className="p-1 rounded-md text-gray-400 hover:text-gray-600
-                dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700
-                transition-colors"
-            >
-              <X size={16} className="block" />
-            </button>
-          </div>
-          <div className="overflow-y-auto px-5 py-4">
-            {children}
-          </div>
-        </div>
-      )}
+      <AnimatePresence onExitComplete={handleExitComplete}>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: DIALOG_ANIMATION_MS / 1000, ease: 'easeOut' }}
+            className="bg-white dark:bg-gray-800
+              text-gray-900 dark:text-gray-100
+              border border-gray-200 dark:border-gray-700
+              rounded-xl shadow-xl
+              overflow-hidden"
+          >
+            <div className="flex flex-col max-h-[calc(100vh-4rem)]">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h2 id={titleId} className="text-lg font-bold">
+                  {title}
+                </h2>
+                <button
+                  onClick={onClose}
+                  aria-label="Close dialog"
+                  className="p-1 rounded-md text-gray-400 hover:text-gray-600
+                    dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700
+                    transition-colors"
+                >
+                  <X size={16} className="block" />
+                </button>
+              </div>
+              <div className="overflow-y-auto px-5 py-4">
+                {children}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </dialog>
   );
 }

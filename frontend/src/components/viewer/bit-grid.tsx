@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppState, useAppDispatch } from '../../context/app-context';
 import type { RegisterDef, Field } from '../../types/register';
 import { getBit } from '../../utils/bitwise';
@@ -77,6 +77,24 @@ export function BitGrid({ register, hoveredFieldIndices, onFieldHover, fieldHove
   const value = state.registerValues[register.id] ?? 0n;
   const [containerRef, containerWidth] = useContainerWidth<HTMLDivElement>();
   const [hoveredNibbleIndex, setHoveredNibbleIndex] = useState<number | null>(null);
+
+  // Track toggled bits for flash effect
+  const prevValueRef = useRef(value);
+  const [flashBits, setFlashBits] = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    if (prevValueRef.current !== value) {
+      const changed = prevValueRef.current ^ value;
+      const changedBits = new Set<number>();
+      for (let i = 0; i < register.width; i++) {
+        if ((changed >> BigInt(i)) & 1n) changedBits.add(i);
+      }
+      setFlashBits(changedBits);
+      prevValueRef.current = value;
+      const timer = setTimeout(() => setFlashBits(new Set()), 150);
+      return () => clearTimeout(timer);
+    }
+  }, [value, register.width]);
 
   // Layout: depends only on container width and register width
   const { rows, cellSize } = useMemo(() => {
@@ -198,7 +216,7 @@ export function BitGrid({ register, hoveredFieldIndices, onFieldHover, fieldHove
                       isUnassigned
                         ? 'bit-unassigned border-gray-300/60 dark:border-gray-600/60'
                         : 'border-gray-300 dark:border-gray-600'
-                    }`}
+                    } ${flashBits.has(bitIdx) ? 'bit-flash' : ''}`}
                     style={{
                       gridRow: 2,
                       gridColumn: col,
