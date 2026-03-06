@@ -1,4 +1,5 @@
 import { useState, useRef, useId, useEffect, useCallback } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useClickOutside } from '../../hooks/use-click-outside';
 
 // ── Menu item types ──────────────────────────────────────────────
@@ -45,49 +46,6 @@ function lastFocusableIndex(items: MenuItem[]): number {
   return -1;
 }
 
-// ── Animation ────────────────────────────────────────────────────
-
-const ANIMATION_MS = 150;
-
-/**
- * Keeps a panel mounted in the DOM while its exit animation plays.
- * Uses React's "store previous props in state" pattern to detect
- * open→close transitions during render, then async callbacks in
- * effects for the actual animation timing.
- */
-function useAnimatedPresence(open: boolean) {
-  const [prevOpen, setPrevOpen] = useState(open);
-  const [phase, setPhase] = useState<'idle' | 'entering' | 'entered' | 'exiting'>('idle');
-
-  if (open !== prevOpen) {
-    setPrevOpen(open);
-    if (open) {
-      setPhase('entering');
-    } else if (phase === 'entering' || phase === 'entered') {
-      setPhase('exiting');
-    }
-  }
-
-  useEffect(() => {
-    if (phase === 'entering') {
-      // Double-rAF: first frame mounts at opacity-0, second triggers CSS transition
-      const id = requestAnimationFrame(() => {
-        requestAnimationFrame(() => setPhase('entered'));
-      });
-      return () => cancelAnimationFrame(id);
-    }
-    if (phase === 'exiting') {
-      const timer = setTimeout(() => setPhase('idle'), ANIMATION_MS);
-      return () => clearTimeout(timer);
-    }
-  }, [phase]);
-
-  return {
-    mounted: phase !== 'idle',
-    visible: phase === 'entered',
-  };
-}
-
 // ── Component ────────────────────────────────────────────────────
 
 export function DropdownMenu({ items, triggerLabel, triggerContent, footer }: DropdownMenuProps) {
@@ -98,18 +56,16 @@ export function DropdownMenu({ items, triggerLabel, triggerContent, footer }: Dr
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const itemRefs = useRef<(HTMLLIElement | null)[]>([]);
-  const { mounted, visible } = useAnimatedPresence(isOpen);
 
   // Close on click outside
   useClickOutside(containerRef, () => setIsOpen(false), isOpen);
 
-  // Focus the active item when it changes (depends on mounted so it
-  // re-fires after the panel enters the DOM)
+  // Focus the active item when it changes
   useEffect(() => {
-    if (isOpen && mounted && activeIndex >= 0) {
+    if (isOpen && activeIndex >= 0) {
       itemRefs.current[activeIndex]?.focus();
     }
-  }, [isOpen, mounted, activeIndex]);
+  }, [isOpen, activeIndex]);
 
   const close = useCallback((restoreFocus = true) => {
     setIsOpen(false);
@@ -215,50 +171,105 @@ export function DropdownMenu({ items, triggerLabel, triggerContent, footer }: Dr
         {triggerContent}
       </button>
 
-      {mounted && (
-        <div
-          className={`absolute right-0 top-full mt-1 min-w-[10rem]
-            rounded-md shadow-lg border overflow-hidden
-            bg-white dark:bg-gray-800
-            border-gray-200 dark:border-gray-700
-            z-50 origin-top-right
-            transition-[opacity,transform] duration-150 ease-out
-            motion-reduce:transition-none
-            ${visible
-              ? 'opacity-100 scale-100'
-              : 'opacity-0 scale-[0.97] pointer-events-none'
-            }`}
-        >
-          <ul
-            id={menuId}
-            role="menu"
-            onKeyDown={handleMenuKeyDown}
-            className="py-1"
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.97 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.97 }}
+            transition={{ duration: 0.15, ease: 'easeOut' }}
+            className="absolute right-0 top-full mt-1 min-w-[10rem]
+              rounded-md shadow-lg border overflow-hidden
+              bg-white dark:bg-gray-800
+              border-gray-200 dark:border-gray-700
+              z-50 origin-top-right"
           >
-            {items.map((item, i) => {
-              if (item.kind === 'separator') {
-                return (
-                  <li
-                    key={i}
-                    role="separator"
-                    className="my-1 border-t border-gray-200 dark:border-gray-700"
-                  />
-                );
-              }
+            <ul
+              id={menuId}
+              role="menu"
+              onKeyDown={handleMenuKeyDown}
+              className="py-1"
+            >
+              {items.map((item, i) => {
+                if (item.kind === 'separator') {
+                  return (
+                    <li
+                      key={i}
+                      role="separator"
+                      className="my-1 border-t border-gray-200 dark:border-gray-700"
+                    />
+                  );
+                }
 
-              const isActive = activeIndex === i;
+                const isActive = activeIndex === i;
 
-              if (item.kind === 'toggle') {
+                if (item.kind === 'toggle') {
+                  return (
+                    <li
+                      key={i}
+                      ref={(el) => { itemRefs.current[i] = el; }}
+                      role="menuitemcheckbox"
+                      aria-checked={item.checked}
+                      tabIndex={isActive ? 0 : -1}
+                      onClick={() => activateItem(item)}
+                      className={`flex items-center justify-between w-full px-3 py-2
+                        text-left text-sm cursor-pointer select-none
+                        text-gray-700 dark:text-gray-200
+                        focus:outline-none
+                        ${isActive
+                          ? 'bg-gray-100 dark:bg-gray-700'
+                          : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+                        }`}
+                    >
+                      <span>{item.label}</span>
+                      {item.checked && (
+                        <span className="text-blue-600 dark:text-blue-400 ml-3" aria-hidden="true">
+                          ✓
+                        </span>
+                      )}
+                    </li>
+                  );
+                }
+
+                if (item.kind === 'link') {
+                  const itemClass = `flex items-center gap-2 w-full px-3 py-2 text-left text-sm cursor-pointer select-none
+                    text-gray-700 dark:text-gray-200 no-underline
+                    focus:outline-none
+                    ${isActive
+                      ? 'bg-gray-100 dark:bg-gray-700'
+                      : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+                    }`;
+                  return (
+                    <li
+                      key={i}
+                      ref={(el) => { itemRefs.current[i] = el; }}
+                      role="menuitem"
+                      tabIndex={isActive ? 0 : -1}
+                      onClick={() => close(false)}
+                    >
+                      <a
+                        href={item.href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={itemClass}
+                        tabIndex={-1}
+                      >
+                        {item.icon}
+                        {item.label}
+                      </a>
+                    </li>
+                  );
+                }
+
+                // action item
                 return (
                   <li
                     key={i}
                     ref={(el) => { itemRefs.current[i] = el; }}
-                    role="menuitemcheckbox"
-                    aria-checked={item.checked}
+                    role="menuitem"
                     tabIndex={isActive ? 0 : -1}
                     onClick={() => activateItem(item)}
-                    className={`flex items-center justify-between w-full px-3 py-2
-                      text-left text-sm cursor-pointer select-none
+                    className={`w-full px-3 py-2 text-left text-sm cursor-pointer select-none
                       text-gray-700 dark:text-gray-200
                       focus:outline-none
                       ${isActive
@@ -266,74 +277,19 @@ export function DropdownMenu({ items, triggerLabel, triggerContent, footer }: Dr
                         : 'hover:bg-gray-100 dark:hover:bg-gray-700'
                       }`}
                   >
-                    <span>{item.label}</span>
-                    {item.checked && (
-                      <span className="text-blue-600 dark:text-blue-400 ml-3" aria-hidden="true">
-                        ✓
-                      </span>
-                    )}
+                    {item.label}
                   </li>
                 );
-              }
-
-              if (item.kind === 'link') {
-                const itemClass = `flex items-center gap-2 w-full px-3 py-2 text-left text-sm cursor-pointer select-none
-                  text-gray-700 dark:text-gray-200 no-underline
-                  focus:outline-none
-                  ${isActive
-                    ? 'bg-gray-100 dark:bg-gray-700'
-                    : 'hover:bg-gray-100 dark:hover:bg-gray-700'
-                  }`;
-                return (
-                  <li
-                    key={i}
-                    ref={(el) => { itemRefs.current[i] = el; }}
-                    role="menuitem"
-                    tabIndex={isActive ? 0 : -1}
-                    onClick={() => close(false)}
-                  >
-                    <a
-                      href={item.href}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={itemClass}
-                      tabIndex={-1}
-                    >
-                      {item.icon}
-                      {item.label}
-                    </a>
-                  </li>
-                );
-              }
-
-              // action item
-              return (
-                <li
-                  key={i}
-                  ref={(el) => { itemRefs.current[i] = el; }}
-                  role="menuitem"
-                  tabIndex={isActive ? 0 : -1}
-                  onClick={() => activateItem(item)}
-                  className={`w-full px-3 py-2 text-left text-sm cursor-pointer select-none
-                    text-gray-700 dark:text-gray-200
-                    focus:outline-none
-                    ${isActive
-                      ? 'bg-gray-100 dark:bg-gray-700'
-                      : 'hover:bg-gray-100 dark:hover:bg-gray-700'
-                    }`}
-                >
-                  {item.label}
-                </li>
-              );
-            })}
-          </ul>
-          {footer && (
-            <div className="border-t border-gray-200 dark:border-gray-700">
-              {footer}
-            </div>
-          )}
-        </div>
-      )}
+              })}
+            </ul>
+            {footer && (
+              <div className="border-t border-gray-200 dark:border-gray-700">
+                {footer}
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
