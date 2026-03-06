@@ -109,11 +109,18 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
         const jwt = requireJwt(getJwt);
         const result = await saveProjectToCloudImpl(jsonPayload, existingCloudId, jwt);
 
+        // Guard: only update internal cloud state if still on the same
+        // saved project. When capturedLocalId is null (unsaved project),
+        // skip all internal state updates to prevent flush-before-evict
+        // results/errors from bleeding into the unsaved project's state.
+        const stillOnSameProject = capturedLocalId !== null
+          && activeLocalIdRef.current === capturedLocalId;
+
         if (result.kind === 'not-found') {
           if (capturedLocalId) {
             updateCloudMetadata(capturedLocalId, CLEARED_CLOUD_METADATA);
           }
-          if (activeLocalIdRef.current === capturedLocalId) {
+          if (stillOnSameProject) {
             clearCloudUrl();
             setInternal((prev) => ({
               ...prev,
@@ -130,7 +137,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
         }
 
         if (result.kind === 'created') {
-          if (activeLocalIdRef.current === capturedLocalId) {
+          if (stillOnSameProject) {
             applyCreatedResult(result);
           }
         } else {
@@ -141,7 +148,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
           // During flush-before-evict, internal state already belongs to
           // the new project — updating it would set the wrong timestamp
           // and lastSavedVersion.
-          if (activeLocalIdRef.current === capturedLocalId) {
+          if (stillOnSameProject) {
             setInternal((prev) => ({
               ...prev,
               status: 'idle',
@@ -151,8 +158,8 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
           }
         }
       } catch (err) {
-        // Only surface the error if we're still on the same project
-        if (activeLocalIdRef.current === capturedLocalId) {
+        // Only surface the error if we're still on the same saved project
+        if (capturedLocalId !== null && activeLocalIdRef.current === capturedLocalId) {
           const next = { ...internalRef.current, status: 'idle' as const, error: friendlyErrorMessage(err, 'Failed to save project.') };
           internalRef.current = next;
           setInternal(next);
