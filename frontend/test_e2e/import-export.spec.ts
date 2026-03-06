@@ -6,7 +6,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 async function resetApp(page: Page) {
   await page.goto('/');
-  await page.evaluate(() => localStorage.clear());
+  await page.evaluate(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+  });
   await page.reload();
   await expect(page.getByRole('heading', { name: 'STATUS_REG' })).toBeVisible();
 }
@@ -24,6 +27,11 @@ test.describe('Import / Export', () => {
     // Set the file on the hidden file input
     const fileInput = page.locator('input[type="file"]');
     await fileInput.setInputFiles(resolve(__dirname, 'fixtures', 'sample-import.json'));
+
+    // The unsaved guard dialog appears because the default project is unsaved.
+    // Click "Discard" to discard the unsaved seed project and proceed with import.
+    await expect(page.getByRole('alertdialog')).toBeVisible();
+    await page.getByRole('alertdialog').getByRole('button', { name: 'Discard' }).click();
 
     // The imported register should appear
     await expect(page.getByRole('heading', { name: 'CTRL_REG' })).toBeVisible();

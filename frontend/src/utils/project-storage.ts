@@ -3,7 +3,9 @@ import {
   type ProjectManifest,
   type ProjectManifestEntry,
   type StoredLocalProject,
+  type StoredUnsavedProject,
   type ProjectListEntry,
+  type UnsavedProjectSource,
 } from '../types/project';
 import type { SerializedAppState } from '../types/register';
 
@@ -16,6 +18,8 @@ const PROJECT_PREFIX = 'register-viewer-project:';
 const LEGACY_STATE_KEY = 'register-viewer-state';
 const LEGACY_PROJECTS_KEY = 'register-viewer-projects';
 export const ACTIVE_PROJECT_SESSION_KEY = 'register-viewer-active-project';
+const UNSAVED_PROJECT_KEY = 'register-viewer-unsaved';
+export const UNSAVED_SESSION_SENTINEL = '__unsaved__';
 
 /**
  * In-memory manifest cache to avoid repeated localStorage reads + JSON parses.
@@ -317,6 +321,51 @@ export function getStorageUsage(): { usedBytes: number; estimatedTotalBytes: num
     estimatedTotalBytes,
     percent: Math.round((usedBytes / estimatedTotalBytes) * 100),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Unsaved project utilities
+// ---------------------------------------------------------------------------
+
+/** Persist an unsaved project to localStorage. */
+export function saveUnsavedProjectState(
+  name: string,
+  state: SerializedAppState,
+  source: UnsavedProjectSource = 'new',
+  createdAt?: string,
+): void {
+  const record: StoredUnsavedProject = {
+    name,
+    state,
+    createdAt: createdAt ?? new Date().toISOString(),
+    source,
+  };
+  localStorage.setItem(UNSAVED_PROJECT_KEY, JSON.stringify(record));
+}
+
+/** Load the unsaved project from localStorage. Returns null if missing or corrupt. */
+export function loadUnsavedProject(): StoredUnsavedProject | null {
+  try {
+    const raw = localStorage.getItem(UNSAVED_PROJECT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (
+      typeof parsed !== 'object' || parsed === null ||
+      typeof parsed.name !== 'string' ||
+      typeof parsed.state !== 'object' || parsed.state === null ||
+      !Array.isArray(parsed.state.registers)
+    ) {
+      return null;
+    }
+    return parsed as StoredUnsavedProject;
+  } catch {
+    return null;
+  }
+}
+
+/** Remove the unsaved project key from localStorage. */
+export function clearUnsavedProject(): void {
+  localStorage.removeItem(UNSAVED_PROJECT_KEY);
 }
 
 /** Migrate legacy single-project state into a manifest project entry. */

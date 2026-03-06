@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import type { ReactNode } from 'react';
 import { CloudSyncProvider, useCloudSync, useCloudSyncActions } from './cloud-sync-context';
 import { AppProvider } from './app-context';
+import { EditProvider } from './edit-context';
 import { ProjectStorageProvider, useProjectStorageActions } from './project-storage-context';
 import { useAppDispatch } from './app-context';
 import { makeState, makeRegister } from '../test/helpers';
@@ -59,11 +60,15 @@ vi.mock('../utils/project-storage', () => ({
   getMostRecentProjectId: vi.fn(() => null),
   invalidateManifestCache: vi.fn(),
   projectStorageKey: vi.fn((id: string) => `register-viewer-project:${id}`),
+  ACTIVE_PROJECT_SESSION_KEY: 'register-viewer-active-project',
+  UNSAVED_SESSION_SENTINEL: '__unsaved__',
+  clearUnsavedProject: vi.fn(),
 }));
 
 vi.mock('../utils/storage', () => ({
   exportToObject: vi.fn(() => ({ version: 1, registers: [], values: {} })),
   deserializeState: vi.fn((data: unknown) => data),
+  serializeState: vi.fn((state: unknown) => state),
   EMPTY_SERIALIZED_STATE: { registers: [], activeRegisterId: null, registerValues: {} },
 }));
 
@@ -124,9 +129,11 @@ function wrapper({ children }: { children: ReactNode }) {
   });
   return (
     <AppProvider savedState={initialState}>
-      <ProjectStorageProvider initialLocalId={TEST_LOCAL_ID}>
-        <CloudSyncProvider>{children}</CloudSyncProvider>
-      </ProjectStorageProvider>
+      <EditProvider>
+        <ProjectStorageProvider initialLocalId={TEST_LOCAL_ID}>
+          <CloudSyncProvider>{children}</CloudSyncProvider>
+        </ProjectStorageProvider>
+      </EditProvider>
     </AppProvider>
   );
 }
@@ -1218,9 +1225,11 @@ describe('CloudSyncProvider', () => {
             });
             return (
               <AppProvider savedState={initialState}>
-                <ProjectStorageProvider initialLocalId={PREV_LOCAL_ID}>
-                  <CloudSyncProvider>{children}</CloudSyncProvider>
-                </ProjectStorageProvider>
+                <EditProvider>
+                  <ProjectStorageProvider initialLocalId={PREV_LOCAL_ID}>
+                    <CloudSyncProvider>{children}</CloudSyncProvider>
+                  </ProjectStorageProvider>
+                </EditProvider>
               </AppProvider>
             );
           },
@@ -1445,9 +1454,11 @@ describe('CloudSyncProvider', () => {
             });
             return (
               <AppProvider savedState={initialState}>
-                <ProjectStorageProvider initialLocalId={PREV_LOCAL_ID}>
-                  <CloudSyncProvider>{children}</CloudSyncProvider>
-                </ProjectStorageProvider>
+                <EditProvider>
+                  <ProjectStorageProvider initialLocalId={PREV_LOCAL_ID}>
+                    <CloudSyncProvider>{children}</CloudSyncProvider>
+                  </ProjectStorageProvider>
+                </EditProvider>
               </AppProvider>
             );
           },

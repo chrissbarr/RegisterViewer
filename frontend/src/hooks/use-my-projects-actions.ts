@@ -17,6 +17,7 @@ export function useMyProjectsActions(
   open: boolean,
   onClose: () => void,
   onBeforeNewProject?: () => void,
+  onSwitchProject?: (localId: string) => void,
 ) {
   const { activeLocalId, projects } = useProjectStorage();
   const { createNewProject, switchProject, deleteLocalProject, renameProject, refreshProjectList } = useProjectStorageActions();
@@ -96,10 +97,15 @@ export function useMyProjectsActions(
       setDownloadingLocalId(null);
     }
 
-    switchProject(localId);
+    // Use guarded switch if provided (handles unsaved project prompt)
+    if (onSwitchProject) {
+      onSwitchProject(localId);
+    } else {
+      switchProject(localId);
+      onClose();
+    }
     announce('Project opened');
-    onClose();
-  }, [projects, switchProject, announce, onClose, getJwt, setCloudError]);
+  }, [projects, switchProject, announce, onClose, getJwt, setCloudError, onSwitchProject]);
 
   const handleDelete = useCallback(async (localId: string) => {
     const project = projects.find(p => p.localId === localId);

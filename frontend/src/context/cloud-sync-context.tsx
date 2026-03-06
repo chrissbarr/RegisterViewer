@@ -323,8 +323,6 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   );
 
   useEffect(() => {
-    if (!activeLocalId) return;
-
     // Evict previous cloud project's data from localStorage on switch
     const prevLocalId = prevActiveLocalIdRef.current;
     prevActiveLocalIdRef.current = activeLocalId;
@@ -351,6 +349,22 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
           // Flush failed — keep local data as safety net
         });
       }
+    }
+
+    if (!activeLocalId) {
+      // Reset cloud sync state when transitioning from a saved project to
+      // an unsaved one (e.g. New Project). This prevents stale cloud state
+      // from the previous project triggering auto-sync on the empty project.
+      // Skip on initial mount (prevLocalId is null) so that initFromProject
+      // can set up cloud state for shared projects loaded from #/p/{id} URLs.
+      if (prevLocalId) {
+        if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+        loginGuard.pendingCloudOpRef.current = null;
+        loginGuard.setLoginRequired(false);
+        setInternal({ ...initialInternalState });
+        clearCloudUrl();
+      }
+      return;
     }
 
     const entry = projectsRef.current.find(p => p.localId === activeLocalId);

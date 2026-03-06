@@ -1,13 +1,14 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MAX, type AppState } from '../../types/register';
+import type { UnsavedProjectSource } from '../../types/project';
 import { useAppState } from '../../context/app-context';
 import { EditProvider } from '../../context/edit-context';
 import { PreferencesProvider, usePreferences, usePreferencesActions } from '../../context/preferences-context';
 import { ProjectStorageProvider, useProjectStorage } from '../../context/project-storage-context';
 import { CloudSyncProvider, useCloudSync, useCloudSyncActions } from '../../context/cloud-sync-context';
 import { serializeState } from '../../utils/storage';
-import { patchProjectState } from '../../utils/project-storage';
+import { patchProjectState, saveUnsavedProjectState } from '../../utils/project-storage';
 import { Header } from './header';
 import { Sidebar } from './sidebar';
 import { MainPanel } from '../viewer/main-panel';
@@ -28,6 +29,7 @@ import { SAVE_DEBOUNCE_MS } from '../../constants';
 interface AppShellProps {
   cloudInit?: { projectId: string; isOwner: boolean };
   initialLocalId?: string | null;
+  initialUnsaved?: { name: string; source: UnsavedProjectSource } | null;
 }
 
 function AppShellInner({ cloudInit }: AppShellProps) {
@@ -37,7 +39,7 @@ function AppShellInner({ cloudInit }: AppShellProps) {
   const pendingStateRef = useRef<AppState | null>(null);
   const cloud = useCloudSync();
   const cloudActions = useCloudSyncActions();
-  const { activeLocalId } = useProjectStorage();
+  const { activeLocalId, isUnsaved, unsavedName } = useProjectStorage();
 
   // Initialize cloud state from props (when loaded from #/p/{id} URL)
   const cloudInitRef = useRef(cloudInit);
@@ -49,24 +51,42 @@ function AppShellInner({ cloudInit }: AppShellProps) {
     }
   }, [cloudActions]);
 
-  // Auto-save to per-project localStorage key (debounced)
+  // Ref updates for debounced save/flush (avoids stale closures).
+  // Safe to use useEffect because the 300ms debounce timer ensures refs are
+  // updated before the timeout fires.
   const activeLocalIdRef = useRef(activeLocalId);
-  useEffect(() => {
-    activeLocalIdRef.current = activeLocalId;
-  }, [activeLocalId]);
+  useEffect(() => { activeLocalIdRef.current = activeLocalId; }, [activeLocalId]);
 
+  const isUnsavedRef = useRef(isUnsaved);
+  useEffect(() => { isUnsavedRef.current = isUnsaved; }, [isUnsaved]);
+
+  const unsavedNameRef = useRef(unsavedName);
+  useEffect(() => { unsavedNameRef.current = unsavedName; }, [unsavedName]);
+
+  // Auto-save to localStorage (debounced). Branches on unsaved vs saved project.
   useEffect(() => {
-    if (!activeLocalId) return;
+    if (!activeLocalId && !isUnsaved) return;
     pendingStateRef.current = state;
     const timer = setTimeout(() => {
-      const id = activeLocalIdRef.current;
-      if (id) {
-        patchProjectState(id, serializeState(state));
+      if (isUnsavedRef.current) {
+        const name = state.project?.title?.trim() || unsavedNameRef.current || 'Untitled Project';
+        try {
+          saveUnsavedProjectState(name, serializeState(state));
+        } catch (err) {
+          if (import.meta.env.DEV) {
+            console.warn('[app-shell] Failed to save unsaved project:', err);
+          }
+        }
+      } else {
+        const id = activeLocalIdRef.current;
+        if (id) {
+          patchProjectState(id, serializeState(state));
+        }
       }
       pendingStateRef.current = null;
     }, SAVE_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [state, activeLocalId]);
+  }, [state, activeLocalId, isUnsaved]);
 
   // Flush any pending save on unmount or page unload.
   // Ref-based so the effect is set up once — avoids stale-closure flush
@@ -78,16 +98,21 @@ function AppShellInner({ cloudInit }: AppShellProps) {
 
   useEffect(() => {
     const flush = () => {
-      const id = activeLocalIdRef.current;
-      if (pendingStateRef.current !== null && id) {
-        patchProjectState(id, serializeState(pendingStateRef.current));
+      if (pendingStateRef.current !== null) {
+        if (isUnsavedRef.current) {
+          const name = pendingStateRef.current.project?.title?.trim() || unsavedNameRef.current || 'Untitled Project';
+          try {
+            saveUnsavedProjectState(name, serializeState(pendingStateRef.current));
+          } catch { /* best effort */ }
+        } else {
+          const id = activeLocalIdRef.current;
+          if (id) {
+            patchProjectState(id, serializeState(pendingStateRef.current));
+          }
+        }
         pendingStateRef.current = null;
       }
       // Best-effort cloud sync flush (fire-and-forget on unload).
-      // The async PUT may not complete before the browser kills the page, but
-      // local data is always safe (synchronous patchProjectState above). The
-      // cloud copy will catch up via auto-sync on next app load. sendBeacon
-      // is not viable because the API requires PUT with JWT Authorization header.
       cloudActionsRef.current.flushSync().catch(() => {});
     };
     window.addEventListener('beforeunload', flush);
@@ -202,13 +227,13 @@ function AppShellInner({ cloudInit }: AppShellProps) {
   );
 }
 
-export function AppShell({ cloudInit, initialLocalId }: AppShellProps) {
+export function AppShell({ cloudInit, initialLocalId, initialUnsaved }: AppShellProps) {
   return (
     <AuthProvider>
       <ToastPortalProvider>
         <PreferencesProvider>
           <EditProvider>
-            <ProjectStorageProvider initialLocalId={initialLocalId ?? null}>
+            <ProjectStorageProvider initialLocalId={initialLocalId ?? null} initialUnsaved={initialUnsaved}>
               <CloudSyncProvider>
                 <AppShellInner cloudInit={cloudInit} />
               </CloudSyncProvider>

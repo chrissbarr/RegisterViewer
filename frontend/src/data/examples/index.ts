@@ -2,7 +2,7 @@ import allFieldTypesRaw from './all-field-types.json?raw';
 import timerCounterRaw from './timer-counter.json?raw';
 import atmega328pRaw from './atmega328p.json?raw';
 
-export interface ExampleProject {
+interface ExampleProject {
   id: string;
   name: string;
   description: string;

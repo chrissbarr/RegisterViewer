@@ -59,7 +59,7 @@ async function setupMockAuth(page: Page) {
   }, MOCK_JWT);
 }
 
-/** Clear storage and reload so the app creates the default seed project. */
+/** Clear storage and reload so the app creates the default seed project (unsaved). */
 async function resetApp(page: Page) {
   await page.goto('/');
   await page.evaluate(() => {
@@ -68,6 +68,12 @@ async function resetApp(page: Page) {
   });
   await page.reload();
   await expect(page.getByRole('heading', { name: 'STATUS_REG' })).toBeVisible();
+}
+
+/** Save the current unsaved project via the app menu's "Save project" item. */
+async function saveUnsavedProject(page: Page) {
+  await page.getByRole('button', { name: 'Application menu' }).click();
+  await page.getByRole('menuitem', { name: 'Save project' }).click();
 }
 
 function hexInput(page: Page) {
@@ -245,6 +251,7 @@ test.describe('Cloud: Explicit save to cloud', () => {
     await setupMockAuth(page);
     await mockCloudApi(page);
     await resetApp(page);
+    await saveUnsavedProject(page);
 
     // No sync indicator should be visible for a local-only project
     await expect(page.getByTitle('Saved to cloud')).not.toBeVisible({ timeout: 2000 });
@@ -361,6 +368,7 @@ test.describe('Cloud: Auto-sync after edit', () => {
       },
     });
     await resetApp(page);
+    await saveUnsavedProject(page);
 
     // Explicitly save to cloud first
     await saveActiveProjectToCloud(page);
@@ -392,6 +400,7 @@ test.describe('Cloud: Visibility change', () => {
     await setupMockAuth(page);
     await mockCloudApi(page);
     await resetApp(page);
+    await saveUnsavedProject(page);
 
     // Explicitly save to cloud first
     await saveActiveProjectToCloud(page);
@@ -431,6 +440,7 @@ test.describe('Cloud: Share dialog cloud section states', () => {
     await setupMockAuth(page);
     await mockCloudApi(page);
     await resetApp(page);
+    await saveUnsavedProject(page);
 
     // Explicitly save to cloud first
     await saveActiveProjectToCloud(page);
@@ -460,6 +470,7 @@ test.describe('Cloud: Owner opens own project via URL', () => {
       },
     });
     await resetApp(page);
+    await saveUnsavedProject(page);
 
     // Explicitly save to cloud to establish cloud ownership
     await saveActiveProjectToCloud(page);
@@ -494,6 +505,7 @@ test.describe('Cloud: Copy cloud link', () => {
     await setupMockAuth(page);
     await mockCloudApi(page);
     await resetApp(page);
+    await saveUnsavedProject(page);
 
     // Explicitly save to cloud first
     await saveActiveProjectToCloud(page);
@@ -534,6 +546,7 @@ test.describe('Cloud: Delete removes cloud copy', () => {
       },
     });
     await resetApp(page);
+    await saveUnsavedProject(page);
 
     // Explicitly save to cloud first
     await saveActiveProjectToCloud(page);
@@ -594,6 +607,7 @@ test.describe('Cloud: Remove from Cloud', () => {
     await setupMockAuth(page);
     await mockCloudApi(page);
     await resetApp(page);
+    await saveUnsavedProject(page);
 
     // Save to cloud first
     await saveActiveProjectToCloud(page);
@@ -631,6 +645,7 @@ test.describe('Cloud: Sign-out purge', () => {
     });
 
     await resetApp(page);
+    await saveUnsavedProject(page);
 
     // Save to cloud so the project has storage: 'cloud'
     await saveActiveProjectToCloud(page);
@@ -657,6 +672,7 @@ test.describe('Cloud: Delete confirmation cloud warning', () => {
     await setupMockAuth(page);
     await mockCloudApi(page);
     await resetApp(page);
+    await saveUnsavedProject(page);
 
     // Save to cloud first
     await saveActiveProjectToCloud(page);
@@ -683,6 +699,7 @@ test.describe('Cloud: Share dialog save-to-cloud prompt', () => {
     await setupMockAuth(page);
     await mockCloudApi(page);
     await resetApp(page);
+    await saveUnsavedProject(page);
 
     // Project is local-only (not saved to cloud yet)
     // Open share dialog

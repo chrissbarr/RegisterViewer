@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
-import { Plus, TriangleAlert } from 'lucide-react';
+import { Plus, Save, TriangleAlert } from 'lucide-react';
 import { Dialog } from '../common/dialog';
 import { ProjectSettingsDialog } from '../common/project-settings-dialog';
 import { ShareDialog } from '../common/share-dialog';
@@ -18,15 +18,21 @@ const STORAGE_WARNING_PERCENT = 80;
 interface MyProjectsDialogProps {
   open: boolean;
   onClose: () => void;
+  /** Optional guarded switch callback. When provided, handleOpen uses this instead of the default switchProject. */
+  onSwitchProject?: (localId: string) => void;
+  /** Guarded new-project callback. Creates an unsaved project, showing the unsaved prompt if needed. */
+  onNewProject?: () => void;
+  /** Callback to save the current unsaved project. Only provided when current project is unsaved. */
+  onSaveProject?: () => void;
 }
 
-export function MyProjectsDialog({ open, onClose }: MyProjectsDialogProps) {
+export function MyProjectsDialog({ open, onClose, onSwitchProject, onNewProject, onSaveProject }: MyProjectsDialogProps) {
   const { activeLocalId, projects } = useProjectStorage();
   const auth = useAuth();
 
   const [filter, setFilter] = useState('');
   const resetFilter = useCallback(() => setFilter(''), []);
-  const actions = useMyProjectsActions(open, onClose, resetFilter);
+  const actions = useMyProjectsActions(open, onClose, resetFilter, onSwitchProject);
 
   // Compute storage percent when dialog is open (derived, no state needed)
   const storagePercent = useMemo(
@@ -77,15 +83,30 @@ export function MyProjectsDialog({ open, onClose }: MyProjectsDialogProps) {
           <div className="text-sm text-gray-500 dark:text-gray-400">
             {projects.length} {projects.length === 1 ? 'project' : 'projects'}
           </div>
-          <button
-            onClick={actions.handleNewProject}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium
-              bg-blue-600 text-white hover:bg-blue-500
-              transition-colors"
-          >
-            <Plus size={14} aria-hidden="true" />
-            New Project
-          </button>
+          <div className="flex items-center gap-2">
+            {onSaveProject && (
+              <button
+                onClick={() => { onSaveProject(); onClose(); }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium
+                  text-gray-700 dark:text-gray-200
+                  bg-gray-100 dark:bg-gray-700
+                  hover:bg-gray-200 dark:hover:bg-gray-600
+                  transition-colors"
+              >
+                <Save size={14} aria-hidden="true" />
+                Save Project
+              </button>
+            )}
+            <button
+              onClick={onNewProject ?? actions.handleNewProject}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium
+                bg-blue-600 text-white hover:bg-blue-500
+                transition-colors"
+            >
+              <Plus size={14} aria-hidden="true" />
+              New Project
+            </button>
+          </div>
         </div>
 
         {/* Storage warning */}
@@ -126,7 +147,7 @@ export function MyProjectsDialog({ open, onClose }: MyProjectsDialogProps) {
                   No projects yet.
                 </p>
                 <button
-                  onClick={actions.handleNewProject}
+                  onClick={onNewProject ?? actions.handleNewProject}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium
                     bg-blue-600 text-white hover:bg-blue-500
                     transition-colors"

@@ -4,13 +4,14 @@ import { test, expect, type Page } from '@playwright/test';
 // Storage keys (must match src/utils/project-storage.ts)
 // ---------------------------------------------------------------------------
 const PROJECT_PREFIX = 'register-viewer-project:';
+const UNSAVED_KEY = 'register-viewer-unsaved';
 const ACTIVE_PROJECT_SESSION_KEY = 'register-viewer-active-project';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Clear localStorage so the app starts fresh (creates default seed project). */
+/** Clear localStorage so the app starts fresh (creates default unsaved seed project). */
 async function resetApp(page: Page) {
   await page.goto('/');
   await page.evaluate(() => {
@@ -29,10 +30,22 @@ async function openMyProjects(page: Page) {
   await expect(page.getByRole('dialog')).toBeVisible();
 }
 
-/** Create a new project via the Application menu. */
+/** Create a new project via the Application menu. Handles unsaved guard if needed. */
 async function createNewProjectViaMenu(page: Page) {
   await page.getByRole('button', { name: 'Application menu' }).click();
   await page.getByRole('menuitem', { name: 'New project' }).click();
+
+  // If an unsaved guard dialog appears, discard the unsaved project
+  const discardButton = page.getByRole('alertdialog').getByRole('button', { name: 'Discard' });
+  if (await discardButton.isVisible({ timeout: 1000 }).catch(() => false)) {
+    await discardButton.click();
+  }
+}
+
+/** Save the current unsaved project via the app menu's "Save project" item. */
+async function saveUnsavedProject(page: Page) {
+  await page.getByRole('button', { name: 'Application menu' }).click();
+  await page.getByRole('menuitem', { name: 'Save project' }).click();
 }
 
 function hexInput(page: Page) {
@@ -40,11 +53,34 @@ function hexInput(page: Page) {
 }
 
 /**
- * Wait for auto-save to flush by checking that any stored project
- * contains the expected substring (e.g. a hex value or register name).
- * Scans all project keys in localStorage (prefix: register-viewer-project:).
+ * Wait for auto-save to flush by checking that any stored project or the
+ * unsaved project key contains the expected substring.
  */
 async function waitForAutoSave(page: Page, expectedSubstring: string) {
+  const needle = expectedSubstring.toLowerCase();
+  await expect(async () => {
+    const found = await page.evaluate(({ prefix, unsavedKey, search }) => {
+      // Check saved project keys
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key?.startsWith(prefix)) {
+          const val = localStorage.getItem(key);
+          if (val && val.toLowerCase().includes(search)) return true;
+        }
+      }
+      // Check unsaved project key
+      const unsaved = localStorage.getItem(unsavedKey);
+      if (unsaved && unsaved.toLowerCase().includes(search)) return true;
+      return false;
+    }, { prefix: PROJECT_PREFIX, unsavedKey: UNSAVED_KEY, search: needle });
+    expect(found).toBe(true);
+  }).toPass({ timeout: 5000 });
+}
+
+/**
+ * Wait for auto-save specifically in saved project keys (not unsaved).
+ */
+async function waitForSavedAutoSave(page: Page, expectedSubstring: string) {
   const needle = expectedSubstring.toLowerCase();
   await expect(async () => {
     const found = await page.evaluate(({ prefix, search }) => {
@@ -62,14 +98,14 @@ async function waitForAutoSave(page: Page, expectedSubstring: string) {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 1: Fresh start -> create project -> edit -> auto-save -> refresh
+// Scenario 1: Fresh start -> edit -> auto-save -> refresh (unsaved project)
 // ---------------------------------------------------------------------------
 
 test.describe('Scenario 1: Project auto-save and restore', () => {
   test('creates a project, edits a value, reloads, and verifies state restored', async ({ page }) => {
     await resetApp(page);
 
-    // The default project should have loaded with seed data
+    // The default project should have loaded with seed data (unsaved)
     await expect(hexInput(page)).toHaveValue('DEADBEEF');
 
     // Add a second register so we can verify multi-register state persists
@@ -81,7 +117,7 @@ test.describe('Scenario 1: Project auto-save and restore', () => {
     await hexInput(page).blur();
     await expect(hexInput(page)).toHaveValue('AABBCCDD');
 
-    // Wait for auto-save to flush to localStorage
+    // Wait for auto-save to flush to localStorage (unsaved key)
     await waitForAutoSave(page, '0xaabbccdd');
 
     // Reload page
@@ -109,7 +145,13 @@ test.describe('Scenario 3: Project state isolation', () => {
     // Project 1 (the default "Example Project") has STATUS_REG with 0xDEADBEEF
     await expect(hexInput(page)).toHaveValue('DEADBEEF');
 
-    // Create a second project via menu — the new project starts empty
+    // Save the unsaved project first so it appears in My Projects
+    await saveUnsavedProject(page);
+
+    // Wait for auto-save to flush to saved project key
+    await waitForSavedAutoSave(page, '0xdeadbeef');
+
+    // Create a second project via menu (no guard — project is now saved)
     await createNewProjectViaMenu(page);
 
     // Add a register (first register in empty project will be REG_0)
@@ -119,8 +161,11 @@ test.describe('Scenario 3: Project state isolation', () => {
     await hexInput(page).blur();
     await expect(hexInput(page)).toHaveValue('11223344');
 
-    // Wait for auto-save to flush to localStorage
-    await waitForAutoSave(page, '0x11223344');
+    // Save the second project too so we can switch between them
+    await saveUnsavedProject(page);
+
+    // Wait for auto-save to flush
+    await waitForSavedAutoSave(page, '0x11223344');
 
     // Switch back to Project 1 via My Projects dialog
     await openMyProjects(page);
@@ -148,14 +193,21 @@ test.describe('Scenario 7: Delete local project', () => {
   test('deleting a project removes it from manifest and localStorage', async ({ page }) => {
     await resetApp(page);
 
-    // Create a second project so deletion of first doesn't leave us with nothing
+    // Save the default project first
+    await saveUnsavedProject(page);
+    await waitForSavedAutoSave(page, 'STATUS_REG');
+
+    // Create a second project via menu (no guard — project is saved)
     await createNewProjectViaMenu(page);
     // New project starts empty; add a register (will be REG_0)
     await page.getByRole('button', { name: '+ Add Register' }).click();
     await expect(page.getByRole('heading', { name: 'REG_0' })).toBeVisible();
 
+    // Save the second project
+    await saveUnsavedProject(page);
+
     // Wait for auto-save to persist the new register
-    await waitForAutoSave(page, 'REG_0');
+    await waitForSavedAutoSave(page, 'REG_0');
 
     // Open My Projects
     await openMyProjects(page);
@@ -208,6 +260,10 @@ test.describe('Scenario 8: Multi-tab project isolation', () => {
     await page1.reload();
     await expect(page1.getByRole('heading', { name: 'STATUS_REG' })).toBeVisible();
 
+    // Save the unsaved project first so it gets a localId in the manifest
+    await saveUnsavedProject(page1);
+    await waitForSavedAutoSave(page1, 'STATUS_REG');
+
     // Get the seed project's localId from the manifest
     const project1Id = await page1.evaluate(() => {
       const raw = localStorage.getItem('register-viewer-manifest');
@@ -217,14 +273,17 @@ test.describe('Scenario 8: Multi-tab project isolation', () => {
     });
     expect(project1Id).toBeTruthy();
 
-    // Create a second project from Tab 1
+    // Create a second project from Tab 1 (no guard — project is saved)
     await createNewProjectViaMenu(page1);
     // New empty project — add a register (REG_0)
     await page1.getByRole('button', { name: '+ Add Register' }).click();
     await expect(page1.getByRole('heading', { name: 'REG_0' })).toBeVisible();
 
+    // Save the second project too
+    await saveUnsavedProject(page1);
+
     // Wait for auto-save to persist the new register
-    await waitForAutoSave(page1, 'REG_0');
+    await waitForSavedAutoSave(page1, 'REG_0');
 
     // Get the second project's localId
     const project2Id = await page1.evaluate((p1Id) => {
@@ -249,13 +308,13 @@ test.describe('Scenario 8: Multi-tab project isolation', () => {
     await page1.bringToFront();
     await hexInput(page1).fill('FEEDFACE');
     await hexInput(page1).blur();
-    await waitForAutoSave(page1, '0xfeedface');
+    await waitForSavedAutoSave(page1, '0xfeedface');
 
     // Edit in Tab 2 (project 1): change STATUS_REG's value
     await page2.bringToFront();
     await hexInput(page2).fill('CAFEBABE');
     await hexInput(page2).blur();
-    await waitForAutoSave(page2, '0xcafebabe');
+    await waitForSavedAutoSave(page2, '0xcafebabe');
 
     // Verify Tab 1 still has its value
     await page1.bringToFront();
