@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { motion } from 'framer-motion';
 import { Loader2, TriangleAlert } from 'lucide-react';
 import { AppProvider } from '../context/app-context';
 import { AppShell } from './layout/app-shell';
@@ -267,8 +268,15 @@ export function AppLoader() {
   }
 
   return (
-    <AppProvider savedState={state.initialState} key={state.cloudInit?.projectId ?? state.localId ?? 'default'}>
-      <AppShell cloudInit={state.cloudInit} initialLocalId={state.localId} initialUnsaved={state.unsaved} />
-    </AppProvider>
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.3, ease: 'easeOut' }}
+      className="h-full"
+    >
+      <AppProvider savedState={state.initialState} key={state.cloudInit?.projectId ?? state.localId ?? 'default'}>
+        <AppShell cloudInit={state.cloudInit} initialLocalId={state.localId} initialUnsaved={state.unsaved} />
+      </AppProvider>
+    </motion.div>
   );
 }
