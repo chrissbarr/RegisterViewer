@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronRight } from 'lucide-react';
 import { SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MAX, type AppState } from '../../types/register';
 import type { UnsavedProjectSource } from '../../types/project';
@@ -179,23 +180,29 @@ function AppShellInner({ cloudInit }: AppShellProps) {
         />
       )}
       <div className="flex flex-1 overflow-hidden relative">
-        {collapsed && (
-          <button
-            onClick={() => preferencesActions.setSidebarCollapsed(false)}
-            className="absolute left-0 top-1/2 -translate-y-1/2 z-20
-              w-5 h-10 flex items-center justify-center
-              bg-gray-200 dark:bg-gray-800
-              hover:bg-gray-300 dark:hover:bg-gray-700
-              rounded-r-md border border-l-0
-              border-gray-300 dark:border-gray-600
-              text-gray-500 dark:text-gray-400
-              transition-colors"
-            title="Expand sidebar (Ctrl+B)"
-            aria-label="Expand sidebar"
-          >
-            <ChevronRight size={12} />
-          </button>
-        )}
+        <AnimatePresence>
+          {collapsed && (
+            <motion.button
+              initial={{ opacity: 0, x: -8 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -8 }}
+              transition={{ duration: 0.15 }}
+              onClick={() => preferencesActions.setSidebarCollapsed(false)}
+              className="absolute left-0 top-1/2 -translate-y-1/2 z-20
+                w-5 h-10 flex items-center justify-center
+                bg-gray-200 dark:bg-gray-800
+                hover:bg-gray-300 dark:hover:bg-gray-700
+                rounded-r-md border border-l-0
+                border-gray-300 dark:border-gray-600
+                text-gray-500 dark:text-gray-400
+                transition-colors"
+              title="Expand sidebar (Ctrl+B)"
+              aria-label="Expand sidebar"
+            >
+              <ChevronRight size={12} />
+            </motion.button>
+          )}
+        </AnimatePresence>
 
         <Sidebar
           width={sidebarWidth}
