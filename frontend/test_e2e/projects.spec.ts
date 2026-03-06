@@ -42,12 +42,10 @@ async function createNewProjectViaMenu(page: Page) {
   }
 }
 
-/** Save the current unsaved project by clicking the banner's "Save Project" button. */
+/** Save the current unsaved project via the app menu's "Save project" item. */
 async function saveUnsavedProject(page: Page) {
-  const saveButton = page.getByRole('status').getByRole('button', { name: 'Save Project' });
-  await saveButton.click();
-  // Wait for the banner to disappear (project is now saved)
-  await expect(saveButton).not.toBeVisible();
+  await page.getByRole('button', { name: 'Application menu' }).click();
+  await page.getByRole('menuitem', { name: 'Save project' }).click();
 }
 
 function hexInput(page: Page) {

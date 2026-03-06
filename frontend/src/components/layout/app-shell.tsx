@@ -13,7 +13,6 @@ import { Header } from './header';
 import { Sidebar } from './sidebar';
 import { MainPanel } from '../viewer/main-panel';
 import { Toast } from '../common/toast';
-import { UnsavedBanner } from '../common/unsaved-banner';
 import { LoginDialog } from '../auth/login-dialog';
 import { ToastPortalProvider } from '../../context/toast-portal-context';
 import { AuthProvider } from '../../context/auth-context';
@@ -171,7 +170,6 @@ function AppShellInner({ cloudInit }: AppShellProps) {
   return (
     <div className="h-screen flex flex-col bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100">
       <Header />
-      <UnsavedBanner />
       {cloud.error && (
         <Toast
           message={cloud.error}

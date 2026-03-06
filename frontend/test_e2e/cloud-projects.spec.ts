@@ -70,11 +70,10 @@ async function resetApp(page: Page) {
   await expect(page.getByRole('heading', { name: 'STATUS_REG' })).toBeVisible();
 }
 
-/** Save the current unsaved project by clicking the banner's "Save Project" button. */
+/** Save the current unsaved project via the app menu's "Save project" item. */
 async function saveUnsavedProject(page: Page) {
-  const saveButton = page.getByRole('status').getByRole('button', { name: 'Save Project' });
-  await saveButton.click();
-  await expect(saveButton).not.toBeVisible();
+  await page.getByRole('button', { name: 'Application menu' }).click();
+  await page.getByRole('menuitem', { name: 'Save project' }).click();
 }
 
 function hexInput(page: Page) {

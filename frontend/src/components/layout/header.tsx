@@ -16,7 +16,7 @@ import { GITHUB_URL } from '../../constants';
 import { useAppState, useAppDispatch } from '../../context/app-context';
 import { useAuth, useAuthActions } from '../../context/auth-context';
 import { usePreferences, usePreferencesActions } from '../../context/preferences-context';
-import { useProjectStorageActions } from '../../context/project-storage-context';
+import { useProjectStorage, useProjectStorageActions } from '../../context/project-storage-context';
 import { useUnsavedGuard } from '../../hooks/use-unsaved-guard';
 import { exportToJson, importFromJson, type ImportWarning } from '../../utils/storage';
 import { triggerFileDownload } from '../../utils/file-download';
@@ -41,7 +41,8 @@ export function Header() {
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   const [myProjectsOpen, setMyProjectsOpen] = useState(false);
   const [importFeedback, setImportFeedback] = useState<ImportFeedback | null>(null);
-  const { loadAsUnsaved, switchProject } = useProjectStorageActions();
+  const { isUnsaved } = useProjectStorage();
+  const { loadAsUnsaved, switchProject, saveCurrentProject } = useProjectStorageActions();
   const cloud = useCloudSync();
   const unsavedGuard = useUnsavedGuard();
 
@@ -137,6 +138,9 @@ export function Header() {
 
   const menuItems: MenuItem[] = [
     { kind: 'action', label: 'New project', onAction: handleNewProject },
+    ...(isUnsaved
+      ? [{ kind: 'action' as const, label: 'Save project', onAction: () => saveCurrentProject() }]
+      : []),
     { kind: 'action', label: 'My Projects', onAction: () => setMyProjectsOpen(true) },
     { kind: 'action', label: 'Project settings', onAction: () => setProjectSettingsOpen(true) },
     { kind: 'separator' },
@@ -221,6 +225,8 @@ export function Header() {
             open={myProjectsOpen}
             onClose={() => setMyProjectsOpen(false)}
             onSwitchProject={handleSwitchProject}
+            onNewProject={() => { handleNewProject(); setMyProjectsOpen(false); }}
+            onSaveProject={isUnsaved ? () => saveCurrentProject() : undefined}
           />
           <LoginDialog
             open={loginDialogOpen}
