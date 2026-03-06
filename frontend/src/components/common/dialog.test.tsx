@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { Dialog } from './dialog';
 
 // jsdom doesn't implement HTMLDialogElement.showModal/close
@@ -75,20 +75,19 @@ describe('Dialog', () => {
       showModalSpy.mockRestore();
     });
 
-    it('calls close after exit animation completes', async () => {
+    it('removes content when open transitions to false', async () => {
+      const onClose = vi.fn();
       const { rerender } = render(
-        <Dialog open={true} onClose={vi.fn()} title="Test">content</Dialog>,
+        <Dialog open={true} onClose={onClose} title="Test">content</Dialog>,
       );
-      const closeSpy = vi.spyOn(HTMLDialogElement.prototype, 'close');
-      await act(async () => {
-        rerender(
-          <Dialog open={false} onClose={vi.fn()} title="Test">content</Dialog>,
-        );
+      expect(screen.getByText('content')).toBeInTheDocument();
+      rerender(
+        <Dialog open={false} onClose={onClose} title="Test">content</Dialog>,
+      );
+      // AnimatePresence exit removes the content from the DOM
+      await vi.waitFor(() => {
+        expect(screen.queryByText('content')).not.toBeInTheDocument();
       });
-      // In test env, AnimatePresence exit completes synchronously (no real animations)
-      // The close may or may not have been called depending on AnimatePresence behavior
-      // Just verify the dialog transitions to closed state
-      closeSpy.mockRestore();
     });
   });
 });
