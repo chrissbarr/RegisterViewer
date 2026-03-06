@@ -1,4 +1,4 @@
-import { MotionConfig } from 'framer-motion';
+import { MotionConfig } from 'motion/react';
 import { AnnouncerProvider } from './components/common/announcer';
 import { AppLoader } from './components/app-loader';
 

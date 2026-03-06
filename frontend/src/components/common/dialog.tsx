@@ -1,5 +1,5 @@
 import { useRef, useEffect, useId, useCallback, type ReactNode, type RefObject } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { X } from 'lucide-react';
 import { useToastPortalRegister } from '../../context/toast-portal-context';
 

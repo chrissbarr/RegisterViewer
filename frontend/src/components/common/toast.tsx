@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { CircleCheck, OctagonAlert, Info } from 'lucide-react';
 import { useToastPortalTarget } from '../../context/toast-portal-context';
 

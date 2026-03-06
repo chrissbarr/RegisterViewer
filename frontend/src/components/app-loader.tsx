@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { Loader2, TriangleAlert } from 'lucide-react';
 import { AppProvider } from '../context/app-context';
 import { AppShell } from './layout/app-shell';

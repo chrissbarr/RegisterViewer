@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'motion/react';
 import { DropdownMenu, type MenuItem } from '../common/dropdown-menu';
 import { AboutDialog } from '../common/about-dialog';
 import { ExamplesDialog } from '../common/examples-dialog';
