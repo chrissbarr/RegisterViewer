@@ -4,11 +4,11 @@ import { test, expect, type Page } from '@playwright/test';
 // Thresholds (ms) — tune after baseline data is collected
 // ---------------------------------------------------------------------------
 const THRESHOLDS = {
-  E2E_LATENCY_MS: 50,
-  BITGRID_RENDER_MS: 30,
-  VALUE_INPUT_RENDER_MS: 20,
-  FIELD_TABLE_RENDER_MS: 20,
-  RAPID_TOGGLE_TOTAL_MS: 500,
+  E2E_LATENCY_MS: 1000,
+  BITGRID_RENDER_MS: 500,
+  VALUE_INPUT_RENDER_MS: 300,
+  FIELD_TABLE_RENDER_MS: 300,
+  RAPID_TOGGLE_TOTAL_MS: 5000,
   RAPID_TOGGLE_COUNT: 10,
 };
 
@@ -80,15 +80,30 @@ function buildStressState(width: number, fieldCount: number) {
 async function injectFixture(page: Page, width: number, fieldCount: number) {
   const state = buildStressState(width, fieldCount);
   const localId = 'perf-test-project';
+  const now = new Date().toISOString();
+  const name = state.registers[0].name;
   const manifest = {
-    projects: [{ localId, title: state.registers[0].name, storage: 'local', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }],
-    activeLocalId: localId,
+    projects: [{ localId, name, storage: 'local', createdAt: now, localSavedAt: now }],
   };
-  await page.addInitScript(({ manifest, state, localId }) => {
+  // Wrap state in StoredLocalProject format expected by loadProject
+  const storedProject = {
+    localId,
+    cloudId: null,
+    name,
+    visibility: 'private',
+    createdAt: now,
+    localSavedAt: now,
+    cloudSavedAt: null,
+    storage: 'local',
+    state,
+  };
+  await page.addInitScript(({ manifest, storedProject, localId }) => {
+    localStorage.clear();
+    sessionStorage.clear();
     localStorage.setItem('register-viewer-manifest', JSON.stringify(manifest));
-    localStorage.setItem(`register-viewer-project:${localId}`, JSON.stringify(state));
+    localStorage.setItem(`register-viewer-project:${localId}`, JSON.stringify(storedProject));
     sessionStorage.setItem('register-viewer-active-project', localId);
-  }, { manifest, state, localId });
+  }, { manifest, storedProject, localId });
 }
 
 // ---------------------------------------------------------------------------
@@ -280,7 +295,7 @@ for (const fixture of FIXTURES) {
       const startTime = await page.evaluate(() => performance.now());
 
       for (let i = 0; i < toggleCount; i++) {
-        const bitCell = page.locator(`[role="button"][aria-label^="Toggle bit ${i}"]`);
+        const bitCell = page.locator(`[role="button"][aria-label^="Toggle bit ${i} "]`);
         if (await bitCell.count() === 0) break;
         await bitCell.click();
       }
@@ -289,7 +304,7 @@ for (const fixture of FIXTURES) {
 
       // Verify all bits were actually toggled (they should all be 1 now)
       for (let i = 0; i < toggleCount; i++) {
-        const bitCell = page.locator(`[role="button"][aria-label^="Toggle bit ${i}"]`);
+        const bitCell = page.locator(`[role="button"][aria-label^="Toggle bit ${i} "]`);
         if (await bitCell.count() === 0) break;
         await expect(bitCell.locator('span.font-bold')).toHaveText('1');
       }

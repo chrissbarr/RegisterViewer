@@ -29,6 +29,7 @@ export default defineConfig({
       // intercepts requests via page.route(); other tests simply ignore the
       // extra cloud UI elements (Save button, etc.) and are unaffected.
       VITE_API_URL: 'https://mock-cloud-api.test',
+      VITE_PERF_PROFILING: 'true',
     },
   },
 });
