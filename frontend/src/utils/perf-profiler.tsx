@@ -1,6 +1,6 @@
 import { Profiler, type ProfilerOnRenderCallback, type ReactNode } from 'react';
 
-export interface PerfEntry {
+interface PerfEntry {
   id: string;
   phase: 'mount' | 'update';
   actualDuration: number;

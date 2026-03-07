@@ -1,5 +1,4 @@
-import type { Field, FlagField, EnumField, IntegerField, RegisterDef, AppState } from '../types/register';
-import { ADDRESS_UNIT_BITS_DEFAULT } from '../types/register';
+import type { Field, FlagField, EnumField, IntegerField, RegisterDef } from '../types/register';
 
 function makeStressFields(width: number, fieldCount: number): Field[] {
   const fields: Field[] = [];
@@ -52,21 +51,3 @@ export const STRESS_32_8 = makeStressRegister(32, 8);
 export const STRESS_64_16 = makeStressRegister(64, 16);
 export const STRESS_128_32 = makeStressRegister(128, 32);
 
-export const STRESS_FIXTURES = [
-  { name: 'STRESS_32_8', register: STRESS_32_8 },
-  { name: 'STRESS_64_16', register: STRESS_64_16 },
-  { name: 'STRESS_128_32', register: STRESS_128_32 },
-] as const;
-
-/** Build a full AppState from a stress register, ready for localStorage injection. */
-export function makeStressAppState(register: RegisterDef): AppState {
-  return {
-    registers: [register],
-    activeRegisterId: register.id,
-    registerValues: { [register.id]: 0n },
-    mapTableWidth: 32,
-    mapShowGaps: true,
-    mapSortDescending: false,
-    addressUnitBits: ADDRESS_UNIT_BITS_DEFAULT,
-  };
-}
