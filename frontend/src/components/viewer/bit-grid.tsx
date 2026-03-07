@@ -14,6 +14,7 @@ import {
   nibblesForRow,
 } from '../../utils/bit-grid-layout';
 import { fieldColor, fieldBorderColor } from '../../utils/field-colors';
+import { PerfProfiler } from '../../utils/perf-profiler';
 
 /** Pre-computed colors for a field, keyed by field index. */
 interface FieldColors {
@@ -128,6 +129,7 @@ export function BitGrid({ register, hoveredFieldIndices, onFieldHover, fieldHove
   );
 
   return (
+    <PerfProfiler id="BitGrid">
     <div ref={containerRef}>
       <div className="flex flex-col gap-1">
         {rows.map((row, rowIdx) => {
@@ -287,5 +289,6 @@ export function BitGrid({ register, hoveredFieldIndices, onFieldHover, fieldHove
         })}
       </div>
     </div>
+    </PerfProfiler>
   );
 }

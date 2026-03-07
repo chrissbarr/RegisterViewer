@@ -2,6 +2,7 @@ import type { RegisterDef } from '../../types/register';
 import { useAppState } from '../../context/app-context';
 import { decodeField } from '../../utils/decode';
 import { FieldRow } from './field-row';
+import { PerfProfiler } from '../../utils/perf-profiler';
 
 interface Props {
   register: RegisterDef;
@@ -23,6 +24,7 @@ export function FieldTable({ register, hoveredFieldIndices, onFieldHover, fieldH
   }
 
   return (
+    <PerfProfiler id="FieldTable">
     <div className="overflow-x-auto">
       <table className="w-full text-left table-fixed min-w-[600px]">
         <thead>
@@ -56,5 +58,6 @@ export function FieldTable({ register, hoveredFieldIndices, onFieldHover, fieldH
         </tbody>
       </table>
     </div>
+    </PerfProfiler>
   );
 }
