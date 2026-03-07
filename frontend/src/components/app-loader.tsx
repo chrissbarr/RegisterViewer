@@ -73,10 +73,10 @@ function createDefaultUnsavedProject(): { state: AppState; unsaved: { name: stri
   return { state: seedState, unsaved: { name: 'Example Project', source: 'seed' } };
 }
 
-function parseSnapshotHash(hash: string): AppState | null {
+async function parseSnapshotHash(hash: string): Promise<AppState | null> {
   try {
     const encoded = hash.slice('#data='.length);
-    const json = decompressSnapshot(encoded);
+    const json = await decompressSnapshot(encoded);
     const result = importFromJson(json);
     if (!result || result.registers.length === 0) return null;
 
@@ -129,12 +129,17 @@ export function AppLoader() {
 
     switch (resolution.type) {
       case 'snapshot': {
-        const parsed = parseSnapshotHash(hash);
-        if (parsed) {
-          setState({ phase: 'ready', initialState: parsed });
-        } else {
-          setState({ phase: 'error', message: 'Failed to decode shared snapshot. The URL may be corrupted or invalid.' });
-        }
+        parseSnapshotHash(hash)
+          .then((parsed) => {
+            if (parsed) {
+              setState({ phase: 'ready', initialState: parsed });
+            } else {
+              setState({ phase: 'error', message: 'Failed to decode shared snapshot. The URL may be corrupted or invalid.' });
+            }
+          })
+          .catch(() => {
+            setState({ phase: 'error', message: 'Failed to decode shared snapshot. The URL may be corrupted or invalid.' });
+          });
         break;
       }
 

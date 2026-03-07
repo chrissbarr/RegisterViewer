@@ -24,14 +24,14 @@ function toUrlSafeBase64(bytes: Uint8Array): string {
 
 describe('compressSnapshot / decompressSnapshot', () => {
   describe('round-trip encoding', () => {
-    it('round-trips a simple JSON string', () => {
+    it('round-trips a simple JSON string', async () => {
       const json = '{"version":1,"registers":[]}';
-      const compressed = compressSnapshot(json);
-      const decompressed = decompressSnapshot(compressed);
+      const compressed = await compressSnapshot(json);
+      const decompressed = await decompressSnapshot(compressed);
       expect(decompressed).toBe(json);
     });
 
-    it('round-trips a complex JSON string', () => {
+    it('round-trips a complex JSON string', async () => {
       const json = JSON.stringify({
         version: 1,
         registers: [
@@ -46,57 +46,57 @@ describe('compressSnapshot / decompressSnapshot', () => {
         ],
         registerValues: { 'reg-1': '0xFF' },
       });
-      const compressed = compressSnapshot(json);
-      const decompressed = decompressSnapshot(compressed);
+      const compressed = await compressSnapshot(json);
+      const decompressed = await decompressSnapshot(compressed);
       expect(decompressed).toBe(json);
     });
 
-    it('round-trips an empty object', () => {
+    it('round-trips an empty object', async () => {
       const json = '{}';
-      const compressed = compressSnapshot(json);
-      const decompressed = decompressSnapshot(compressed);
+      const compressed = await compressSnapshot(json);
+      const decompressed = await decompressSnapshot(compressed);
       expect(decompressed).toBe(json);
     });
 
-    it('round-trips unicode characters', () => {
+    it('round-trips unicode characters', async () => {
       const json = '{"name":"测试","emoji":"🚀"}';
-      const compressed = compressSnapshot(json);
-      const decompressed = decompressSnapshot(compressed);
+      const compressed = await compressSnapshot(json);
+      const decompressed = await decompressSnapshot(compressed);
       expect(decompressed).toBe(json);
     });
 
-    it('produces URL-safe base64 (no +, /, or =)', () => {
+    it('produces URL-safe base64 (no +, /, or =)', async () => {
       const json = '{"test":"data with lots of repetition to trigger compression"}';
-      const compressed = compressSnapshot(json);
+      const compressed = await compressSnapshot(json);
       expect(compressed).not.toContain('+');
       expect(compressed).not.toContain('/');
       expect(compressed).not.toContain('=');
     });
 
-    it('compresses repetitive data efficiently', () => {
+    it('compresses repetitive data efficiently', async () => {
       const repetitive = 'a'.repeat(1000);
       const json = JSON.stringify({ data: repetitive });
-      const compressed = compressSnapshot(json);
+      const compressed = await compressSnapshot(json);
       // Compressed should be much smaller than original
       expect(compressed.length).toBeLessThan(json.length / 2);
     });
   });
 
   describe('edge cases', () => {
-    it('handles very long JSON strings', () => {
+    it('handles very long JSON strings', async () => {
       const longArray = Array(100)
         .fill(null)
         .map((_, i) => ({ id: `item-${i}`, value: i }));
       const json = JSON.stringify({ items: longArray });
-      const compressed = compressSnapshot(json);
-      const decompressed = decompressSnapshot(compressed);
+      const compressed = await compressSnapshot(json);
+      const decompressed = await decompressSnapshot(compressed);
       expect(decompressed).toBe(json);
     });
 
-    it('handles special characters in JSON', () => {
+    it('handles special characters in JSON', async () => {
       const json = '{"special":"\\n\\t\\r\\"\\\\"}';
-      const compressed = compressSnapshot(json);
-      const decompressed = decompressSnapshot(compressed);
+      const compressed = await compressSnapshot(json);
+      const decompressed = await decompressSnapshot(compressed);
       expect(decompressed).toBe(json);
     });
   });
@@ -119,33 +119,33 @@ describe('buildSnapshotUrl', () => {
     });
   });
 
-  it('builds a URL with compressed state in hash fragment', () => {
+  it('builds a URL with compressed state in hash fragment', async () => {
     const state = makeState({
       registers: [makeRegister({ id: 'reg-1', name: 'TEST' })],
       registerValues: { 'reg-1': 0xFFn },
     });
 
-    const url = buildSnapshotUrl(state);
+    const url = await buildSnapshotUrl(state);
 
     expect(url).toMatch(/^https:\/\/example\.com\/app#data=.+/);
     expect(url).toContain('#data=');
   });
 
-  it('strips existing hash from base URL', () => {
+  it('strips existing hash from base URL', async () => {
     Object.defineProperty(window, 'location', {
       writable: true,
       value: { ...window.location, href: 'https://example.com/app#existing-hash' },
     });
 
     const state = makeState();
-    const url = buildSnapshotUrl(state);
+    const url = await buildSnapshotUrl(state);
 
     // Should strip existing hash and add snapshot data
     expect(url).toMatch(/^https:\/\/example\.com\/app#data=.+/);
     expect(url).not.toContain('#existing-hash');
   });
 
-  it('produces a decodable URL', () => {
+  it('produces a decodable URL', async () => {
     const state = makeState({
       registers: [
         makeRegister({
@@ -158,11 +158,11 @@ describe('buildSnapshotUrl', () => {
       registerValues: { 'reg-1': 0xAAn },
     });
 
-    const url = buildSnapshotUrl(state);
+    const url = await buildSnapshotUrl(state);
     const hashPart = url.split('#data=')[1];
 
     expect(hashPart).toBeDefined();
-    const decoded = decompressSnapshot(hashPart);
+    const decoded = await decompressSnapshot(hashPart);
     const parsed = JSON.parse(decoded);
 
     expect(parsed.version).toBe(1);
@@ -231,18 +231,18 @@ describe('isProjectHash', () => {
 });
 
 describe('decompression bomb protection', () => {
-  it('rejects compressed input exceeding MAX_COMPRESSED_SIZE (512 KB)', () => {
+  it('rejects compressed input exceeding MAX_COMPRESSED_SIZE (512 KB)', async () => {
     // Create a fake base64 payload > 512 KB (raw bytes)
     // 512 * 1024 = 524288 bytes; base64 encodes 3 bytes per 4 chars
     const oversizedBytes = new Uint8Array(600 * 1024);
     const encoded = toUrlSafeBase64(oversizedBytes);
 
-    expect(() => decompressSnapshot(encoded)).toThrow(
+    await expect(decompressSnapshot(encoded)).rejects.toThrow(
       'Compressed snapshot exceeds maximum allowed size',
     );
   });
 
-  it('rejects payloads that decompress beyond MAX_DECOMPRESSED_SIZE (2 MB)', () => {
+  it('rejects payloads that decompress beyond MAX_DECOMPRESSED_SIZE (2 MB)', async () => {
     // 3 MB of zeros compresses to a few KB with deflate
     const bigPayload = new Uint8Array(3 * 1024 * 1024);
     const compressed = deflate(bigPayload);
@@ -250,16 +250,16 @@ describe('decompression bomb protection', () => {
 
     // Compressed size is small, but decompressed exceeds 2 MB
     expect(compressed.length).toBeLessThan(512 * 1024);
-    expect(() => decompressSnapshot(encoded)).toThrow(
+    await expect(decompressSnapshot(encoded)).rejects.toThrow(
       'Decompressed snapshot exceeds maximum allowed size',
     );
   });
 
-  it('allows payloads just under the decompressed size limit', () => {
+  it('allows payloads just under the decompressed size limit', async () => {
     // Create a payload just under 2 MB
     const justUnder = JSON.stringify({ data: 'x'.repeat(1.9 * 1024 * 1024) });
-    const compressed = compressSnapshot(justUnder);
-    const result = decompressSnapshot(compressed);
+    const compressed = await compressSnapshot(justUnder);
+    const result = await decompressSnapshot(compressed);
     expect(result).toBe(justUnder);
   });
 });
