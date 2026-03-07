@@ -3,12 +3,25 @@ import { test, expect, type Page } from '@playwright/test';
 // ---------------------------------------------------------------------------
 // Thresholds (ms) — tune after baseline data is collected
 // ---------------------------------------------------------------------------
+// Render thresholds are based on React Profiler actualDuration (real CPU render
+// time). E2E thresholds are wall-clock and include Playwright CDP round-trip
+// overhead (~50-100ms), so they are set higher than user-felt latency.
+//
+// Baseline measurements (128-bit / 32-field worst case, dev server):
+//   BitGrid render:      ~0.5-0.9ms
+//   ValueInputBar render: ~0.2-0.9ms
+//   FieldTable render:    ~1.5-9.6ms
+//   E2E wall-clock:       ~66-116ms (dominated by CDP overhead)
+//
+// CI multiplier: set PERF_THRESHOLD_MULTIPLIER env var (default 1)
+const CI_MULT = Number(process.env.PERF_THRESHOLD_MULTIPLIER) || 1;
+
 const THRESHOLDS = {
-  E2E_LATENCY_MS: 1000,
-  BITGRID_RENDER_MS: 500,
-  VALUE_INPUT_RENDER_MS: 300,
-  FIELD_TABLE_RENDER_MS: 300,
-  RAPID_TOGGLE_TOTAL_MS: 5000,
+  E2E_LATENCY_MS: 300 * CI_MULT,
+  BITGRID_RENDER_MS: 16 * CI_MULT,
+  VALUE_INPUT_RENDER_MS: 16 * CI_MULT,
+  FIELD_TABLE_RENDER_MS: 30 * CI_MULT,
+  RAPID_TOGGLE_TOTAL_MS: 2000 * CI_MULT,
   RAPID_TOGGLE_COUNT: 10,
 };
 
@@ -181,6 +194,10 @@ for (const fixture of FIXTURES) {
       await injectFixture(page, fixture.width, fixture.fieldCount);
       await page.goto('/');
       await expect(page.getByRole('heading', { name: `STRESS_${fixture.width}_${fixture.fieldCount}` })).toBeVisible();
+      // Warmup: first interaction has cold-start penalty (JIT, layout, paint)
+      const warmupBit = page.locator('[role="button"][aria-label^="Toggle bit 0 "]');
+      await warmupBit.click();
+      await warmupBit.click(); // toggle back
     });
 
     // --- Test 1: Bit toggle ---
