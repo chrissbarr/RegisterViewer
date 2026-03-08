@@ -56,7 +56,7 @@ vi.mock('../../utils/storage', () => ({
 }));
 
 vi.mock('../../utils/snapshot-url', () => ({
-  buildSnapshotUrl: vi.fn(() => 'https://example.com/#data=abc123'),
+  buildSnapshotUrl: vi.fn(() => Promise.resolve('https://example.com/#data=abc123')),
 }));
 
 vi.mock('../common/announcer', () => ({
@@ -128,7 +128,7 @@ beforeEach(() => {
   (loadProject as Mock).mockReturnValue(null);
   (useProjectStorage as Mock).mockReturnValue({ activeLocalId: null, projects: [] });
   (useAuth as Mock).mockReturnValue({ user: { id: 'u1', email: 'test@example.com' } });
-  (buildSnapshotUrl as Mock).mockReturnValue('https://example.com/#data=abc123');
+  (buildSnapshotUrl as Mock).mockReturnValue(Promise.resolve('https://example.com/#data=abc123'));
   (deserializeState as Mock).mockImplementation((data: unknown) => data);
 });
 
@@ -155,9 +155,9 @@ describe('ShareDialog', () => {
       expect(screen.getByText('Share')).toBeInTheDocument();
     });
 
-    it('renders the snapshot URL input', () => {
+    it('renders the snapshot URL input', async () => {
       renderShareDialog();
-      const input = screen.getByDisplayValue('https://example.com/#data=abc123');
+      const input = await screen.findByDisplayValue('https://example.com/#data=abc123');
       expect(input).toBeInTheDocument();
       expect(input).toHaveAttribute('readonly');
     });
@@ -174,22 +174,29 @@ describe('ShareDialog', () => {
       ).toBeInTheDocument();
     });
 
-    it('shows character count for snapshot URL', () => {
+    it('shows character count for snapshot URL', async () => {
       renderShareDialog();
-      // 'https://example.com/#data=abc123'.length === 32
-      expect(screen.getByText(/32 characters/)).toBeInTheDocument();
+      await waitFor(() => {
+        // 'https://example.com/#data=abc123'.length === 32
+        expect(screen.getByText(/32 characters/)).toBeInTheDocument();
+      });
     });
 
-    it('does not show amber warning for short URLs', () => {
+    it('does not show amber warning for short URLs', async () => {
       renderShareDialog();
+      await waitFor(() => {
+        expect(screen.getByText(/32 characters/)).toBeInTheDocument();
+      });
       expect(screen.queryByText(/URL is long/)).not.toBeInTheDocument();
     });
 
-    it('shows amber warning for URLs longer than 2000 characters', () => {
+    it('shows amber warning for URLs longer than 2000 characters', async () => {
       const longUrl = 'https://example.com/#data=' + 'x'.repeat(2000);
-      (buildSnapshotUrl as Mock).mockReturnValue(longUrl);
+      (buildSnapshotUrl as Mock).mockReturnValue(Promise.resolve(longUrl));
       renderShareDialog();
-      expect(screen.getByText(/URL is long and may not work/)).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByText(/URL is long and may not work/)).toBeInTheDocument();
+      });
     });
 
     it('does not render the cloud link section when cloud is disabled', () => {
@@ -197,20 +204,20 @@ describe('ShareDialog', () => {
       expect(screen.queryByText('Cloud link')).not.toBeInTheDocument();
     });
 
-    it('shows error message when snapshot URL generation fails', () => {
-      (buildSnapshotUrl as Mock).mockImplementation(() => {
-        throw new Error('Compression failed');
-      });
+    it('shows error message when snapshot URL generation fails', async () => {
+      (buildSnapshotUrl as Mock).mockReturnValue(Promise.reject(new Error('Compression failed')));
       renderShareDialog();
-      expect(screen.getByText('Failed to generate snapshot URL.')).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByText('Failed to generate snapshot URL.')).toBeInTheDocument();
+      });
     });
 
-    it('does not render snapshot URL input when generation fails', () => {
-      (buildSnapshotUrl as Mock).mockImplementation(() => {
-        throw new Error('Compression failed');
-      });
+    it('does not render snapshot URL input when generation fails', async () => {
+      (buildSnapshotUrl as Mock).mockReturnValue(Promise.reject(new Error('Compression failed')));
       renderShareDialog();
-      expect(screen.queryByDisplayValue(/example\.com/)).not.toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.queryByDisplayValue(/example\.com/)).not.toBeInTheDocument();
+      });
     });
 
     it('does not build snapshot URL when dialog is closed', () => {
@@ -734,15 +741,16 @@ describe('ShareDialog', () => {
   // ── 6. Copy button ────────────────────────────────────────────────
 
   describe('copy button', () => {
-    it('renders a copy button for the snapshot URL', () => {
+    it('renders a copy button for the snapshot URL', async () => {
       renderShareDialog();
-      expect(screen.getByRole('button', { name: 'Copy snapshot URL' })).toBeInTheDocument();
+      expect(await screen.findByRole('button', { name: 'Copy snapshot URL' })).toBeInTheDocument();
     });
 
     it('copies snapshot URL to clipboard on click', async () => {
       renderShareDialog();
+      const btn = await screen.findByRole('button', { name: 'Copy snapshot URL' });
       await act(async () => {
-        fireEvent.click(screen.getByRole('button', { name: 'Copy snapshot URL' }));
+        fireEvent.click(btn);
       });
       expect(navigator.clipboard.writeText).toHaveBeenCalledWith('https://example.com/#data=abc123');
     });

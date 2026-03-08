@@ -17,7 +17,7 @@ vi.mock('../utils/seed-data', () => ({
 }));
 
 vi.mock('../utils/snapshot-url', () => ({
-  decompressSnapshot: vi.fn(() => '{}'),
+  decompressSnapshot: vi.fn(() => Promise.resolve('{}')),
 }));
 
 vi.mock('../utils/api-client', () => ({
@@ -135,7 +135,7 @@ beforeEach(() => {
   (deserializeState as Mock).mockReturnValue(TEST_APP_STATE);
   (loadProject as Mock).mockReturnValue(null);
   (getMostRecentProjectId as Mock).mockReturnValue(null);
-  (decompressSnapshot as Mock).mockReturnValue('{}');
+  (decompressSnapshot as Mock).mockReturnValue(Promise.resolve('{}'));
   (importFromJson as Mock).mockReturnValue(null);
   (fetchAndParseCloudProject as Mock).mockRejectedValue(new Error('Not called'));
 });
@@ -216,7 +216,7 @@ describe('AppLoader', () => {
     it('parses valid snapshot hash and renders AppShell', async () => {
       const importResult = makeImportResult();
       (resolveInitialProject as Mock).mockReturnValue({ type: 'snapshot', data: 'compressed-data' });
-      (decompressSnapshot as Mock).mockReturnValue('{"registers":[]}');
+      (decompressSnapshot as Mock).mockReturnValue(Promise.resolve('{"registers":[]}'));
       (importFromJson as Mock).mockReturnValue(importResult);
 
       // Set hash
@@ -234,7 +234,7 @@ describe('AppLoader', () => {
 
     it('shows error state when snapshot parse fails', async () => {
       (resolveInitialProject as Mock).mockReturnValue({ type: 'snapshot', data: 'bad-data' });
-      (decompressSnapshot as Mock).mockReturnValue('{}');
+      (decompressSnapshot as Mock).mockReturnValue(Promise.resolve('{}'));
       // importFromJson returns null => parse failure
       (importFromJson as Mock).mockReturnValue(null);
 
@@ -251,9 +251,7 @@ describe('AppLoader', () => {
 
     it('shows error when snapshot decompression throws', async () => {
       (resolveInitialProject as Mock).mockReturnValue({ type: 'snapshot', data: 'bad-data' });
-      (decompressSnapshot as Mock).mockImplementation(() => {
-        throw new Error('Decompression failed');
-      });
+      (decompressSnapshot as Mock).mockReturnValue(Promise.reject(new Error('Decompression failed')));
 
       window.location.hash = '#data=bad-data';
 
@@ -266,7 +264,7 @@ describe('AppLoader', () => {
 
     it('shows error when importFromJson returns empty registers', async () => {
       (resolveInitialProject as Mock).mockReturnValue({ type: 'snapshot', data: 'empty-data' });
-      (decompressSnapshot as Mock).mockReturnValue('{"registers":[]}');
+      (decompressSnapshot as Mock).mockReturnValue(Promise.resolve('{"registers":[]}'));
       // Returns result with empty registers — treated as failure
       (importFromJson as Mock).mockReturnValue({ registers: [], values: {}, project: {} });
 

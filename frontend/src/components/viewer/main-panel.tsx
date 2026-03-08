@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'motion/react';
 import { useAppState, useAppDispatch } from '../../context/app-context';
 import { useEditState, useEditActions } from '../../context/edit-context';
 import { ValueInputBar } from './value-input-bar';

@@ -70,13 +70,22 @@ export function ShareDialog({ open, onClose, projectLocalId }: ShareDialogProps)
   // Defer targetState so snapshot computation doesn't block dialog open render
   const deferredTargetState = useDeferredValue(targetState);
 
-  const snapshotUrl = useMemo(() => {
-    if (!open || !deferredTargetState) return null;
-    try {
-      return buildSnapshotUrl(deferredTargetState);
-    } catch {
-      return null;
+  const [snapshotUrl, setSnapshotUrl] = useState<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (!open) {
+      setSnapshotUrl(undefined);
+      return;
     }
+    if (!deferredTargetState) {
+      setSnapshotUrl(null);
+      return;
+    }
+    let cancelled = false;
+    setSnapshotUrl(undefined);
+    buildSnapshotUrl(deferredTargetState)
+      .then((url) => { if (!cancelled) setSnapshotUrl(url); })
+      .catch(() => { if (!cancelled) setSnapshotUrl(null); });
+    return () => { cancelled = true; };
   }, [open, deferredTargetState]);
 
   const charCount = snapshotUrl?.length ?? 0;
@@ -148,9 +157,9 @@ export function ShareDialog({ open, onClose, projectLocalId }: ShareDialogProps)
                 {isUrlLong && ' — URL is long and may not work in all browsers or messaging apps.'}
               </p>
             </div>
-          ) : (
+          ) : snapshotUrl === null ? (
             <p className="text-xs text-red-500">Failed to generate snapshot URL.</p>
-          )}
+          ) : null}
         </div>
 
         {/* Cloud link section */}

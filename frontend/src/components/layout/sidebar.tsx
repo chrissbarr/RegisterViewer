@@ -1,5 +1,5 @@
 import { ChevronLeft } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { RegisterList } from '../register-list/register-list';
 
 interface Props {

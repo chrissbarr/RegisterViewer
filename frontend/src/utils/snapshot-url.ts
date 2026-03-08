@@ -1,4 +1,3 @@
-import { deflate, Inflate } from 'pako';
 import { exportToJson } from './storage';
 import type { AppState } from '../types/register';
 
@@ -30,7 +29,8 @@ function fromUrlSafeBase64(encoded: string): Uint8Array {
   return bytes;
 }
 
-export function compressSnapshot(jsonString: string): string {
+export async function compressSnapshot(jsonString: string): Promise<string> {
+  const { deflate } = await import('pako');
   const encoder = new TextEncoder();
   const data = encoder.encode(jsonString);
   const compressed = deflate(data);
@@ -40,7 +40,8 @@ export function compressSnapshot(jsonString: string): string {
 const MAX_COMPRESSED_SIZE = 512 * 1024; // 512 KB
 const MAX_DECOMPRESSED_SIZE = 2 * 1024 * 1024; // 2 MB
 
-export function decompressSnapshot(encoded: string): string {
+export async function decompressSnapshot(encoded: string): Promise<string> {
+  const { Inflate } = await import('pako');
   const compressed = fromUrlSafeBase64(encoded);
   if (compressed.length > MAX_COMPRESSED_SIZE) {
     throw new Error('Compressed snapshot exceeds maximum allowed size');
@@ -80,9 +81,9 @@ export function decompressSnapshot(encoded: string): string {
   return new TextDecoder().decode(result);
 }
 
-export function buildSnapshotUrl(state: AppState): string {
+export async function buildSnapshotUrl(state: AppState): Promise<string> {
   const json = exportToJson(state);
-  const compressed = compressSnapshot(json);
+  const compressed = await compressSnapshot(json);
   const base = window.location.href.split('#')[0];
   return `${base}#data=${compressed}`;
 }

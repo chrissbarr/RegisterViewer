@@ -106,7 +106,7 @@ vi.mock('../../utils/storage', () => ({
 }));
 
 vi.mock('../../utils/snapshot-url', () => ({
-  buildSnapshotUrl: vi.fn(() => ''),
+  buildSnapshotUrl: vi.fn(() => Promise.resolve('')),
 }));
 
 vi.mock('../../utils/friendly-error', () => ({

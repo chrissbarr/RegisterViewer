@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'motion/react';
 import { Plus, Save, TriangleAlert } from 'lucide-react';
 import { Dialog } from '../common/dialog';
 import { ProjectSettingsDialog } from '../common/project-settings-dialog';
