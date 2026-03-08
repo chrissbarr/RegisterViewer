@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { makeStressRegister } from '../src/data/perf-fixtures';
 
 // ---------------------------------------------------------------------------
 // Thresholds (ms) — tune after baseline data is collected
@@ -41,48 +42,15 @@ const FIXTURES: StressFixtureDef[] = [
   { name: 'STRESS_128_32', width: 128, fieldCount: 32 },
 ];
 
-/**
- * Build a stress register definition inline for injection.
- * We duplicate the factory logic here rather than importing from app source
- * because Playwright tests run in Node, not in the app bundle.
- */
 function buildStressState(width: number, fieldCount: number) {
-  const fields: Record<string, unknown>[] = [];
-  const bitsPerField = Math.max(1, Math.floor(width / fieldCount));
-  let currentBit = 0;
-
-  for (let i = 0; i < fieldCount && currentBit < width; i++) {
-    const lsb = currentBit;
-    const remainingFields = fieldCount - i;
-    const remainingBits = width - currentBit;
-    const fieldWidth = i === fieldCount - 1
-      ? remainingBits
-      : Math.min(bitsPerField, remainingBits - (remainingFields - 1));
-    const msb = lsb + fieldWidth - 1;
-
-    const id = `stress-field-${i}`;
-    const name = `field_${i}`;
-
-    if (fieldWidth === 1) {
-      fields.push({ id, name, msb, lsb, type: 'flag' });
-    } else if (i % 3 === 1 && fieldWidth <= 4) {
-      const entries = Array.from({ length: Math.min(1 << fieldWidth, 4) }, (_, v) => ({
-        value: v,
-        name: `${name}_opt${v}`,
-      }));
-      fields.push({ id, name, msb, lsb, type: 'enum', enumEntries: entries });
-    } else {
-      fields.push({ id, name, msb, lsb, type: 'integer' });
-    }
-
-    currentBit = msb + 1;
-  }
-
-  const regId = `stress-reg-${width}-${fieldCount}`;
+  const reg = makeStressRegister(width, fieldCount);
+  const fields = reg.fields.map(({ id, name, msb, lsb, type, ...rest }) => ({
+    id, name, msb, lsb, type, ...rest,
+  }));
   return {
-    registers: [{ id: regId, name: `STRESS_${width}_${fieldCount}`, width, fields }],
-    activeRegisterId: regId,
-    registerValues: { [regId]: '0x0' },
+    registers: [{ id: reg.id, name: reg.name, width: reg.width, fields }],
+    activeRegisterId: reg.id,
+    registerValues: { [reg.id]: '0x0' },
     mapTableWidth: 32,
     mapShowGaps: true,
     mapSortDescending: false,
@@ -252,10 +220,9 @@ for (const fixture of FIXTURES) {
 
     // --- Test 5: Flag field toggle ---
     test('flag field toggle stays under threshold', async ({ page }) => {
-      // Find first flag-type field button in the field table
       const flagButton = page.locator('button', { hasText: /^(set|clear)$/ }).first();
-      // Skip if no flag fields in this fixture
-      if (await flagButton.count() === 0) return;
+      const hasFlags = await flagButton.count() > 0;
+      test.skip(!hasFlags, `${fixture.name} has no 1-bit flag fields`);
 
       const result = await measureInteraction(page, () => flagButton.click());
 
@@ -272,6 +239,7 @@ for (const fixture of FIXTURES) {
         const count = await options.count();
         if (count > 1) {
           const lastValue = await options.nth(count - 1).getAttribute('value');
+          expect(lastValue, 'Expected option to have a value attribute').not.toBeNull();
           const result = await measureInteraction(page, () =>
             enumSelect.selectOption(lastValue!),
           );
@@ -280,20 +248,19 @@ for (const fixture of FIXTURES) {
         }
       }
 
-      // Fall back to integer input
+      // Fall back to integer input — at least one editable field must exist
       const intInput = page.locator('table input[type="text"]').first();
-      if (await intInput.count() > 0) {
-        await intInput.focus();
-        const result = await measureInteraction(page, () => page.keyboard.press('7'));
-        expect(result.e2eMs).toBeLessThan(THRESHOLDS.E2E_LATENCY_MS);
-      }
+      await expect(intInput, 'Expected at least one editable field (enum or integer) in fixture').toBeVisible();
+      await intInput.focus();
+      const result = await measureInteraction(page, () => page.keyboard.press('7'));
+      expect(result.e2eMs).toBeLessThan(THRESHOLDS.E2E_LATENCY_MS);
     });
 
     // --- Test 6.5: Hover over field ---
     test('hover over field stays under threshold', async ({ page }) => {
       // Hover over a field label in the bit grid (grid row 3 elements with field names)
       const fieldLabel = page.locator('[title="field_0"]').first();
-      if (await fieldLabel.count() === 0) return;
+      await expect(fieldLabel, 'Expected field_0 label to be visible').toBeVisible();
 
       await page.evaluate(() => performance.mark('hover-start'));
       await fieldLabel.hover();
@@ -312,18 +279,21 @@ for (const fixture of FIXTURES) {
 
       const startTime = await page.evaluate(() => performance.now());
 
+      let toggled = 0;
       for (let i = 0; i < toggleCount; i++) {
         const bitCell = page.locator(`[role="button"][aria-label^="Toggle bit ${i} "]`);
         if (await bitCell.count() === 0) break;
         await bitCell.click();
+        toggled++;
       }
 
       const totalMs = await page.evaluate((start) => performance.now() - start, startTime);
 
+      expect(toggled, 'Expected at least one bit to be toggled').toBeGreaterThan(0);
+
       // Verify all bits were actually toggled (they should all be 1 now)
-      for (let i = 0; i < toggleCount; i++) {
+      for (let i = 0; i < toggled; i++) {
         const bitCell = page.locator(`[role="button"][aria-label^="Toggle bit ${i} "]`);
-        if (await bitCell.count() === 0) break;
         await expect(bitCell.locator('span.font-bold')).toHaveText('1');
       }
 
