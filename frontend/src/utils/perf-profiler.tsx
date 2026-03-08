@@ -2,7 +2,7 @@ import { Profiler, type ProfilerOnRenderCallback, type ReactNode } from 'react';
 
 interface PerfEntry {
   id: string;
-  phase: 'mount' | 'update';
+  phase: 'mount' | 'update' | 'nested-update';
   actualDuration: number;
   baseDuration: number;
   timestamp: number;
@@ -36,6 +36,22 @@ function ensurePerfData(): PerfData {
   return window.__PERF_DATA__;
 }
 
+const onRender: ProfilerOnRenderCallback = (
+  profilerId,
+  phase,
+  actualDuration,
+  baseDuration,
+) => {
+  const data = ensurePerfData();
+  data.entries.push({
+    id: profilerId,
+    phase: phase as PerfEntry['phase'],
+    actualDuration,
+    baseDuration,
+    timestamp: performance.now(),
+  });
+};
+
 interface Props {
   id: string;
   children: ReactNode;
@@ -45,22 +61,6 @@ export function PerfProfiler({ id, children }: Props) {
   if (!__PERF_PROFILING__) {
     return children;
   }
-
-  const onRender: ProfilerOnRenderCallback = (
-    profilerId,
-    phase,
-    actualDuration,
-    baseDuration,
-  ) => {
-    const data = ensurePerfData();
-    data.entries.push({
-      id: profilerId,
-      phase: phase as 'mount' | 'update',
-      actualDuration,
-      baseDuration,
-      timestamp: performance.now(),
-    });
-  };
 
   return (
     <Profiler id={id} onRender={onRender}>

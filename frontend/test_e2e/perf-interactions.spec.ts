@@ -145,21 +145,22 @@ async function measureInteraction(
   // Perform the interaction
   await action();
 
-  // Wait for paint (rAF + microtask flush)
-  await page.evaluate(
-    () => new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0))),
-  );
-
-  // Read results
+  // Wait for paint (rAF + microtask flush) then read results in one round-trip
   const result = await page.evaluate((start) => {
-    const endTime = performance.now();
-    const entries = window.__PERF_DATA__?.getEntriesSince(start) ?? [];
-    const renders: Record<string, { actualDuration: number; baseDuration: number }[]> = {};
-    for (const e of entries) {
-      if (!renders[e.id]) renders[e.id] = [];
-      renders[e.id].push({ actualDuration: e.actualDuration, baseDuration: e.baseDuration });
-    }
-    return { e2eMs: endTime - start, renders };
+    return new Promise<MeasureResult>((resolve) => {
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          const endTime = performance.now();
+          const entries = window.__PERF_DATA__?.getEntriesSince(start) ?? [];
+          const renders: Record<string, { actualDuration: number; baseDuration: number }[]> = {};
+          for (const e of entries) {
+            if (!renders[e.id]) renders[e.id] = [];
+            renders[e.id].push({ actualDuration: e.actualDuration, baseDuration: e.baseDuration });
+          }
+          resolve({ e2eMs: endTime - start, renders });
+        }, 0);
+      });
+    });
   }, startTime);
 
   return result;

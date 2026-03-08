@@ -50,4 +50,3 @@ export function makeStressRegister(width: number, fieldCount: number): RegisterD
 export const STRESS_32_8 = makeStressRegister(32, 8);
 export const STRESS_64_16 = makeStressRegister(64, 16);
 export const STRESS_128_32 = makeStressRegister(128, 32);
-

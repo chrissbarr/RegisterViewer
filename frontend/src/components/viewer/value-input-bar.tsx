@@ -256,7 +256,7 @@ export function ValueInputBar({ register }: Props) {
 
   return (
     <PerfProfiler id="ValueInputBar">
-    <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-3">
       {/* PRIMARY: HEX input — larger text, bolder presence */}
       <label className="flex items-center gap-2">
         <span className={labelClass}>HEX</span>
@@ -374,7 +374,7 @@ export function ValueInputBar({ register }: Props) {
           </div>
         </label>
       </div>
-    </div>
+      </div>
     </PerfProfiler>
   );
 }

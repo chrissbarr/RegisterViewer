@@ -130,9 +130,9 @@ export function BitGrid({ register, hoveredFieldIndices, onFieldHover, fieldHove
 
   return (
     <PerfProfiler id="BitGrid">
-    <div ref={containerRef}>
-      <div className="flex flex-col gap-1">
-        {rows.map((row, rowIdx) => {
+      <div ref={containerRef}>
+        <div className="flex flex-col gap-1">
+          {rows.map((row, rowIdx) => {
           const { rowFields, rowUnassigned, gtc } = rowLayoutData[rowIdx];
           const rowNibbles = rowNibblesData[rowIdx];
           const hasLabels = rowFields.length > 0 || rowUnassigned.length > 0;
@@ -287,8 +287,8 @@ export function BitGrid({ register, hoveredFieldIndices, onFieldHover, fieldHove
             </div>
           );
         })}
+        </div>
       </div>
-    </div>
     </PerfProfiler>
   );
 }
