@@ -17,7 +17,7 @@ vi.mock('../utils/cloud-url', () => ({
 }));
 
 import { evictProjectData } from '../utils/project-storage';
-import { clearCloudUrl } from '../utils/cloud-url';
+import { clearCloudUrl, setCloudUrl } from '../utils/cloud-url';
 
 function makeInternal(overrides: Partial<InternalCloudSyncState> = {}): InternalCloudSyncState {
   return { ...initialInternalState, ...overrides };
@@ -153,5 +153,68 @@ describe('useProjectSwitchEviction', () => {
     });
 
     expect(evictProjectData).not.toHaveBeenCalled();
+  });
+
+  it('evicts cloud project data on switch', async () => {
+    const flushSync = vi.fn().mockResolvedValue(undefined);
+    const projects = [
+      makeProjectEntry({ localId: 'proj-1', cloudId: 'cloud-1', storage: 'cloud' }),
+      makeProjectEntry({ localId: 'proj-2', storage: 'local' }),
+    ];
+    const deps = makeDeps({
+      activeLocalId: 'proj-1',
+      projects,
+      projectsRef: { current: projects },
+      flushSyncRef: { current: flushSync },
+    });
+
+    const { rerender } = renderHook(
+      (props) => useProjectSwitchEviction(props),
+      { initialProps: deps },
+    );
+
+    rerender({
+      ...deps,
+      activeLocalId: 'proj-2',
+      activeLocalIdRef: { current: 'proj-2' },
+    });
+
+    await vi.waitFor(() => {
+      expect(evictProjectData).toHaveBeenCalledWith('proj-1');
+    });
+
+    expect(flushSync).toHaveBeenCalled();
+  });
+
+  it('updates cloud state when switching to project with cloudId', () => {
+    const setInternal = vi.fn();
+    const projects = [
+      makeProjectEntry({ localId: 'proj-1', storage: 'local' }),
+      makeProjectEntry({ localId: 'proj-2', cloudId: 'cloud-2', storage: 'cloud', visibility: 'unlisted' }),
+    ];
+    const needsVersionSyncRef = { current: false };
+    const deps = makeDeps({
+      activeLocalId: 'proj-1',
+      projects,
+      projectsRef: { current: projects },
+      internalRef: { current: makeInternal({ cloudId: null }) },
+      needsVersionSyncRef,
+      setInternal,
+    });
+
+    const { rerender } = renderHook(
+      (props) => useProjectSwitchEviction(props),
+      { initialProps: deps },
+    );
+
+    rerender({
+      ...deps,
+      activeLocalId: 'proj-2',
+      activeLocalIdRef: { current: 'proj-2' },
+    });
+
+    expect(setCloudUrl).toHaveBeenCalledWith('cloud-2');
+    expect(setInternal).toHaveBeenCalledWith(expect.any(Function));
+    expect(needsVersionSyncRef.current).toBe(true);
   });
 });
