@@ -47,6 +47,7 @@ import { useAuthTransition } from '../hooks/use-auth-transition';
 import { computeSyncPatches } from '../utils/cloud-sync';
 import { DEFAULT_PROJECT_NAME, type Visibility } from '../types/project';
 import type { AppState } from '../types/register';
+import { initialInternalState, type InternalCloudSyncState, type SyncResult } from '../types/cloud-sync';
 
 export type { SyncStatus };
 
@@ -63,13 +64,6 @@ interface CloudSyncState {
   loginRequired: boolean;
   /** Cloud auto-sync status indicator. */
   syncStatus: SyncStatus;
-}
-
-export interface SyncResult {
-  updatedCount: number;
-  staleCloudIds: string[];
-  /** Number of cloud-only projects that were added as local placeholders */
-  placeholdersCreated: number;
 }
 
 interface CloudSyncActions {
@@ -94,31 +88,6 @@ interface CloudSyncActions {
 
 const CloudSyncStateContext = createContext<CloudSyncState | null>(null);
 const CloudSyncActionsContext = createContext<CloudSyncActions | null>(null);
-
-/** Shared with useActiveProjectCloudOps and useProjectCloudOps. */
-export interface InternalCloudSyncState {
-  cloudId: string | null;
-  isOwner: boolean;
-  storage: 'local' | 'cloud';
-  status: 'idle' | 'saving' | 'loading' | 'deleting';
-  error: string | null;
-  shareUrl: string | null;
-  lastCloudSavedAt: string | null;
-  lastSavedVersion: number;
-  visibility: Visibility;
-}
-
-const initialInternalState: InternalCloudSyncState = {
-  cloudId: null,
-  isOwner: false,
-  storage: 'local',
-  status: 'idle',
-  error: null,
-  shareUrl: null,
-  lastCloudSavedAt: null,
-  lastSavedVersion: -1,
-  visibility: 'private',
-};
 
 /**
  * Manages cloud synchronization state for the active project.

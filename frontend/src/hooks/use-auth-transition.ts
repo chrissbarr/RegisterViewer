@@ -1,7 +1,7 @@
 import { useEffect, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import { purgeCloudProjects, getMostRecentProjectId, ACTIVE_PROJECT_SESSION_KEY } from '../utils/project-storage';
 import { clearCloudUrl } from '../utils/cloud-url';
-import type { InternalCloudSyncState, SyncResult } from '../context/cloud-sync-context';
+import type { InternalCloudSyncState, SyncResult } from '../types/cloud-sync';
 
 interface UseAuthTransitionDeps {
   authUser: { email: string } | null;

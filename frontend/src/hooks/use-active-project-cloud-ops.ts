@@ -8,7 +8,7 @@ import { setCloudUrl, clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock, r
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
 import { DEFAULT_PROJECT_NAME, type Visibility } from '../types/project';
 import type { AppState, RegisterDef, ProjectMetadata, AddressUnitBits } from '../types/register';
-import type { InternalCloudSyncState } from '../context/cloud-sync-context';
+import type { InternalCloudSyncState } from '../types/cloud-sync';
 
 type ImportStateAction = {
   type: 'IMPORT_STATE';

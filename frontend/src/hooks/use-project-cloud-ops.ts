@@ -5,7 +5,7 @@ import { loadProject, buildProjectUrl } from '../utils/project-storage';
 import { setCloudUrl, clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock, requireJwt } from '../utils/cloud-url';
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
 import type { Visibility, ProjectListEntry } from '../types/project';
-import type { InternalCloudSyncState } from '../context/cloud-sync-context';
+import type { InternalCloudSyncState } from '../types/cloud-sync';
 
 interface ProjectCloudOpsDeps {
   updateCloudMetadata: (localId: string, updates: Partial<{

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { CLOUD_SYNC_DEBOUNCE_MS } from '../constants';
-import type { InternalCloudSyncState } from '../context/cloud-sync-context';
+import type { InternalCloudSyncState } from '../types/cloud-sync';
 import type { AppState } from '../types/register';
 
 /**

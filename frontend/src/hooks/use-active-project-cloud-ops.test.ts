@@ -1,7 +1,7 @@
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { useActiveProjectCloudOps } from './use-active-project-cloud-ops';
-import type { InternalCloudSyncState } from '../context/cloud-sync-context';
+import type { InternalCloudSyncState } from '../types/cloud-sync';
 import type { AppState } from '../types/register';
 import { makeState, makeRegister } from '../test/helpers';
 // ApiError import resolves to the mocked class — needed for instanceof checks in source
