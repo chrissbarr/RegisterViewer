@@ -35,15 +35,16 @@ import {
   getProject,
 } from '../utils/api-client';
 import { useAuth, useAuthActions } from './auth-context';
-import { buildProjectUrl, createProject, evictProjectData } from '../utils/project-storage';
+import { buildProjectUrl, createProject } from '../utils/project-storage';
 import { EMPTY_SERIALIZED_STATE } from '../utils/storage';
-import { clearCloudUrl, setCloudUrl } from '../utils/cloud-url';
+import { clearCloudUrl } from '../utils/cloud-url';
 import { useDirtyTracking } from '../hooks/use-dirty-tracking';
 import { useActiveProjectCloudOps } from '../hooks/use-active-project-cloud-ops';
 import { useProjectCloudOps } from '../hooks/use-project-cloud-ops';
 import { useAutoSync, type SyncStatus } from '../hooks/use-auto-sync';
 import { useLoginGuard } from '../hooks/use-login-guard';
 import { useAuthTransition } from '../hooks/use-auth-transition';
+import { useProjectSwitchEviction } from '../hooks/use-project-switch-eviction';
 import { computeSyncPatches } from '../utils/cloud-sync';
 import { DEFAULT_PROJECT_NAME, type Visibility } from '../types/project';
 import type { AppState } from '../types/register';
@@ -142,7 +143,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   // double-invocation of effects. Do not move to useEffect without verifying the
   // initFromProject race described in the CloudSyncProvider docstring.
   const internalRef = useRef(internal);
-  internalRef.current = internal;
+  internalRef.current = internal; // eslint-disable-line react-hooks/refs -- intentional render-time sync; see docstring above
 
   // Ref to avoid stale closures in save/fork callbacks
   const appStateRef = useRef(appState);
@@ -159,9 +160,9 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     localId: activeLocalId,
     state: appState,
   });
-  if (activeLocalId === lastStableStateRef.current.localId) {
+  if (activeLocalId === lastStableStateRef.current.localId) { // eslint-disable-line react-hooks/refs -- intentional render-time read; see comment above
     // Still on the same project — keep the snapshot fresh
-    lastStableStateRef.current.state = appState;
+    lastStableStateRef.current.state = appState; // eslint-disable-line react-hooks/refs
   }
   // When activeLocalId changes, we intentionally do NOT update the snapshot
   // here — it preserves the previous project's state for the effect to use.
@@ -261,8 +262,8 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   // Keep refs up-to-date for the auth-transition and eviction effects
   const syncCloudProjectsRef = useRef<(() => Promise<SyncResult>) | null>(null);
   const flushSyncRef = useRef<((stateOverride?: AppState) => Promise<void>) | null>(null);
-  syncCloudProjectsRef.current = syncCloudProjects;
-  flushSyncRef.current = flushSync;
+  syncCloudProjectsRef.current = syncCloudProjects; // eslint-disable-line react-hooks/refs -- render-time sync for stable callback refs
+  flushSyncRef.current = flushSync; // eslint-disable-line react-hooks/refs
 
   // Auth transition: sign-in retry, cloud sync, sign-out cleanup
   const { isSigningOutRef } = useAuthTransition({
@@ -282,93 +283,13 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   });
 
   // --- Active project switch: eviction + cloudId tracking ---
-  const prevActiveLocalIdRef = useRef<string | null>(null);
-
-  // Derive the active project's cloudId so the effect re-runs when it changes
-  // (e.g., after auto-upload sets a cloudId on a previously local-only project).
-  const activeCloudId = useMemo(
-    () => projects.find(p => p.localId === activeLocalId)?.cloudId ?? null,
-    [projects, activeLocalId],
-  );
-
-  useEffect(() => {
-    // Evict previous cloud project's data from localStorage on switch
-    const prevLocalId = prevActiveLocalIdRef.current;
-    prevActiveLocalIdRef.current = activeLocalId;
-    if (prevLocalId && prevLocalId !== activeLocalId) {
-      // Grab the previous project's state snapshot before updating the ref.
-      // After switchProject, appStateRef already holds the *new* project's state,
-      // so we pass the snapshot to flushSync to save the correct data.
-      const prevState = lastStableStateRef.current.localId === prevLocalId
-        ? lastStableStateRef.current.state
-        : undefined;
-      // Update the snapshot ref for the new project
-      lastStableStateRef.current = { localId: activeLocalId, state: appState };
-
-      const prevEntry = projectsRef.current.find(p => p.localId === prevLocalId);
-      if (prevEntry?.storage === 'cloud' && prevEntry.cloudId) {
-        // Flush pending sync first, then evict — only on success and only if
-        // the user hasn't navigated back to this project in the meantime.
-        // Skip during sign-out to avoid racing with purgeCloudProjects.
-        flushSyncRef.current?.(prevState).then(() => {
-          if (activeLocalIdRef.current === prevLocalId) return; // user navigated back
-          if (isSigningOutRef.current) return; // sign-out purge handles cleanup
-          evictProjectData(prevLocalId);
-        }).catch(() => {
-          // Flush failed — keep local data as safety net
-        });
-      }
-    }
-
-    if (!activeLocalId) {
-      // Reset cloud sync state when transitioning from a saved project to
-      // an unsaved one (e.g. New Project). This prevents stale cloud state
-      // from the previous project triggering auto-sync on the empty project.
-      // Skip on initial mount (prevLocalId is null) so that initFromProject
-      // can set up cloud state for shared projects loaded from #/p/{id} URLs.
-      if (prevLocalId) {
-        if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
-        loginGuard.pendingCloudOpRef.current = null;
-        loginGuard.setLoginRequired(false);
-        setInternal({ ...initialInternalState });
-        clearCloudUrl();
-      }
-      return;
-    }
-
-    const entry = projectsRef.current.find(p => p.localId === activeLocalId);
-    const cloudId = entry?.cloudId ?? null;
-    // Skip if cloudId hasn't changed (avoid redundant state updates)
-    if (cloudId === internalRef.current.cloudId) return;
-    // Clear any pending cloud operation from the previous project
-    loginGuard.pendingCloudOpRef.current = null;
-    loginGuard.setLoginRequired(false);
-    // Use storage === 'cloud' as an optimistic ownership hint — cloud-storage
-    // projects were uploaded by this user. The async re-evaluation effect below
-    // still confirms via a server round-trip, but this avoids flashing the
-    // "shared project" banner on owned projects during the async gap.
-    const isOwner = entry?.storage === 'cloud';
-    if (cloudId === null) {
-      setInternal({ ...initialInternalState });
-      clearCloudUrl();
-    } else {
-      // Signal dirty tracking to capture the version after its next bump,
-      // so that re-syncing from a freshly-uploaded project starts clean.
-      needsVersionSyncRef.current = true;
-      setCloudUrl(cloudId);
-      setInternal((prev) => ({
-        ...prev,
-        cloudId,
-        isOwner,
-        storage: entry?.storage ?? 'local',
-        shareUrl: buildProjectUrl(cloudId),
-        lastCloudSavedAt: null,
-        error: null,
-        visibility: entry?.visibility ?? 'private',
-      }));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- dataVersionRef is a ref (stable); activeCloudId triggers re-eval when cloudId changes after upload; appState is intentionally read only during project transitions (render-time ref handles steady-state updates)
-  }, [activeLocalId, activeCloudId]);
+  useProjectSwitchEviction({
+    activeLocalId, appState, projects,
+    internalRef, projectsRef, activeLocalIdRef, needsVersionSyncRef,
+    lastStableStateRef, flushSyncRef, syncTimerRef, isSigningOutRef,
+    cancelPendingOp: loginGuard.cancelPendingOp,
+    setInternal, initialInternalState,
+  });
 
   // Re-evaluate ownership when auth state changes or the active cloud project
   // changes while authenticated. Covers: (1) JWT validated after startup,

@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useProjectSwitchEviction } from './use-project-switch-eviction';
 import type { InternalCloudSyncState } from '../types/cloud-sync';
 import { initialInternalState } from '../types/cloud-sync';
+import type { ProjectListEntry } from '../types/project';
 import { makeState, makeRegister } from '../test/helpers';
 
 vi.mock('../utils/project-storage', () => ({
@@ -22,16 +23,29 @@ function makeInternal(overrides: Partial<InternalCloudSyncState> = {}): Internal
   return { ...initialInternalState, ...overrides };
 }
 
+function makeProjectEntry(overrides: Partial<ProjectListEntry> & { localId: string }): ProjectListEntry {
+  return {
+    cloudId: null,
+    name: 'Test Project',
+    visibility: 'private',
+    storage: 'local',
+    createdAt: '2026-01-01T00:00:00Z',
+    localSavedAt: '2026-01-01T00:00:00Z',
+    cloudSavedAt: null,
+    ...overrides,
+  };
+}
+
 function makeDeps(overrides: Record<string, unknown> = {}) {
-  const baseState = makeState([makeRegister()]);
+  const baseState = makeState({ registers: [makeRegister()] });
   const internal = makeInternal();
 
   return {
     activeLocalId: 'proj-1' as string | null,
     appState: baseState,
-    projects: [] as { localId: string; cloudId: string | null; storage: 'local' | 'cloud'; visibility: 'private' | 'unlisted' }[],
+    projects: [] as ProjectListEntry[],
     internalRef: { current: internal },
-    projectsRef: { current: [] as typeof overrides.projects | [] },
+    projectsRef: { current: [] as ProjectListEntry[] },
     activeLocalIdRef: { current: 'proj-1' as string | null },
     needsVersionSyncRef: { current: false },
     lastStableStateRef: { current: { localId: 'proj-1', state: baseState } },
@@ -83,8 +97,8 @@ describe('useProjectSwitchEviction', () => {
 
   it('does not evict local-storage projects on switch', async () => {
     const projects = [
-      { localId: 'proj-1', cloudId: null, storage: 'local' as const, visibility: 'private' as const },
-      { localId: 'proj-2', cloudId: null, storage: 'local' as const, visibility: 'private' as const },
+      makeProjectEntry({ localId: 'proj-1', storage: 'local' }),
+      makeProjectEntry({ localId: 'proj-2', storage: 'local' }),
     ];
     const deps = makeDeps({
       activeLocalId: 'proj-1',
@@ -108,8 +122,8 @@ describe('useProjectSwitchEviction', () => {
   it('skips eviction during sign-out', async () => {
     const flushSync = vi.fn().mockResolvedValue(undefined);
     const projects = [
-      { localId: 'proj-1', cloudId: 'cloud-1', storage: 'cloud' as const, visibility: 'private' as const },
-      { localId: 'proj-2', cloudId: null, storage: 'local' as const, visibility: 'private' as const },
+      makeProjectEntry({ localId: 'proj-1', cloudId: 'cloud-1', storage: 'cloud' }),
+      makeProjectEntry({ localId: 'proj-2', storage: 'local' }),
     ];
     const isSigningOutRef = { current: false };
     const deps = makeDeps({

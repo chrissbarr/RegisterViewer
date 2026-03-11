@@ -5,7 +5,7 @@ import type { InternalCloudSyncState } from '../types/cloud-sync';
 import type { ProjectListEntry } from '../types/project';
 import type { AppState } from '../types/register';
 
-export interface UseProjectSwitchEvictionDeps {
+interface UseProjectSwitchEvictionDeps {
   activeLocalId: string | null;
   appState: AppState;
   projects: ProjectListEntry[];
