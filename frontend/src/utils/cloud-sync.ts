@@ -1,4 +1,6 @@
-import type { ProjectListEntry, Visibility } from '../types/project';
+import { DEFAULT_PROJECT_NAME, type ProjectListEntry, type Visibility } from '../types/project';
+import { listProjects } from './api-client';
+import type { SyncResult } from '../types/cloud-sync';
 
 interface SyncPatch {
   localId: string;
@@ -68,4 +70,53 @@ export function computeSyncPatches(
   const cloudOnlyProjects = serverProjects.filter(sp => !localCloudIds.has(sp.id));
 
   return { patches, staleCloudIds, cloudOnlyProjects };
+}
+
+interface PlaceholderData {
+  title: string;
+  cloudId: string;
+  visibility: Visibility;
+  cloudSavedAt: string;
+}
+
+interface SyncCallbacks {
+  updateCloudMetadata: (localId: string, updates: Partial<{ cloudSavedAt: string; visibility: Visibility }>) => void;
+  createPlaceholder: (data: PlaceholderData) => void;
+}
+
+/**
+ * Fetch the authenticated user's cloud projects and reconcile with local state.
+ *
+ * Returns metadata patches applied, stale cloud IDs (server-deleted), and
+ * count of cloud-only projects that were created as local placeholders.
+ *
+ * Side effects are delegated to callbacks so this function remains testable
+ * without React context dependencies.
+ */
+export async function syncCloudProjectsFromServer(
+  jwt: string,
+  projects: ReadonlyArray<ProjectListEntry>,
+  callbacks: SyncCallbacks,
+): Promise<SyncResult> {
+  const response = await listProjects(jwt);
+
+  const { patches, staleCloudIds, cloudOnlyProjects } = computeSyncPatches(
+    projects as ProjectListEntry[],
+    response.projects,
+  );
+
+  for (const { localId, ...updates } of patches) {
+    callbacks.updateCloudMetadata(localId, updates);
+  }
+
+  for (const sp of cloudOnlyProjects) {
+    callbacks.createPlaceholder({
+      title: sp.title ?? DEFAULT_PROJECT_NAME,
+      cloudId: sp.id,
+      visibility: sp.visibility,
+      cloudSavedAt: sp.updatedAt,
+    });
+  }
+
+  return { updatedCount: patches.length, staleCloudIds, placeholdersCreated: cloudOnlyProjects.length };
 }
