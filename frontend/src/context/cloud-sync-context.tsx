@@ -31,7 +31,6 @@ import { useAppState, useAppDispatch } from './app-context';
 import { useProjectStorage, useProjectStorageActions } from './project-storage-context';
 import {
   isCloudEnabled,
-  listProjects,
   getProject,
 } from '../utils/api-client';
 import { useAuth, useAuthActions } from './auth-context';
@@ -45,8 +44,8 @@ import { useAutoSync, type SyncStatus } from '../hooks/use-auto-sync';
 import { useLoginGuard } from '../hooks/use-login-guard';
 import { useAuthTransition } from '../hooks/use-auth-transition';
 import { useProjectSwitchEviction } from '../hooks/use-project-switch-eviction';
-import { computeSyncPatches } from '../utils/cloud-sync';
-import { DEFAULT_PROJECT_NAME, type Visibility } from '../types/project';
+import { syncCloudProjectsFromServer } from '../utils/cloud-sync';
+import type { Visibility } from '../types/project';
 import type { AppState } from '../types/register';
 import { initialInternalState, type InternalCloudSyncState, type SyncResult } from '../types/cloud-sync';
 
@@ -236,27 +235,18 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
 
     const jwt = getJwt();
     if (!jwt) return emptyResult;
-    const response = await listProjects(jwt);
 
-    const { patches, staleCloudIds, cloudOnlyProjects } = computeSyncPatches(projectsRef.current, response.projects);
-
-    for (const { localId, ...updates } of patches) {
-      updateCloudMetadata(localId, updates);
-    }
-
-    // Create lightweight local placeholders for cloud-only projects so they
-    // appear in the project list with full cloud actions (share, visibility, delete).
-    // The actual project data is fetched lazily when the user opens the project.
-    for (const sp of cloudOnlyProjects) {
-      createProject(EMPTY_SERIALIZED_STATE, sp.title ?? DEFAULT_PROJECT_NAME, {
-        cloudId: sp.id,
-        visibility: sp.visibility,
-        cloudSavedAt: sp.updatedAt,
-        storage: 'cloud',
-      });
-    }
-
-    return { updatedCount: patches.length, staleCloudIds, placeholdersCreated: cloudOnlyProjects.length };
+    return syncCloudProjectsFromServer(jwt, projectsRef.current, {
+      updateCloudMetadata,
+      createPlaceholder: (data) => {
+        createProject(EMPTY_SERIALIZED_STATE, data.title, {
+          cloudId: data.cloudId,
+          visibility: data.visibility,
+          cloudSavedAt: data.cloudSavedAt,
+          storage: 'cloud',
+        });
+      },
+    });
   }, [updateCloudMetadata, getJwt]);
 
   // Keep refs up-to-date for the auth-transition and eviction effects
