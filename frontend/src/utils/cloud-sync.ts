@@ -31,7 +31,7 @@ interface SyncPatchResult {
  * projects loaded via link have `storage === 'local'` and are skipped.
  */
 export function computeSyncPatches(
-  projects: ProjectListEntry[],
+  projects: ReadonlyArray<ProjectListEntry>,
   serverProjects: ReadonlyArray<ServerProject>,
 ): SyncPatchResult {
   const serverMap = new Map(serverProjects.map(p => [p.id, p]));
@@ -101,7 +101,7 @@ export async function syncCloudProjectsFromServer(
   const response = await listProjects(jwt);
 
   const { patches, staleCloudIds, cloudOnlyProjects } = computeSyncPatches(
-    projects as ProjectListEntry[],
+    projects,
     response.projects,
   );
 

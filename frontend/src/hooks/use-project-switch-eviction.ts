@@ -126,6 +126,6 @@ export function useProjectSwitchEviction(deps: UseProjectSwitchEvictionDeps): vo
         visibility: entry?.visibility ?? 'private',
       }));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- dataVersionRef is a ref (stable); activeCloudId triggers re-eval when cloudId changes after upload; appState is intentionally read only during project transitions (render-time ref handles steady-state updates)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- all other deps are refs (stable identity) or stable callbacks; activeCloudId triggers re-eval when cloudId changes after upload; appState is intentionally read only during project transitions (render-time ref in parent handles steady-state updates)
   }, [activeLocalId, activeCloudId]);
 }

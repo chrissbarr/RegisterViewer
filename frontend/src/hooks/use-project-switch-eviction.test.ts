@@ -36,21 +36,23 @@ function makeProjectEntry(overrides: Partial<ProjectListEntry> & { localId: stri
   };
 }
 
-function makeDeps(overrides: Record<string, unknown> = {}) {
+type Deps = Parameters<typeof useProjectSwitchEviction>[0];
+
+function makeDeps(overrides: Partial<Deps> = {}): Deps {
   const baseState = makeState({ registers: [makeRegister()] });
   const internal = makeInternal();
 
   return {
-    activeLocalId: 'proj-1' as string | null,
+    activeLocalId: 'proj-1',
     appState: baseState,
-    projects: [] as ProjectListEntry[],
+    projects: [],
     internalRef: { current: internal },
-    projectsRef: { current: [] as ProjectListEntry[] },
-    activeLocalIdRef: { current: 'proj-1' as string | null },
+    projectsRef: { current: [] },
+    activeLocalIdRef: { current: 'proj-1' },
     needsVersionSyncRef: { current: false },
     lastStableStateRef: { current: { localId: 'proj-1', state: baseState } },
     flushSyncRef: { current: vi.fn().mockResolvedValue(undefined) },
-    syncTimerRef: { current: null as ReturnType<typeof setTimeout> | null },
+    syncTimerRef: { current: null },
     isSigningOutRef: { current: false },
     cancelPendingOp: vi.fn(),
     setInternal: vi.fn(),
