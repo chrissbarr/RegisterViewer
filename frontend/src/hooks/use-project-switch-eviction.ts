@@ -57,6 +57,14 @@ export function useProjectSwitchEviction(deps: UseProjectSwitchEvictionDeps): vo
     const prevLocalId = prevActiveLocalIdRef.current;
     prevActiveLocalIdRef.current = activeLocalId;
     if (prevLocalId && prevLocalId !== activeLocalId) {
+      // Cancel any pending auto-sync timer from the previous project immediately.
+      // Without this, the timer could fire during the render-cycle gap and save
+      // the new project's appState to the old project's cloudId.
+      if (syncTimerRef.current) {
+        clearTimeout(syncTimerRef.current);
+        syncTimerRef.current = null;
+      }
+
       // Grab the previous project's state snapshot before updating the ref.
       // After switchProject, appStateRef already holds the *new* project's state,
       // so we pass the snapshot to flushSync to save the correct data.

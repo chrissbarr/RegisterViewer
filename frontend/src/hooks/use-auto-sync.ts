@@ -102,7 +102,9 @@ export function useAutoSync(deps: UseAutoSyncDeps): UseAutoSyncResult {
     // Derive dirty status from refs so this callback is referentially stable
     // (isDirty in the dep array caused a stale-closure duplicate PUT).
     const { cloudId, isOwner, lastSavedVersion } = internalRef.current;
-    if (!cloudId || !isOwner || dataVersionRef.current === lastSavedVersion) return;
+    if (!cloudId || !isOwner || dataVersionRef.current === lastSavedVersion) {
+      return;
+    }
     const jwt = getJwt();
     if (!jwt) return;
     await saveToCloud(stateOverride);

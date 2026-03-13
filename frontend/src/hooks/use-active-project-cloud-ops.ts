@@ -30,6 +30,7 @@ interface ActiveProjectCloudOpsDeps {
     cloudId: string | null;
     cloudSavedAt: string | null;
     visibility: Visibility;
+    storage: 'local' | 'cloud';
   }>) => void;
   createNewProject: (name: string, state: ReturnType<typeof serializeState>) => string;
   getJwt: () => string | null;
@@ -77,6 +78,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
     updateCloudMetadata(currentLocalId, {
       cloudId: result.cloudId,
       cloudSavedAt: result.timestamp,
+      storage: 'cloud',
     });
 
     const shareUrl = buildProjectUrl(result.cloudId);
@@ -86,6 +88,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
       ...prev,
       cloudId: result.cloudId,
       isOwner: true,
+      storage: 'cloud',
       status: 'idle',
       shareUrl,
       lastCloudSavedAt: result.timestamp,
@@ -95,24 +98,40 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
 
   const saveToCloud = useCallback(async (stateOverride?: AppState): Promise<boolean> => {
     if (!isCloudEnabled()) return true;
+
+    // When stateOverride is provided, this is a flush-before-evict save for
+    // a departing project. activeLocalIdRef already points to the NEW project
+    // (updated by an earlier effect), so we must NOT use it or update any
+    // internal state/metadata — the departing project's localStorage is about
+    // to be evicted anyway.
+    const isFlushForDepartingProject = !!stateOverride;
+
     const lockResult = await withMutationLock(mutationLockRef, async () => {
-      // Capture localId before the await — during flush-before-evict,
-      // activeLocalIdRef may already point to the new project by the
-      // time the async save completes.
-      const capturedLocalId = activeLocalIdRef.current;
+      const capturedLocalId = isFlushForDepartingProject
+        ? null // intentionally null — we don't know the departing project's localId
+        : activeLocalIdRef.current;
       try {
         const { cloudId, isOwner } = internalRef.current;
         const existingCloudId = (cloudId && isOwner) ? cloudId : null;
 
-        setInternal((prev) => ({ ...prev, status: 'saving', error: null }));
-        const jsonPayload = exportToObject(stateOverride ?? appStateRef.current);
+        const stateToSave = stateOverride ?? appStateRef.current;
+
+        if (!isFlushForDepartingProject) {
+          setInternal((prev) => ({ ...prev, status: 'saving', error: null }));
+        }
+        const jsonPayload = exportToObject(stateToSave);
         const jwt = requireJwt(getJwt);
         const result = await saveProjectToCloudImpl(jsonPayload, existingCloudId, jwt);
 
+        // During flush-before-evict, skip all post-save state updates:
+        // the data was sent to the correct cloudId (captured before the
+        // await), but activeLocalIdRef and internalRef now belong to the
+        // new project — touching them would corrupt the new project's state.
+        if (isFlushForDepartingProject) return;
+
         // Guard: only update internal cloud state if still on the same
         // saved project. When capturedLocalId is null (unsaved project),
-        // skip all internal state updates to prevent flush-before-evict
-        // results/errors from bleeding into the unsaved project's state.
+        // skip all internal state updates.
         const stillOnSameProject = capturedLocalId !== null
           && activeLocalIdRef.current === capturedLocalId;
 
@@ -144,10 +163,6 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
           if (capturedLocalId) {
             updateCloudMetadata(capturedLocalId, { cloudSavedAt: result.timestamp });
           }
-          // Only update internal state if we're still on the same project.
-          // During flush-before-evict, internal state already belongs to
-          // the new project — updating it would set the wrong timestamp
-          // and lastSavedVersion.
           if (stillOnSameProject) {
             setInternal((prev) => ({
               ...prev,
@@ -158,7 +173,10 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
           }
         }
       } catch (err) {
-        // Only surface the error if we're still on the same saved project
+        // During flush-before-evict, swallow errors silently — the eviction
+        // handler's .catch() already keeps local data as a safety net.
+        if (isFlushForDepartingProject) return;
+
         if (capturedLocalId !== null && activeLocalIdRef.current === capturedLocalId) {
           const next = { ...internalRef.current, status: 'idle' as const, error: friendlyErrorMessage(err, 'Failed to save project.') };
           internalRef.current = next;

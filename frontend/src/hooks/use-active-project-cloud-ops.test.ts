@@ -158,6 +158,7 @@ describe('useActiveProjectCloudOps', () => {
       expect(deps.updateCloudMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, {
         cloudId: TEST_CLOUD_ID,
         cloudSavedAt: TEST_TIMESTAMP,
+        storage: 'cloud',
       });
       expect(setCloudUrl).toHaveBeenCalledWith(TEST_CLOUD_ID);
       // setInternal should have been called with status 'saving' then with the created result
@@ -341,6 +342,7 @@ describe('useActiveProjectCloudOps', () => {
       expect(deps.updateCloudMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, {
         cloudId: 'forked-cloud-id',
         cloudSavedAt: TEST_TIMESTAMP,
+        storage: 'cloud',
       });
       expect(setCloudUrl).toHaveBeenCalledWith('forked-cloud-id');
     });
@@ -364,6 +366,7 @@ describe('useActiveProjectCloudOps', () => {
       expect(deps.updateCloudMetadata).toHaveBeenCalledWith('new-local-id', {
         cloudId: 'forked-cloud-id',
         cloudSavedAt: TEST_TIMESTAMP,
+        storage: 'cloud',
       });
     });
   });
