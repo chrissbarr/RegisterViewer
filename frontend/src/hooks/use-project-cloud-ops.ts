@@ -5,7 +5,7 @@ import { loadProject } from '../utils/project-storage';
 import { clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock, requireJwt } from '../utils/cloud-url';
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
 import type { Visibility, ProjectListEntry } from '../types/project';
-import type { CloudSyncCore } from '../types/cloud-sync';
+import { type CloudSyncCore, initialInternalState } from '../types/cloud-sync';
 
 interface ProjectCloudOpsDeps {
   core: CloudSyncCore;
@@ -35,7 +35,7 @@ interface ProjectCloudOps {
  * Used primarily by the My Projects dialog.
  */
 export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
-  const { core: { internalRef, activeLocalIdRef, setInternal, initialInternalState }, updateCloudMetadata, projectsRef, mutationLockRef, getJwt, activeProjectSave } = deps;
+  const { core: { internalRef, activeLocalIdRef, setInternal }, updateCloudMetadata, projectsRef, mutationLockRef, getJwt, activeProjectSave } = deps;
 
   const saveProjectToCloud = useCallback(async (localId: string) => {
     if (!isCloudEnabled()) return;
@@ -96,7 +96,7 @@ export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
         setInternal({ ...initialInternalState });
       }
     });
-  }, [updateCloudMetadata, projectsRef, mutationLockRef, internalRef, setInternal, initialInternalState, getJwt]);
+  }, [updateCloudMetadata, projectsRef, mutationLockRef, internalRef, setInternal, getJwt]);
 
   const setProjectVisibility = useCallback(async (localId: string, v: Visibility) => {
     const entry = projectsRef.current.find(p => p.localId === localId);
@@ -125,7 +125,7 @@ export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
       clearCloudUrl();
       setInternal({ ...initialInternalState });
     }
-  }, [updateCloudMetadata, projectsRef, internalRef, setInternal, initialInternalState]);
+  }, [updateCloudMetadata, projectsRef, internalRef, setInternal]);
 
   return useMemo(
     () => ({ saveProjectToCloud, deleteProjectFromCloud, setProjectVisibility, unlinkCloudProject }),

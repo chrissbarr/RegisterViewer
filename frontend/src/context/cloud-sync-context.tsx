@@ -159,7 +159,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   // Shared refs passed to all cloud sync hooks (AR-1: reduces per-hook param count).
   // All items are stable across renders (refs, useState setter, module-level const).
   const core: CloudSyncCore = useMemo(
-    () => ({ internalRef, activeLocalIdRef, setInternal, initialInternalState }),
+    () => ({ internalRef, activeLocalIdRef, setInternal }),
     [],
   );
 

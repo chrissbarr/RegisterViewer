@@ -37,7 +37,6 @@ export interface CloudSyncCore {
   internalRef: MutableRefObject<InternalCloudSyncState>;
   activeLocalIdRef: MutableRefObject<string | null>;
   setInternal: Dispatch<SetStateAction<InternalCloudSyncState>>;
-  initialInternalState: InternalCloudSyncState;
 }
 
 export interface SyncResult {

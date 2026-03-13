@@ -8,7 +8,7 @@ import { setCloudUrl, clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock, r
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
 import { DEFAULT_PROJECT_NAME, type Visibility } from '../types/project';
 import type { AppState } from '../types/register';
-import type { CloudSyncCore } from '../types/cloud-sync';
+import { type CloudSyncCore, initialInternalState } from '../types/cloud-sync';
 import type { ImportStateAction } from '../context/app-context';
 
 interface ActiveProjectCloudOpsDeps {
@@ -49,7 +49,7 @@ interface ActiveProjectCloudOps {
  */
 export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): ActiveProjectCloudOps {
   const {
-    core: { internalRef, activeLocalIdRef, setInternal, initialInternalState },
+    core: { internalRef, activeLocalIdRef, setInternal },
     appStateRef, dataVersionRef, mutationLockRef, needsVersionSyncRef,
     updateCloudMetadata, createNewProject, getJwt, dispatch,
   } = deps;
@@ -216,7 +216,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
         setInternal((prev) => ({ ...prev, status: 'idle', error: friendlyErrorMessage(err, 'Failed to delete project.') }));
       }
     });
-  }, [updateCloudMetadata, mutationLockRef, getJwt, internalRef, activeLocalIdRef, setInternal, initialInternalState]);
+  }, [updateCloudMetadata, mutationLockRef, getJwt, internalRef, activeLocalIdRef, setInternal]);
 
   const setVisibility = useCallback(async (v: Visibility) => {
     const { cloudId, isOwner, visibility: previousVisibility } = internalRef.current;

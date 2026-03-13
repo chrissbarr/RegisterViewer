@@ -1,7 +1,7 @@
 import { useEffect, useRef, type MutableRefObject } from 'react';
 import { purgeCloudProjects, getMostRecentProjectId, ACTIVE_PROJECT_SESSION_KEY } from '../utils/project-storage';
 import { clearCloudUrl } from '../utils/cloud-url';
-import type { CloudSyncCore, SyncResult } from '../types/cloud-sync';
+import { type CloudSyncCore, type SyncResult, initialInternalState } from '../types/cloud-sync';
 
 interface UseAuthTransitionDeps {
   core: CloudSyncCore;
@@ -35,7 +35,7 @@ interface UseAuthTransitionResult {
  */
 export function useAuthTransition(deps: UseAuthTransitionDeps): UseAuthTransitionResult {
   const {
-    core: { activeLocalIdRef, setInternal, initialInternalState },
+    core: { activeLocalIdRef, setInternal },
     authUser, pendingCloudOpRef, setLoginRequired, rawSave, rawFork,
     syncCloudProjectsRef, syncTimerRef,
     refreshProjectList, switchProject, createNewProject,
@@ -98,7 +98,7 @@ export function useAuthTransition(deps: UseAuthTransitionDeps): UseAuthTransitio
       clearCloudUrl();
       sessionStorage.removeItem(ACTIVE_PROJECT_SESSION_KEY);
     }
-  }, [authUser, rawSave, rawFork, pendingCloudOpRef, setLoginRequired, syncCloudProjectsRef, syncTimerRef, activeLocalIdRef, setInternal, initialInternalState, refreshProjectList, switchProject, createNewProject]);
+  }, [authUser, rawSave, rawFork, pendingCloudOpRef, setLoginRequired, syncCloudProjectsRef, syncTimerRef, activeLocalIdRef, setInternal, refreshProjectList, switchProject, createNewProject]);
 
   return { isSigningOutRef };
 }
