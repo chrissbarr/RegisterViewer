@@ -29,7 +29,8 @@ export function useLoginGuard(deps: UseLoginGuardDeps): UseLoginGuardResult {
   const [loginRequired, setLoginRequired] = useState(false);
   const pendingCloudOpRef = useRef<'save' | 'fork' | null>(null);
 
-  const saveToCloud = useCallback(async () => {
+  /** Wraps rawSave with JWT guard. Returns `undefined` (deferred to login) when no JWT is available. */
+  const saveToCloud = useCallback(async (): Promise<boolean | undefined> => {
     if (!getJwt()) {
       pendingCloudOpRef.current = 'save';
       setLoginRequired(true);

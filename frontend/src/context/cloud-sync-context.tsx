@@ -67,7 +67,14 @@ interface CloudSyncState {
 }
 
 interface CloudSyncActions {
-  /** Returns false if the save was dropped because a mutation lock was held. */
+  /**
+   * Save the active project to the cloud.
+   *
+   * Returns:
+   * - `true` — saved successfully (or cloud disabled)
+   * - `false` — mutation lock held by another operation; try again later
+   * - `undefined` — no JWT; operation deferred to login dialog (auto-retried on sign-in)
+   */
   saveToCloud: () => Promise<boolean | undefined>;
   saveProjectToCloud: (localId: string) => Promise<void>;
   deleteFromCloud: () => Promise<void>;
