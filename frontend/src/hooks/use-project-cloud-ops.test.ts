@@ -256,7 +256,13 @@ describe('useProjectCloudOps', () => {
       });
 
       expect(clearCloudUrl).toHaveBeenCalled();
-      expect(deps.setInternal).toHaveBeenCalled();
+      expect(deps.setInternal).toHaveBeenCalledWith(
+        expect.objectContaining({
+          cloudId: null,
+          isOwner: false,
+          storage: 'local',
+        }),
+      );
     });
 
     it('does not clear cloud state when deleting non-active project', async () => {
@@ -298,7 +304,10 @@ describe('useProjectCloudOps', () => {
         await result.current.setProjectVisibility('local-1', 'unlisted');
       });
 
-      expect(deps.setInternal).toHaveBeenCalled();
+      // setInternal is called with an updater function that sets visibility
+      expect(deps.setInternal).toHaveBeenCalledWith(expect.any(Function));
+      const updater = (deps.setInternal as Mock).mock.calls[0][0] as (prev: Record<string, unknown>) => Record<string, unknown>;
+      expect(updater({ visibility: 'private' })).toEqual({ visibility: 'unlisted' });
     });
 
     it('returns early when project has no cloudId', async () => {
@@ -343,7 +352,13 @@ describe('useProjectCloudOps', () => {
       });
 
       expect(clearCloudUrl).toHaveBeenCalled();
-      expect(deps.setInternal).toHaveBeenCalled();
+      expect(deps.setInternal).toHaveBeenCalledWith(
+        expect.objectContaining({
+          cloudId: null,
+          isOwner: false,
+          storage: 'local',
+        }),
+      );
     });
 
     it('does nothing when project has no cloudId', () => {
