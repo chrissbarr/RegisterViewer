@@ -97,38 +97,45 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
     }));
   }, [updateCloudMetadata, createNewProject, dataVersionRef, activeLocalIdRef, appStateRef, setInternal]);
 
+  /**
+   * Flush-before-evict: save a departing project's state to the cloud before
+   * its localStorage is evicted. Skips all post-save state updates and swallows
+   * errors — the eviction handler keeps local data as a safety net.
+   */
+  const flushDepartingProject = useCallback(async (stateOverride: AppState) => {
+    await withMutationLock(mutationLockRef, async () => {
+      try {
+        const { cloudId, isOwner } = internalRef.current;
+        const existingCloudId = (cloudId && isOwner) ? cloudId : null;
+        const jsonPayload = exportToObject(stateOverride);
+        const jwt = requireJwt(getJwt);
+        await saveProjectToCloudImpl(jsonPayload, existingCloudId, jwt);
+      } catch {
+        // Swallow — eviction handler keeps local data as safety net
+      }
+    });
+  }, [mutationLockRef, getJwt, internalRef]);
+
   const saveToCloud = useCallback(async (stateOverride?: AppState): Promise<boolean> => {
     if (!isCloudEnabled()) return true;
 
     // When stateOverride is provided, this is a flush-before-evict save for
-    // a departing project. activeLocalIdRef already points to the NEW project
-    // (updated by an earlier effect), so we must NOT use it or update any
-    // internal state/metadata — the departing project's localStorage is about
-    // to be evicted anyway.
-    const isFlushForDepartingProject = !!stateOverride;
+    // a departing project — delegate to the dedicated handler.
+    if (stateOverride) {
+      await flushDepartingProject(stateOverride);
+      return true;
+    }
 
     const lockResult = await withMutationLock(mutationLockRef, async () => {
-      const capturedLocalId = isFlushForDepartingProject
-        ? null // intentionally null — we don't know the departing project's localId
-        : activeLocalIdRef.current;
+      const capturedLocalId = activeLocalIdRef.current;
       try {
         const { cloudId, isOwner } = internalRef.current;
         const existingCloudId = (cloudId && isOwner) ? cloudId : null;
 
-        const stateToSave = stateOverride ?? appStateRef.current;
-
-        if (!isFlushForDepartingProject) {
-          setInternal((prev) => ({ ...prev, status: 'saving', error: null }));
-        }
-        const jsonPayload = exportToObject(stateToSave);
+        setInternal((prev) => ({ ...prev, status: 'saving', error: null }));
+        const jsonPayload = exportToObject(appStateRef.current);
         const jwt = requireJwt(getJwt);
         const result = await saveProjectToCloudImpl(jsonPayload, existingCloudId, jwt);
-
-        // During flush-before-evict, skip all post-save state updates:
-        // the data was sent to the correct cloudId (captured before the
-        // await), but activeLocalIdRef and internalRef now belong to the
-        // new project — touching them would corrupt the new project's state.
-        if (isFlushForDepartingProject) return;
 
         // Guard: only update internal cloud state if still on the same
         // saved project. When capturedLocalId is null (unsaved project),
@@ -174,10 +181,6 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
           }
         }
       } catch (err) {
-        // During flush-before-evict, swallow errors silently — the eviction
-        // handler's .catch() already keeps local data as a safety net.
-        if (isFlushForDepartingProject) return;
-
         if (capturedLocalId !== null && activeLocalIdRef.current === capturedLocalId) {
           const next = { ...internalRef.current, status: 'idle' as const, error: friendlyErrorMessage(err, 'Failed to save project.') };
           internalRef.current = next;
@@ -187,7 +190,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
       }
     });
     return lockResult.executed;
-  }, [updateCloudMetadata, applyCreatedResult, mutationLockRef, dataVersionRef, getJwt, internalRef, appStateRef, activeLocalIdRef, setInternal]);
+  }, [flushDepartingProject, updateCloudMetadata, applyCreatedResult, mutationLockRef, dataVersionRef, getJwt, internalRef, appStateRef, activeLocalIdRef, setInternal]);
 
   const fork = useCallback(async () => {
     if (!isCloudEnabled()) return;
