@@ -243,6 +243,9 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     const jwt = getJwt();
     if (!jwt) return emptyResult;
 
+    // TODO(CQ-4): staleCloudIds are computed but not acted on — server-deleted
+    // projects remain in the local manifest. A future enhancement should unlink
+    // these entries via updateCloudMetadata(localId, CLEARED_CLOUD_METADATA).
     return syncCloudProjectsFromServer(jwt, projectsRef.current, {
       updateCloudMetadata,
       createPlaceholder: (data) => {

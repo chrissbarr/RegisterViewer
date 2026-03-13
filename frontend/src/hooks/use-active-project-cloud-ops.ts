@@ -7,16 +7,9 @@ import { buildProjectUrl } from '../utils/project-storage';
 import { setCloudUrl, clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock, requireJwt } from '../utils/cloud-url';
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
 import { DEFAULT_PROJECT_NAME, type Visibility } from '../types/project';
-import type { AppState, RegisterDef, ProjectMetadata, AddressUnitBits } from '../types/register';
+import type { AppState } from '../types/register';
 import type { InternalCloudSyncState } from '../types/cloud-sync';
-
-type ImportStateAction = {
-  type: 'IMPORT_STATE';
-  registers: RegisterDef[];
-  values: Record<string, bigint>;
-  project?: ProjectMetadata;
-  addressUnitBits?: AddressUnitBits;
-};
+import type { ImportStateAction } from '../context/app-context';
 
 // TODO(AR-1): Consider grouping shared refs (internalRef, appStateRef, etc.) into CloudSyncRefs bag
 interface ActiveProjectCloudOpsDeps {

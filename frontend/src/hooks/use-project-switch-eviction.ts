@@ -84,8 +84,9 @@ export function useProjectSwitchEviction(deps: UseProjectSwitchEvictionDeps): vo
           if (activeLocalIdRef.current === prevLocalId) return; // user navigated back
           if (isSigningOutRef.current) return; // sign-out purge handles cleanup
           evictProjectData(prevLocalId);
-        }).catch(() => {
+        }).catch((err) => {
           // Flush failed — keep local data as safety net
+          console.warn('[cloud-sync] flush-before-evict failed for project', prevLocalId, err);
         });
       }
     }
