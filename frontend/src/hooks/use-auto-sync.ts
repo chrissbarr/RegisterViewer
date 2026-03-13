@@ -37,6 +37,11 @@ interface UseAutoSyncResult {
  *
  * Priority: `!canAutoSync` → local-only; `syncing` always shows (active save);
  * `!isDirty` → saved (overrides stale 'offline'); `isDirty + offline` → offline.
+ *
+ * Note (BP-4): During the debounce window (isDirty but timer hasn't fired),
+ * this returns 'saved' rather than a 'pending' status. This is intentional:
+ * showing "pending" for every keystroke during the 3s debounce would create
+ * visual noise. The brief inaccuracy is acceptable UX.
  */
 export function deriveSyncStatus(canAutoSync: boolean, isDirty: boolean, asyncOverride: 'syncing' | 'offline' | null): SyncStatus {
   if (!canAutoSync) return 'local-only';
@@ -92,6 +97,10 @@ export function useAutoSync(deps: UseAutoSyncDeps): UseAutoSyncResult {
     return () => {
       cancelled = true;
       if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+      // Reset async status on cleanup to prevent stale 'offline'/'syncing'
+      // from leaking when canAutoSync toggles off or project switches.
+      // Scheduled as microtask to satisfy react-hooks/set-state-in-effect.
+      void Promise.resolve().then(() => setAsyncOverride(null));
     };
   }, [isDirty, canAutoSync, getJwt, saveToCloud]);
 

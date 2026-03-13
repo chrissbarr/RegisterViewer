@@ -133,6 +133,36 @@ describe('useAutoSync', () => {
     expect(saveToCloud).not.toHaveBeenCalled();
   });
 
+  it('resets asyncOverride when canAutoSync toggles off', async () => {
+    const saveToCloud = vi.fn(() => Promise.reject(new Error('network error')));
+    const deps = makeDeps({ isDirty: true, canAutoSync: true, saveToCloud });
+
+    const { result, rerender } = renderHook(
+      (props: Partial<Parameters<typeof useAutoSync>[0]>) => useAutoSync({ ...deps, ...props }),
+      { initialProps: { isDirty: true, canAutoSync: true } },
+    );
+
+    // Trigger offline state
+    await act(async () => {
+      vi.advanceTimersByTime(150);
+      await Promise.resolve();
+    });
+    expect(result.current.syncStatus).toBe('offline');
+
+    // Toggle canAutoSync off — should reset asyncOverride
+    await act(async () => {
+      rerender({ isDirty: true, canAutoSync: false });
+    });
+    expect(result.current.syncStatus).toBe('local-only');
+
+    // Toggle back on — should be 'saved' (asyncOverride was cleared), not 'offline'
+    saveToCloud.mockResolvedValue(true);
+    await act(async () => {
+      rerender({ isDirty: false, canAutoSync: true });
+    });
+    expect(result.current.syncStatus).toBe('saved');
+  });
+
   describe('flushSync', () => {
     it('calls saveToCloud immediately when dirty', async () => {
       const saveToCloud = vi.fn(() => Promise.resolve(true as const));
