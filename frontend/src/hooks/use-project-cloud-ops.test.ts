@@ -67,15 +67,18 @@ function makeProjectList(entries: Array<{ localId: string; cloudId?: string | nu
 function makeDeps(overrides: Record<string, unknown> = {}) {
   const initial = makeInitialState();
   const internalRef = { current: overrides.internalState as typeof initial ?? initial };
+  const activeLocalIdRef = { current: (overrides.activeLocalId as string) ?? 'local-1' };
+  const setInternal = vi.fn() as Mock;
   const projects = (overrides.projects as ProjectListEntry[]) ?? makeProjectList([{ localId: 'local-1', cloudId: 'cloud-1' }]);
   return {
+    core: { internalRef, activeLocalIdRef, setInternal, initialInternalState: initial },
+    // Expose core fields at top level for test assertions
+    internalRef,
+    activeLocalIdRef,
+    setInternal,
     updateCloudMetadata: vi.fn() as Mock,
     projectsRef: { current: projects },
-    activeLocalIdRef: { current: (overrides.activeLocalId as string) ?? 'local-1' },
     mutationLockRef: { current: false },
-    internalRef,
-    setInternal: vi.fn() as Mock,
-    initialInternalState: initial,
     getJwt: (overrides.getJwt as (() => string | null)) ?? (() => 'mock-jwt'),
     activeProjectSave: (overrides.activeProjectSave as (() => Promise<boolean>)) ?? vi.fn(async () => true),
   };

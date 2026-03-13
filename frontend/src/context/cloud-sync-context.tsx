@@ -47,7 +47,7 @@ import { useProjectSwitchEviction } from '../hooks/use-project-switch-eviction';
 import { syncCloudProjectsFromServer } from '../utils/cloud-sync';
 import type { Visibility } from '../types/project';
 import type { AppState } from '../types/register';
-import { initialInternalState, type InternalCloudSyncState, type SyncResult } from '../types/cloud-sync';
+import { initialInternalState, type CloudSyncCore, type InternalCloudSyncState, type SyncResult } from '../types/cloud-sync';
 
 export type { SyncStatus };
 
@@ -156,6 +156,13 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   const internalRef = useRef(internal);
   internalRef.current = internal; // eslint-disable-line react-hooks/refs -- intentional render-time sync; see docstring above
 
+  // Shared refs passed to all cloud sync hooks (AR-1: reduces per-hook param count).
+  // All items are stable across renders (refs, useState setter, module-level const).
+  const core: CloudSyncCore = useMemo(
+    () => ({ internalRef, activeLocalIdRef, setInternal, initialInternalState }),
+    [],
+  );
+
   // Ref to avoid stale closures in save/fork callbacks
   const appStateRef = useRef(appState);
   useEffect(() => {
@@ -180,10 +187,9 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
 
   // Active-project cloud operations (save, fork, delete, visibility, load)
   const rawActiveOps = useActiveProjectCloudOps({
-    internalRef, appStateRef, activeLocalIdRef,
+    core, appStateRef,
     dataVersionRef, mutationLockRef, needsVersionSyncRef,
-    setInternal, updateCloudMetadata, createNewProject,
-    getJwt, dispatch, initialInternalState,
+    updateCloudMetadata, createNewProject, getJwt, dispatch,
   });
 
   // Login guard: JWT-guarded save/fork with deferred retry
@@ -281,28 +287,21 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
 
   // Auth transition: sign-in retry, cloud sync, sign-out cleanup
   const { isSigningOutRef } = useAuthTransition({
-    authUser,
+    core, authUser,
     pendingCloudOpRef: loginGuard.pendingCloudOpRef,
     setLoginRequired: loginGuard.setLoginRequired,
     rawSave: rawActiveOps.saveToCloud,
     rawFork: rawActiveOps.fork,
-    syncCloudProjectsRef,
-    syncTimerRef,
-    activeLocalIdRef,
-    setInternal,
-    initialInternalState,
-    refreshProjectList,
-    switchProject,
-    createNewProject,
+    syncCloudProjectsRef, syncTimerRef,
+    refreshProjectList, switchProject, createNewProject,
   });
 
   // --- Active project switch: eviction + cloudId tracking ---
   useProjectSwitchEviction({
-    activeLocalId, appState, projects,
-    internalRef, projectsRef, activeLocalIdRef, needsVersionSyncRef,
+    core, activeLocalId, appState, projects,
+    projectsRef, needsVersionSyncRef,
     lastStableStateRef, flushSyncRef, syncTimerRef, isSigningOutRef,
     cancelPendingOp: loginGuard.cancelPendingOp,
-    setInternal, initialInternalState,
   });
 
   // Re-evaluate ownership when auth state changes or the active cloud project
@@ -328,14 +327,8 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
 
   // By-localId cloud operations (used by My Projects dialog)
   const projectOps = useProjectCloudOps({
-    updateCloudMetadata,
-    projectsRef,
-    activeLocalIdRef,
-    mutationLockRef,
-    internalRef,
-    setInternal,
-    initialInternalState,
-    getJwt,
+    core, updateCloudMetadata, projectsRef,
+    mutationLockRef, getJwt,
     activeProjectSave: rawActiveOps.saveToCloud,
   });
 

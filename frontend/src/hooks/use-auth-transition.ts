@@ -1,10 +1,10 @@
-import { useEffect, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
+import { useEffect, useRef, type MutableRefObject } from 'react';
 import { purgeCloudProjects, getMostRecentProjectId, ACTIVE_PROJECT_SESSION_KEY } from '../utils/project-storage';
 import { clearCloudUrl } from '../utils/cloud-url';
-import type { InternalCloudSyncState, SyncResult } from '../types/cloud-sync';
+import type { CloudSyncCore, SyncResult } from '../types/cloud-sync';
 
-// TODO(AR-1): Consider grouping shared refs (internalRef, appStateRef, etc.) into CloudSyncRefs bag
 interface UseAuthTransitionDeps {
+  core: CloudSyncCore;
   authUser: { email: string } | null;
   pendingCloudOpRef: MutableRefObject<'save' | 'fork' | null>;
   setLoginRequired: (v: boolean) => void;
@@ -12,9 +12,6 @@ interface UseAuthTransitionDeps {
   rawFork: () => Promise<void>;
   syncCloudProjectsRef: MutableRefObject<(() => Promise<SyncResult>) | null>;
   syncTimerRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
-  activeLocalIdRef: MutableRefObject<string | null>;
-  setInternal: Dispatch<SetStateAction<InternalCloudSyncState>>;
-  initialInternalState: InternalCloudSyncState;
   refreshProjectList: () => void;
   switchProject: (id: string) => void;
   createNewProject: () => string;
@@ -38,9 +35,9 @@ interface UseAuthTransitionResult {
  */
 export function useAuthTransition(deps: UseAuthTransitionDeps): UseAuthTransitionResult {
   const {
+    core: { activeLocalIdRef, setInternal, initialInternalState },
     authUser, pendingCloudOpRef, setLoginRequired, rawSave, rawFork,
-    syncCloudProjectsRef, syncTimerRef, activeLocalIdRef,
-    setInternal, initialInternalState,
+    syncCloudProjectsRef, syncTimerRef,
     refreshProjectList, switchProject, createNewProject,
   } = deps;
 

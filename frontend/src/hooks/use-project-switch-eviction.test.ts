@@ -1,7 +1,7 @@
 import { renderHook } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useProjectSwitchEviction } from './use-project-switch-eviction';
-import type { InternalCloudSyncState } from '../types/cloud-sync';
+import type { InternalCloudSyncState, CloudSyncCore } from '../types/cloud-sync';
 import { initialInternalState } from '../types/cloud-sync';
 import type { ProjectListEntry } from '../types/project';
 import { makeState, makeRegister } from '../test/helpers';
@@ -38,26 +38,40 @@ function makeProjectEntry(overrides: Partial<ProjectListEntry> & { localId: stri
 
 type Deps = Parameters<typeof useProjectSwitchEviction>[0];
 
-function makeDeps(overrides: Partial<Deps> = {}): Deps {
+interface MakeDepsOverrides extends Partial<Omit<Deps, 'core'>> {
+  internalRef?: { current: InternalCloudSyncState };
+  setInternal?: ReturnType<typeof vi.fn>;
+}
+
+function makeDeps(overrides: MakeDepsOverrides = {}) {
   const baseState = makeState({ registers: [makeRegister()] });
   const internal = makeInternal();
 
+  const internalRef = overrides.internalRef ?? { current: internal };
+  const activeLocalIdRef = { current: 'proj-1' as string | null };
+  const setInternal = overrides.setInternal ?? vi.fn();
+  const core = { internalRef, activeLocalIdRef, setInternal, initialInternalState } as unknown as CloudSyncCore;
+
+  // Remove core-field overrides before spreading into Deps
+  const { internalRef: _, setInternal: __, ...rest } = overrides;
+
   return {
-    activeLocalId: 'proj-1',
+    core,
+    // Expose core fields at top level for test assertions
+    internalRef,
+    activeLocalIdRef,
+    setInternal,
+    activeLocalId: 'proj-1' as string | null,
     appState: baseState,
-    projects: [],
-    internalRef: { current: internal },
-    projectsRef: { current: [] },
-    activeLocalIdRef: { current: 'proj-1' },
+    projects: [] as ProjectListEntry[],
+    projectsRef: { current: [] as ProjectListEntry[] },
     needsVersionSyncRef: { current: false },
-    lastStableStateRef: { current: { localId: 'proj-1', state: baseState } },
-    flushSyncRef: { current: vi.fn().mockResolvedValue(undefined) },
-    syncTimerRef: { current: null },
+    lastStableStateRef: { current: { localId: 'proj-1' as string | null, state: baseState } },
+    flushSyncRef: { current: vi.fn().mockResolvedValue(undefined) as ((stateOverride?: unknown) => Promise<void>) | null },
+    syncTimerRef: { current: null as ReturnType<typeof setTimeout> | null },
     isSigningOutRef: { current: false },
     cancelPendingOp: vi.fn(),
-    setInternal: vi.fn(),
-    initialInternalState,
-    ...overrides,
+    ...rest,
   };
 }
 
@@ -89,8 +103,9 @@ describe('useProjectSwitchEviction', () => {
       { initialProps: deps },
     );
 
-    // Switch to null
-    rerender({ ...deps, activeLocalId: null, activeLocalIdRef: { current: null } });
+    // Switch to null — mutate the ref to match what the provider does
+    deps.activeLocalIdRef.current = null;
+    rerender({ ...deps, activeLocalId: null });
 
     expect(cancelPendingOp).toHaveBeenCalled();
     expect(clearCloudUrl).toHaveBeenCalled();
@@ -113,7 +128,8 @@ describe('useProjectSwitchEviction', () => {
       { initialProps: deps },
     );
 
-    rerender({ ...deps, activeLocalId: 'proj-2', activeLocalIdRef: { current: 'proj-2' } });
+    deps.activeLocalIdRef.current = 'proj-2';
+    rerender({ ...deps, activeLocalId: 'proj-2' });
 
     // Let any pending promises flush
     await vi.waitFor(() => {
@@ -143,10 +159,10 @@ describe('useProjectSwitchEviction', () => {
 
     // Set signing out before the switch
     isSigningOutRef.current = true;
+    deps.activeLocalIdRef.current = 'proj-2';
     rerender({
       ...deps,
       activeLocalId: 'proj-2',
-      activeLocalIdRef: { current: 'proj-2' },
       isSigningOutRef,
     });
 
@@ -175,10 +191,10 @@ describe('useProjectSwitchEviction', () => {
       { initialProps: deps },
     );
 
+    deps.activeLocalIdRef.current = 'proj-2';
     rerender({
       ...deps,
       activeLocalId: 'proj-2',
-      activeLocalIdRef: { current: 'proj-2' },
     });
 
     await vi.waitFor(() => {
@@ -209,10 +225,10 @@ describe('useProjectSwitchEviction', () => {
       { initialProps: deps },
     );
 
+    deps.activeLocalIdRef.current = 'proj-2';
     rerender({
       ...deps,
       activeLocalId: 'proj-2',
-      activeLocalIdRef: { current: 'proj-2' },
     });
 
     expect(setCloudUrl).toHaveBeenCalledWith('cloud-2');

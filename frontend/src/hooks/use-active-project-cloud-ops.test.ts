@@ -101,24 +101,29 @@ function buildDeps() {
     project: { title: 'Test Project' },
   });
 
+  const internalRef = makeRef<InternalCloudSyncState>({ ...INITIAL_INTERNAL_STATE });
+  const activeLocalIdRef = makeRef<string | null>(TEST_LOCAL_ID);
+  const setInternal = vi.fn((updater) => {
+    // Support both direct value and updater function
+    if (typeof updater === 'function') {
+      updater(INITIAL_INTERNAL_STATE);
+    }
+  });
+
   return {
-    internalRef: makeRef<InternalCloudSyncState>({ ...INITIAL_INTERNAL_STATE }),
+    core: { internalRef, activeLocalIdRef, setInternal, initialInternalState: { ...INITIAL_INTERNAL_STATE } },
+    // Expose refs at top level for test assertions
+    internalRef,
+    activeLocalIdRef,
+    setInternal,
     appStateRef: makeRef<AppState>(appState),
-    activeLocalIdRef: makeRef<string | null>(TEST_LOCAL_ID),
     dataVersionRef: makeRef(1),
     mutationLockRef: makeRef(false),
     needsVersionSyncRef: makeRef(false),
-    setInternal: vi.fn((updater) => {
-      // Support both direct value and updater function
-      if (typeof updater === 'function') {
-        updater(INITIAL_INTERNAL_STATE);
-      }
-    }),
     updateCloudMetadata: vi.fn(),
     createNewProject: vi.fn(() => 'new-local-id'),
     getJwt: vi.fn((): string | null => TEST_JWT),
     dispatch: vi.fn(),
-    initialInternalState: { ...INITIAL_INTERNAL_STATE },
   };
 }
 

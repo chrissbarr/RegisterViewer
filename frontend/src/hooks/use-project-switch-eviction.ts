@@ -1,24 +1,20 @@
-import { useEffect, useMemo, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
+import { useEffect, useMemo, useRef, type MutableRefObject } from 'react';
 import { buildProjectUrl, evictProjectData } from '../utils/project-storage';
 import { setCloudUrl, clearCloudUrl } from '../utils/cloud-url';
-import type { InternalCloudSyncState } from '../types/cloud-sync';
+import type { CloudSyncCore } from '../types/cloud-sync';
 import type { ProjectListEntry } from '../types/project';
 import type { AppState } from '../types/register';
 
-// TODO(AR-1): Consider grouping shared refs (internalRef, appStateRef, etc.) into CloudSyncRefs bag
 interface UseProjectSwitchEvictionDeps {
+  core: CloudSyncCore;
   /** Currently active project's localId (from ProjectStorage context). */
   activeLocalId: string | null;
   /** Current app state — used to snapshot departing project for flush-before-evict. */
   appState: AppState;
   /** Full project list — used to find cloudId for active project. */
   projects: ProjectListEntry[];
-  /** Ref synced to cloud sync internal state. */
-  internalRef: MutableRefObject<InternalCloudSyncState>;
   /** Ref synced to projects list for async callbacks. */
   projectsRef: MutableRefObject<ProjectListEntry[]>;
-  /** Ref synced to activeLocalId for async callbacks. */
-  activeLocalIdRef: MutableRefObject<string | null>;
   /** Set true when loadCloudProject dispatches IMPORT_STATE, triggering version re-sync. */
   needsVersionSyncRef: MutableRefObject<boolean>;
   /** Snapshot of previous project's state, updated during render. Used by flush-before-evict. */
@@ -31,10 +27,6 @@ interface UseProjectSwitchEvictionDeps {
   isSigningOutRef: MutableRefObject<boolean>;
   /** Clears any pending login guard operation on project switch. */
   cancelPendingOp: () => void;
-  /** Sets cloud sync internal state. */
-  setInternal: Dispatch<SetStateAction<InternalCloudSyncState>>;
-  /** Default internal state for resetting on project switch. */
-  initialInternalState: InternalCloudSyncState;
 }
 
 /**
@@ -52,10 +44,11 @@ interface UseProjectSwitchEvictionDeps {
  */
 export function useProjectSwitchEviction(deps: UseProjectSwitchEvictionDeps): void {
   const {
+    core: { internalRef, activeLocalIdRef, setInternal, initialInternalState },
     activeLocalId, appState, projects,
-    internalRef, projectsRef, activeLocalIdRef, needsVersionSyncRef,
+    projectsRef, needsVersionSyncRef,
     lastStableStateRef, flushSyncRef, syncTimerRef, isSigningOutRef,
-    cancelPendingOp, setInternal, initialInternalState,
+    cancelPendingOp,
   } = deps;
 
   const prevActiveLocalIdRef = useRef<string | null>(null);

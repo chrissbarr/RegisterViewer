@@ -32,7 +32,19 @@ const INITIAL_INTERNAL_STATE = {
 };
 
 function makeDeps(overrides: Partial<Parameters<typeof useAuthTransition>[0]> = {}) {
+  const activeLocalIdRef = { current: 'local-1' };
+  const setInternal = vi.fn();
+  const core = overrides.core ?? {
+    internalRef: { current: { ...INITIAL_INTERNAL_STATE } },
+    activeLocalIdRef,
+    setInternal,
+    initialInternalState: INITIAL_INTERNAL_STATE,
+  };
   return {
+    core,
+    // Expose refs at top level for test assertions
+    activeLocalIdRef: core.activeLocalIdRef,
+    setInternal: core.setInternal,
     authUser: null as { email: string } | null,
     pendingCloudOpRef: { current: null as 'save' | 'fork' | null },
     setLoginRequired: vi.fn(),
@@ -40,9 +52,6 @@ function makeDeps(overrides: Partial<Parameters<typeof useAuthTransition>[0]> = 
     rawFork: vi.fn(() => Promise.resolve()),
     syncCloudProjectsRef: { current: vi.fn(() => Promise.resolve({ updatedCount: 0, staleCloudIds: [], placeholdersCreated: 0 })) },
     syncTimerRef: { current: null as ReturnType<typeof setTimeout> | null },
-    activeLocalIdRef: { current: 'local-1' },
-    setInternal: vi.fn(),
-    initialInternalState: INITIAL_INTERNAL_STATE,
     refreshProjectList: vi.fn(),
     switchProject: vi.fn(),
     createNewProject: vi.fn(() => 'new-project-id'),

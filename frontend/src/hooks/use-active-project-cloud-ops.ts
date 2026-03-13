@@ -1,4 +1,4 @@
-import { useCallback, useMemo, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
+import { useCallback, useMemo, type Dispatch, type MutableRefObject } from 'react';
 import { exportToObject, serializeState } from '../utils/storage';
 import { isCloudEnabled, ApiError } from '../utils/api-client';
 import { fetchAndParseCloudProject } from '../utils/cloud-project-loader';
@@ -8,18 +8,15 @@ import { setCloudUrl, clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock, r
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
 import { DEFAULT_PROJECT_NAME, type Visibility } from '../types/project';
 import type { AppState } from '../types/register';
-import type { InternalCloudSyncState } from '../types/cloud-sync';
+import type { CloudSyncCore } from '../types/cloud-sync';
 import type { ImportStateAction } from '../context/app-context';
 
-// TODO(AR-1): Consider grouping shared refs (internalRef, appStateRef, etc.) into CloudSyncRefs bag
 interface ActiveProjectCloudOpsDeps {
-  internalRef: MutableRefObject<InternalCloudSyncState>;
+  core: CloudSyncCore;
   appStateRef: MutableRefObject<AppState>;
-  activeLocalIdRef: MutableRefObject<string | null>;
   dataVersionRef: MutableRefObject<number>;
   mutationLockRef: MutableRefObject<boolean>;
   needsVersionSyncRef: MutableRefObject<boolean>;
-  setInternal: Dispatch<SetStateAction<InternalCloudSyncState>>;
   updateCloudMetadata: (localId: string, updates: Partial<{
     cloudId: string | null;
     cloudSavedAt: string | null;
@@ -29,7 +26,6 @@ interface ActiveProjectCloudOpsDeps {
   createNewProject: (name: string, state: ReturnType<typeof serializeState>) => string;
   getJwt: () => string | null;
   dispatch: Dispatch<ImportStateAction>;
-  initialInternalState: InternalCloudSyncState;
 }
 
 interface ActiveProjectCloudOps {
@@ -53,10 +49,9 @@ interface ActiveProjectCloudOps {
  */
 export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): ActiveProjectCloudOps {
   const {
-    internalRef, appStateRef, activeLocalIdRef,
-    dataVersionRef, mutationLockRef, needsVersionSyncRef,
-    setInternal, updateCloudMetadata, createNewProject,
-    getJwt, dispatch, initialInternalState,
+    core: { internalRef, activeLocalIdRef, setInternal, initialInternalState },
+    appStateRef, dataVersionRef, mutationLockRef, needsVersionSyncRef,
+    updateCloudMetadata, createNewProject, getJwt, dispatch,
   } = deps;
 
   const applyCreatedResult = useCallback((result: { cloudId: string; timestamp: string }) => {

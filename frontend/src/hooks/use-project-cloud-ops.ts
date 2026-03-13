@@ -1,13 +1,14 @@
-import { useCallback, useMemo, type MutableRefObject, type SetStateAction, type Dispatch } from 'react';
+import { useCallback, useMemo, type MutableRefObject } from 'react';
 import { exportToObject, deserializeState } from '../utils/storage';
 import { isCloudEnabled } from '../utils/api-client';
 import { loadProject } from '../utils/project-storage';
 import { clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock, requireJwt } from '../utils/cloud-url';
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
 import type { Visibility, ProjectListEntry } from '../types/project';
-import type { InternalCloudSyncState } from '../types/cloud-sync';
+import type { CloudSyncCore } from '../types/cloud-sync';
 
 interface ProjectCloudOpsDeps {
+  core: CloudSyncCore;
   updateCloudMetadata: (localId: string, updates: Partial<{
     cloudId: string | null;
     cloudSavedAt: string | null;
@@ -15,11 +16,7 @@ interface ProjectCloudOpsDeps {
     storage: 'local' | 'cloud';
   }>) => void;
   projectsRef: MutableRefObject<ProjectListEntry[]>;
-  activeLocalIdRef: MutableRefObject<string | null>;
   mutationLockRef: MutableRefObject<boolean>;
-  internalRef: MutableRefObject<InternalCloudSyncState>;
-  setInternal: Dispatch<SetStateAction<InternalCloudSyncState>>;
-  initialInternalState: InternalCloudSyncState;
   getJwt: () => string | null;
   /** Save the active project using live React state (handles dirty tracking + status). */
   activeProjectSave: () => Promise<boolean>;
@@ -38,7 +35,7 @@ interface ProjectCloudOps {
  * Used primarily by the My Projects dialog.
  */
 export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
-  const { updateCloudMetadata, projectsRef, activeLocalIdRef, mutationLockRef, internalRef, setInternal, initialInternalState, getJwt, activeProjectSave } = deps;
+  const { core: { internalRef, activeLocalIdRef, setInternal, initialInternalState }, updateCloudMetadata, projectsRef, mutationLockRef, getJwt, activeProjectSave } = deps;
 
   const saveProjectToCloud = useCallback(async (localId: string) => {
     if (!isCloudEnabled()) return;

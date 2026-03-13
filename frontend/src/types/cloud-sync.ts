@@ -1,3 +1,4 @@
+import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import type { Visibility } from './project';
 
 /** Shared with useActiveProjectCloudOps, useProjectCloudOps, and other cloud hooks. */
@@ -24,6 +25,20 @@ export const initialInternalState: InternalCloudSyncState = {
   lastSavedVersion: -1,
   visibility: 'private',
 };
+
+/**
+ * Shared refs and state setters passed to all cloud sync hooks (AR-1).
+ *
+ * Groups the four dependencies that every cloud sync hook needs,
+ * reducing per-hook parameter counts and centralising changes when
+ * the internal state shape evolves.
+ */
+export interface CloudSyncCore {
+  internalRef: MutableRefObject<InternalCloudSyncState>;
+  activeLocalIdRef: MutableRefObject<string | null>;
+  setInternal: Dispatch<SetStateAction<InternalCloudSyncState>>;
+  initialInternalState: InternalCloudSyncState;
+}
 
 export interface SyncResult {
   updatedCount: number;
