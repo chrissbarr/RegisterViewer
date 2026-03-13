@@ -175,6 +175,27 @@ describe('useAuthTransition', () => {
     expect(result.current.isSigningOutRef.current).toBe(false);
   });
 
+  it('sets isSigningOutRef true during sign-out', () => {
+    const deps = makeDeps({ authUser: { email: 'test@example.com' } });
+
+    const { result, rerender } = renderHook(
+      ({ authUser }) => useAuthTransition({ ...deps, authUser }),
+      { initialProps: { authUser: { email: 'test@example.com' } as { email: string } | null } },
+    );
+
+    const isSigningOutRef = result.current.isSigningOutRef;
+
+    // Spy on purgeCloudProjects to observe isSigningOutRef mid-sign-out
+    vi.mocked(purgeCloudProjects).mockImplementation(() => {
+      expect(isSigningOutRef.current).toBe(true);
+      return [];
+    });
+
+    rerender({ authUser: null });
+
+    expect(purgeCloudProjects).toHaveBeenCalledTimes(1);
+  });
+
   it('triggers sync on first mount with existing auth', () => {
     const deps = makeDeps({ authUser: { email: 'test@example.com' } });
 
