@@ -63,9 +63,10 @@ export function useAuthTransition(deps: UseAuthTransitionDeps): UseAuthTransitio
         pendingCloudOpRef.current = null;
         setLoginRequired(false);
         if (op === 'save') {
-          void rawSave();
+          // Error already surfaced via internal.error UI state
+          rawSave().catch(() => {});
         } else if (op === 'fork') {
-          void rawFork();
+          rawFork().catch(() => {});
         }
       }
       // Sync cloud projects (pull metadata from server)

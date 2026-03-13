@@ -172,19 +172,12 @@ describe('useAutoSync', () => {
       expect(saveToCloud).not.toHaveBeenCalled();
     });
 
-    it('throws when saveToCloud sets error', async () => {
-      const saveToCloud = vi.fn(() => Promise.resolve(true as const));
-      const internalRef = makeInternalRef({ lastSavedVersion: 1, error: null });
+    it('propagates errors thrown by saveToCloud', async () => {
+      const saveToCloud = vi.fn().mockRejectedValue(new Error('Network error'));
       const deps = makeDeps({
         saveToCloud,
-        internalRef,
+        internalRef: makeInternalRef({ lastSavedVersion: 1 }),
         dataVersionRef: { current: 2 },
-      });
-
-      // After save, simulate error being set
-      saveToCloud.mockImplementation(async () => {
-        internalRef.current.error = 'Save failed';
-        return true;
       });
 
       const { result } = renderHook(() => useAutoSync(deps));
@@ -193,7 +186,7 @@ describe('useAutoSync', () => {
         act(async () => {
           await result.current.flushSync();
         }),
-      ).rejects.toThrow('Cloud sync failed');
+      ).rejects.toThrow('Network error');
     });
 
     it('skips when no cloudId', async () => {

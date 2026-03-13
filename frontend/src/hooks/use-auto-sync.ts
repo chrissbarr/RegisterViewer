@@ -108,10 +108,6 @@ export function useAutoSync(deps: UseAutoSyncDeps): UseAutoSyncResult {
     const jwt = getJwt();
     if (!jwt) return;
     await saveToCloud(stateOverride);
-    // saveToCloud catches internally and sets error state — propagate as rejection
-    if (internalRef.current.error) {
-      throw new Error('Cloud sync failed');
-    }
   }, [getJwt, saveToCloud, internalRef, dataVersionRef]);
 
   return { syncStatus, flushSync, syncTimerRef };

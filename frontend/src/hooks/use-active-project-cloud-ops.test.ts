@@ -286,23 +286,27 @@ describe('useActiveProjectCloudOps', () => {
 
       const { result } = renderHook(() => useActiveProjectCloudOps(deps));
 
-      await act(async () => {
-        await result.current.saveToCloud();
-      });
+      await expect(
+        act(async () => {
+          await result.current.saveToCloud();
+        }),
+      ).rejects.toThrow('Network error');
 
       // internalRef should NOT have been updated with the error
       expect(deps.internalRef.current.error).toBeNull();
     });
 
-    it('sets error state on failure', async () => {
+    it('sets error state on failure and re-throws', async () => {
       const deps = makeDefaultDeps();
       (saveProjectToCloudImpl as Mock).mockRejectedValue(new Error('Network error'));
 
       const { result } = renderHook(() => useActiveProjectCloudOps(deps));
 
-      await act(async () => {
-        await result.current.saveToCloud();
-      });
+      await expect(
+        act(async () => {
+          await result.current.saveToCloud();
+        }),
+      ).rejects.toThrow('Network error');
 
       // The hook writes error to internalRef and calls setInternal
       expect(deps.internalRef.current).toMatchObject({

@@ -182,6 +182,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
           internalRef.current = next;
           setInternal(next);
         }
+        throw err;
       }
     });
     return lockResult.executed;

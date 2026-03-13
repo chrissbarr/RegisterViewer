@@ -354,15 +354,21 @@ describe('CloudSyncProvider', () => {
       expect(result.current.state.error).toContain('Cloud project not found');
     });
 
-    it('sets error on general failure', async () => {
+    it('sets error state and re-throws on general failure', async () => {
       (apiCreateProject as Mock).mockRejectedValue(new Error('Network error'));
 
       const { result } = renderCloudSync();
 
+      let caughtError: unknown;
       await act(async () => {
-        await result.current.actions.saveToCloud();
+        try {
+          await result.current.actions.saveToCloud();
+        } catch (err) {
+          caughtError = err;
+        }
       });
 
+      expect(caughtError).toBeInstanceOf(Error);
       expect(result.current.state.status).toBe('idle');
       expect(result.current.state.error).toBe('Network error');
     });
@@ -690,16 +696,11 @@ describe('CloudSyncProvider', () => {
       expect(apiCreateProject).toHaveBeenCalled();
     });
 
-    it('updates existing cloud project', async () => {
-      (loadProject as Mock).mockReturnValue({
-        localId: TEST_LOCAL_ID,
-        cloudId: 'cloud-existing',
-        state: makeState(),
-      });
-      (deserializeState as Mock).mockReturnValue(makeState());
+    it('delegates to active-project save when localId is active project', async () => {
+      authMock.getJwt.mockReturnValue('mock-jwt');
       (loadManifest as Mock).mockReturnValue({
         version: 1,
-        projects: [makeManifestEntry({ cloudId: 'cloud-existing' })],
+        projects: [makeManifestEntry({ cloudId: 'cloud-existing', storage: 'cloud' })],
       });
       (apiUpdateProject as Mock).mockResolvedValue({
         id: 'cloud-existing',
@@ -708,10 +709,17 @@ describe('CloudSyncProvider', () => {
 
       const { result } = renderCloudSync();
 
+      // Initialize cloud state so the active-project save path knows the cloudId
+      await act(async () => {
+        result.current.actions.initFromProject('cloud-existing', true, 'cloud');
+      });
+
       await act(async () => {
         await result.current.actions.saveProjectToCloud(TEST_LOCAL_ID);
       });
 
+      // Active-project path uses appStateRef (not localStorage)
+      expect(loadProject).not.toHaveBeenCalled();
       expect(apiUpdateProject).toHaveBeenCalled();
     });
 
@@ -897,7 +905,7 @@ describe('CloudSyncProvider', () => {
       const { result } = renderCloudSync();
 
       await act(async () => {
-        await result.current.actions.saveToCloud();
+        await result.current.actions.saveToCloud().catch(() => {});
       });
       expect(result.current.state.error).toBe('Test error');
 

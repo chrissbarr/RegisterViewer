@@ -105,7 +105,8 @@ export function ShareDialog({ open, onClose, projectLocalId }: ShareDialogProps)
         })
         .finally(() => setIsSavingByLocalId(false));
     } else {
-      cloudActions.saveToCloud();
+      // Error surfaced via cloud sync UI state; suppress rejection
+      cloudActions.saveToCloud().catch(() => {});
     }
   }, [projectLocalId, cloudActions]);
 
