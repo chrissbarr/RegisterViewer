@@ -51,7 +51,7 @@ export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
     }
 
     // Non-active project: read from localStorage
-    await withMutationLock(mutationLockRef, async () => {
+    const lockResult = await withMutationLock(mutationLockRef, async () => {
       const project = loadProject(localId);
       if (!project) throw new Error('Project not found.');
 
@@ -78,6 +78,9 @@ export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
         updateCloudMetadata(localId, { cloudSavedAt: result.timestamp, storage: 'cloud' });
       }
     });
+    if (!lockResult.executed) {
+      throw new Error('Another cloud operation is in progress. Please try again.');
+    }
   }, [updateCloudMetadata, projectsRef, mutationLockRef, activeLocalIdRef, getJwt, activeProjectSave]);
 
   const deleteProjectFromCloud = useCallback(async (cloudId: string) => {

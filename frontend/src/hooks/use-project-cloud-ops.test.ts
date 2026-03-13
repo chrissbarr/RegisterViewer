@@ -16,12 +16,14 @@ vi.mock('../utils/project-storage', () => ({
   buildProjectUrl: vi.fn((id: string) => `https://app/#/p/${id}`),
 }));
 
-vi.mock('../utils/cloud-url', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../utils/cloud-url')>()),
-  setCloudUrl: vi.fn(),
-  clearCloudUrl: vi.fn(),
-  withMutationLock: vi.fn(async (_ref: unknown, fn: () => Promise<unknown>) => fn()),
-}));
+vi.mock('../utils/cloud-url', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../utils/cloud-url')>();
+  return {
+    ...actual,
+    setCloudUrl: vi.fn(),
+    clearCloudUrl: vi.fn(),
+  };
+});
 
 vi.mock('../utils/cloud-operations', () => ({
   saveProjectToCloudImpl: vi.fn(),
@@ -198,6 +200,19 @@ describe('useProjectCloudOps', () => {
           await result.current.saveProjectToCloud('local-1');
         }),
       ).rejects.toThrow('Authentication required. Please sign in.');
+    });
+
+    it('throws when mutation lock is held for non-active save', async () => {
+      const deps = makeDeps({ activeLocalId: 'other-local' });
+      deps.mutationLockRef.current = true; // lock already held
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      await expect(
+        act(async () => {
+          await result.current.saveProjectToCloud('local-1');
+        }),
+      ).rejects.toThrow('Another cloud operation is in progress');
     });
 
     it('skips when cloud is not enabled', async () => {
