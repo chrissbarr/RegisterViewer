@@ -39,6 +39,12 @@ export interface CloudSyncCore {
   setInternal: Dispatch<SetStateAction<InternalCloudSyncState>>;
 }
 
+/** Subset of InternalCloudSyncState needed by the auto-sync engine. */
+export type AutoSyncInternalSlice = Pick<InternalCloudSyncState, 'cloudId' | 'isOwner' | 'storage' | 'lastSavedVersion' | 'error'>;
+
+/** Subset of InternalCloudSyncState needed by the dirty-tracking hook. */
+export type DirtyTrackingInternalSlice = Pick<InternalCloudSyncState, 'cloudId' | 'lastSavedVersion'>;
+
 export interface SyncResult {
   updatedCount: number;
   staleCloudIds: string[];

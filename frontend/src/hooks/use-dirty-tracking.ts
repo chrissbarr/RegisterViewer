@@ -1,15 +1,11 @@
 import { useRef, useState, useEffect, type MutableRefObject } from 'react';
+import type { DirtyTrackingInternalSlice } from '../types/cloud-sync';
 
 interface DataDeps {
   registers: unknown;
   registerValues: unknown;
   project?: unknown;
   addressUnitBits?: unknown;
-}
-
-interface InternalSlice {
-  cloudId: string | null;
-  lastSavedVersion: number;
 }
 
 type StateSetter<T> = (updater: (prev: T) => T) => void;
@@ -34,7 +30,7 @@ interface DirtyTrackingResult {
  * last-saved version (from state) and only re-render when dirty status
  * actually changes. This avoids re-rendering on every keystroke.
  */
-export function useDirtyTracking<T extends InternalSlice>(
+export function useDirtyTracking<T extends DirtyTrackingInternalSlice>(
   dataDeps: DataDeps,
   internal: T,
   setInternal: StateSetter<T>,

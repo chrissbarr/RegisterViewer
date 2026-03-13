@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { CLOUD_SYNC_DEBOUNCE_MS } from '../constants';
-import type { InternalCloudSyncState } from '../types/cloud-sync';
+import type { AutoSyncInternalSlice } from '../types/cloud-sync';
 import type { AppState } from '../types/register';
 
 /**
@@ -12,11 +12,9 @@ import type { AppState } from '../types/register';
  */
 export type SyncStatus = 'saved' | 'syncing' | 'offline' | 'local-only';
 
-type InternalSlice = Pick<InternalCloudSyncState, 'cloudId' | 'isOwner' | 'storage' | 'lastSavedVersion' | 'error'>;
-
 interface UseAutoSyncDeps {
   isDirty: boolean;
-  internalRef: MutableRefObject<InternalSlice>;
+  internalRef: MutableRefObject<AutoSyncInternalSlice>;
   dataVersionRef: MutableRefObject<number>;
   canAutoSync: boolean;
   getJwt: () => string | null;
