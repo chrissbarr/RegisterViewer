@@ -45,6 +45,14 @@ export type AutoSyncInternalSlice = Pick<InternalCloudSyncState, 'cloudId' | 'is
 /** Subset of InternalCloudSyncState needed by the dirty-tracking hook. */
 export type DirtyTrackingInternalSlice = Pick<InternalCloudSyncState, 'cloudId' | 'lastSavedVersion'>;
 
+/** Partial cloud metadata payload accepted by `updateCloudMetadata`. */
+export interface CloudMetadataUpdate {
+  cloudId?: string | null;
+  cloudSavedAt?: string | null;
+  visibility?: Visibility;
+  storage?: 'local' | 'cloud';
+}
+
 export interface SyncResult {
   updatedCount: number;
   staleCloudIds: string[];

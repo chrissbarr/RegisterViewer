@@ -5,16 +5,11 @@ import { loadProject } from '../utils/project-storage';
 import { clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock, requireJwt } from '../utils/cloud-url';
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
 import type { Visibility, ProjectListEntry } from '../types/project';
-import { type CloudSyncCore, initialInternalState } from '../types/cloud-sync';
+import { type CloudSyncCore, type CloudMetadataUpdate, initialInternalState } from '../types/cloud-sync';
 
 interface ProjectCloudOpsDeps {
   core: CloudSyncCore;
-  updateCloudMetadata: (localId: string, updates: Partial<{
-    cloudId: string | null;
-    cloudSavedAt: string | null;
-    visibility: Visibility;
-    storage: 'local' | 'cloud';
-  }>) => void;
+  updateCloudMetadata: (localId: string, updates: CloudMetadataUpdate) => void;
   projectsRef: MutableRefObject<ProjectListEntry[]>;
   mutationLockRef: MutableRefObject<boolean>;
   getJwt: () => string | null;

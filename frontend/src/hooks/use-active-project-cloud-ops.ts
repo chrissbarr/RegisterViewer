@@ -8,7 +8,7 @@ import { setCloudUrl, clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock, r
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
 import { DEFAULT_PROJECT_NAME, type Visibility } from '../types/project';
 import type { AppState } from '../types/register';
-import { type CloudSyncCore, initialInternalState } from '../types/cloud-sync';
+import { type CloudSyncCore, type CloudMetadataUpdate, initialInternalState } from '../types/cloud-sync';
 import type { ImportStateAction } from '../context/app-context';
 
 interface ActiveProjectCloudOpsDeps {
@@ -17,12 +17,7 @@ interface ActiveProjectCloudOpsDeps {
   dataVersionRef: MutableRefObject<number>;
   mutationLockRef: MutableRefObject<boolean>;
   needsVersionSyncRef: MutableRefObject<boolean>;
-  updateCloudMetadata: (localId: string, updates: Partial<{
-    cloudId: string | null;
-    cloudSavedAt: string | null;
-    visibility: Visibility;
-    storage: 'local' | 'cloud';
-  }>) => void;
+  updateCloudMetadata: (localId: string, updates: CloudMetadataUpdate) => void;
   createNewProject: (name: string, state: ReturnType<typeof serializeState>) => string;
   getJwt: () => string | null;
   dispatch: Dispatch<ImportStateAction>;
