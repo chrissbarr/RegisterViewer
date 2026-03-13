@@ -115,6 +115,11 @@ const CloudSyncActionsContext = createContext<CloudSyncActions | null>(null);
  * By-localId operations (saveProjectToCloud, deleteProjectFromCloud,
  * setProjectVisibility, unlinkCloudProject) are delegated to
  * useProjectCloudOps for use by the My Projects dialog.
+ *
+ * PERF-1: Decomposed hooks may trigger 2-4 extra renders per project switch
+ * via cascading setInternal calls. This is inherent to the hook-based architecture
+ * and is not user-visible (no layout thrashing). If profiling reveals jank,
+ * consolidate to useReducer. See .full-review/05-final-report.md.
  */
 export function CloudSyncProvider({ children }: { children: ReactNode }) {
   const appState = useAppState();
