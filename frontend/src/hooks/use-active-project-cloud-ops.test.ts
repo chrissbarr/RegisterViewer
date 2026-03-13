@@ -296,6 +296,55 @@ describe('useActiveProjectCloudOps', () => {
       expect(deps.internalRef.current.error).toBeNull();
     });
 
+    it('flush-before-evict: does NOT call setInternal or updateCloudMetadata after save', async () => {
+      const deps = makeDefaultDeps();
+      deps.internalRef.current = {
+        ...INITIAL_INTERNAL_STATE,
+        cloudId: TEST_CLOUD_ID,
+        isOwner: true,
+        storage: 'cloud',
+      };
+      (saveProjectToCloudImpl as Mock).mockResolvedValue({
+        kind: 'updated',
+        cloudId: TEST_CLOUD_ID,
+        timestamp: TEST_TIMESTAMP,
+      });
+
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+
+      // Pass stateOverride to trigger flush-before-evict path
+      const stateOverride = makeState();
+      await act(async () => {
+        await result.current.saveToCloud(stateOverride);
+      });
+
+      // Post-save state updates are skipped for departing project
+      expect(deps.setInternal).not.toHaveBeenCalledWith(expect.objectContaining({ status: 'idle' }));
+      expect(deps.updateCloudMetadata).not.toHaveBeenCalled();
+    });
+
+    it('flush-before-evict: swallows errors without updating state', async () => {
+      const deps = makeDefaultDeps();
+      deps.internalRef.current = {
+        ...INITIAL_INTERNAL_STATE,
+        cloudId: TEST_CLOUD_ID,
+        isOwner: true,
+        storage: 'cloud',
+      };
+      (saveProjectToCloudImpl as Mock).mockRejectedValue(new Error('Network error'));
+
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+
+      const stateOverride = makeState();
+      // Should NOT throw
+      await act(async () => {
+        await result.current.saveToCloud(stateOverride);
+      });
+
+      // Error state not set (no setInternal call with error)
+      expect(deps.setInternal).not.toHaveBeenCalledWith(expect.objectContaining({ error: expect.any(String) }));
+    });
+
     it('sets error state on failure and re-throws', async () => {
       const deps = makeDefaultDeps();
       (saveProjectToCloudImpl as Mock).mockRejectedValue(new Error('Network error'));
