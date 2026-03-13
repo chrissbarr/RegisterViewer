@@ -30,13 +30,19 @@ interface UseProjectSwitchEvictionDeps {
 }
 
 /**
- * Handles project switch eviction and cloudId tracking.
+ * Handles project switch lifecycle: eviction and cloud state tracking.
  *
  * When the active project changes:
- * 1. Flushes pending cloud sync for the previous project, then evicts
- *    its localStorage data (cloud-backed projects only).
- * 2. Updates internal cloud state to match the new project's cloudId.
- * 3. Clears stale login guard state from the previous project.
+ * 1. **Eviction**: Flushes pending cloud sync for the departing project,
+ *    then evicts its localStorage data (cloud-backed projects only).
+ * 2. **Cloud state init**: Updates internal cloud state to match the
+ *    new project's cloudId, ownership, and storage type.
+ * 3. **Cleanup**: Clears stale login guard state and auto-sync timer
+ *    from the previous project.
+ *
+ * The hook name emphasizes eviction (the most complex path), but both
+ * responsibilities are tightly coupled to the `activeLocalId` transition
+ * and intentionally kept together.
  *
  * IMPORTANT: `lastStableStateRef` must be updated during render in the
  * parent component (not in a useEffect). This hook reads but does not

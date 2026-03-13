@@ -163,7 +163,11 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  // Ref to avoid stale closures in save/fork callbacks
+  // Ref to avoid stale closures in save/fork callbacks.
+  // Synced via useEffect (not render-time assignment) because appStateRef doesn't
+  // need same-commit synchronous visibility — callbacks that read it run async.
+  // Compare: internalRef uses render-time sync for initFromProject's same-commit
+  // guard; lastStableStateRef uses render-time sync for snapshot consistency.
   const appStateRef = useRef(appState);
   useEffect(() => {
     appStateRef.current = appState;
@@ -268,6 +272,10 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     // these entries via updateCloudMetadata(localId, CLEARED_CLOUD_METADATA).
     return syncCloudProjectsFromServer(jwt, projectsRef.current, {
       updateCloudMetadata,
+      // AR-6: Uses raw `createProject` utility (not the context action `createNewProject`)
+      // because this callback runs during async sync, not during a React render.
+      // The context action would trigger additional side effects (project switching)
+      // that are undesirable for background placeholder creation.
       createPlaceholder: (data) => {
         try {
           createProject(EMPTY_SERIALIZED_STATE, data.title, {
@@ -283,7 +291,10 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     });
   }, [updateCloudMetadata, getJwt]);
 
-  // Keep refs up-to-date for the auth-transition and eviction effects
+  // Callback refs: nullable because the callbacks reference state/hooks defined below.
+  // Direct assignment in render (not useEffect) ensures they're fresh by the time
+  // effects in child hooks read them. The `| null` type forces consumers to use
+  // optional chaining, preventing calls before initialization.
   const syncCloudProjectsRef = useRef<(() => Promise<SyncResult>) | null>(null);
   const flushSyncRef = useRef<((stateOverride?: AppState) => Promise<void>) | null>(null);
   syncCloudProjectsRef.current = syncCloudProjects; // eslint-disable-line react-hooks/refs -- render-time sync for stable callback refs
