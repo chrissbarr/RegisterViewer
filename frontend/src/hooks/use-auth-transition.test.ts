@@ -196,6 +196,23 @@ describe('useAuthTransition', () => {
     expect(purgeCloudProjects).toHaveBeenCalledTimes(1);
   });
 
+  it('isSigningOutRef stays true after sign-out until next sign-in', () => {
+    const deps = makeDeps({ authUser: { email: 'test@example.com' } });
+
+    const { result, rerender } = renderHook(
+      ({ authUser }) => useAuthTransition({ ...deps, authUser }),
+      { initialProps: { authUser: { email: 'test@example.com' } as { email: string } | null } },
+    );
+
+    // Sign out — ref should stay true (protects async eviction checks)
+    rerender({ authUser: null });
+    expect(result.current.isSigningOutRef.current).toBe(true);
+
+    // Sign back in — ref should be reset to false
+    rerender({ authUser: { email: 'test@example.com' } });
+    expect(result.current.isSigningOutRef.current).toBe(false);
+  });
+
   it('triggers sync on first mount with existing auth', () => {
     const deps = makeDeps({ authUser: { email: 'test@example.com' } });
 

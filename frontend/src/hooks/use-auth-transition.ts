@@ -58,6 +58,9 @@ export function useAuthTransition(deps: UseAuthTransitionDeps): UseAuthTransitio
 
     if (shouldSync) {
       hasRunInitialSyncRef.current = true;
+      // Reset sign-out flag on sign-in (kept true after sign-out to protect
+      // async eviction checks — see use-project-switch-eviction.ts)
+      isSigningOutRef.current = false;
       // Sign-in: retry any pending cloud operation that was deferred
       if (pendingCloudOpRef.current) {
         const op = pendingCloudOpRef.current;
@@ -97,7 +100,6 @@ export function useAuthTransition(deps: UseAuthTransitionDeps): UseAuthTransitio
       setInternal({ ...initialInternalState });
       clearCloudUrl();
       sessionStorage.removeItem(ACTIVE_PROJECT_SESSION_KEY);
-      isSigningOutRef.current = false;
     }
   }, [authUser, rawSave, rawFork, pendingCloudOpRef, setLoginRequired, syncCloudProjectsRef, syncTimerRef, activeLocalIdRef, setInternal, initialInternalState, refreshProjectList, switchProject, createNewProject]);
 
