@@ -307,12 +307,12 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     updateCloudMetadata,
     projectsRef,
     activeLocalIdRef,
-    dataVersionRef,
     mutationLockRef,
     internalRef,
     setInternal,
     initialInternalState,
     getJwt,
+    activeProjectSave: rawActiveOps.saveToCloud,
   });
 
   const actions = useMemo(

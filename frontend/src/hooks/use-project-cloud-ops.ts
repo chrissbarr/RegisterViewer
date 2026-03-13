@@ -1,8 +1,8 @@
 import { useCallback, useMemo, type MutableRefObject, type SetStateAction, type Dispatch } from 'react';
 import { exportToObject, deserializeState } from '../utils/storage';
 import { isCloudEnabled } from '../utils/api-client';
-import { loadProject, buildProjectUrl } from '../utils/project-storage';
-import { setCloudUrl, clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock, requireJwt } from '../utils/cloud-url';
+import { loadProject } from '../utils/project-storage';
+import { clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock, requireJwt } from '../utils/cloud-url';
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
 import type { Visibility, ProjectListEntry } from '../types/project';
 import type { InternalCloudSyncState } from '../types/cloud-sync';
@@ -16,12 +16,13 @@ interface ProjectCloudOpsDeps {
   }>) => void;
   projectsRef: MutableRefObject<ProjectListEntry[]>;
   activeLocalIdRef: MutableRefObject<string | null>;
-  dataVersionRef: MutableRefObject<number>;
   mutationLockRef: MutableRefObject<boolean>;
   internalRef: MutableRefObject<InternalCloudSyncState>;
   setInternal: Dispatch<SetStateAction<InternalCloudSyncState>>;
   initialInternalState: InternalCloudSyncState;
   getJwt: () => string | null;
+  /** Save the active project using live React state (handles dirty tracking + status). */
+  activeProjectSave: () => Promise<boolean>;
 }
 
 interface ProjectCloudOps {
@@ -37,10 +38,19 @@ interface ProjectCloudOps {
  * Used primarily by the My Projects dialog.
  */
 export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
-  const { updateCloudMetadata, projectsRef, activeLocalIdRef, dataVersionRef, mutationLockRef, internalRef, setInternal, initialInternalState, getJwt } = deps;
+  const { updateCloudMetadata, projectsRef, activeLocalIdRef, mutationLockRef, internalRef, setInternal, initialInternalState, getJwt, activeProjectSave } = deps;
 
   const saveProjectToCloud = useCallback(async (localId: string) => {
     if (!isCloudEnabled()) return;
+
+    // Active project: delegate to the live-state path which handles
+    // dirty tracking, status indicators, and reads fresh React state.
+    if (localId === activeLocalIdRef.current) {
+      await activeProjectSave();
+      return;
+    }
+
+    // Non-active project: read from localStorage
     await withMutationLock(mutationLockRef, async () => {
       const project = loadProject(localId);
       if (!project) throw new Error('Project not found.');
@@ -64,25 +74,11 @@ export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
           cloudSavedAt: result.timestamp,
           storage: 'cloud',
         });
-
-        // If this is the active project, update cloud state + URL
-        if (localId === activeLocalIdRef.current) {
-          setCloudUrl(result.cloudId);
-          setInternal((prev) => ({
-            ...prev,
-            cloudId: result.cloudId,
-            isOwner: true,
-            storage: 'cloud',
-            shareUrl: buildProjectUrl(result.cloudId),
-            lastCloudSavedAt: result.timestamp,
-            lastSavedVersion: dataVersionRef.current,
-          }));
-        }
       } else {
         updateCloudMetadata(localId, { cloudSavedAt: result.timestamp, storage: 'cloud' });
       }
     });
-  }, [updateCloudMetadata, projectsRef, mutationLockRef, activeLocalIdRef, dataVersionRef, setInternal, getJwt]);
+  }, [updateCloudMetadata, projectsRef, mutationLockRef, activeLocalIdRef, getJwt, activeProjectSave]);
 
   const deleteProjectFromCloud = useCallback(async (cloudId: string) => {
     await withMutationLock(mutationLockRef, async () => {

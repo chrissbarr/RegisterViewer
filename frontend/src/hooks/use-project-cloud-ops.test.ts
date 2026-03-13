@@ -70,12 +70,12 @@ function makeDeps(overrides: Record<string, unknown> = {}) {
     updateCloudMetadata: vi.fn() as Mock,
     projectsRef: { current: projects },
     activeLocalIdRef: { current: (overrides.activeLocalId as string) ?? 'local-1' },
-    dataVersionRef: { current: 1 },
     mutationLockRef: { current: false },
     internalRef,
     setInternal: vi.fn() as Mock,
     initialInternalState: initial,
     getJwt: (overrides.getJwt as (() => string | null)) ?? (() => 'mock-jwt'),
+    activeProjectSave: (overrides.activeProjectSave as (() => Promise<boolean>)) ?? vi.fn(async () => true),
   };
 }
 
@@ -87,8 +87,37 @@ beforeEach(() => {
 
 describe('useProjectCloudOps', () => {
   describe('saveProjectToCloud', () => {
-    it('creates a new cloud project when no existing cloudId', async () => {
-      const deps = makeDeps({ projects: makeProjectList([{ localId: 'local-1', cloudId: null }]) });
+    it('delegates to activeProjectSave when localId is the active project', async () => {
+      const activeProjectSave = vi.fn(async () => true);
+      const deps = makeDeps({ activeProjectSave });
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      await act(async () => {
+        await result.current.saveProjectToCloud('local-1');
+      });
+
+      expect(activeProjectSave).toHaveBeenCalledOnce();
+      // Should NOT read from localStorage or call the cloud API directly
+      expect(loadProject).not.toHaveBeenCalled();
+      expect(saveProjectToCloudImpl).not.toHaveBeenCalled();
+    });
+
+    it('propagates errors thrown by activeProjectSave', async () => {
+      const activeProjectSave = vi.fn().mockRejectedValue(new Error('Network failure'));
+      const deps = makeDeps({ activeProjectSave });
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      await expect(
+        act(async () => {
+          await result.current.saveProjectToCloud('local-1');
+        }),
+      ).rejects.toThrow('Network failure');
+    });
+
+    it('creates a new cloud project for non-active project', async () => {
+      const deps = makeDeps({ activeLocalId: 'other-local', projects: makeProjectList([{ localId: 'local-1', cloudId: null }]) });
       (loadProject as Mock).mockReturnValue({ state: '{}', cloudId: null });
       (saveProjectToCloudImpl as Mock).mockResolvedValue({
         kind: 'created',
@@ -107,12 +136,13 @@ describe('useProjectCloudOps', () => {
         cloudSavedAt: '2026-01-01T00:00:00Z',
         storage: 'cloud',
       });
-      expect(setCloudUrl).toHaveBeenCalledWith('new-cloud');
-      expect(deps.setInternal).toHaveBeenCalled();
+      // Should NOT update active project cloud state
+      expect(setCloudUrl).not.toHaveBeenCalled();
+      expect(deps.setInternal).not.toHaveBeenCalled();
     });
 
-    it('updates an existing cloud project', async () => {
-      const deps = makeDeps();
+    it('updates an existing non-active cloud project', async () => {
+      const deps = makeDeps({ activeLocalId: 'other-local' });
       (saveProjectToCloudImpl as Mock).mockResolvedValue({
         kind: 'updated',
         timestamp: '2026-01-02T00:00:00Z',
@@ -128,12 +158,11 @@ describe('useProjectCloudOps', () => {
         cloudSavedAt: '2026-01-02T00:00:00Z',
         storage: 'cloud',
       });
-      // Should NOT set cloud URL for updates
       expect(setCloudUrl).not.toHaveBeenCalled();
     });
 
-    it('throws when project not found locally', async () => {
-      const deps = makeDeps();
+    it('throws when non-active project not found locally', async () => {
+      const deps = makeDeps({ activeLocalId: 'other-local' });
       (loadProject as Mock).mockReturnValue(null);
 
       const { result } = renderHook(() => useProjectCloudOps(deps));
@@ -145,8 +174,8 @@ describe('useProjectCloudOps', () => {
       ).rejects.toThrow('Project not found.');
     });
 
-    it('throws when cloud returns not-found', async () => {
-      const deps = makeDeps();
+    it('throws when cloud returns not-found for non-active project', async () => {
+      const deps = makeDeps({ activeLocalId: 'other-local' });
       (saveProjectToCloudImpl as Mock).mockResolvedValue({ kind: 'not-found' });
 
       const { result } = renderHook(() => useProjectCloudOps(deps));
@@ -158,8 +187,8 @@ describe('useProjectCloudOps', () => {
       ).rejects.toThrow('Cloud project not found on server.');
     });
 
-    it('throws "Authentication required" when getJwt returns null', async () => {
-      const deps = makeDeps({ getJwt: () => null, projects: makeProjectList([{ localId: 'local-1', cloudId: null }]) });
+    it('throws "Authentication required" for non-active project when getJwt returns null', async () => {
+      const deps = makeDeps({ activeLocalId: 'other-local', getJwt: () => null, projects: makeProjectList([{ localId: 'local-1', cloudId: null }]) });
       (loadProject as Mock).mockReturnValue({ state: '{}', cloudId: null });
 
       const { result } = renderHook(() => useProjectCloudOps(deps));
@@ -182,26 +211,7 @@ describe('useProjectCloudOps', () => {
       });
 
       expect(saveProjectToCloudImpl).not.toHaveBeenCalled();
-    });
-
-    it('does not update cloud state for non-active project on create', async () => {
-      const deps = makeDeps({ activeLocalId: 'other-local', projects: makeProjectList([{ localId: 'local-1', cloudId: null }]) });
-      (loadProject as Mock).mockReturnValue({ state: '{}', cloudId: null });
-      (saveProjectToCloudImpl as Mock).mockResolvedValue({
-        kind: 'created',
-        cloudId: 'new-cloud',
-        timestamp: '2026-01-01T00:00:00Z',
-      });
-
-      const { result } = renderHook(() => useProjectCloudOps(deps));
-
-      await act(async () => {
-        await result.current.saveProjectToCloud('local-1');
-      });
-
-      expect(deps.updateCloudMetadata).toHaveBeenCalled();
-      expect(setCloudUrl).not.toHaveBeenCalled();
-      expect(deps.setInternal).not.toHaveBeenCalled();
+      expect(deps.activeProjectSave).not.toHaveBeenCalled();
     });
   });
 
