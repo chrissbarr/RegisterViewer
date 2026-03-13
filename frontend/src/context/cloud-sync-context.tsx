@@ -269,12 +269,16 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     return syncCloudProjectsFromServer(jwt, projectsRef.current, {
       updateCloudMetadata,
       createPlaceholder: (data) => {
-        createProject(EMPTY_SERIALIZED_STATE, data.title, {
-          cloudId: data.cloudId,
-          visibility: data.visibility,
-          cloudSavedAt: data.cloudSavedAt,
-          storage: 'cloud',
-        });
+        try {
+          createProject(EMPTY_SERIALIZED_STATE, data.title, {
+            cloudId: data.cloudId,
+            visibility: data.visibility,
+            cloudSavedAt: data.cloudSavedAt,
+            storage: 'cloud',
+          });
+        } catch (err) {
+          console.warn('[cloud-sync] Failed to create placeholder for cloud project', data.cloudId, err);
+        }
       },
     });
   }, [updateCloudMetadata, getJwt]);
