@@ -114,7 +114,12 @@ export function useAutoSync(deps: UseAutoSyncDeps): UseAutoSyncResult {
     }
     const jwt = getJwt();
     if (!jwt) return;
-    await saveToCloud(stateOverride);
+    try {
+      await saveToCloud(stateOverride);
+    } catch {
+      // Best-effort flush — callers (beforeunload, flush-before-evict) cannot
+      // handle errors meaningfully. Auto-sync catches separately for offline status.
+    }
   }, [getJwt, saveToCloud, internalRef, dataVersionRef]);
 
   return { syncStatus, flushSync, syncTimerRef };

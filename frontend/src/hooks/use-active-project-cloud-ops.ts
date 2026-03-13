@@ -84,12 +84,14 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
    * Flush-before-evict: save a departing project's state to the cloud before
    * its localStorage is evicted. Skips all post-save state updates and swallows
    * errors — the eviction handler keeps local data as a safety net.
+   *
+   * `existingCloudId` is captured by the caller (saveToCloud) synchronously
+   * before any async gap, preventing a TOCTOU race where internalRef could
+   * reflect the new project's state by the time the lock callback runs.
    */
-  const flushDepartingProject = useCallback(async (stateOverride: AppState) => {
+  const flushDepartingProject = useCallback(async (stateOverride: AppState, existingCloudId: string | null) => {
     await withMutationLock(mutationLockRef, async () => {
       try {
-        const { cloudId, isOwner } = internalRef.current;
-        const existingCloudId = (cloudId && isOwner) ? cloudId : null;
         const jsonPayload = exportToObject(stateOverride);
         const jwt = requireJwt(getJwt);
         await saveProjectToCloudImpl(jsonPayload, existingCloudId, jwt);
@@ -97,15 +99,18 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
         // Swallow — eviction handler keeps local data as safety net
       }
     });
-  }, [mutationLockRef, getJwt, internalRef]);
+  }, [mutationLockRef, getJwt]);
 
   const saveToCloud = useCallback(async (stateOverride?: AppState): Promise<boolean> => {
     if (!isCloudEnabled()) return true;
 
     // When stateOverride is provided, this is a flush-before-evict save for
-    // a departing project — delegate to the dedicated handler.
+    // a departing project — capture cloudId/isOwner synchronously before any
+    // async gap, then delegate to the dedicated handler.
     if (stateOverride) {
-      await flushDepartingProject(stateOverride);
+      const { cloudId, isOwner } = internalRef.current;
+      const existingCloudId = (cloudId && isOwner) ? cloudId : null;
+      await flushDepartingProject(stateOverride, existingCloudId);
       return true;
     }
 
