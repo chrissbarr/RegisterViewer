@@ -162,6 +162,34 @@ describe('computeSyncPatches', () => {
     expect(result.cloudOnlyProjects[0].id).toBe('c-brand-new');
   });
 
+  it('skips timestamp patch when server date is malformed', () => {
+    const local = [makeEntry({
+      localId: 'l1',
+      cloudId: 'c1',
+      storage: 'cloud',
+      cloudSavedAt: '2024-01-01T00:00:00Z',
+      visibility: 'private',
+    })];
+    const server = [makeServer({ id: 'c1', updatedAt: 'not-a-date', visibility: 'private' })];
+
+    const result = computeSyncPatches(local, server);
+    expect(result.patches).toEqual([]);
+  });
+
+  it('treats malformed local date as epoch 0 for comparison', () => {
+    const local = [makeEntry({
+      localId: 'l1',
+      cloudId: 'c1',
+      storage: 'cloud',
+      cloudSavedAt: 'garbage',
+      visibility: 'private',
+    })];
+    const server = [makeServer({ id: 'c1', updatedAt: '2024-01-02T00:00:00Z', visibility: 'private' })];
+
+    const result = computeSyncPatches(local, server);
+    expect(result.patches).toEqual([{ localId: 'l1', cloudSavedAt: '2024-01-02T00:00:00Z' }]);
+  });
+
   it('treats null cloudSavedAt as epoch 0 for comparison', () => {
     const local = [makeEntry({
       localId: 'l1',

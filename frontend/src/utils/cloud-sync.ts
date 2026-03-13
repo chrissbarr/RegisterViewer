@@ -51,10 +51,14 @@ export function computeSyncPatches(
       let hasUpdate = false;
 
       const serverTime = new Date(serverProject.updatedAt).getTime();
-      const localCloudTime = entry.cloudSavedAt ? new Date(entry.cloudSavedAt).getTime() : 0;
-      if (serverTime > localCloudTime) {
-        patch.cloudSavedAt = serverProject.updatedAt;
-        hasUpdate = true;
+      if (!Number.isNaN(serverTime)) {
+        const localCloudTime = entry.cloudSavedAt ? new Date(entry.cloudSavedAt).getTime() : 0;
+        // Treat malformed local date as epoch 0 (always older than server)
+        const effectiveLocalTime = Number.isNaN(localCloudTime) ? 0 : localCloudTime;
+        if (serverTime > effectiveLocalTime) {
+          patch.cloudSavedAt = serverProject.updatedAt;
+          hasUpdate = true;
+        }
       }
       if (serverProject.visibility !== entry.visibility) {
         patch.visibility = serverProject.visibility;
