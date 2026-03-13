@@ -1,7 +1,7 @@
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { useActiveProjectCloudOps } from './use-active-project-cloud-ops';
-import type { InternalCloudSyncState } from '../types/cloud-sync';
+import { initialInternalState, type InternalCloudSyncState } from '../types/cloud-sync';
 import type { AppState } from '../types/register';
 import { makeState, makeRegister } from '../test/helpers';
 // ApiError import resolves to the mocked class — needed for instanceof checks in source
@@ -74,17 +74,7 @@ const TEST_CLOUD_ID = 'cloud-abc';
 const TEST_JWT = 'mock-jwt-token';
 const TEST_TIMESTAMP = '2024-06-01T00:00:00Z';
 
-const INITIAL_INTERNAL_STATE: InternalCloudSyncState = {
-  cloudId: null,
-  isOwner: false,
-  storage: 'local',
-  status: 'idle',
-  error: null,
-  shareUrl: null,
-  lastCloudSavedAt: null,
-  lastSavedVersion: 0,
-  visibility: 'private',
-};
+const INITIAL_INTERNAL_STATE: InternalCloudSyncState = { ...initialInternalState, lastSavedVersion: 0 };
 
 function makeRef<T>(value: T): { current: T } {
   return { current: value };
@@ -111,7 +101,7 @@ function buildDeps() {
   });
 
   return {
-    core: { internalRef, activeLocalIdRef, setInternal, initialInternalState: { ...INITIAL_INTERNAL_STATE } },
+    core: { internalRef, activeLocalIdRef, setInternal },
     // Expose refs at top level for test assertions
     internalRef,
     activeLocalIdRef,

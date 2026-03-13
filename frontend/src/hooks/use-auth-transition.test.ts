@@ -1,6 +1,7 @@
 import { renderHook } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAuthTransition } from './use-auth-transition';
+import { initialInternalState } from '../types/cloud-sync';
 
 // ── Mocks ────────────────────────────────────────────────────────────
 
@@ -19,17 +20,7 @@ import { clearCloudUrl } from '../utils/cloud-url';
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-const INITIAL_INTERNAL_STATE = {
-  cloudId: null,
-  isOwner: false,
-  storage: 'local' as const,
-  status: 'idle' as const,
-  error: null,
-  shareUrl: null,
-  lastCloudSavedAt: null,
-  lastSavedVersion: -1,
-  visibility: 'private' as const,
-};
+const INITIAL_INTERNAL_STATE = { ...initialInternalState };
 
 function makeDeps(overrides: Partial<Parameters<typeof useAuthTransition>[0]> = {}) {
   const activeLocalIdRef = { current: 'local-1' };
@@ -38,7 +29,6 @@ function makeDeps(overrides: Partial<Parameters<typeof useAuthTransition>[0]> = 
     internalRef: { current: { ...INITIAL_INTERNAL_STATE } },
     activeLocalIdRef,
     setInternal,
-    initialInternalState: INITIAL_INTERNAL_STATE,
   };
   return {
     core,

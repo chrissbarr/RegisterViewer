@@ -36,19 +36,10 @@ import { loadProject } from '../utils/project-storage';
 import { setCloudUrl, clearCloudUrl } from '../utils/cloud-url';
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
 import type { ProjectListEntry } from '../types/project';
+import { initialInternalState } from '../types/cloud-sync';
 
 function makeInitialState() {
-  return {
-    cloudId: null as string | null,
-    isOwner: false,
-    storage: 'local' as const,
-    status: 'idle' as const,
-    error: null as string | null,
-    shareUrl: null as string | null,
-    lastCloudSavedAt: null as string | null,
-    lastSavedVersion: -1,
-    visibility: 'private' as const,
-  };
+  return { ...initialInternalState };
 }
 
 function makeProjectList(entries: Array<{ localId: string; cloudId?: string | null }>): ProjectListEntry[] {
@@ -71,7 +62,7 @@ function makeDeps(overrides: Record<string, unknown> = {}) {
   const setInternal = vi.fn() as Mock;
   const projects = (overrides.projects as ProjectListEntry[]) ?? makeProjectList([{ localId: 'local-1', cloudId: 'cloud-1' }]);
   return {
-    core: { internalRef, activeLocalIdRef, setInternal, initialInternalState: initial },
+    core: { internalRef, activeLocalIdRef, setInternal },
     // Expose core fields at top level for test assertions
     internalRef,
     activeLocalIdRef,
