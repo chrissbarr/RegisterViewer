@@ -236,6 +236,35 @@ describe('useAutoSync', () => {
       expect(saveToCloud).not.toHaveBeenCalled();
     });
 
+    it('forwards stateOverride to saveToCloud', async () => {
+      const saveToCloud = vi.fn(() => Promise.resolve(true as const));
+      const internalRef = makeInternalRef({ lastSavedVersion: 1 });
+      const deps = makeDeps({
+        isDirty: false,
+        canAutoSync: true,
+        saveToCloud,
+        internalRef,
+        dataVersionRef: { current: 5 },
+      });
+
+      const { result } = renderHook(() => useAutoSync(deps));
+
+      const overrideState = {
+        registers: [],
+        activeRegisterId: null,
+        registerValues: {},
+        mapTableWidth: 32 as const,
+        mapShowGaps: true,
+        mapSortDescending: false,
+        addressUnitBits: 8 as const,
+      };
+      await act(async () => {
+        await result.current.flushSync(overrideState);
+      });
+
+      expect(saveToCloud).toHaveBeenCalledWith(overrideState);
+    });
+
     it('skips when not owner', async () => {
       const saveToCloud = vi.fn(() => Promise.resolve(true as const));
       const deps = makeDeps({
