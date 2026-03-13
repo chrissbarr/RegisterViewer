@@ -340,6 +340,41 @@ describe('useActiveProjectCloudOps', () => {
       expect(deps.setInternal).not.toHaveBeenCalledWith(expect.objectContaining({ error: expect.any(String) }));
     });
 
+    it('flush-before-evict: uses cloudId captured at call time, not from stale internalRef', async () => {
+      const deps = makeDefaultDeps();
+      deps.internalRef.current = {
+        ...INITIAL_INTERNAL_STATE,
+        cloudId: 'departing-cloud-id',
+        isOwner: true,
+        storage: 'cloud',
+      };
+
+      // Simulate internalRef being updated during the async save (new project loaded)
+      (saveProjectToCloudImpl as Mock).mockImplementation(async () => {
+        // By the time the API call runs, internalRef has been updated to new project
+        deps.internalRef.current = {
+          ...INITIAL_INTERNAL_STATE,
+          cloudId: 'new-project-cloud-id',
+          isOwner: false,
+        };
+        return { kind: 'updated', cloudId: 'departing-cloud-id', timestamp: TEST_TIMESTAMP };
+      });
+
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+
+      const stateOverride = makeState();
+      await act(async () => {
+        await result.current.saveToCloud(stateOverride);
+      });
+
+      // Must have saved to the departing project's cloudId, not the new one
+      expect(saveProjectToCloudImpl).toHaveBeenCalledWith(
+        expect.anything(),
+        'departing-cloud-id',
+        TEST_JWT,
+      );
+    });
+
     it('sets error state on failure and re-throws', async () => {
       const deps = makeDefaultDeps();
       (saveProjectToCloudImpl as Mock).mockRejectedValue(new Error('Network error'));

@@ -202,7 +202,7 @@ describe('useAutoSync', () => {
       expect(saveToCloud).not.toHaveBeenCalled();
     });
 
-    it('propagates errors thrown by saveToCloud', async () => {
+    it('swallows errors thrown by saveToCloud (best-effort flush)', async () => {
       const saveToCloud = vi.fn().mockRejectedValue(new Error('Network error'));
       const deps = makeDeps({
         saveToCloud,
@@ -212,11 +212,30 @@ describe('useAutoSync', () => {
 
       const { result } = renderHook(() => useAutoSync(deps));
 
-      await expect(
-        act(async () => {
-          await result.current.flushSync();
-        }),
-      ).rejects.toThrow('Network error');
+      // Should NOT throw — flushSync is best-effort
+      await act(async () => {
+        await result.current.flushSync();
+      });
+
+      expect(saveToCloud).toHaveBeenCalledTimes(1);
+    });
+
+    it('swallows errors when stateOverride is provided (flush-before-evict)', async () => {
+      const saveToCloud = vi.fn().mockRejectedValue(new Error('Network error'));
+      const deps = makeDeps({
+        saveToCloud,
+        internalRef: makeInternalRef({ lastSavedVersion: 1 }),
+        dataVersionRef: { current: 2 },
+      });
+
+      const { result } = renderHook(() => useAutoSync(deps));
+
+      // Should NOT throw — flush-before-evict errors are swallowed
+      await act(async () => {
+        await result.current.flushSync({ registers: [], activeRegisterId: null, registerValues: {}, mapTableWidth: 32, mapShowGaps: true, mapSortDescending: false, addressUnitBits: 8 });
+      });
+
+      expect(saveToCloud).toHaveBeenCalledTimes(1);
     });
 
     it('skips when no cloudId', async () => {

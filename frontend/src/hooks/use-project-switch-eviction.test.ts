@@ -235,4 +235,68 @@ describe('useProjectSwitchEviction', () => {
     expect(setInternal).toHaveBeenCalledWith(expect.any(Function));
     expect(needsVersionSyncRef.current).toBe(true);
   });
+
+  it('evicts after flushSync resolves even if save was not executed', async () => {
+    const flushSync = vi.fn().mockResolvedValue(undefined);
+    const projects = [
+      makeProjectEntry({ localId: 'proj-1', cloudId: 'cloud-1', storage: 'cloud' }),
+      makeProjectEntry({ localId: 'proj-2', storage: 'local' }),
+    ];
+    const deps = makeDeps({
+      activeLocalId: 'proj-1',
+      projects,
+      projectsRef: { current: projects },
+      flushSyncRef: { current: flushSync },
+    });
+
+    const { rerender } = renderHook(
+      (props) => useProjectSwitchEviction(props),
+      { initialProps: deps },
+    );
+
+    // Switch project — flushSync resolves (simulating dropped lock)
+    deps.activeLocalIdRef.current = 'proj-2';
+    rerender({ ...deps, activeLocalId: 'proj-2' });
+
+    await vi.waitFor(() => {
+      expect(flushSync).toHaveBeenCalled();
+      // Eviction proceeds regardless of whether flush actually saved
+      expect(evictProjectData).toHaveBeenCalledWith('proj-1');
+    });
+  });
+
+  it('keeps local data when flush rejects (safety net)', async () => {
+    const flushSync = vi.fn().mockRejectedValue(new Error('Lock contention or network error'));
+    const projects = [
+      makeProjectEntry({ localId: 'proj-1', cloudId: 'cloud-1', storage: 'cloud' }),
+      makeProjectEntry({ localId: 'proj-2', storage: 'local' }),
+    ];
+    const deps = makeDeps({
+      activeLocalId: 'proj-1',
+      projects,
+      projectsRef: { current: projects },
+      flushSyncRef: { current: flushSync },
+    });
+
+    // Suppress expected console.warn from the .catch() handler
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const { rerender } = renderHook(
+      (props) => useProjectSwitchEviction(props),
+      { initialProps: deps },
+    );
+
+    deps.activeLocalIdRef.current = 'proj-2';
+    rerender({ ...deps, activeLocalId: 'proj-2' });
+
+    // Wait for the .catch() path to complete
+    await vi.waitFor(() => {
+      expect(flushSync).toHaveBeenCalled();
+    });
+
+    // Eviction should NOT happen when flush rejects — data preserved as safety net
+    expect(evictProjectData).not.toHaveBeenCalled();
+
+    warnSpy.mockRestore();
+  });
 });
