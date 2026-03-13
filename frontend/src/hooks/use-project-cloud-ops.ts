@@ -88,7 +88,7 @@ export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
       // If the currently active cloud project is this one, clear cloud state
       if (internalRef.current.cloudId === cloudId) {
         clearCloudUrl();
-        setInternal({ ...initialInternalState });
+        setInternal(initialInternalState);
       }
     });
   }, [updateCloudMetadata, projectsRef, mutationLockRef, internalRef, setInternal, getJwt]);
@@ -118,7 +118,7 @@ export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
     // If the currently active cloud project is this one, clear cloud state
     if (internalRef.current.cloudId === cloudId) {
       clearCloudUrl();
-      setInternal({ ...initialInternalState });
+      setInternal(initialInternalState);
     }
   }, [updateCloudMetadata, projectsRef, internalRef, setInternal]);
 

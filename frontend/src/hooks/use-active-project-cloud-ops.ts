@@ -206,7 +206,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
         }
 
         clearCloudUrl();
-        setInternal({ ...initialInternalState });
+        setInternal(initialInternalState);
       } catch (err) {
         setInternal((prev) => ({ ...prev, status: 'idle', error: friendlyErrorMessage(err, 'Failed to delete project.') }));
       }

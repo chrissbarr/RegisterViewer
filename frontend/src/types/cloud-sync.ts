@@ -14,7 +14,7 @@ export interface InternalCloudSyncState {
   visibility: Visibility;
 }
 
-export const initialInternalState: InternalCloudSyncState = {
+export const initialInternalState: InternalCloudSyncState = Object.freeze({
   cloudId: null,
   isOwner: false,
   storage: 'local',
@@ -24,7 +24,7 @@ export const initialInternalState: InternalCloudSyncState = {
   lastCloudSavedAt: null,
   lastSavedVersion: -1,
   visibility: 'private',
-};
+});
 
 /**
  * Shared refs and state setters passed to all cloud sync hooks (AR-1).

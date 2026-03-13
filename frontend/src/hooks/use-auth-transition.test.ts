@@ -113,7 +113,7 @@ describe('useAuthTransition', () => {
 
     expect(purgeCloudProjects).toHaveBeenCalledTimes(1);
     expect(deps.refreshProjectList).toHaveBeenCalledTimes(1);
-    expect(deps.setInternal).toHaveBeenCalledWith({ ...INITIAL_INTERNAL_STATE });
+    expect(deps.setInternal).toHaveBeenCalledWith(initialInternalState);
     expect(clearCloudUrl).toHaveBeenCalledTimes(1);
   });
 

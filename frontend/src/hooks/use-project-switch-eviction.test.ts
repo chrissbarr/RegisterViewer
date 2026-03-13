@@ -109,7 +109,7 @@ describe('useProjectSwitchEviction', () => {
 
     expect(cancelPendingOp).toHaveBeenCalled();
     expect(clearCloudUrl).toHaveBeenCalled();
-    expect(setInternal).toHaveBeenCalledWith({ ...initialInternalState });
+    expect(setInternal).toHaveBeenCalledWith(initialInternalState);
   });
 
   it('does not evict local-storage projects on switch', async () => {

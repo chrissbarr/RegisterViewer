@@ -107,7 +107,7 @@ export function useProjectSwitchEviction(deps: UseProjectSwitchEvictionDeps): vo
       if (prevLocalId) {
         if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
         cancelPendingOp();
-        setInternal({ ...initialInternalState });
+        setInternal(initialInternalState);
         clearCloudUrl();
       }
       return;
@@ -125,7 +125,7 @@ export function useProjectSwitchEviction(deps: UseProjectSwitchEvictionDeps): vo
     // "shared project" banner on owned projects during the async gap.
     const isOwner = entry?.storage === 'cloud';
     if (cloudId === null) {
-      setInternal({ ...initialInternalState });
+      setInternal(initialInternalState);
       clearCloudUrl();
     } else {
       // Signal dirty tracking to capture the version after its next bump,

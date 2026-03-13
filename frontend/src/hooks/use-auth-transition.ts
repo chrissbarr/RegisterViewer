@@ -94,7 +94,7 @@ export function useAuthTransition(deps: UseAuthTransitionDeps): UseAuthTransitio
 
       // Reset cloud sync state
       if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
-      setInternal({ ...initialInternalState });
+      setInternal(initialInternalState);
       clearCloudUrl();
       sessionStorage.removeItem(ACTIVE_PROJECT_SESSION_KEY);
     }
