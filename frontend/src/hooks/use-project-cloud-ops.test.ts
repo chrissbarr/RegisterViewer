@@ -16,8 +16,8 @@ vi.mock('../utils/project-storage', () => ({
   buildProjectUrl: vi.fn((id: string) => `https://app/#/p/${id}`),
 }));
 
-vi.mock('../utils/cloud-url', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../utils/cloud-url')>();
+vi.mock('../utils/cloud-utils', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../utils/cloud-utils')>();
   return {
     ...actual,
     setCloudUrl: vi.fn(),
@@ -33,7 +33,7 @@ vi.mock('../utils/cloud-operations', () => ({
 
 import { isCloudEnabled } from '../utils/api-client';
 import { loadProject } from '../utils/project-storage';
-import { setCloudUrl, clearCloudUrl } from '../utils/cloud-url';
+import { setCloudUrl, clearCloudUrl } from '../utils/cloud-utils';
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
 import type { ProjectListEntry } from '../types/project';
 import { initialInternalState } from '../types/cloud-sync';

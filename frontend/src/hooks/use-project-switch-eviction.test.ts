@@ -11,13 +11,13 @@ vi.mock('../utils/project-storage', () => ({
   evictProjectData: vi.fn(),
 }));
 
-vi.mock('../utils/cloud-url', () => ({
+vi.mock('../utils/cloud-utils', () => ({
   setCloudUrl: vi.fn(),
   clearCloudUrl: vi.fn(),
 }));
 
 import { evictProjectData } from '../utils/project-storage';
-import { clearCloudUrl, setCloudUrl } from '../utils/cloud-url';
+import { clearCloudUrl, setCloudUrl } from '../utils/cloud-utils';
 
 function makeInternal(overrides: Partial<InternalCloudSyncState> = {}): InternalCloudSyncState {
   return { ...initialInternalState, ...overrides };

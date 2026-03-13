@@ -11,12 +11,12 @@ vi.mock('../utils/project-storage', () => ({
   ACTIVE_PROJECT_SESSION_KEY: 'test-active-project',
 }));
 
-vi.mock('../utils/cloud-url', () => ({
+vi.mock('../utils/cloud-utils', () => ({
   clearCloudUrl: vi.fn(),
 }));
 
 import { purgeCloudProjects, getMostRecentProjectId } from '../utils/project-storage';
-import { clearCloudUrl } from '../utils/cloud-url';
+import { clearCloudUrl } from '../utils/cloud-utils';
 
 // ── Helpers ──────────────────────────────────────────────────────────
 

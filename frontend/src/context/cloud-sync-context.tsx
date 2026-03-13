@@ -36,7 +36,7 @@ import {
 import { useAuth, useAuthActions } from './auth-context';
 import { buildProjectUrl, createProject } from '../utils/project-storage';
 import { EMPTY_SERIALIZED_STATE } from '../utils/storage';
-import { clearCloudUrl } from '../utils/cloud-url';
+import { clearCloudUrl } from '../utils/cloud-utils';
 import { useDirtyTracking } from '../hooks/use-dirty-tracking';
 import { useActiveProjectCloudOps } from '../hooks/use-active-project-cloud-ops';
 import { useProjectCloudOps } from '../hooks/use-project-cloud-ops';

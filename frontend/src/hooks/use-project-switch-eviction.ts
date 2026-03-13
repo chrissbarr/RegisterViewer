@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, type MutableRefObject } from 'react';
 import { buildProjectUrl, evictProjectData } from '../utils/project-storage';
-import { setCloudUrl, clearCloudUrl } from '../utils/cloud-url';
+import { setCloudUrl, clearCloudUrl } from '../utils/cloud-utils';
 import { type CloudSyncCore, initialInternalState } from '../types/cloud-sync';
 import type { ProjectListEntry } from '../types/project';
 import type { AppState } from '../types/register';

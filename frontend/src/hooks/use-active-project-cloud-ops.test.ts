@@ -33,9 +33,9 @@ vi.mock('../utils/cloud-operations', () => ({
   patchVisibilityImpl: vi.fn(),
 }));
 
-// Mock cloud-url but keep withMutationLock as a passthrough that uses the real implementation
-vi.mock('../utils/cloud-url', async () => {
-  const actual = await vi.importActual<typeof import('../utils/cloud-url')>('../utils/cloud-url');
+// Mock cloud-utils but keep withMutationLock as a passthrough that uses the real implementation
+vi.mock('../utils/cloud-utils', async () => {
+  const actual = await vi.importActual<typeof import('../utils/cloud-utils')>('../utils/cloud-utils');
   return {
     ...actual,
     setCloudUrl: vi.fn(),
@@ -64,7 +64,7 @@ vi.spyOn(history, 'replaceState').mockImplementation(() => {});
 import { isCloudEnabled } from '../utils/api-client';
 import { fetchAndParseCloudProject } from '../utils/cloud-project-loader';
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
-import { setCloudUrl, clearCloudUrl } from '../utils/cloud-url';
+import { setCloudUrl, clearCloudUrl } from '../utils/cloud-utils';
 import { exportToObject } from '../utils/storage';
 
 // ── Helpers ──────────────────────────────────────────────────────────

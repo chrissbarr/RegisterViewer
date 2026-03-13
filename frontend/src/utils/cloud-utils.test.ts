@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { type MutableRefObject } from 'react';
-import { withMutationLock } from './cloud-url';
+import { withMutationLock } from './cloud-utils';
 
 function makeRef(initial: boolean): MutableRefObject<boolean> {
   return { current: initial };
