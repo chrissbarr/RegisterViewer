@@ -134,7 +134,7 @@ describe('useAutoSync', () => {
   });
 
   it('resets asyncOverride when canAutoSync toggles off', async () => {
-    const saveToCloud = vi.fn(() => Promise.reject(new Error('network error')));
+    const saveToCloud = vi.fn<() => Promise<boolean>>(() => Promise.reject(new Error('network error')));
     const deps = makeDeps({ isDirty: true, canAutoSync: true, saveToCloud });
 
     const { result, rerender } = renderHook(
