@@ -205,6 +205,15 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     fork: loginGuard.fork,
   }), [rawActiveOps, loginGuard.saveToCloud, loginGuard.fork]);
 
+  /**
+   * Initialize cloud state for a newly-switched project.
+   *
+   * @param cloudId - The project's cloud ID, or null for local-only projects.
+   * @param isOwner - Whether the current user owns this cloud project.
+   * @param storage - Storage type; defaults to 'cloud' if cloudId is present and owned,
+   *                  'local' otherwise. This default ensures owned cloud projects are
+   *                  automatically set up for auto-sync.
+   */
   const initFromProject = useCallback(
     (cloudId: string | null, isOwner: boolean, storage: 'local' | 'cloud' = cloudId && isOwner ? 'cloud' : 'local') => {
       if (cloudId === null) {

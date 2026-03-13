@@ -7,19 +7,33 @@ import type { AppState } from '../types/register';
 
 // TODO(AR-1): Consider grouping shared refs (internalRef, appStateRef, etc.) into CloudSyncRefs bag
 interface UseProjectSwitchEvictionDeps {
+  /** Currently active project's localId (from ProjectStorage context). */
   activeLocalId: string | null;
+  /** Current app state — used to snapshot departing project for flush-before-evict. */
   appState: AppState;
+  /** Full project list — used to find cloudId for active project. */
   projects: ProjectListEntry[];
+  /** Ref synced to cloud sync internal state. */
   internalRef: MutableRefObject<InternalCloudSyncState>;
+  /** Ref synced to projects list for async callbacks. */
   projectsRef: MutableRefObject<ProjectListEntry[]>;
+  /** Ref synced to activeLocalId for async callbacks. */
   activeLocalIdRef: MutableRefObject<string | null>;
+  /** Set true when loadCloudProject dispatches IMPORT_STATE, triggering version re-sync. */
   needsVersionSyncRef: MutableRefObject<boolean>;
+  /** Snapshot of previous project's state, updated during render. Used by flush-before-evict. */
   lastStableStateRef: MutableRefObject<{ localId: string | null; state: AppState }>;
+  /** Ref to flushSync callback for immediate save before eviction. */
   flushSyncRef: MutableRefObject<((stateOverride?: AppState) => Promise<void>) | null>;
+  /** Ref to auto-sync timer — cleared on project switch. */
   syncTimerRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
+  /** True during sign-out — eviction is skipped (purgeCloudProjects handles cleanup). */
   isSigningOutRef: MutableRefObject<boolean>;
+  /** Clears any pending login guard operation on project switch. */
   cancelPendingOp: () => void;
+  /** Sets cloud sync internal state. */
   setInternal: Dispatch<SetStateAction<InternalCloudSyncState>>;
+  /** Default internal state for resetting on project switch. */
   initialInternalState: InternalCloudSyncState;
 }
 
