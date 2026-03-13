@@ -5,6 +5,7 @@ import type { InternalCloudSyncState } from '../types/cloud-sync';
 import type { ProjectListEntry } from '../types/project';
 import type { AppState } from '../types/register';
 
+// TODO(AR-1): Consider grouping shared refs (internalRef, appStateRef, etc.) into CloudSyncRefs bag
 interface UseProjectSwitchEvictionDeps {
   activeLocalId: string | null;
   appState: AppState;

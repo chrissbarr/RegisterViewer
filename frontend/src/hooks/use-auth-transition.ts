@@ -3,6 +3,7 @@ import { purgeCloudProjects, getMostRecentProjectId, ACTIVE_PROJECT_SESSION_KEY 
 import { clearCloudUrl } from '../utils/cloud-url';
 import type { InternalCloudSyncState, SyncResult } from '../types/cloud-sync';
 
+// TODO(AR-1): Consider grouping shared refs (internalRef, appStateRef, etc.) into CloudSyncRefs bag
 interface UseAuthTransitionDeps {
   authUser: { email: string } | null;
   pendingCloudOpRef: MutableRefObject<'save' | 'fork' | null>;

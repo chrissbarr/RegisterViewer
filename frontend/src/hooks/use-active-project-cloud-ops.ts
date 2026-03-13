@@ -18,6 +18,7 @@ type ImportStateAction = {
   addressUnitBits?: AddressUnitBits;
 };
 
+// TODO(AR-1): Consider grouping shared refs (internalRef, appStateRef, etc.) into CloudSyncRefs bag
 interface ActiveProjectCloudOpsDeps {
   internalRef: MutableRefObject<InternalCloudSyncState>;
   appStateRef: MutableRefObject<AppState>;
