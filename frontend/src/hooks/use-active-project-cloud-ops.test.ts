@@ -135,6 +135,7 @@ describe('useActiveProjectCloudOps', () => {
         kind: 'created',
         cloudId: TEST_CLOUD_ID,
         timestamp: TEST_TIMESTAMP,
+        version: 1,
       });
 
       const { result } = renderHook(() => useActiveProjectCloudOps(deps));
@@ -149,11 +150,13 @@ describe('useActiveProjectCloudOps', () => {
         { version: 1, registers: [], values: {} },
         null, // no existing cloudId
         TEST_JWT,
+        undefined, // no serverVersion for new project
       );
       expect(deps.updateCloudMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, {
         cloudId: TEST_CLOUD_ID,
         cloudSavedAt: TEST_TIMESTAMP,
         storage: 'cloud',
+        serverVersion: 1,
       });
       expect(setCloudUrl).toHaveBeenCalledWith(TEST_CLOUD_ID);
       // setInternal should have been called with status 'saving' then with the created result
@@ -166,11 +169,13 @@ describe('useActiveProjectCloudOps', () => {
         ...INITIAL_INTERNAL_STATE,
         cloudId: TEST_CLOUD_ID,
         isOwner: true,
+        serverVersion: 2,
       };
       (saveProjectToCloudImpl as Mock).mockResolvedValue({
         kind: 'updated',
         cloudId: TEST_CLOUD_ID,
         timestamp: TEST_TIMESTAMP,
+        version: 3,
       });
 
       const { result } = renderHook(() => useActiveProjectCloudOps(deps));
@@ -183,9 +188,11 @@ describe('useActiveProjectCloudOps', () => {
         expect.anything(),
         TEST_CLOUD_ID, // existing cloudId passed for update
         TEST_JWT,
+        2, // serverVersion passed for optimistic concurrency
       );
       expect(deps.updateCloudMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, {
         cloudSavedAt: TEST_TIMESTAMP,
+        serverVersion: 3,
       });
     });
 
@@ -248,7 +255,7 @@ describe('useActiveProjectCloudOps', () => {
       // Simulate project switch during the async save
       (saveProjectToCloudImpl as Mock).mockImplementation(async () => {
         deps.activeLocalIdRef.current = 'switched-project';
-        return { kind: 'updated', cloudId: TEST_CLOUD_ID, timestamp: TEST_TIMESTAMP };
+        return { kind: 'updated', cloudId: TEST_CLOUD_ID, timestamp: TEST_TIMESTAMP, version: 2 };
       });
 
       const { result } = renderHook(() => useActiveProjectCloudOps(deps));
@@ -260,6 +267,7 @@ describe('useActiveProjectCloudOps', () => {
       // updateCloudMetadata should target the original project, not the switched one
       expect(deps.updateCloudMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, {
         cloudSavedAt: TEST_TIMESTAMP,
+        serverVersion: 2,
       });
       // setInternal should NOT have been called with the timestamp update
       // because the active project changed (only the 'saving' status update runs)
@@ -289,90 +297,6 @@ describe('useActiveProjectCloudOps', () => {
 
       // internalRef should NOT have been updated with the error
       expect(deps.internalRef.current.error).toBeNull();
-    });
-
-    it('flush-before-evict: does NOT call setInternal or updateCloudMetadata after save', async () => {
-      const deps = makeDefaultDeps();
-      deps.internalRef.current = {
-        ...INITIAL_INTERNAL_STATE,
-        cloudId: TEST_CLOUD_ID,
-        isOwner: true,
-        storage: 'cloud',
-      };
-      (saveProjectToCloudImpl as Mock).mockResolvedValue({
-        kind: 'updated',
-        cloudId: TEST_CLOUD_ID,
-        timestamp: TEST_TIMESTAMP,
-      });
-
-      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
-
-      // Pass stateOverride to trigger flush-before-evict path
-      const stateOverride = makeState();
-      await act(async () => {
-        await result.current.saveToCloud(stateOverride);
-      });
-
-      // Post-save state updates are skipped for departing project
-      expect(deps.setInternal).not.toHaveBeenCalledWith(expect.objectContaining({ status: 'idle' }));
-      expect(deps.updateCloudMetadata).not.toHaveBeenCalled();
-    });
-
-    it('flush-before-evict: swallows errors without updating state', async () => {
-      const deps = makeDefaultDeps();
-      deps.internalRef.current = {
-        ...INITIAL_INTERNAL_STATE,
-        cloudId: TEST_CLOUD_ID,
-        isOwner: true,
-        storage: 'cloud',
-      };
-      (saveProjectToCloudImpl as Mock).mockRejectedValue(new Error('Network error'));
-
-      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
-
-      const stateOverride = makeState();
-      // Should NOT throw
-      await act(async () => {
-        await result.current.saveToCloud(stateOverride);
-      });
-
-      // Error state not set (no setInternal call with error)
-      expect(deps.setInternal).not.toHaveBeenCalledWith(expect.objectContaining({ error: expect.any(String) }));
-    });
-
-    it('flush-before-evict: uses cloudId captured at call time, not from stale internalRef', async () => {
-      const deps = makeDefaultDeps();
-      deps.internalRef.current = {
-        ...INITIAL_INTERNAL_STATE,
-        cloudId: 'departing-cloud-id',
-        isOwner: true,
-        storage: 'cloud',
-      };
-
-      // Simulate internalRef being updated during the async save (new project loaded)
-      (saveProjectToCloudImpl as Mock).mockImplementation(async () => {
-        // By the time the API call runs, internalRef has been updated to new project
-        deps.internalRef.current = {
-          ...INITIAL_INTERNAL_STATE,
-          cloudId: 'new-project-cloud-id',
-          isOwner: false,
-        };
-        return { kind: 'updated', cloudId: 'departing-cloud-id', timestamp: TEST_TIMESTAMP };
-      });
-
-      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
-
-      const stateOverride = makeState();
-      await act(async () => {
-        await result.current.saveToCloud(stateOverride);
-      });
-
-      // Must have saved to the departing project's cloudId, not the new one
-      expect(saveProjectToCloudImpl).toHaveBeenCalledWith(
-        expect.anything(),
-        'departing-cloud-id',
-        TEST_JWT,
-      );
     });
 
     it('sets error state on failure and re-throws', async () => {
@@ -408,6 +332,7 @@ describe('useActiveProjectCloudOps', () => {
         kind: 'created',
         cloudId: 'forked-cloud-id',
         timestamp: TEST_TIMESTAMP,
+        version: 1,
       });
 
       const { result } = renderHook(() => useActiveProjectCloudOps(deps));
@@ -426,6 +351,7 @@ describe('useActiveProjectCloudOps', () => {
         cloudId: 'forked-cloud-id',
         cloudSavedAt: TEST_TIMESTAMP,
         storage: 'cloud',
+        serverVersion: 1,
       });
       expect(setCloudUrl).toHaveBeenCalledWith('forked-cloud-id');
     });
@@ -437,6 +363,7 @@ describe('useActiveProjectCloudOps', () => {
         kind: 'created',
         cloudId: 'forked-cloud-id',
         timestamp: TEST_TIMESTAMP,
+        version: 1,
       });
 
       const { result } = renderHook(() => useActiveProjectCloudOps(deps));
@@ -450,6 +377,7 @@ describe('useActiveProjectCloudOps', () => {
         cloudId: 'forked-cloud-id',
         cloudSavedAt: TEST_TIMESTAMP,
         storage: 'cloud',
+        serverVersion: 1,
       });
     });
   });

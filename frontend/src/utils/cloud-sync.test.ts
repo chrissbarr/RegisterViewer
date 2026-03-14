@@ -26,6 +26,7 @@ function makeServer(overrides: Partial<ServerProject> & { id: string }): ServerP
     title: 'Server Project',
     visibility: 'private',
     updatedAt: '2024-01-02T00:00:00Z',
+    version: 1,
     ...overrides,
   };
 }
@@ -38,7 +39,7 @@ describe('computeSyncPatches', () => {
     expect(result.cloudOnlyProjects).toEqual([]);
   });
 
-  it('returns no patches when local and server are in sync', () => {
+  it('returns version-only patch when local and server timestamps/visibility match', () => {
     const local = [makeEntry({
       localId: 'l1',
       cloudId: 'c1',
@@ -49,7 +50,8 @@ describe('computeSyncPatches', () => {
     const server = [makeServer({ id: 'c1', visibility: 'private', updatedAt: '2024-01-02T00:00:00Z' })];
 
     const result = computeSyncPatches(local, server);
-    expect(result.patches).toEqual([]);
+    // serverVersion is always propagated
+    expect(result.patches).toEqual([{ localId: 'l1', serverVersion: 1 }]);
     expect(result.staleCloudIds).toEqual([]);
     expect(result.cloudOnlyProjects).toEqual([]);
   });
@@ -65,7 +67,7 @@ describe('computeSyncPatches', () => {
     const server = [makeServer({ id: 'c1', updatedAt: '2024-01-03T00:00:00Z', visibility: 'private' })];
 
     const result = computeSyncPatches(local, server);
-    expect(result.patches).toEqual([{ localId: 'l1', cloudSavedAt: '2024-01-03T00:00:00Z' }]);
+    expect(result.patches).toEqual([{ localId: 'l1', cloudSavedAt: '2024-01-03T00:00:00Z', serverVersion: 1 }]);
   });
 
   it('generates visibility patch when server visibility differs', () => {
@@ -79,7 +81,7 @@ describe('computeSyncPatches', () => {
     const server = [makeServer({ id: 'c1', updatedAt: '2024-01-02T00:00:00Z', visibility: 'unlisted' })];
 
     const result = computeSyncPatches(local, server);
-    expect(result.patches).toEqual([{ localId: 'l1', visibility: 'unlisted' }]);
+    expect(result.patches).toEqual([{ localId: 'l1', visibility: 'unlisted', serverVersion: 1 }]);
   });
 
   it('generates combined patch when both timestamp and visibility differ', () => {
@@ -97,6 +99,7 @@ describe('computeSyncPatches', () => {
       localId: 'l1',
       cloudSavedAt: '2024-01-05T00:00:00Z',
       visibility: 'unlisted',
+      serverVersion: 1,
     }]);
   });
 
@@ -162,13 +165,13 @@ describe('computeSyncPatches', () => {
     ];
 
     const result = computeSyncPatches(local, server);
-    expect(result.patches).toEqual([{ localId: 'l1', cloudSavedAt: '2024-06-01T00:00:00Z' }]);
+    expect(result.patches).toEqual([{ localId: 'l1', cloudSavedAt: '2024-06-01T00:00:00Z', serverVersion: 1 }]);
     expect(result.staleCloudIds).toEqual(['c-gone']);
     expect(result.cloudOnlyProjects).toHaveLength(1);
     expect(result.cloudOnlyProjects[0].id).toBe('c-brand-new');
   });
 
-  it('skips timestamp patch when server date is malformed', () => {
+  it('skips timestamp patch when server date is malformed (but still propagates version)', () => {
     const local = [makeEntry({
       localId: 'l1',
       cloudId: 'c1',
@@ -179,7 +182,8 @@ describe('computeSyncPatches', () => {
     const server = [makeServer({ id: 'c1', updatedAt: 'not-a-date', visibility: 'private' })];
 
     const result = computeSyncPatches(local, server);
-    expect(result.patches).toEqual([]);
+    // No cloudSavedAt patch (malformed date), but serverVersion still propagated
+    expect(result.patches).toEqual([{ localId: 'l1', serverVersion: 1 }]);
   });
 
   it('treats malformed local date as epoch 0 for comparison', () => {
@@ -193,7 +197,7 @@ describe('computeSyncPatches', () => {
     const server = [makeServer({ id: 'c1', updatedAt: '2024-01-02T00:00:00Z', visibility: 'private' })];
 
     const result = computeSyncPatches(local, server);
-    expect(result.patches).toEqual([{ localId: 'l1', cloudSavedAt: '2024-01-02T00:00:00Z' }]);
+    expect(result.patches).toEqual([{ localId: 'l1', cloudSavedAt: '2024-01-02T00:00:00Z', serverVersion: 1 }]);
   });
 
   it('treats null cloudSavedAt as epoch 0 for comparison', () => {
@@ -206,7 +210,7 @@ describe('computeSyncPatches', () => {
     const server = [makeServer({ id: 'c1', updatedAt: '2024-01-01T00:00:00Z' })];
 
     const result = computeSyncPatches(local, server);
-    expect(result.patches).toEqual([{ localId: 'l1', cloudSavedAt: '2024-01-01T00:00:00Z' }]);
+    expect(result.patches).toEqual([{ localId: 'l1', cloudSavedAt: '2024-01-01T00:00:00Z', serverVersion: 1 }]);
   });
 });
 
@@ -233,7 +237,7 @@ describe('syncCloudProjectsFromServer', () => {
       createPlaceholder,
     });
 
-    expect(updateCloudMetadata).toHaveBeenCalledWith('l1', { cloudSavedAt: '2024-06-01T00:00:00Z' });
+    expect(updateCloudMetadata).toHaveBeenCalledWith('l1', { cloudSavedAt: '2024-06-01T00:00:00Z', serverVersion: 1 });
     expect(result.updatedCount).toBe(1);
     expect(result.staleCloudIds).toEqual([]);
     expect(result.placeholdersCreated).toBe(0);

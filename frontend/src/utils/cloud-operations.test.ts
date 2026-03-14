@@ -32,6 +32,7 @@ describe('saveProjectToCloudImpl', () => {
     (createProject as Mock).mockResolvedValue({
       id: 'cloud-new',
       createdAt: '2024-01-01T00:00:00Z',
+      version: 1,
     });
 
     const result = await saveProjectToCloudImpl(payload, null, jwt);
@@ -40,6 +41,7 @@ describe('saveProjectToCloudImpl', () => {
       kind: 'created',
       cloudId: 'cloud-new',
       timestamp: '2024-01-01T00:00:00Z',
+      version: 1,
     });
     expect(createProject).toHaveBeenCalledWith(payload, jwt);
   });
@@ -48,6 +50,7 @@ describe('saveProjectToCloudImpl', () => {
     (updateProject as Mock).mockResolvedValue({
       id: 'cloud-abc',
       updatedAt: '2024-01-02T00:00:00Z',
+      version: 2,
     });
 
     const result = await saveProjectToCloudImpl(payload, 'cloud-abc', jwt);
@@ -56,8 +59,9 @@ describe('saveProjectToCloudImpl', () => {
       kind: 'updated',
       cloudId: 'cloud-abc',
       timestamp: '2024-01-02T00:00:00Z',
+      version: 2,
     });
-    expect(updateProject).toHaveBeenCalledWith('cloud-abc', payload, jwt);
+    expect(updateProject).toHaveBeenCalledWith('cloud-abc', payload, jwt, 1);
   });
 
   it('returns not-found when update gets 404', async () => {
@@ -68,6 +72,19 @@ describe('saveProjectToCloudImpl', () => {
     const result = await saveProjectToCloudImpl(payload, 'cloud-gone', jwt);
 
     expect(result).toEqual({ kind: 'not-found' });
+    expect(updateProject).toHaveBeenCalledWith('cloud-gone', payload, jwt, 1);
+  });
+
+  it('returns conflict with serverVersion when update gets 409', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const err = new ApiError(409, { error: 'Conflict' } as any);
+    // Set currentVersion on errorBody (the real ApiError stores the full JSON body)
+    err.errorBody = { error: 'Conflict', currentVersion: 5 } as never;
+    (updateProject as Mock).mockRejectedValue(err);
+
+    const result = await saveProjectToCloudImpl(payload, 'cloud-abc', jwt, 3);
+
+    expect(result).toEqual({ kind: 'conflict', serverVersion: 5 });
   });
 
   it('throws on network error during update', async () => {

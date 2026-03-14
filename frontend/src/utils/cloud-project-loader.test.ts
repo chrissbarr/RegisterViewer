@@ -31,6 +31,7 @@ function makeGetProjectResponse(dataOverride?: unknown) {
     createdAt: '2024-01-01T00:00:00Z',
     updatedAt: '2024-06-15T12:00:00Z',
     isOwner: false,
+    version: 1,
   };
 }
 
@@ -74,6 +75,17 @@ describe('fetchAndParseCloudProject', () => {
     const result = await fetchAndParseCloudProject('ABC123DEF456');
 
     expect(result.updatedAt).toBe('2024-06-15T12:00:00Z');
+  });
+
+  it('threads version from the API response', async () => {
+    const apiResponse = { ...makeGetProjectResponse(), version: 3 };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockGetProject.mockResolvedValue(apiResponse as any);
+    mockImportFromObject.mockRestore();
+
+    const result = await fetchAndParseCloudProject('ABC123DEF456');
+
+    expect(result.version).toBe(3);
   });
 
   it('threads isOwner from the API response', async () => {

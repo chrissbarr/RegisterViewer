@@ -55,6 +55,7 @@ vi.mock('../utils/project-storage', () => ({
     createdAt: e.createdAt ?? '2024-01-01T00:00:00Z',
     localSavedAt: e.localSavedAt ?? '2024-01-01T00:00:00Z',
     cloudSavedAt: e.cloudSavedAt ?? null,
+    serverVersion: e.serverVersion ?? null,
     storage: e.storage ?? 'local',
   })),
   getMostRecentProjectId: vi.fn(() => null),
@@ -117,6 +118,7 @@ function makeManifestEntry(overrides: Partial<ProjectManifestEntry> = {}) {
     createdAt: '2024-01-01T00:00:00Z',
     localSavedAt: '2024-01-01T00:00:00Z',
     cloudSavedAt: null as string | null,
+    serverVersion: null as number | null,
     storage: 'local' as const,
     ...overrides,
   };
@@ -173,7 +175,7 @@ beforeEach(() => {
   (loadProject as Mock).mockReturnValue(null);
   (exportToObject as Mock).mockReturnValue({ version: 1, registers: [], values: {} });
   // getProject is called by the ownership re-evaluation effect; default to a resolved promise
-  (apiGetProject as Mock).mockResolvedValue({ id: 'test', data: '{}', createdAt: '', updatedAt: '', isOwner: false });
+  (apiGetProject as Mock).mockResolvedValue({ id: 'test', data: '{}', createdAt: '', updatedAt: '', isOwner: false, version: 1 });
   // listProjects is called by syncCloudProjects on mount/sign-in; default to empty list
   (apiListProjects as Mock).mockResolvedValue({ projects: [] });
 });
@@ -313,6 +315,7 @@ describe('CloudSyncProvider', () => {
       (apiUpdateProject as Mock).mockResolvedValue({
         id: 'cloud-abc',
         updatedAt: '2024-01-02T12:00:00Z',
+        version: 2,
       });
 
       await act(async () => {
@@ -323,6 +326,7 @@ describe('CloudSyncProvider', () => {
         'cloud-abc',
         { version: 1, registers: [], values: {} },
         'mock-jwt-token',
+        1, // serverVersion from initial create
       );
       expect(result.current.state.lastCloudSavedAt).toBe('2024-01-02T12:00:00Z');
     });
@@ -705,6 +709,7 @@ describe('CloudSyncProvider', () => {
       (apiUpdateProject as Mock).mockResolvedValue({
         id: 'cloud-existing',
         updatedAt: '2024-01-02T12:00:00Z',
+        version: 2,
       });
 
       const { result } = renderCloudSync();
@@ -816,6 +821,7 @@ describe('CloudSyncProvider', () => {
         addressUnitBits: 8,
         updatedAt: '2024-01-01T12:00:00Z',
         isOwner: true,
+        version: 1,
       };
       (fetchAndParseCloudProject as Mock).mockResolvedValue(importResult);
 
@@ -937,6 +943,7 @@ describe('CloudSyncProvider', () => {
             visibility: 'unlisted',
             createdAt: '2024-01-01T00:00:00Z',
             updatedAt: '2024-02-01T00:00:00Z', // newer than local
+            version: 1,
           },
         ],
       });
@@ -954,6 +961,7 @@ describe('CloudSyncProvider', () => {
       expect(updateProjectMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, {
         cloudSavedAt: '2024-02-01T00:00:00Z',
         visibility: 'unlisted',
+        serverVersion: 1,
       });
     });
 
@@ -998,6 +1006,7 @@ describe('CloudSyncProvider', () => {
             visibility: 'unlisted',
             createdAt: '2024-01-01T00:00:00Z',
             updatedAt: '2024-02-01T00:00:00Z',
+            version: 1,
           },
         ],
       });
@@ -1351,17 +1360,16 @@ describe('CloudSyncProvider', () => {
       expect(evictProjectData).not.toHaveBeenCalledWith(PREV_LOCAL_ID);
     });
 
-    it('flush-before-evict saves the previous project state, not the new project state', async () => {
-      // Regression: switchProject dispatches LOAD_STATE + sets activeLocalId in
-      // the same commit. By the time the project-switch effect calls flushSync,
-      // appStateRef already points to the *new* project's state. Without the
-      // stateOverride fix, exportToObject would serialize the wrong project.
+    it('best-effort save reads previous project from localStorage on switch', async () => {
+      // The best-effort save reads from localStorage via loadProject()
+      // to get the departing project's state (not appStateRef which
+      // may already point to the new project).
       authMock.getJwt.mockReturnValue('mock-jwt');
 
       (loadManifest as Mock).mockReturnValue({
         version: 1,
         projects: [
-          makeManifestEntry({ localId: PREV_LOCAL_ID, cloudId: 'cloud-prev', storage: 'cloud' }),
+          makeManifestEntry({ localId: PREV_LOCAL_ID, cloudId: 'cloud-prev', storage: 'cloud', serverVersion: 1 }),
           makeManifestEntry({ localId: NEXT_LOCAL_ID, cloudId: null, name: 'Next' }),
         ],
       });
@@ -1381,7 +1389,7 @@ describe('CloudSyncProvider', () => {
       }));
 
       // Cloud update succeeds
-      (apiUpdateProject as Mock).mockResolvedValue({ id: 'cloud-prev', updatedAt: '2026-01-01T00:00:00Z' });
+      (apiUpdateProject as Mock).mockResolvedValue({ id: 'cloud-prev', updatedAt: '2026-01-01T00:00:00Z', version: 2 });
       (apiGetProject as Mock).mockReturnValue(new Promise(() => {}));
 
       const { result } = renderWithProjectSwitch();
@@ -1391,7 +1399,7 @@ describe('CloudSyncProvider', () => {
         result.current.actions.initFromProject('cloud-prev', true, 'cloud');
       });
 
-      // Make data dirty so flushSync actually attempts a save
+      // Make data dirty so the best-effort save fires
       act(() => {
         result.current.dispatch({
           type: 'SET_REGISTER_VALUE',
@@ -1400,33 +1408,26 @@ describe('CloudSyncProvider', () => {
         });
       });
 
-      // Clear exportToObject call history before the switch
-      (exportToObject as Mock).mockClear();
-
-      // Track what state exportToObject receives during the flush
-      const capturedStates: unknown[] = [];
-      (exportToObject as Mock).mockImplementation((state: unknown) => {
-        capturedStates.push(state);
-        return { version: 1, registers: [], values: {} };
-      });
-
-      // Switch to the next project — triggers flush-before-evict
+      // Switch to the next project — triggers best-effort save
       await act(async () => {
         result.current.storageActions.switchProject(NEXT_LOCAL_ID);
       });
 
-      // Wait for flush promise to settle
+      // Wait for save promise to settle
       await act(async () => {
         await new Promise(r => setTimeout(r, 50));
       });
 
-      // exportToObject should have been called with the PREVIOUS project's
-      // state (containing reg-1 with value 0x42), NOT the next project's state.
-      expect(capturedStates.length).toBeGreaterThanOrEqual(1);
-      const flushedState = capturedStates[0] as { registers: Array<{ id: string }>; registerValues: Record<string, bigint> };
-      // The previous project had reg-1; the new project has reg-2.
-      // If the bug were present, we'd see reg-2 here instead.
-      expect(flushedState.registers[0]?.id).toBe('reg-1');
+      // loadProject should have been called with the PREVIOUS project's localId
+      // to read its state from localStorage (not from appStateRef)
+      expect(loadProject).toHaveBeenCalledWith(PREV_LOCAL_ID);
+      // The API update should have been called for the previous project
+      expect(apiUpdateProject).toHaveBeenCalledWith(
+        'cloud-prev',
+        expect.anything(),
+        'mock-jwt',
+        1, // serverVersion
+      );
     });
   });
 
@@ -1524,7 +1525,7 @@ describe('CloudSyncProvider', () => {
       });
 
       // Server confirms ownership
-      (apiGetProject as Mock).mockResolvedValue({ isOwner: true });
+      (apiGetProject as Mock).mockResolvedValue({ isOwner: true, version: 1 });
 
       const { result } = renderCloudSync();
 

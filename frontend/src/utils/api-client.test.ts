@@ -523,7 +523,7 @@ describe('updateProject with visibility', () => {
       }),
     });
 
-    await updateProject('TEST', { version: 1 }, 'a'.repeat(64), 'unlisted');
+    await updateProject('TEST', { version: 1 }, 'a'.repeat(64), 1, 'unlisted');
 
     const callArgs = mockFetch.mock.calls[0];
     const body = JSON.parse(callArgs[1].body);

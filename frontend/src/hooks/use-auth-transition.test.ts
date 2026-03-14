@@ -36,10 +36,10 @@ function makeDeps(overrides: Partial<Parameters<typeof useAuthTransition>[0]> = 
     activeLocalIdRef: core.activeLocalIdRef,
     setInternal: core.setInternal,
     authUser: null as { email: string } | null,
-    pendingCloudOpRef: { current: null as 'save' | 'fork' | null },
-    setLoginRequired: vi.fn(),
-    rawSave: vi.fn(() => Promise.resolve(true)),
-    rawFork: vi.fn(() => Promise.resolve()),
+    pendingOpRef: { current: null as 'save' | 'fork' | null },
+    saveToCloud: vi.fn(() => Promise.resolve(true)),
+    fork: vi.fn(() => Promise.resolve()),
+    dismissLogin: vi.fn(),
     syncCloudProjectsRef: { current: vi.fn(() => Promise.resolve({ updatedCount: 0, staleCloudIds: [], placeholdersCreated: 0 })) },
     syncTimerRef: { current: null as ReturnType<typeof setTimeout> | null },
     refreshProjectList: vi.fn(),
@@ -72,7 +72,7 @@ describe('useAuthTransition', () => {
 
   it('retries pending save on sign-in', () => {
     const deps = makeDeps();
-    deps.pendingCloudOpRef.current = 'save';
+    deps.pendingOpRef.current = 'save';
 
     const { rerender } = renderHook(
       ({ authUser }) => useAuthTransition({ ...deps, authUser }),
@@ -81,14 +81,14 @@ describe('useAuthTransition', () => {
 
     rerender({ authUser: { email: 'test@example.com' } });
 
-    expect(deps.rawSave).toHaveBeenCalledTimes(1);
-    expect(deps.setLoginRequired).toHaveBeenCalledWith(false);
-    expect(deps.pendingCloudOpRef.current).toBe(null);
+    expect(deps.saveToCloud).toHaveBeenCalledTimes(1);
+    expect(deps.dismissLogin).toHaveBeenCalled();
+    expect(deps.pendingOpRef.current).toBe(null);
   });
 
   it('retries pending fork on sign-in', () => {
     const deps = makeDeps();
-    deps.pendingCloudOpRef.current = 'fork';
+    deps.pendingOpRef.current = 'fork';
 
     const { rerender } = renderHook(
       ({ authUser }) => useAuthTransition({ ...deps, authUser }),
@@ -97,7 +97,7 @@ describe('useAuthTransition', () => {
 
     rerender({ authUser: { email: 'test@example.com' } });
 
-    expect(deps.rawFork).toHaveBeenCalledTimes(1);
+    expect(deps.fork).toHaveBeenCalledTimes(1);
   });
 
   it('purges cloud projects on sign-out', () => {
@@ -165,51 +165,6 @@ describe('useAuthTransition', () => {
     // Timer should have been cleared (we can't directly check clearTimeout,
     // but setInternal being called confirms the sign-out path ran)
     expect(deps.setInternal).toHaveBeenCalled();
-  });
-
-  it('returns isSigningOutRef', () => {
-    const deps = makeDeps();
-    const { result } = renderHook(() => useAuthTransition(deps));
-    expect(result.current.isSigningOutRef).toBeDefined();
-    expect(result.current.isSigningOutRef.current).toBe(false);
-  });
-
-  it('sets isSigningOutRef true during sign-out', () => {
-    const deps = makeDeps({ authUser: { email: 'test@example.com' } });
-
-    const { result, rerender } = renderHook(
-      ({ authUser }) => useAuthTransition({ ...deps, authUser }),
-      { initialProps: { authUser: { email: 'test@example.com' } as { email: string } | null } },
-    );
-
-    const isSigningOutRef = result.current.isSigningOutRef;
-
-    // Spy on purgeCloudProjects to observe isSigningOutRef mid-sign-out
-    vi.mocked(purgeCloudProjects).mockImplementation(() => {
-      expect(isSigningOutRef.current).toBe(true);
-      return [];
-    });
-
-    rerender({ authUser: null });
-
-    expect(purgeCloudProjects).toHaveBeenCalledTimes(1);
-  });
-
-  it('isSigningOutRef stays true after sign-out until next sign-in', () => {
-    const deps = makeDeps({ authUser: { email: 'test@example.com' } });
-
-    const { result, rerender } = renderHook(
-      ({ authUser }) => useAuthTransition({ ...deps, authUser }),
-      { initialProps: { authUser: { email: 'test@example.com' } as { email: string } | null } },
-    );
-
-    // Sign out — ref should stay true (protects async eviction checks)
-    rerender({ authUser: null });
-    expect(result.current.isSigningOutRef.current).toBe(true);
-
-    // Sign back in — ref should be reset to false
-    rerender({ authUser: { email: 'test@example.com' } });
-    expect(result.current.isSigningOutRef.current).toBe(false);
   });
 
   it('triggers sync on first mount with existing auth', () => {
