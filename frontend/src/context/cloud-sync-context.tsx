@@ -43,7 +43,7 @@ import { useProjectCloudOps } from '../hooks/use-project-cloud-ops';
 import { useAutoSync, type SyncStatus } from '../hooks/use-auto-sync';
 import { useLoginGuard } from '../hooks/use-login-guard';
 import { useAuthTransition } from '../hooks/use-auth-transition';
-import { useProjectSwitchEviction } from '../hooks/use-project-switch-eviction';
+import { useProjectSwitchInit } from '../hooks/use-project-switch-init';
 import { syncCloudProjectsFromServer } from '../utils/cloud-sync';
 import type { Visibility } from '../types/project';
 import type { AppState } from '../types/register';
@@ -185,9 +185,17 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   if (activeLocalId === lastStableStateRef.current.localId) { // eslint-disable-line react-hooks/refs -- intentional render-time read; see comment above
     // Still on the same project — keep the snapshot fresh
     lastStableStateRef.current.state = appState; // eslint-disable-line react-hooks/refs
+  } else if (lastStableStateRef.current.localId === null) { // eslint-disable-line react-hooks/refs
+    // Transitioning from unsaved (null) to saved — adopt the new project's
+    // localId so the eviction effect can match it later. Without this, the
+    // ref stays stuck at localId=null after saveCurrentProject() changes
+    // activeLocalId from null to a real id, causing flush-before-evict to
+    // fail to find the departing project's state snapshot.
+    lastStableStateRef.current = { localId: activeLocalId, state: appState }; // eslint-disable-line react-hooks/refs
   }
-  // When activeLocalId changes, we intentionally do NOT update the snapshot
-  // here — it preserves the previous project's state for the effect to use.
+  // When activeLocalId changes between two truthy ids (real project switch),
+  // we intentionally do NOT update — preserving the previous project's state
+  // for the eviction effect to flush before evicting.
 
   // Active-project cloud operations (save, fork, delete, visibility, load)
   const rawActiveOps = useActiveProjectCloudOps({
@@ -311,8 +319,8 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     refreshProjectList, switchProject, createNewProject,
   });
 
-  // --- Active project switch: eviction + cloudId tracking ---
-  useProjectSwitchEviction({
+  // --- Active project switch: cloud state init + best-effort save ---
+  useProjectSwitchInit({
     core, activeLocalId, appState, projects,
     projectsRef, needsVersionSyncRef,
     lastStableStateRef, flushSyncRef, syncTimerRef, isSigningOutRef,
