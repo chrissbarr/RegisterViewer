@@ -162,7 +162,7 @@ async function mockCloudApi(page: Page, options: {
         if (method === 'POST') {
           const resp = options.createResponse ?? {
             status: 200,
-            body: { id: cloudId, shareUrl: `${urlObj.origin}/#/p/${cloudId}`, createdAt: now },
+            body: { id: cloudId, shareUrl: `${urlObj.origin}/#/p/${cloudId}`, createdAt: now, version: 1 },
           };
           await route.fulfill({
             status: resp.status,
@@ -193,7 +193,7 @@ async function mockCloudApi(page: Page, options: {
         if (method === 'GET') {
           const resp = options.getResponse ?? {
             status: 200,
-            body: { id: projectId, data: MOCK_PROJECT_DATA, createdAt: now, updatedAt: now, isOwner: true },
+            body: { id: projectId, data: MOCK_PROJECT_DATA, createdAt: now, updatedAt: now, isOwner: true, version: 1 },
           };
           await route.fulfill({
             status: resp.status,
@@ -205,7 +205,7 @@ async function mockCloudApi(page: Page, options: {
         if (method === 'PUT') {
           const resp = options.updateResponse ?? {
             status: 200,
-            body: { id: projectId, updatedAt: new Date().toISOString() },
+            body: { id: projectId, updatedAt: new Date().toISOString(), version: 2 },
           };
           await route.fulfill({
             status: resp.status,
@@ -217,7 +217,7 @@ async function mockCloudApi(page: Page, options: {
         if (method === 'PATCH') {
           const resp = options.patchResponse ?? {
             status: 200,
-            body: { id: projectId, updatedAt: new Date().toISOString() },
+            body: { id: projectId, updatedAt: new Date().toISOString(), version: 2 },
           };
           await route.fulfill({
             status: resp.status,
@@ -279,6 +279,7 @@ test.describe('Cloud: Open shared project', () => {
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
           isOwner: false,
+          version: 1,
         },
       },
     });
@@ -334,6 +335,7 @@ test.describe('Cloud: Fork shared project', () => {
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
           isOwner: false,
+          version: 1,
         },
       },
     });
@@ -466,7 +468,7 @@ test.describe('Cloud: Owner opens own project via URL', () => {
       // When reloading, the GET response should indicate the user is the owner
       getResponse: {
         status: 200,
-        body: { id: 'mockCloud123', data: MOCK_PROJECT_DATA, createdAt: now, updatedAt: now, isOwner: true },
+        body: { id: 'mockCloud123', data: MOCK_PROJECT_DATA, createdAt: now, updatedAt: now, isOwner: true, version: 1 },
       },
     });
     await resetApp(page);
