@@ -291,7 +291,7 @@ describe('updateProject', () => {
     const data = { version: 1, registers: [] };
     const jwt = 'a'.repeat(64);
 
-    const result = await updateProject(id, data, jwt);
+    const result = await updateProject(id, data, jwt, 1);
 
     expect(mockFetch).toHaveBeenCalledOnce();
     expect(mockFetch).toHaveBeenCalledWith(
@@ -303,7 +303,7 @@ describe('updateProject', () => {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${'a'.repeat(64)}`,
         },
-        body: JSON.stringify({ data }),
+        body: JSON.stringify({ data, version: 1 }),
       },
     );
     expect(result).toEqual(responseData);
@@ -320,7 +320,7 @@ describe('updateProject', () => {
       }),
     });
 
-    await updateProject('test/with/slashes', {}, 'a'.repeat(64));
+    await updateProject('test/with/slashes', {}, 'a'.repeat(64), 1);
 
     const callArgs = mockFetch.mock.calls[0];
     expect(callArgs[0]).toContain('test%2Fwith%2Fslashes');
@@ -330,11 +330,11 @@ describe('updateProject', () => {
     mockFetch.mockResolvedValue(mockErrorResponse(401, { error: 'Unauthorized' }));
 
     await expect(
-      updateProject('ABC123DEF456', {}, 'wrong'.repeat(16)),
+      updateProject('ABC123DEF456', {}, 'wrong'.repeat(16), 1),
     ).rejects.toThrow(ApiError);
 
     try {
-      await updateProject('ABC123DEF456', {}, 'wrong'.repeat(16));
+      await updateProject('ABC123DEF456', {}, 'wrong'.repeat(16), 1);
     } catch (error) {
       expect(error).toBeInstanceOf(ApiError);
       expect((error as ApiError).status).toBe(401);
@@ -345,7 +345,7 @@ describe('updateProject', () => {
     mockFetch.mockResolvedValueOnce(mockErrorResponse(404, { error: 'Project not found' }));
 
     await expect(
-      updateProject('NONEXISTENT', {}, 'a'.repeat(64)),
+      updateProject('NONEXISTENT', {}, 'a'.repeat(64), 1),
     ).rejects.toThrow(ApiError);
   });
 
@@ -357,7 +357,7 @@ describe('updateProject', () => {
       json: async () => ({ id: 'TEST', updatedAt: '2024-01-01T00:00:00Z' }),
     });
 
-    await updateProject('TEST', { version: 1 }, 'my-jwt');
+    await updateProject('TEST', { version: 1 }, 'my-jwt', 1);
 
     const callArgs = mockFetch.mock.calls[0];
     expect(callArgs[1].headers.Authorization).toBe('Bearer my-jwt');

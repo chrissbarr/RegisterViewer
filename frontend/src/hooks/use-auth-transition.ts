@@ -57,11 +57,11 @@ export function useAuthTransition(deps: UseAuthTransitionDeps): void {
         dismissLogin();
         if (pendingOp === 'save') {
           saveToCloud().catch((err) => {
-            if (process.env.NODE_ENV !== 'production') console.warn('Auto-retry save failed:', err);
+            if (import.meta.env.DEV) console.warn('Auto-retry save failed:', err);
           });
         } else if (pendingOp === 'fork') {
           fork().catch((err) => {
-            if (process.env.NODE_ENV !== 'production') console.warn('Auto-retry fork failed:', err);
+            if (import.meta.env.DEV) console.warn('Auto-retry fork failed:', err);
           });
         }
       }

@@ -55,6 +55,7 @@ function toManifestEntry(project: StoredLocalProject): ProjectManifestEntry {
     createdAt: project.createdAt,
     localSavedAt: project.localSavedAt,
     cloudSavedAt: project.cloudSavedAt,
+    serverVersion: null,
     storage: project.storage ?? 'local',
   };
 }

@@ -76,10 +76,7 @@ describe('saveProjectToCloudImpl', () => {
   });
 
   it('returns conflict with serverVersion when update gets 409', async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const err = new ApiError(409, { error: 'Conflict' } as any);
-    // Set currentVersion on errorBody (the real ApiError stores the full JSON body)
-    err.errorBody = { error: 'Conflict', currentVersion: 5 } as never;
+    const err = new ApiError(409, { error: 'Conflict', currentVersion: 5 });
     (updateProject as Mock).mockRejectedValue(err);
 
     const result = await saveProjectToCloudImpl(payload, 'cloud-abc', jwt, 3);

@@ -1,5 +1,5 @@
 import { renderHook, act } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import { useCloudSyncEngine, deriveSyncStatus, type UseCloudSyncEngineDeps } from './use-cloud-sync-engine';
 import { initialInternalState, type InternalCloudSyncState } from '../types/cloud-sync';
 
@@ -25,7 +25,8 @@ function makeInternal(overrides: Partial<InternalCloudSyncState> = {}): Internal
   };
 }
 
-function makeDeps(overrides: Partial<UseCloudSyncEngineDeps> = {}): UseCloudSyncEngineDeps {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function makeDeps(overrides: Record<string, any> = {}): UseCloudSyncEngineDeps {
   return {
     dataDeps: overrides.dataDeps ?? makeDataDeps(),
     internal: overrides.internal ?? makeInternal(),
@@ -61,10 +62,11 @@ describe('deriveSyncStatus', () => {
 // ── Dirty tracking ──────────────────────────────────────────────────
 
 describe('useCloudSyncEngine - dirty tracking', () => {
-  let setInternal: ReturnType<typeof vi.fn<(updater: (prev: InternalCloudSyncState) => InternalCloudSyncState) => void>>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let setInternal: Mock<any>;
 
   beforeEach(() => {
-    setInternal = vi.fn<(updater: (prev: InternalCloudSyncState) => InternalCloudSyncState) => void>();
+    setInternal = vi.fn();
   });
 
   // ── Initial state ────────────────────────────────────────────────
@@ -299,7 +301,7 @@ describe('useCloudSyncEngine - dirty tracking', () => {
       rerender({ ...deps, dataDeps: makeDataDeps({ registers: [{ id: 'r3' }] }) });
 
       expect(setInternal).toHaveBeenCalled();
-      const updater = setInternal.mock.calls[setInternal.mock.calls.length - 1][0];
+      const updater = setInternal.mock.calls[setInternal.mock.calls.length - 1][0] as (prev: InternalCloudSyncState) => InternalCloudSyncState;
       const updated = updater(internal);
       expect(updated.lastSavedVersion).toBe(result.current.dataVersionRef.current);
     });
@@ -345,7 +347,7 @@ describe('useCloudSyncEngine - dirty tracking', () => {
       });
 
       expect(setInternal).toHaveBeenCalled();
-      const updater = setInternal.mock.calls[setInternal.mock.calls.length - 1][0];
+      const updater = setInternal.mock.calls[setInternal.mock.calls.length - 1][0] as (prev: InternalCloudSyncState) => InternalCloudSyncState;
       const updated = updater(makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 0 }));
       // Version should not have bumped since data deps are same references
       expect(updated.lastSavedVersion).toBe(versionBeforeSync);
