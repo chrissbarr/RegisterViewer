@@ -1,18 +1,18 @@
 /**
  * CloudSyncProvider — cloud save/load/fork/delete/sync for the active project.
  *
- * Cloud operations are split across five hooks:
+ * Cloud operations are split across four hooks:
  * - **Active-project ops** (`useActiveProjectCloudOps`): `saveToCloud`,
  *   `deleteFromCloud`, `setVisibility`, `fork`, `loadCloudProject` — operate
  *   on the currently-loaded project using in-memory `appState` via refs.
  *   Also includes inline JWT guard (login state).
  * - **By-localId ops** (`useProjectCloudOps`): operates on any project by
  *   `localId`, reading state from localStorage. Used by the My Projects dialog.
- * - **Auto-sync** (`useAutoSync`): debounced dirty→save cycle with status
- *   tracking and `flushCloudSync` for beforeunload.
+ * - **Cloud sync engine** (`useCloudSyncEngine`): merged dirty tracking
+ *   (generation-counter `isDirty`) and auto-sync (debounced dirty→save cycle
+ *   with status tracking and `flushCloudSync` for beforeunload).
  * - **Auth transition** (`useAuthTransition`): sign-in retry, cloud project
  *   sync, and sign-out cleanup.
- * - **Dirty tracking** (`useDirtyTracking`): generation-counter `isDirty`.
  *
  * This provider orchestrates state, refs, and delegates to the hooks above.
  * Also owns `initFromProject`, `dismissError`, and `syncCloudProjects`.
@@ -36,10 +36,9 @@ import { useAuth, useAuthActions } from './auth-context';
 import { buildProjectUrl, createProject } from '../utils/project-storage';
 import { EMPTY_SERIALIZED_STATE } from '../utils/storage';
 import { clearCloudUrl } from '../utils/cloud-utils';
-import { useDirtyTracking } from '../hooks/use-dirty-tracking';
 import { useActiveProjectCloudOps } from '../hooks/use-active-project-cloud-ops';
 import { useProjectCloudOps } from '../hooks/use-project-cloud-ops';
-import { useAutoSync, type SyncStatus } from '../hooks/use-auto-sync';
+import { useCloudSyncEngine, type SyncStatus } from '../hooks/use-cloud-sync-engine';
 import { useAuthTransition } from '../hooks/use-auth-transition';
 import { useProjectSwitchInit } from '../hooks/use-project-switch-init';
 import { syncCloudProjectsFromServer } from '../utils/cloud-sync';
@@ -103,7 +102,7 @@ const CloudSyncActionsContext = createContext<CloudSyncActions | null>(null);
  * Architecture: split into two contexts (state + actions) to avoid
  * re-rendering consumers that only need actions. Cloud state tracks
  * the active project's cloudId, ownership, dirty status (generation-
- * counter pattern via useDirtyTracking), and operation status.
+ * counter pattern via useCloudSyncEngine), and operation status.
  *
  * Refs (appStateRef, internalRef, activeLocalIdRef) are used to give
  * stable callbacks access to latest values without appearing in
@@ -142,13 +141,6 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     projectsRef.current = projects;
   }, [projects]);
 
-  // Dirty tracking (generation-counter pattern)
-  const { isDirty, dataVersionRef, needsVersionSyncRef, mutationLockRef } = useDirtyTracking(
-    appState,
-    internal,
-    setInternal,
-  );
-
   // IMPORTANT: Assigned during render (not in useEffect) so that initFromProject's
   // synchronous ref write in a child effect isn't clobbered by a parent sync effect
   // running later in the same commit — which also breaks under React StrictMode's
@@ -176,6 +168,23 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   // Freshness check throttle — reset on project switch
   const lastFreshnessCheckRef = useRef(0);
 
+  // saveToCloud ref: breaks the circular dependency between useCloudSyncEngine
+  // (needs saveToCloud) and useActiveProjectCloudOps (needs refs from the engine).
+  // The engine only calls saveToCloud asynchronously (inside setTimeout), so a ref is safe.
+  const saveToCloudRef = useRef<() => Promise<boolean>>(() => Promise.resolve(false));
+  const saveToCloudStable = useCallback(() => saveToCloudRef.current(), []);
+
+  // Merged dirty tracking + auto-sync engine
+  const canAutoSync = internal.storage === 'cloud' && internal.isOwner && !!authUser && !internal.conflict;
+  const { isDirty, syncStatus, flushCloudSync, syncTimerRef, dataVersionRef, needsVersionSyncRef, mutationLockRef } = useCloudSyncEngine({
+    dataDeps: appState,
+    internal,
+    setInternal,
+    canAutoSync,
+    getJwt,
+    saveToCloud: saveToCloudStable,
+  });
+
   // Active-project cloud operations (save, fork, delete, visibility, load)
   // Login guard state (loginRequired, pendingOpRef, dismissLogin) is now
   // absorbed into useActiveProjectCloudOps.
@@ -184,17 +193,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     dataVersionRef, mutationLockRef, needsVersionSyncRef,
     updateCloudMetadata, createNewProject, getJwt, dispatch,
   });
-
-  // Auto-sync engine (debounced dirty→save)
-  const canAutoSync = internal.storage === 'cloud' && internal.isOwner && !!authUser && !internal.conflict;
-  const { syncStatus, flushCloudSync, syncTimerRef } = useAutoSync({
-    isDirty,
-    internalRef,
-    dataVersionRef,
-    canAutoSync,
-    getJwt,
-    saveToCloud: rawActiveOps.saveToCloud,
-  });
+  saveToCloudRef.current = rawActiveOps.saveToCloud;
 
   /**
    * Initialize cloud state for a newly-switched project.
