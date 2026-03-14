@@ -6,6 +6,7 @@ interface SyncPatch {
   localId: string;
   cloudSavedAt?: string;
   visibility?: Visibility;
+  serverVersion?: number;
 }
 
 export interface ServerProject {
@@ -13,6 +14,7 @@ export interface ServerProject {
   title: string | null;
   visibility: Visibility;
   updatedAt: string;
+  version: number;
 }
 
 interface SyncPatchResult {
@@ -64,6 +66,11 @@ export function computeSyncPatches(
         patch.visibility = serverProject.visibility;
         hasUpdate = true;
       }
+      // Always propagate server version to local metadata
+      if (serverProject.version !== undefined) {
+        patch.serverVersion = serverProject.version;
+        hasUpdate = true;
+      }
       if (hasUpdate) patches.push(patch);
     } else {
       staleCloudIds.push(entry.cloudId);
@@ -84,7 +91,7 @@ interface PlaceholderData {
 }
 
 interface SyncCallbacks {
-  updateCloudMetadata: (localId: string, updates: Partial<{ cloudSavedAt: string; visibility: Visibility }>) => void;
+  updateCloudMetadata: (localId: string, updates: Partial<{ cloudSavedAt: string; visibility: Visibility; serverVersion: number }>) => void;
   createPlaceholder: (data: PlaceholderData) => void;
 }
 
