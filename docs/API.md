@@ -246,7 +246,8 @@ Creates a new project and returns a share URL.
 {
   "id": "AbCdEfGhIjKl",
   "shareUrl": "https://www.registerviewer.com/#/p/AbCdEfGhIjKl",
-  "createdAt": "2026-02-23T09:00:00.000Z"
+  "createdAt": "2026-02-23T09:00:00.000Z",
+  "version": 1
 }
 ```
 
@@ -278,9 +279,12 @@ Retrieves a project by its 12-character base62 ID.
   "data": { "version": 1, "registers": [...], "registerValues": {...} },
   "createdAt": "2026-02-23T09:00:00.000Z",
   "updatedAt": "2026-02-23T09:00:00.000Z",
+  "version": 3,
   "isOwner": true
 }
 ```
+
+`version` is the current optimistic concurrency version. Pass this value in the `PUT` request body to update the project.
 
 `isOwner` is `true` when the requesting user owns this project (via token hash or JWT user ID), `false` otherwise.
 
@@ -306,11 +310,21 @@ Private projects return 404 (not 401/403) to prevent information leakage.
 PUT /api/projects/{id}
 ```
 
-Replaces all project data. Visibility is optional (keeps existing if omitted).
+Replaces all project data. Visibility is optional (keeps existing if omitted). Uses optimistic concurrency via a `version` field.
 
 **Auth:** Required (must be owner)
 
-**Request Body:** Same schema as Create.
+**Request Body:** Same schema as Create, plus a required `version` field:
+
+```jsonc
+{
+  "version": 3,                                    // Required — client's last-known version
+  "data": { /* same as Create */ },
+  "visibility": "private"                           // Optional
+}
+```
+
+The `version` must match the server's current version. On success, the server increments the version atomically.
 
 **Size limit:** 512 KB
 
@@ -319,17 +333,31 @@ Replaces all project data. Visibility is optional (keeps existing if omitted).
 ```json
 {
   "id": "AbCdEfGhIjKl",
-  "updatedAt": "2026-02-23T10:00:00.000Z"
+  "updatedAt": "2026-02-23T10:00:00.000Z",
+  "version": 4
 }
 ```
+
+**Response `409 Conflict`** (version mismatch):
+
+```json
+{
+  "error": "version_conflict",
+  "message": "Project has been modified by another session",
+  "currentVersion": 5
+}
+```
+
+The client should fetch the latest version and either merge or let the user choose.
 
 **Errors:**
 
 | Status | Reason |
 |--------|--------|
-| 400 | Invalid JSON, validation error, invalid visibility, payload too large |
+| 400 | Invalid JSON, validation error, invalid visibility, payload too large, missing/invalid version |
 | 401 | Missing or invalid Authorization header |
 | 404 | Project not found or not owner |
+| 409 | Version conflict — another session updated the project |
 
 ---
 
@@ -412,7 +440,8 @@ Lists all projects owned by the authenticated user.
       "id": "AbCdEfGhIjKl",
       "visibility": "private",
       "createdAt": "2026-02-23T09:00:00.000Z",
-      "updatedAt": "2026-02-23T09:00:00.000Z"
+      "updatedAt": "2026-02-23T09:00:00.000Z",
+      "version": 3
     }
   ]
 }
