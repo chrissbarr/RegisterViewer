@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { ChevronRight } from 'lucide-react';
-import { SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MAX, type AppState } from '../../types/register';
+import { SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MAX, type AppState, type SerializedAppState } from '../../types/register';
 import type { UnsavedProjectSource } from '../../types/project';
 import { useAppState } from '../../context/app-context';
 import { EditProvider } from '../../context/edit-context';
@@ -9,7 +9,7 @@ import { PreferencesProvider, usePreferences, usePreferencesActions } from '../.
 import { ProjectStorageProvider, useProjectStorage } from '../../context/project-storage-context';
 import { CloudSyncProvider, useCloudSync, useCloudSyncActions } from '../../context/cloud-sync-context';
 import { serializeState } from '../../utils/storage';
-import { patchProjectState, saveUnsavedProjectState } from '../../utils/project-storage';
+import { patchProjectState, saveUnsavedProjectState, evictLeastRecentCloudProject } from '../../utils/project-storage';
 import { Header } from './header';
 import { Sidebar } from './sidebar';
 import { MainPanel } from '../viewer/main-panel';
@@ -31,6 +31,25 @@ interface AppShellProps {
   cloudInit?: { projectId: string; isOwner: boolean };
   initialLocalId?: string | null;
   initialUnsaved?: { name: string; source: UnsavedProjectSource } | null;
+}
+
+function safePatchProjectState(id: string, serialized: SerializedAppState): void {
+  const MAX_EVICTION_RETRIES = 3;
+  for (let attempt = 0; attempt < MAX_EVICTION_RETRIES; attempt++) {
+    try {
+      patchProjectState(id, serialized);
+      return;
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'QuotaExceededError') {
+        if (evictLeastRecentCloudProject(id)) {
+          continue; // Retry after evicting
+        }
+      }
+      throw err;
+    }
+  }
+  // Final attempt without catch — let it throw if still over quota
+  patchProjectState(id, serialized);
 }
 
 function AppShellInner({ cloudInit }: AppShellProps) {
@@ -81,7 +100,7 @@ function AppShellInner({ cloudInit }: AppShellProps) {
       } else {
         const id = activeLocalIdRef.current;
         if (id) {
-          patchProjectState(id, serializeState(state));
+          safePatchProjectState(id, serializeState(state));
         }
       }
       pendingStateRef.current = null;
@@ -108,7 +127,7 @@ function AppShellInner({ cloudInit }: AppShellProps) {
         } else {
           const id = activeLocalIdRef.current;
           if (id) {
-            patchProjectState(id, serializeState(pendingStateRef.current));
+            safePatchProjectState(id, serializeState(pendingStateRef.current));
           }
         }
         pendingStateRef.current = null;

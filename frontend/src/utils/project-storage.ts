@@ -304,6 +304,22 @@ export function evictProjectData(localId: string): void {
   localStorage.removeItem(projectStorageKey(localId));
 }
 
+/**
+ * Evict the least-recently-used cloud project's data from localStorage.
+ * Used for quota pressure — only evicts storage:'cloud' projects (they can
+ * be re-fetched). Manifest entry stays so the project still appears in the list.
+ * Uses localSavedAt as LRU proxy (best available — no lastViewedAt field).
+ */
+export function evictLeastRecentCloudProject(excludeLocalId: string | null): boolean {
+  const manifest = loadManifest();
+  const candidates = manifest.projects
+    .filter(p => p.storage === 'cloud' && p.localId !== excludeLocalId && hasLocalData(p.localId))
+    .sort((a, b) => (a.localSavedAt ?? '').localeCompare(b.localSavedAt ?? ''));
+  if (candidates.length === 0) return false;
+  evictProjectData(candidates[0].localId);
+  return true;
+}
+
 /** Estimate localStorage usage */
 export function getStorageUsage(): { usedBytes: number; estimatedTotalBytes: number; percent: number } {
   let usedBytes = 0;
