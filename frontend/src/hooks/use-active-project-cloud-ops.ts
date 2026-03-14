@@ -1,4 +1,4 @@
-import { useCallback, useMemo, type Dispatch, type MutableRefObject } from 'react';
+import { useCallback, useMemo, useRef, useState, type Dispatch, type MutableRefObject } from 'react';
 import { exportToObject, serializeState } from '../utils/storage';
 import { isCloudEnabled, ApiError } from '../utils/api-client';
 import { fetchAndParseCloudProject } from '../utils/cloud-project-loader';
@@ -24,15 +24,14 @@ interface ActiveProjectCloudOpsDeps {
 }
 
 interface ActiveProjectCloudOps {
-  /** Returns false if the save was dropped because the mutation lock was held.
-   *  When `stateOverride` is provided it is serialized instead of the live
-   *  `appStateRef` — used by flush-before-evict to save the *previous*
-   *  project's state after `appStateRef` already points to the new project. */
-  saveToCloud: (stateOverride?: AppState) => Promise<boolean>;
+  saveToCloud: () => Promise<boolean>;
   fork: () => Promise<void>;
   deleteFromCloud: () => Promise<void>;
   setVisibility: (v: Visibility) => Promise<void>;
   loadCloudProject: (cloudId: string) => Promise<void>;
+  loginRequired: boolean;
+  pendingOpRef: MutableRefObject<'save' | 'fork' | null>;
+  dismissLogin: () => void;
 }
 
 /**
@@ -41,6 +40,11 @@ interface ActiveProjectCloudOps {
  * Extracted from CloudSyncProvider to reduce its cognitive complexity.
  * All operations read latest state via refs (not direct state) to keep
  * callback references stable across renders.
+ *
+ * Includes inline JWT guard (absorbed from the former useLoginGuard):
+ * when no JWT is available, stores the pending operation type and sets
+ * `loginRequired` to trigger the login dialog. After login, the
+ * auth-transition effect retries the operation via `pendingOpRef`.
  */
 export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): ActiveProjectCloudOps {
   const {
@@ -48,6 +52,15 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
     appStateRef, dataVersionRef, mutationLockRef, needsVersionSyncRef,
     updateCloudMetadata, createNewProject, getJwt, dispatch,
   } = deps;
+
+  // Login guard state (absorbed from useLoginGuard)
+  const [loginRequired, setLoginRequired] = useState(false);
+  const pendingOpRef = useRef<'save' | 'fork' | null>(null);
+
+  const dismissLogin = useCallback(() => {
+    setLoginRequired(false);
+    pendingOpRef.current = null;
+  }, []);
 
   const applyCreatedResult = useCallback((result: { cloudId: string; timestamp: string }) => {
     let currentLocalId = activeLocalIdRef.current;
@@ -80,38 +93,15 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
     }));
   }, [updateCloudMetadata, createNewProject, dataVersionRef, activeLocalIdRef, appStateRef, setInternal]);
 
-  /**
-   * Flush-before-evict: save a departing project's state to the cloud before
-   * its localStorage is evicted. Skips all post-save state updates and swallows
-   * errors — the eviction handler keeps local data as a safety net.
-   *
-   * `existingCloudId` is captured by the caller (saveToCloud) synchronously
-   * before any async gap, preventing a TOCTOU race where internalRef could
-   * reflect the new project's state by the time the lock callback runs.
-   */
-  const flushDepartingProject = useCallback(async (stateOverride: AppState, existingCloudId: string | null) => {
-    await withMutationLock(mutationLockRef, async () => {
-      try {
-        const jsonPayload = exportToObject(stateOverride);
-        const jwt = requireJwt(getJwt);
-        await saveProjectToCloudImpl(jsonPayload, existingCloudId, jwt);
-      } catch {
-        // Swallow — eviction handler keeps local data as safety net
-      }
-    });
-  }, [mutationLockRef, getJwt]);
-
-  const saveToCloud = useCallback(async (stateOverride?: AppState): Promise<boolean> => {
+  const saveToCloud = useCallback(async (): Promise<boolean> => {
     if (!isCloudEnabled()) return true;
 
-    // When stateOverride is provided, this is a flush-before-evict save for
-    // a departing project — capture cloudId/isOwner synchronously before any
-    // async gap, then delegate to the dedicated handler.
-    if (stateOverride) {
-      const { cloudId, isOwner } = internalRef.current;
-      const existingCloudId = (cloudId && isOwner) ? cloudId : null;
-      await flushDepartingProject(stateOverride, existingCloudId);
-      return true;
+    // JWT guard: defer to login dialog if not authenticated
+    const jwt = getJwt();
+    if (!jwt) {
+      setLoginRequired(true);
+      pendingOpRef.current = 'save';
+      return false;
     }
 
     const lockResult = await withMutationLock(mutationLockRef, async () => {
@@ -122,8 +112,8 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
 
         setInternal((prev) => ({ ...prev, status: 'saving', error: null }));
         const jsonPayload = exportToObject(appStateRef.current);
-        const jwt = requireJwt(getJwt);
-        const result = await saveProjectToCloudImpl(jsonPayload, existingCloudId, jwt);
+        const freshJwt = requireJwt(getJwt);
+        const result = await saveProjectToCloudImpl(jsonPayload, existingCloudId, freshJwt);
 
         // Guard: only update internal cloud state if still on the same
         // saved project. When capturedLocalId is null (unsaved project),
@@ -178,16 +168,25 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
       }
     });
     return lockResult.executed;
-  }, [flushDepartingProject, updateCloudMetadata, applyCreatedResult, mutationLockRef, dataVersionRef, getJwt, internalRef, appStateRef, activeLocalIdRef, setInternal]);
+  }, [updateCloudMetadata, applyCreatedResult, mutationLockRef, dataVersionRef, getJwt, internalRef, appStateRef, activeLocalIdRef, setInternal]);
 
   const fork = useCallback(async () => {
     if (!isCloudEnabled()) return;
+
+    // JWT guard: defer to login dialog if not authenticated
+    const jwt = getJwt();
+    if (!jwt) {
+      setLoginRequired(true);
+      pendingOpRef.current = 'fork';
+      return;
+    }
+
     await withMutationLock(mutationLockRef, async () => {
       setInternal((prev) => ({ ...prev, status: 'saving', error: null }));
       try {
         const jsonPayload = exportToObject(appStateRef.current);
-        const jwt = requireJwt(getJwt);
-        const result = await saveProjectToCloudImpl(jsonPayload, null, jwt);
+        const freshJwt = requireJwt(getJwt);
+        const result = await saveProjectToCloudImpl(jsonPayload, null, freshJwt);
         if (result.kind !== 'created') throw new Error('Failed to save copy.');
         applyCreatedResult(result);
       } catch (err) {
@@ -292,8 +291,10 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
     [dispatch, needsVersionSyncRef, getJwt, setInternal],
   );
 
-  return useMemo(
+  const ops = useMemo(
     () => ({ saveToCloud, fork, deleteFromCloud, setVisibility, loadCloudProject }),
     [saveToCloud, fork, deleteFromCloud, setVisibility, loadCloudProject],
   );
+
+  return { ...ops, loginRequired, pendingOpRef, dismissLogin };
 }

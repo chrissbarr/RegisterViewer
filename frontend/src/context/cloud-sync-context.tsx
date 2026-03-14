@@ -41,7 +41,6 @@ import { useDirtyTracking } from '../hooks/use-dirty-tracking';
 import { useActiveProjectCloudOps } from '../hooks/use-active-project-cloud-ops';
 import { useProjectCloudOps } from '../hooks/use-project-cloud-ops';
 import { useAutoSync, type SyncStatus } from '../hooks/use-auto-sync';
-import { useLoginGuard } from '../hooks/use-login-guard';
 import { useAuthTransition } from '../hooks/use-auth-transition';
 import { useProjectSwitchInit } from '../hooks/use-project-switch-init';
 import { syncCloudProjectsFromServer } from '../utils/cloud-sync';
@@ -198,17 +197,12 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   // for the eviction effect to flush before evicting.
 
   // Active-project cloud operations (save, fork, delete, visibility, load)
-  const rawActiveOps = useActiveProjectCloudOps({
+  // Login guard state (loginRequired, pendingOpRef, dismissLogin) is now
+  // absorbed into useActiveProjectCloudOps.
+  const { loginRequired, pendingOpRef, dismissLogin, ...rawActiveOps } = useActiveProjectCloudOps({
     core, appStateRef,
     dataVersionRef, mutationLockRef, needsVersionSyncRef,
     updateCloudMetadata, createNewProject, getJwt, dispatch,
-  });
-
-  // Login guard: JWT-guarded save/fork with deferred retry
-  const loginGuard = useLoginGuard({
-    getJwt,
-    rawSave: rawActiveOps.saveToCloud,
-    rawFork: rawActiveOps.fork,
   });
 
   // Auto-sync engine (debounced dirty→save)
@@ -221,12 +215,6 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     getJwt,
     saveToCloud: rawActiveOps.saveToCloud,
   });
-
-  const activeOps = useMemo(() => ({
-    ...rawActiveOps,
-    saveToCloud: loginGuard.saveToCloud,
-    fork: loginGuard.fork,
-  }), [rawActiveOps, loginGuard.saveToCloud, loginGuard.fork]);
 
   /**
    * Initialize cloud state for a newly-switched project.
@@ -311,8 +299,8 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   // Auth transition: sign-in retry, cloud sync, sign-out cleanup
   const { isSigningOutRef } = useAuthTransition({
     core, authUser,
-    pendingCloudOpRef: loginGuard.pendingCloudOpRef,
-    setLoginRequired: loginGuard.setLoginRequired,
+    pendingCloudOpRef: pendingOpRef,
+    setLoginRequired: (v: boolean) => { if (!v) dismissLogin(); },
     rawSave: rawActiveOps.saveToCloud,
     rawFork: rawActiveOps.fork,
     syncCloudProjectsRef, syncTimerRef,
@@ -324,7 +312,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     core, activeLocalId, appState, projects,
     projectsRef, needsVersionSyncRef,
     lastStableStateRef, flushSyncRef, syncTimerRef, isSigningOutRef,
-    cancelPendingOp: loginGuard.cancelPendingOp,
+    cancelPendingOp: dismissLogin,
   });
 
   // Re-evaluate ownership when auth state changes or the active cloud project
@@ -357,13 +345,13 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
 
   const actions = useMemo(
     () => ({
-      ...activeOps,
+      ...rawActiveOps,
       dismissError, initFromProject, syncCloudProjects,
-      cancelPendingOp: loginGuard.cancelPendingOp,
+      cancelPendingOp: dismissLogin,
       flushSync,
       ...projectOps,
     }),
-    [activeOps, dismissError, initFromProject, syncCloudProjects, loginGuard.cancelPendingOp, flushSync, projectOps],
+    [rawActiveOps, dismissError, initFromProject, syncCloudProjects, dismissLogin, flushSync, projectOps],
   );
 
   const providedState: CloudSyncState = useMemo(
@@ -376,7 +364,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       shareUrl: internal.shareUrl,
       lastCloudSavedAt: internal.lastCloudSavedAt,
       visibility: internal.visibility,
-      loginRequired: loginGuard.loginRequired,
+      loginRequired,
       syncStatus,
     }),
     [
@@ -388,7 +376,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       internal.shareUrl,
       internal.lastCloudSavedAt,
       internal.visibility,
-      loginGuard.loginRequired,
+      loginRequired,
       syncStatus,
     ],
   );
