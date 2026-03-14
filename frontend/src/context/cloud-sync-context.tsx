@@ -9,7 +9,7 @@
  * - **By-localId ops** (`useProjectCloudOps`): operates on any project by
  *   `localId`, reading state from localStorage. Used by the My Projects dialog.
  * - **Auto-sync** (`useAutoSync`): debounced dirty→save cycle with status
- *   tracking and `flushSync` for beforeunload.
+ *   tracking and `flushCloudSync` for beforeunload.
  * - **Auth transition** (`useAuthTransition`): sign-in retry, cloud project
  *   sync, and sign-out cleanup.
  * - **Dirty tracking** (`useDirtyTracking`): generation-counter `isDirty`.
@@ -91,7 +91,7 @@ interface CloudSyncActions {
   /** Pull the latest server version, replacing local state. Used by the conflict banner. */
   loadServerVersion: () => Promise<void>;
   /** Flush any pending cloud sync immediately (best-effort, for beforeunload). */
-  flushSync: () => Promise<void>;
+  flushCloudSync: () => Promise<void>;
 }
 
 const CloudSyncStateContext = createContext<CloudSyncState | null>(null);
@@ -187,7 +187,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
 
   // Auto-sync engine (debounced dirty→save)
   const canAutoSync = internal.storage === 'cloud' && internal.isOwner && !!authUser && !internal.conflict;
-  const { syncStatus, flushSync, syncTimerRef } = useAutoSync({
+  const { syncStatus, flushCloudSync, syncTimerRef } = useAutoSync({
     isDirty,
     internalRef,
     dataVersionRef,
@@ -393,10 +393,10 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       ...rawActiveOps,
       dismissError, dismissLogin, initFromProject, syncCloudProjects,
       loadServerVersion,
-      flushSync,
+      flushCloudSync,
       ...projectOps,
     }),
-    [rawActiveOps, dismissError, dismissLogin, initFromProject, syncCloudProjects, loadServerVersion, flushSync, projectOps],
+    [rawActiveOps, dismissError, dismissLogin, initFromProject, syncCloudProjects, loadServerVersion, flushCloudSync, projectOps],
   );
 
   const providedState: CloudSyncState = useMemo(

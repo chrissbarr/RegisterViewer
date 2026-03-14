@@ -133,7 +133,7 @@ function AppShellInner({ cloudInit }: AppShellProps) {
         pendingStateRef.current = null;
       }
       // Best-effort cloud sync flush (fire-and-forget on unload).
-      cloudActionsRef.current.flushSync().catch(() => {});
+      cloudActionsRef.current.flushCloudSync().catch(() => {});
     };
     window.addEventListener('beforeunload', flush);
     window.addEventListener('pagehide', flush);
@@ -254,7 +254,7 @@ function AppShellInner({ cloudInit }: AppShellProps) {
       </div>
 
       {/* Login dialog triggered by cloud ops when unauthenticated */}
-      <LoginDialog open={cloud.loginRequired} onClose={cloudActions.cancelPendingOp} />
+      <LoginDialog open={cloud.loginRequired} onClose={cloudActions.dismissLogin} />
     </div>
   );
 }

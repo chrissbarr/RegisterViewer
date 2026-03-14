@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { CLOUD_SYNC_DEBOUNCE_MS } from '../constants';
 import type { AutoSyncInternalSlice } from '../types/cloud-sync';
-import type { AppState } from '../types/register';
-
 /**
  * Cloud auto-sync status for the active project.
  * - `saved`: cloud is up to date with local state
@@ -18,15 +16,13 @@ interface UseAutoSyncDeps {
   dataVersionRef: MutableRefObject<number>;
   canAutoSync: boolean;
   getJwt: () => string | null;
-  saveToCloud: (stateOverride?: AppState) => Promise<boolean>;
+  saveToCloud: () => Promise<boolean>;
 }
 
 interface UseAutoSyncResult {
   syncStatus: SyncStatus;
-  /** Flush pending cloud sync immediately. When `stateOverride` is provided
-   *  it is forwarded to `saveToCloud` so the caller can supply a snapshot of
-   *  the *previous* project's state (used by flush-before-evict). */
-  flushSync: (stateOverride?: AppState) => Promise<void>;
+  /** Flush pending cloud sync immediately (best-effort, for beforeunload). */
+  flushCloudSync: () => Promise<void>;
   syncTimerRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
 }
 
@@ -54,7 +50,7 @@ export function deriveSyncStatus(canAutoSync: boolean, isDirty: boolean, asyncOv
  *
  * When `isDirty && canAutoSync`, schedules a cloud save after
  * `CLOUD_SYNC_DEBOUNCE_MS`. Tracks sync status for UI indicators.
- * Provides `flushSync` for immediate save (e.g., beforeunload).
+ * Provides `flushCloudSync` for immediate save (e.g., beforeunload).
  */
 export function useAutoSync(deps: UseAutoSyncDeps): UseAutoSyncResult {
   const { isDirty, internalRef, dataVersionRef, canAutoSync, getJwt, saveToCloud } = deps;
@@ -104,7 +100,7 @@ export function useAutoSync(deps: UseAutoSyncDeps): UseAutoSyncResult {
 
   const syncStatus = deriveSyncStatus(canAutoSync, isDirty, asyncOverride);
 
-  const flushSync = useCallback(async (stateOverride?: AppState) => {
+  const flushCloudSync = useCallback(async () => {
     if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
     // Derive dirty status from refs so this callback is referentially stable
     // (isDirty in the dep array caused a stale-closure duplicate PUT).
@@ -115,12 +111,12 @@ export function useAutoSync(deps: UseAutoSyncDeps): UseAutoSyncResult {
     const jwt = getJwt();
     if (!jwt) return;
     try {
-      await saveToCloud(stateOverride);
+      await saveToCloud();
     } catch {
-      // Best-effort flush — callers (beforeunload, flush-before-evict) cannot
-      // handle errors meaningfully. Auto-sync catches separately for offline status.
+      // Best-effort flush — callers (beforeunload) cannot handle errors
+      // meaningfully. Auto-sync catches separately for offline status.
     }
   }, [getJwt, saveToCloud, internalRef, dataVersionRef]);
 
-  return { syncStatus, flushSync, syncTimerRef };
+  return { syncStatus, flushCloudSync, syncTimerRef };
 }

@@ -1109,7 +1109,7 @@ describe('CloudSyncProvider', () => {
     });
   });
 
-  describe('cancelPendingOp', () => {
+  describe('dismissLogin', () => {
     it('resets loginRequired to false and clears pending op', async () => {
       // Start unauthenticated so save triggers loginRequired
       authMock.user = null;
@@ -1123,7 +1123,7 @@ describe('CloudSyncProvider', () => {
       expect(result.current.state.loginRequired).toBe(true);
 
       act(() => {
-        result.current.actions.cancelPendingOp();
+        result.current.actions.dismissLogin();
       });
 
       expect(result.current.state.loginRequired).toBe(false);

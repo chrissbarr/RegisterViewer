@@ -163,7 +163,7 @@ describe('useAutoSync', () => {
     expect(result.current.syncStatus).toBe('saved');
   });
 
-  describe('flushSync', () => {
+  describe('flushCloudSync', () => {
     it('calls saveToCloud immediately when dirty', async () => {
       const saveToCloud = vi.fn(() => Promise.resolve(true as const));
       const internalRef = makeInternalRef({ lastSavedVersion: 1 });
@@ -178,7 +178,7 @@ describe('useAutoSync', () => {
       const { result } = renderHook(() => useAutoSync(deps));
 
       await act(async () => {
-        await result.current.flushSync();
+        await result.current.flushCloudSync();
       });
 
       expect(saveToCloud).toHaveBeenCalledTimes(1);
@@ -196,7 +196,7 @@ describe('useAutoSync', () => {
       const { result } = renderHook(() => useAutoSync(deps));
 
       await act(async () => {
-        await result.current.flushSync();
+        await result.current.flushCloudSync();
       });
 
       expect(saveToCloud).not.toHaveBeenCalled();
@@ -212,27 +212,9 @@ describe('useAutoSync', () => {
 
       const { result } = renderHook(() => useAutoSync(deps));
 
-      // Should NOT throw — flushSync is best-effort
+      // Should NOT throw — flushCloudSync is best-effort
       await act(async () => {
-        await result.current.flushSync();
-      });
-
-      expect(saveToCloud).toHaveBeenCalledTimes(1);
-    });
-
-    it('swallows errors when stateOverride is provided (flush-before-evict)', async () => {
-      const saveToCloud = vi.fn().mockRejectedValue(new Error('Network error'));
-      const deps = makeDeps({
-        saveToCloud,
-        internalRef: makeInternalRef({ lastSavedVersion: 1 }),
-        dataVersionRef: { current: 2 },
-      });
-
-      const { result } = renderHook(() => useAutoSync(deps));
-
-      // Should NOT throw — flush-before-evict errors are swallowed
-      await act(async () => {
-        await result.current.flushSync({ registers: [], activeRegisterId: null, registerValues: {}, mapTableWidth: 32, mapShowGaps: true, mapSortDescending: false, addressUnitBits: 8 });
+        await result.current.flushCloudSync();
       });
 
       expect(saveToCloud).toHaveBeenCalledTimes(1);
@@ -249,39 +231,10 @@ describe('useAutoSync', () => {
       const { result } = renderHook(() => useAutoSync(deps));
 
       await act(async () => {
-        await result.current.flushSync();
+        await result.current.flushCloudSync();
       });
 
       expect(saveToCloud).not.toHaveBeenCalled();
-    });
-
-    it('forwards stateOverride to saveToCloud', async () => {
-      const saveToCloud = vi.fn(() => Promise.resolve(true as const));
-      const internalRef = makeInternalRef({ lastSavedVersion: 1 });
-      const deps = makeDeps({
-        isDirty: false,
-        canAutoSync: true,
-        saveToCloud,
-        internalRef,
-        dataVersionRef: { current: 5 },
-      });
-
-      const { result } = renderHook(() => useAutoSync(deps));
-
-      const overrideState = {
-        registers: [],
-        activeRegisterId: null,
-        registerValues: {},
-        mapTableWidth: 32 as const,
-        mapShowGaps: true,
-        mapSortDescending: false,
-        addressUnitBits: 8 as const,
-      };
-      await act(async () => {
-        await result.current.flushSync(overrideState);
-      });
-
-      expect(saveToCloud).toHaveBeenCalledWith(overrideState);
     });
 
     it('skips when not owner', async () => {
@@ -295,7 +248,7 @@ describe('useAutoSync', () => {
       const { result } = renderHook(() => useAutoSync(deps));
 
       await act(async () => {
-        await result.current.flushSync();
+        await result.current.flushCloudSync();
       });
 
       expect(saveToCloud).not.toHaveBeenCalled();
