@@ -212,6 +212,20 @@ describe('computeSyncPatches', () => {
     const result = computeSyncPatches(local, server);
     expect(result.patches).toEqual([{ localId: 'l1', cloudSavedAt: '2024-01-01T00:00:00Z', serverVersion: 1 }]);
   });
+
+  it('propagates serverVersion from server projects in patches', () => {
+    const local = [makeEntry({
+      localId: 'l1',
+      cloudId: 'c1',
+      storage: 'cloud',
+      cloudSavedAt: '2024-01-02T00:00:00Z',
+      visibility: 'private',
+    })];
+    const server = [makeServer({ id: 'c1', updatedAt: '2024-01-02T00:00:00Z', visibility: 'private', version: 7 })];
+
+    const result = computeSyncPatches(local, server);
+    expect(result.patches).toEqual([{ localId: 'l1', serverVersion: 7 }]);
+  });
 });
 
 describe('syncCloudProjectsFromServer', () => {

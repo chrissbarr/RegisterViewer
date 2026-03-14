@@ -16,6 +16,7 @@ import {
   purgeCloudProjects,
   hasLocalData,
   evictProjectData,
+  evictLeastRecentCloudProject,
 } from './project-storage';
 import { DEFAULT_PROJECT_NAME, type StoredLocalProject, type ProjectManifest, type ProjectManifestEntry } from '../types/project';
 import type { SerializedAppState } from '../types/register';
@@ -588,5 +589,91 @@ describe('toProjectListEntry', () => {
     expect(result.storage).toBe('cloud');
     expect(result.cloudId).toBe('abc123def456');
     expect(result.visibility).toBe('unlisted');
+  });
+});
+
+describe('evictLeastRecentCloudProject', () => {
+  it('evicts the oldest cloud project by localSavedAt', () => {
+    const oldId = createProject(makeSerializedState(), 'Old Cloud', {
+      cloudId: 'c-old', visibility: 'private', cloudSavedAt: '2024-01-01', storage: 'cloud',
+    });
+    // Manually set old timestamp
+    const oldProject = loadProject(oldId)!;
+    oldProject.localSavedAt = '2020-01-01T00:00:00.000Z';
+    localStorage.setItem(projectStorageKey(oldId), JSON.stringify(oldProject));
+    const m1 = loadManifest();
+    const e1 = m1.projects.find(p => p.localId === oldId)!;
+    e1.localSavedAt = '2020-01-01T00:00:00.000Z';
+    saveManifest(m1);
+
+    const newId = createProject(makeSerializedState(), 'New Cloud', {
+      cloudId: 'c-new', visibility: 'private', cloudSavedAt: '2024-01-01', storage: 'cloud',
+    });
+
+    // Both projects have local data
+    expect(hasLocalData(oldId)).toBe(true);
+    expect(hasLocalData(newId)).toBe(true);
+
+    const result = evictLeastRecentCloudProject(null);
+
+    expect(result).toBe(true);
+    // Oldest project's data should be evicted
+    expect(hasLocalData(oldId)).toBe(false);
+    // Newer project's data should remain
+    expect(hasLocalData(newId)).toBe(true);
+    // Manifest entry should still exist (just data evicted)
+    const manifest = loadManifest();
+    expect(manifest.projects.some(p => p.localId === oldId)).toBe(true);
+  });
+
+  it('skips the excluded project (active project)', () => {
+    const activeId = createProject(makeSerializedState(), 'Active Cloud', {
+      cloudId: 'c-active', visibility: 'private', cloudSavedAt: '2024-01-01', storage: 'cloud',
+    });
+    // Set active project to very old timestamp
+    const activeProject = loadProject(activeId)!;
+    activeProject.localSavedAt = '2019-01-01T00:00:00.000Z';
+    localStorage.setItem(projectStorageKey(activeId), JSON.stringify(activeProject));
+    const m = loadManifest();
+    const e = m.projects.find(p => p.localId === activeId)!;
+    e.localSavedAt = '2019-01-01T00:00:00.000Z';
+    saveManifest(m);
+
+    const otherId = createProject(makeSerializedState(), 'Other Cloud', {
+      cloudId: 'c-other', visibility: 'private', cloudSavedAt: '2024-01-01', storage: 'cloud',
+    });
+
+    // Exclude the active project — should evict the other one instead
+    const result = evictLeastRecentCloudProject(activeId);
+
+    expect(result).toBe(true);
+    expect(hasLocalData(activeId)).toBe(true); // excluded, not evicted
+    expect(hasLocalData(otherId)).toBe(false); // evicted
+  });
+
+  it('returns false when no cloud project candidates exist', () => {
+    // Only local projects
+    createProject(makeSerializedState(), 'Local Only');
+
+    const result = evictLeastRecentCloudProject(null);
+
+    expect(result).toBe(false);
+  });
+
+  it('only evicts storage:cloud projects, not local ones', () => {
+    const localId = createProject(makeSerializedState(), 'Local Project');
+    // Set local project to very old timestamp
+    const localProject = loadProject(localId)!;
+    localProject.localSavedAt = '2018-01-01T00:00:00.000Z';
+    localStorage.setItem(projectStorageKey(localId), JSON.stringify(localProject));
+    const m = loadManifest();
+    const e = m.projects.find(p => p.localId === localId)!;
+    e.localSavedAt = '2018-01-01T00:00:00.000Z';
+    saveManifest(m);
+
+    const result = evictLeastRecentCloudProject(null);
+
+    expect(result).toBe(false);
+    expect(hasLocalData(localId)).toBe(true); // local project data preserved
   });
 });
