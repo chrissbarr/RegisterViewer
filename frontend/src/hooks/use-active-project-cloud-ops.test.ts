@@ -27,6 +27,10 @@ vi.mock('../utils/cloud-project-loader', () => ({
   fetchAndParseCloudProject: vi.fn(),
 }));
 
+vi.mock('../utils/cloud-freshness', () => ({
+  checkAndPullFreshVersion: vi.fn(),
+}));
+
 vi.mock('../utils/cloud-operations', () => ({
   saveProjectToCloudImpl: vi.fn(),
   deleteProjectFromCloudImpl: vi.fn(),
@@ -65,6 +69,7 @@ import { isCloudEnabled } from '../utils/api-client';
 import { fetchAndParseCloudProject } from '../utils/cloud-project-loader';
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
 import { setCloudUrl, clearCloudUrl } from '../utils/cloud-utils';
+import { checkAndPullFreshVersion } from '../utils/cloud-freshness';
 import { exportToObject } from '../utils/storage';
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -322,6 +327,154 @@ describe('useActiveProjectCloudOps', () => {
           error: 'Failed to save project.',
         }),
       );
+    });
+
+    it('clean 409 (no local edits during save) auto-pulls server version', async () => {
+      const deps = makeDefaultDeps();
+      deps.internalRef.current = {
+        ...INITIAL_INTERNAL_STATE,
+        cloudId: TEST_CLOUD_ID,
+        isOwner: true,
+        serverVersion: 2,
+      };
+      // dataVersionRef stays at 1 throughout (no local edits during save)
+      deps.dataVersionRef.current = 1;
+
+      (saveProjectToCloudImpl as Mock).mockResolvedValue({
+        kind: 'conflict',
+        serverVersion: 5,
+      });
+      (checkAndPullFreshVersion as Mock).mockResolvedValue(undefined);
+
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+
+      await act(async () => {
+        await result.current.saveToCloud();
+      });
+
+      // serverVersion should be updated to 5 from the 409 response
+      const setInternalCalls = deps.setInternal.mock.calls;
+      const hasServerVersionUpdate = setInternalCalls.some((call) => {
+        const arg = call[0];
+        const state = typeof arg === 'function' ? arg(deps.internalRef.current) : arg;
+        return state.serverVersion === 5;
+      });
+      expect(hasServerVersionUpdate).toBe(true);
+
+      // checkAndPullFreshVersion should have been called with force: true
+      expect(checkAndPullFreshVersion).toHaveBeenCalledWith(
+        expect.objectContaining({
+          cloudId: TEST_CLOUD_ID,
+          force: true,
+        }),
+      );
+    });
+
+    it('dirty 409 (local edits during save) shows conflict UX', async () => {
+      const deps = makeDefaultDeps();
+      deps.internalRef.current = {
+        ...INITIAL_INTERNAL_STATE,
+        cloudId: TEST_CLOUD_ID,
+        isOwner: true,
+        serverVersion: 2,
+      };
+      deps.dataVersionRef.current = 1;
+
+      // Simulate user editing during the async save by incrementing dataVersionRef
+      (saveProjectToCloudImpl as Mock).mockImplementation(async () => {
+        deps.dataVersionRef.current = 2; // user edited while save was in flight
+        return { kind: 'conflict', serverVersion: 5 };
+      });
+
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+
+      await act(async () => {
+        await result.current.saveToCloud();
+      });
+
+      // conflict should be set in internal state
+      const setInternalCalls = deps.setInternal.mock.calls;
+      const hasConflict = setInternalCalls.some((call) => {
+        const arg = call[0];
+        const state = typeof arg === 'function' ? arg(deps.internalRef.current) : arg;
+        return state.conflict?.serverVersion === 5;
+      });
+      expect(hasConflict).toBe(true);
+
+      // checkAndPullFreshVersion should NOT be called (dirty path skips pull)
+      expect(checkAndPullFreshVersion).not.toHaveBeenCalled();
+    });
+
+    it('409 then pull failure still updates serverVersion (livelock prevention)', async () => {
+      const deps = makeDefaultDeps();
+      deps.internalRef.current = {
+        ...INITIAL_INTERNAL_STATE,
+        cloudId: TEST_CLOUD_ID,
+        isOwner: true,
+        serverVersion: 2,
+      };
+      deps.dataVersionRef.current = 1;
+
+      (saveProjectToCloudImpl as Mock).mockResolvedValue({
+        kind: 'conflict',
+        serverVersion: 5,
+      });
+      // Pull fails
+      (checkAndPullFreshVersion as Mock).mockRejectedValue(new Error('Network error'));
+
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+
+      await act(async () => {
+        await result.current.saveToCloud();
+      });
+
+      // serverVersion should still be updated to 5 (from the first setInternal call)
+      const setInternalCalls = deps.setInternal.mock.calls;
+      const hasServerVersionUpdate = setInternalCalls.some((call) => {
+        const arg = call[0];
+        const state = typeof arg === 'function' ? arg(deps.internalRef.current) : arg;
+        return state.serverVersion === 5;
+      });
+      expect(hasServerVersionUpdate).toBe(true);
+
+      // Conflict UX should be shown as fallback after pull failure
+      const hasConflictFallback = setInternalCalls.some((call) => {
+        const arg = call[0];
+        const state = typeof arg === 'function' ? arg(deps.internalRef.current) : arg;
+        return state.conflict?.serverVersion === 5;
+      });
+      expect(hasConflictFallback).toBe(true);
+    });
+
+    it('successful save updates serverVersion', async () => {
+      const deps = makeDefaultDeps();
+      deps.internalRef.current = {
+        ...INITIAL_INTERNAL_STATE,
+        cloudId: TEST_CLOUD_ID,
+        isOwner: true,
+        serverVersion: 2,
+      };
+      (saveProjectToCloudImpl as Mock).mockResolvedValue({
+        kind: 'updated',
+        cloudId: TEST_CLOUD_ID,
+        timestamp: TEST_TIMESTAMP,
+        version: 3,
+      });
+
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+
+      await act(async () => {
+        await result.current.saveToCloud();
+      });
+
+      // setInternal should have been called with serverVersion: 3
+      const setInternalCalls = deps.setInternal.mock.calls;
+      const hasVersionUpdate = setInternalCalls.some((call) => {
+        const arg = call[0];
+        const state = typeof arg === 'function' ? arg(deps.internalRef.current) : arg;
+        return state.serverVersion === 3 && state.status === 'idle';
+      });
+      expect(hasVersionUpdate).toBe(true);
     });
   });
 
