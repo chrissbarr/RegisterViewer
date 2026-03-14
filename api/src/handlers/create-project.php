@@ -73,5 +73,6 @@ function handleCreateProject(PDO $db, array $config, array $auth, array $parsed)
         'id'        => $id,
         'shareUrl'  => $shareUrl,
         'createdAt' => $timestamps['created_at_iso'],
+        'version'   => 1,
     ], 201);
 }

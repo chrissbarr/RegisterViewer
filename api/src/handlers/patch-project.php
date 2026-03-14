@@ -16,6 +16,9 @@ function handlePatchProject(PDO $db, string $id, array $auth, array $body): ApiR
         return new ApiResponse(['error' => 'visibility must be "private" or "unlisted"'], 400);
     }
 
+    // No version check for visibility changes — they don't conflict with
+    // data saves, so there's no concurrency concern. Version is only
+    // checked on PUT (data updates).
     dbPatchVisibility($db, $id, $body['visibility']);
 
     // Fetch timestamps only (lightweight query)

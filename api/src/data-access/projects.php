@@ -13,7 +13,7 @@ declare(strict_types=1);
 function dbGetProject(PDO $db, string $id): ?array
 {
     $stmt = $db->prepare(
-        "SELECT public_id, visibility, data, title, user_id,
+        "SELECT public_id, visibility, data, title, user_id, version,
                 DATE_FORMAT(created_at, '%Y-%m-%dT%H:%i:%sZ') AS created_at_iso,
                 DATE_FORMAT(updated_at, '%Y-%m-%dT%H:%i:%sZ') AS updated_at_iso,
                 DATE_FORMAT(last_accessed_at, '%Y-%m-%dT%H:%i:%sZ') AS last_accessed_at_iso
@@ -220,7 +220,7 @@ function dbTouchLastAccessed(PDO $db, string $publicId): void
 function dbListProjectsByUserId(PDO $db, int $userId): array
 {
     $stmt = $db->prepare(
-        "SELECT public_id, visibility, title,
+        "SELECT public_id, visibility, title, version,
                 DATE_FORMAT(created_at, '%Y-%m-%dT%H:%i:%sZ') AS created_at_iso,
                 DATE_FORMAT(updated_at, '%Y-%m-%dT%H:%i:%sZ') AS updated_at_iso
          FROM projects

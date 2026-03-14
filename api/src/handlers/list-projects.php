@@ -16,6 +16,7 @@ function handleListProjects(PDO $db, array $auth): ApiResponse
         'visibility' => $row['visibility'],
         'createdAt'  => $row['created_at_iso'],
         'updatedAt'  => $row['updated_at_iso'],
+        'version'    => (int)($row['version'] ?? 1),
     ], $rows);
 
     return new ApiResponse(['projects' => $projects], 200, [
