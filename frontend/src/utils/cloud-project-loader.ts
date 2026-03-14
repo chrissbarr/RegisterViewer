@@ -4,6 +4,23 @@ import { importFromObject, type ImportResult } from './storage';
 interface CloudProjectLoadResult extends ImportResult {
   updatedAt: string;
   isOwner: boolean;
+  version: number;
+}
+
+/**
+ * Parse raw project data (from API response) into app state.
+ * Extracted from fetchAndParseCloudProject for reuse in freshness checks
+ * to avoid double-fetching.
+ */
+export function parseProjectData(data: unknown): ImportResult | null {
+  try {
+    const parsed = typeof data === 'string' ? JSON.parse(data) : data;
+    const result = importFromObject(parsed as Record<string, unknown>);
+    if (!result || result.registers.length === 0) return null;
+    return result;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -14,14 +31,9 @@ interface CloudProjectLoadResult extends ImportResult {
  */
 export async function fetchAndParseCloudProject(id: string, jwt?: string): Promise<CloudProjectLoadResult> {
   const result = await getProject(id, jwt);
-
-  // The API returns `data` as a parsed object (from res.json()).
-  // Use importFromObject directly to avoid re-serializing then re-parsing.
-  const data = typeof result.data === 'string' ? JSON.parse(result.data) : result.data;
-
-  const importResult = importFromObject(data as Record<string, unknown>);
-  if (!importResult || importResult.registers.length === 0) {
+  const parsed = parseProjectData(result.data);
+  if (!parsed) {
     throw new Error('Failed to parse project data from cloud.');
   }
-  return { ...importResult, updatedAt: result.updatedAt, isOwner: result.isOwner };
+  return { ...parsed, updatedAt: result.updatedAt, isOwner: result.isOwner, version: result.version };
 }
