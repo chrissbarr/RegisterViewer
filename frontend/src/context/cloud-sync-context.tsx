@@ -1,16 +1,15 @@
 /**
  * CloudSyncProvider — cloud save/load/fork/delete/sync for the active project.
  *
- * Cloud operations are split across six hooks:
+ * Cloud operations are split across five hooks:
  * - **Active-project ops** (`useActiveProjectCloudOps`): `saveToCloud`,
  *   `deleteFromCloud`, `setVisibility`, `fork`, `loadCloudProject` — operate
  *   on the currently-loaded project using in-memory `appState` via refs.
+ *   Also includes inline JWT guard (login state).
  * - **By-localId ops** (`useProjectCloudOps`): operates on any project by
  *   `localId`, reading state from localStorage. Used by the My Projects dialog.
  * - **Auto-sync** (`useAutoSync`): debounced dirty→save cycle with status
  *   tracking and `flushSync` for beforeunload.
- * - **Login guard** (`useLoginGuard`): JWT-guarded save/fork with deferred
- *   retry after login.
  * - **Auth transition** (`useAuthTransition`): sign-in retry, cloud project
  *   sync, and sign-out cleanup.
  * - **Dirty tracking** (`useDirtyTracking`): generation-counter `isDirty`.
@@ -45,7 +44,6 @@ import { useAuthTransition } from '../hooks/use-auth-transition';
 import { useProjectSwitchInit } from '../hooks/use-project-switch-init';
 import { syncCloudProjectsFromServer } from '../utils/cloud-sync';
 import type { Visibility } from '../types/project';
-import type { AppState } from '../types/register';
 import { initialInternalState, type CloudSyncCore, type InternalCloudSyncState, type SyncResult } from '../types/cloud-sync';
 
 export type { SyncStatus };
@@ -63,6 +61,8 @@ interface CloudSyncState {
   loginRequired: boolean;
   /** Cloud auto-sync status indicator. */
   syncStatus: SyncStatus;
+  /** Non-null when a save conflict was detected (server version mismatch). */
+  conflict: { serverVersion: number } | null;
 }
 
 interface CloudSyncActions {
@@ -71,10 +71,9 @@ interface CloudSyncActions {
    *
    * Returns:
    * - `true` — saved successfully (or cloud disabled)
-   * - `false` — mutation lock held by another operation; try again later
-   * - `undefined` — no JWT; operation deferred to login dialog (auto-retried on sign-in)
+   * - `false` — no JWT (deferred to login) or mutation lock held
    */
-  saveToCloud: () => Promise<boolean | undefined>;
+  saveToCloud: () => Promise<boolean>;
   saveProjectToCloud: (localId: string) => Promise<void>;
   deleteFromCloud: () => Promise<void>;
   deleteProjectFromCloud: (cloudId: string) => Promise<void>;
@@ -83,11 +82,13 @@ interface CloudSyncActions {
   loadCloudProject: (cloudId: string) => Promise<void>;
   fork: () => Promise<void>;
   dismissError: () => void;
+  /** Dismiss the login dialog and cancel any pending cloud operation. */
+  dismissLogin: () => void;
   initFromProject: (cloudId: string | null, isOwner: boolean, storage?: 'local' | 'cloud') => void;
   syncCloudProjects: () => Promise<SyncResult>;
   unlinkCloudProject: (localId: string) => void;
-  /** Cancel pending cloud operation that was waiting for login. */
-  cancelPendingOp: () => void;
+  /** Stub — will be wired in a future task to reload server version. */
+  loadServerVersion: () => Promise<void>;
   /** Flush any pending cloud sync immediately (best-effort, for beforeunload). */
   flushSync: () => Promise<void>;
 }
@@ -165,36 +166,14 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   // Ref to avoid stale closures in save/fork callbacks.
   // Synced via useEffect (not render-time assignment) because appStateRef doesn't
   // need same-commit synchronous visibility — callbacks that read it run async.
-  // Compare: internalRef uses render-time sync for initFromProject's same-commit
-  // guard; lastStableStateRef uses render-time sync for snapshot consistency.
+  // Compare: internalRef uses render-time sync for initFromProject's same-commit guard.
   const appStateRef = useRef(appState);
   useEffect(() => {
     appStateRef.current = appState;
   }, [appState]);
 
-  // Snapshot of the current project's latest app state, updated during render.
-  // When activeLocalId changes in the same commit as LOAD_STATE (both fired
-  // by switchProject), appStateRef already holds the *new* project's state by
-  // the time the project-switch effect runs. This ref preserves the *previous*
-  // project's last state so flush-before-evict saves the correct data.
-  const lastStableStateRef = useRef<{ localId: string | null; state: AppState }>({
-    localId: activeLocalId,
-    state: appState,
-  });
-  if (activeLocalId === lastStableStateRef.current.localId) { // eslint-disable-line react-hooks/refs -- intentional render-time read; see comment above
-    // Still on the same project — keep the snapshot fresh
-    lastStableStateRef.current.state = appState; // eslint-disable-line react-hooks/refs
-  } else if (lastStableStateRef.current.localId === null) { // eslint-disable-line react-hooks/refs
-    // Transitioning from unsaved (null) to saved — adopt the new project's
-    // localId so the eviction effect can match it later. Without this, the
-    // ref stays stuck at localId=null after saveCurrentProject() changes
-    // activeLocalId from null to a real id, causing flush-before-evict to
-    // fail to find the departing project's state snapshot.
-    lastStableStateRef.current = { localId: activeLocalId, state: appState }; // eslint-disable-line react-hooks/refs
-  }
-  // When activeLocalId changes between two truthy ids (real project switch),
-  // we intentionally do NOT update — preserving the previous project's state
-  // for the eviction effect to flush before evicting.
+  // Freshness check throttle — reset on project switch
+  const lastFreshnessCheckRef = useRef(0);
 
   // Active-project cloud operations (save, fork, delete, visibility, load)
   // Login guard state (loginRequired, pendingOpRef, dismissLogin) is now
@@ -206,7 +185,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   });
 
   // Auto-sync engine (debounced dirty→save)
-  const canAutoSync = internal.storage === 'cloud' && internal.isOwner && !!authUser;
+  const canAutoSync = internal.storage === 'cloud' && internal.isOwner && !!authUser && !internal.conflict;
   const { syncStatus, flushSync, syncTimerRef } = useAutoSync({
     isDirty,
     internalRef,
@@ -287,32 +266,29 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     });
   }, [updateCloudMetadata, getJwt]);
 
-  // Callback refs: nullable because the callbacks reference state/hooks defined below.
-  // Direct assignment in render (not useEffect) ensures they're fresh by the time
-  // effects in child hooks read them. The `| null` type forces consumers to use
+  // Callback ref: nullable because the callback references state/hooks defined below.
+  // Direct assignment in render (not useEffect) ensures it's fresh by the time
+  // effects in child hooks read it. The `| null` type forces consumers to use
   // optional chaining, preventing calls before initialization.
   const syncCloudProjectsRef = useRef<(() => Promise<SyncResult>) | null>(null);
-  const flushSyncRef = useRef<((stateOverride?: AppState) => Promise<void>) | null>(null);
   syncCloudProjectsRef.current = syncCloudProjects; // eslint-disable-line react-hooks/refs -- render-time sync for stable callback refs
-  flushSyncRef.current = flushSync; // eslint-disable-line react-hooks/refs
 
   // Auth transition: sign-in retry, cloud sync, sign-out cleanup
-  const { isSigningOutRef } = useAuthTransition({
+  useAuthTransition({
     core, authUser,
-    pendingCloudOpRef: pendingOpRef,
-    setLoginRequired: (v: boolean) => { if (!v) dismissLogin(); },
-    rawSave: rawActiveOps.saveToCloud,
-    rawFork: rawActiveOps.fork,
+    pendingOpRef,
+    saveToCloud: rawActiveOps.saveToCloud,
+    fork: rawActiveOps.fork,
+    dismissLogin,
     syncCloudProjectsRef, syncTimerRef,
     refreshProjectList, switchProject, createNewProject,
   });
 
   // --- Active project switch: cloud state init + best-effort save ---
   useProjectSwitchInit({
-    core, activeLocalId, appState, projects,
-    projectsRef, needsVersionSyncRef,
-    lastStableStateRef, flushSyncRef, syncTimerRef, isSigningOutRef,
-    cancelPendingOp: dismissLogin,
+    core, activeLocalId, projects,
+    projectsRef, needsVersionSyncRef, syncTimerRef,
+    dataVersionRef, getJwt, lastFreshnessCheckRef, updateCloudMetadata,
   });
 
   // Re-evaluate ownership when auth state changes or the active cloud project
@@ -346,12 +322,12 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   const actions = useMemo(
     () => ({
       ...rawActiveOps,
-      dismissError, initFromProject, syncCloudProjects,
-      cancelPendingOp: dismissLogin,
+      dismissError, dismissLogin, initFromProject, syncCloudProjects,
+      loadServerVersion: async () => { console.warn('loadServerVersion not yet wired'); },
       flushSync,
       ...projectOps,
     }),
-    [rawActiveOps, dismissError, initFromProject, syncCloudProjects, dismissLogin, flushSync, projectOps],
+    [rawActiveOps, dismissError, dismissLogin, initFromProject, syncCloudProjects, flushSync, projectOps],
   );
 
   const providedState: CloudSyncState = useMemo(
@@ -366,6 +342,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       visibility: internal.visibility,
       loginRequired,
       syncStatus,
+      conflict: internal.conflict,
     }),
     [
       internal.cloudId,
@@ -378,6 +355,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       internal.visibility,
       loginRequired,
       syncStatus,
+      internal.conflict,
     ],
   );
 
