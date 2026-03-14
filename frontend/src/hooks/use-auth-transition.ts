@@ -6,19 +6,15 @@ import { type CloudSyncCore, type SyncResult, initialInternalState } from '../ty
 interface UseAuthTransitionDeps {
   core: CloudSyncCore;
   authUser: { email: string } | null;
-  pendingCloudOpRef: MutableRefObject<'save' | 'fork' | null>;
-  setLoginRequired: (v: boolean) => void;
-  rawSave: () => Promise<boolean>;
-  rawFork: () => Promise<void>;
+  pendingOpRef: MutableRefObject<'save' | 'fork' | null>;
+  saveToCloud: () => Promise<boolean>;
+  fork: () => Promise<void>;
+  dismissLogin: () => void;
   syncCloudProjectsRef: MutableRefObject<(() => Promise<SyncResult>) | null>;
   syncTimerRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
   refreshProjectList: () => void;
   switchProject: (id: string) => void;
   createNewProject: () => string;
-}
-
-interface UseAuthTransitionResult {
-  isSigningOutRef: MutableRefObject<boolean>;
 }
 
 /**
@@ -33,17 +29,16 @@ interface UseAuthTransitionResult {
  * - Switches to a remaining local project or creates a new one.
  * - Resets cloud sync state.
  */
-export function useAuthTransition(deps: UseAuthTransitionDeps): UseAuthTransitionResult {
+export function useAuthTransition(deps: UseAuthTransitionDeps): void {
   const {
     core: { activeLocalIdRef, setInternal },
-    authUser, pendingCloudOpRef, setLoginRequired, rawSave, rawFork,
+    authUser, pendingOpRef, saveToCloud, fork, dismissLogin,
     syncCloudProjectsRef, syncTimerRef,
     refreshProjectList, switchProject, createNewProject,
   } = deps;
 
   const prevAuthUserRef = useRef(authUser);
   const hasRunInitialSyncRef = useRef(false);
-  const isSigningOutRef = useRef(false);
 
   useEffect(() => {
     const wasNull = prevAuthUserRef.current === null;
@@ -55,19 +50,19 @@ export function useAuthTransition(deps: UseAuthTransitionDeps): UseAuthTransitio
 
     if (shouldSync) {
       hasRunInitialSyncRef.current = true;
-      // Reset sign-out flag on sign-in (kept true after sign-out to protect
-      // async eviction checks — see use-project-switch-eviction.ts)
-      isSigningOutRef.current = false;
       // Sign-in: retry any pending cloud operation that was deferred
-      if (pendingCloudOpRef.current) {
-        const op = pendingCloudOpRef.current;
-        pendingCloudOpRef.current = null;
-        setLoginRequired(false);
-        if (op === 'save') {
-          // Error already surfaced via internal.error UI state
-          rawSave().catch(() => {});
-        } else if (op === 'fork') {
-          rawFork().catch(() => {});
+      const pendingOp = pendingOpRef.current;
+      if (pendingOp) {
+        pendingOpRef.current = null;
+        dismissLogin();
+        if (pendingOp === 'save') {
+          saveToCloud().catch((err) => {
+            if (process.env.NODE_ENV !== 'production') console.warn('Auto-retry save failed:', err);
+          });
+        } else if (pendingOp === 'fork') {
+          fork().catch((err) => {
+            if (process.env.NODE_ENV !== 'production') console.warn('Auto-retry fork failed:', err);
+          });
         }
       }
       // Sync cloud projects (pull metadata from server)
@@ -76,7 +71,6 @@ export function useAuthTransition(deps: UseAuthTransitionDeps): UseAuthTransitio
 
     if (wasLoggedIn && !authUser) {
       hasRunInitialSyncRef.current = false;
-      isSigningOutRef.current = true;
       // Sign-out: purge cloud projects from localStorage
       const purgedIds = purgeCloudProjects();
       refreshProjectList();
@@ -98,7 +92,5 @@ export function useAuthTransition(deps: UseAuthTransitionDeps): UseAuthTransitio
       clearCloudUrl();
       sessionStorage.removeItem(ACTIVE_PROJECT_SESSION_KEY);
     }
-  }, [authUser, rawSave, rawFork, pendingCloudOpRef, setLoginRequired, syncCloudProjectsRef, syncTimerRef, activeLocalIdRef, setInternal, refreshProjectList, switchProject, createNewProject]);
-
-  return { isSigningOutRef };
+  }, [authUser, saveToCloud, fork, pendingOpRef, dismissLogin, syncCloudProjectsRef, syncTimerRef, activeLocalIdRef, setInternal, refreshProjectList, switchProject, createNewProject]);
 }
