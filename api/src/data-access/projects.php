@@ -109,6 +109,60 @@ function dbUpdateProject(
 }
 
 /**
+ * Update project with optimistic concurrency check.
+ * Returns ['updated' => true, 'version' => int] on success,
+ * or ['updated' => false, 'version' => int] on version conflict.
+ *
+ * Version is in the request body (not ETag/If-Match) because this API
+ * uses JSON-only request/response — simpler for the SPA client.
+ */
+function dbUpdateProjectVersioned(
+    PDO $db,
+    string $publicId,
+    string $data,
+    string $visibility,
+    ?string $title,
+    int $clientVersion,
+): array {
+    $stmt = $db->prepare(
+        'UPDATE projects
+         SET data = :data, visibility = :visibility, title = :title,
+             version = version + 1, updated_at = NOW(), last_accessed_at = NOW()
+         WHERE public_id = :public_id AND version = :version'
+    );
+    $stmt->execute([
+        'data'       => $data,
+        'visibility' => $visibility,
+        'title'      => $title,
+        'public_id'  => $publicId,
+        'version'    => $clientVersion,
+    ]);
+
+    if ($stmt->rowCount() === 0) {
+        // requireOwnership() already verified ownership before this call,
+        // so rowCount=0 can only mean version conflict.
+        $current = dbGetProjectVersion($db, $publicId);
+        return ['updated' => false, 'version' => $current];
+    }
+
+    // Version is deterministic: clientVersion + 1.
+    return ['updated' => true, 'version' => $clientVersion + 1];
+}
+
+/**
+ * Get the current version of a project.
+ * Used in the 409 conflict response to tell the client the server's version.
+ * Falls back to 1 during the deploy window before migration runs.
+ */
+function dbGetProjectVersion(PDO $db, string $publicId): int
+{
+    $stmt = $db->prepare('SELECT version FROM projects WHERE public_id = :id');
+    $stmt->execute(['id' => $publicId]);
+    $row = $stmt->fetch();
+    return $row ? (int)($row['version'] ?? 1) : 1;
+}
+
+/**
  * Patch only the visibility of a project.
  * Explicitly sets updated_at to match previous API behavior.
  */
