@@ -10,10 +10,10 @@ export function isCloudEnabled(): boolean {
 
 export class ApiError extends Error {
   status: number;
-  errorBody: { error: string };
+  readonly errorBody: Record<string, unknown>;
 
-  constructor(status: number, errorBody: { error: string }) {
-    super(errorBody.error);
+  constructor(status: number, errorBody: Record<string, unknown>) {
+    super(String(errorBody.error ?? 'Unknown error'));
     this.name = 'ApiError';
     this.status = status;
     this.errorBody = errorBody;
@@ -38,7 +38,7 @@ async function apiRequest(path: string, options?: RequestInit): Promise<Response
     });
 
     if (!res.ok) {
-      let errorBody: { error: string };
+      let errorBody: Record<string, unknown>;
       try {
         errorBody = await res.json();
       } catch {
@@ -66,6 +66,7 @@ interface CreateProjectResponse {
   id: string;
   shareUrl: string;
   createdAt: string;
+  version: number;
 }
 
 export async function createProject(
@@ -91,6 +92,7 @@ interface GetProjectResponse {
   createdAt: string;
   updatedAt: string;
   isOwner: boolean;
+  version: number;
 }
 
 export async function getProject(id: string, jwt?: string): Promise<GetProjectResponse> {
@@ -106,15 +108,17 @@ export async function getProject(id: string, jwt?: string): Promise<GetProjectRe
 interface UpdateProjectResponse {
   id: string;
   updatedAt: string;
+  version: number;
 }
 
 export async function updateProject(
   id: string,
   data: unknown,
   jwt: string,
+  version: number,
   visibility?: Visibility,
 ): Promise<UpdateProjectResponse> {
-  const body: { data: unknown; visibility?: string } = { data };
+  const body: Record<string, unknown> = { data, version };
   if (visibility !== undefined) {
     body.visibility = visibility;
   }
@@ -162,6 +166,7 @@ interface ProjectListItem {
   visibility: Visibility;
   createdAt: string;
   updatedAt: string;
+  version: number;
 }
 
 interface ListProjectsResponse {

@@ -12,6 +12,8 @@ export interface InternalCloudSyncState {
   lastCloudSavedAt: string | null;
   lastSavedVersion: number;
   visibility: Visibility;
+  serverVersion: number; // last known server version (0 = unknown)
+  conflict: { serverVersion: number } | null; // non-null triggers conflict UX
 }
 
 export const initialInternalState: InternalCloudSyncState = Object.freeze({
@@ -24,6 +26,8 @@ export const initialInternalState: InternalCloudSyncState = Object.freeze({
   lastCloudSavedAt: null,
   lastSavedVersion: -1,
   visibility: 'private',
+  serverVersion: 0,
+  conflict: null,
 });
 
 /**
@@ -51,6 +55,7 @@ export interface CloudMetadataUpdate {
   cloudSavedAt?: string | null;
   visibility?: Visibility;
   storage?: 'local' | 'cloud';
+  serverVersion?: number | null;
 }
 
 export interface SyncResult {
