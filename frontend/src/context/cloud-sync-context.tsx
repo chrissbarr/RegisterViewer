@@ -88,7 +88,7 @@ interface CloudSyncActions {
   initFromProject: (cloudId: string | null, isOwner: boolean, storage?: 'local' | 'cloud') => void;
   syncCloudProjects: () => Promise<SyncResult>;
   unlinkCloudProject: (localId: string) => void;
-  /** Stub — will be wired in a future task to reload server version. */
+  /** Pull the latest server version, replacing local state. Used by the conflict banner. */
   loadServerVersion: () => Promise<void>;
   /** Flush any pending cloud sync immediately (best-effort, for beforeunload). */
   flushSync: () => Promise<void>;
@@ -362,15 +362,41 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     activeProjectSave: rawActiveOps.saveToCloud,
   });
 
+  const loadServerVersion = useCallback(async () => {
+    const { cloudId } = internalRef.current;
+    if (!cloudId) return;
+    const jwt = getJwt();
+    if (!jwt) return;
+    const localId = activeLocalIdRef.current;
+    if (!localId) return;
+
+    await checkAndPullFreshVersion({
+      cloudId,
+      knownVersion: 0,
+      localId,
+      jwt,
+      internalRef,
+      dataVersionRef,
+      dispatch,
+      needsVersionSyncRef,
+      lastFreshnessCheckRef,
+      updateCloudMetadata,
+      setInternal,
+      force: true,
+    });
+
+    setInternal((prev) => ({ ...prev, conflict: null }));
+  }, [dispatch, getJwt, updateCloudMetadata, dataVersionRef, needsVersionSyncRef]);
+
   const actions = useMemo(
     () => ({
       ...rawActiveOps,
       dismissError, dismissLogin, initFromProject, syncCloudProjects,
-      loadServerVersion: async () => { console.warn('loadServerVersion not yet wired'); },
+      loadServerVersion,
       flushSync,
       ...projectOps,
     }),
-    [rawActiveOps, dismissError, dismissLogin, initFromProject, syncCloudProjects, flushSync, projectOps],
+    [rawActiveOps, dismissError, dismissLogin, initFromProject, syncCloudProjects, loadServerVersion, flushSync, projectOps],
   );
 
   const providedState: CloudSyncState = useMemo(

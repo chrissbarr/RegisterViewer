@@ -60,14 +60,19 @@ export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
         throw new Error('Cloud project not found on server.');
       }
 
+      if (result.kind === 'conflict') {
+        throw new Error('Server version conflict. Please try again.');
+      }
+
       if (result.kind === 'created') {
         updateCloudMetadata(localId, {
           cloudId: result.cloudId,
           cloudSavedAt: result.timestamp,
           storage: 'cloud',
+          serverVersion: result.version,
         });
       } else {
-        updateCloudMetadata(localId, { cloudSavedAt: result.timestamp, storage: 'cloud' });
+        updateCloudMetadata(localId, { cloudSavedAt: result.timestamp, storage: 'cloud', serverVersion: result.version });
       }
     });
     if (!lockResult.executed) {
