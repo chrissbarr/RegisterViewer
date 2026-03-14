@@ -3,9 +3,11 @@ import { buildProjectUrl, loadProject } from '../utils/project-storage';
 import { setCloudUrl, clearCloudUrl } from '../utils/cloud-utils';
 import { exportToObject, deserializeState } from '../utils/storage';
 import { saveProjectToCloudImpl } from '../utils/cloud-operations';
+import { checkAndPullFreshVersion } from '../utils/cloud-freshness';
 import { type CloudSyncCore, initialInternalState } from '../types/cloud-sync';
 import type { CloudMetadataUpdate } from '../types/cloud-sync';
 import type { ProjectListEntry } from '../types/project';
+import type { ImportStateAction } from '../context/app-context';
 
 interface UseProjectSwitchInitDeps {
   core: CloudSyncCore;
@@ -18,6 +20,7 @@ interface UseProjectSwitchInitDeps {
   getJwt: () => string | null;
   lastFreshnessCheckRef: MutableRefObject<number>;
   updateCloudMetadata: (localId: string, updates: CloudMetadataUpdate) => void;
+  dispatch: (action: ImportStateAction) => void;
 }
 
 /**
@@ -38,7 +41,7 @@ export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
     core: { internalRef, activeLocalIdRef: _activeLocalIdRef, setInternal },
     activeLocalId, projects,
     projectsRef, needsVersionSyncRef, syncTimerRef,
-    dataVersionRef, getJwt, lastFreshnessCheckRef, updateCloudMetadata,
+    dataVersionRef, getJwt, lastFreshnessCheckRef, updateCloudMetadata, dispatch,
   } = deps;
 
   const prevActiveLocalIdRef = useRef<string | null>(null);
@@ -124,6 +127,26 @@ export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
         serverVersion: entry?.serverVersion ?? 0,
         conflict: null,
       }));
+
+      // Freshness check for incoming project
+      const jwt = getJwt();
+      if (jwt && entry?.serverVersion) {
+        checkAndPullFreshVersion({
+          cloudId,
+          knownVersion: entry.serverVersion,
+          localId: activeLocalId,
+          jwt,
+          internalRef,
+          dataVersionRef,
+          dispatch,
+          needsVersionSyncRef,
+          lastFreshnessCheckRef,
+          updateCloudMetadata,
+          setInternal,
+        }).catch((err) => {
+          if (import.meta.env.DEV) console.warn('Freshness check failed:', err);
+        });
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeLocalId, activeCloudId]);

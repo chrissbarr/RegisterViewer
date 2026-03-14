@@ -43,6 +43,7 @@ import { useAutoSync, type SyncStatus } from '../hooks/use-auto-sync';
 import { useAuthTransition } from '../hooks/use-auth-transition';
 import { useProjectSwitchInit } from '../hooks/use-project-switch-init';
 import { syncCloudProjectsFromServer } from '../utils/cloud-sync';
+import { checkAndPullFreshVersion } from '../utils/cloud-freshness';
 import type { Visibility } from '../types/project';
 import { initialInternalState, type CloudSyncCore, type InternalCloudSyncState, type SyncResult } from '../types/cloud-sync';
 
@@ -154,7 +155,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   // double-invocation of effects. Do not move to useEffect without verifying the
   // initFromProject race described in the CloudSyncProvider docstring.
   const internalRef = useRef(internal);
-  internalRef.current = internal; // eslint-disable-line react-hooks/refs -- intentional render-time sync; see docstring above
+  internalRef.current = internal; // intentional render-time sync; see docstring above
 
   // Shared refs passed to all cloud sync hooks (AR-1: reduces per-hook param count).
   // All items are stable across renders (refs, useState setter, module-level const).
@@ -271,7 +272,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   // effects in child hooks read it. The `| null` type forces consumers to use
   // optional chaining, preventing calls before initialization.
   const syncCloudProjectsRef = useRef<(() => Promise<SyncResult>) | null>(null);
-  syncCloudProjectsRef.current = syncCloudProjects; // eslint-disable-line react-hooks/refs -- render-time sync for stable callback refs
+  syncCloudProjectsRef.current = syncCloudProjects; // render-time sync for stable callback refs
 
   // Auth transition: sign-in retry, cloud sync, sign-out cleanup
   useAuthTransition({
@@ -289,7 +290,49 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     core, activeLocalId, projects,
     projectsRef, needsVersionSyncRef, syncTimerRef,
     dataVersionRef, getJwt, lastFreshnessCheckRef, updateCloudMetadata,
+    dispatch,
   });
+
+  // Freshness check when tab regains focus
+  useEffect(() => {
+    let cancelled = false;
+
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (cancelled) return;
+
+      const { cloudId, serverVersion } = internalRef.current;
+      if (!cloudId || serverVersion === 0) return;
+      const jwt = getJwt();
+      if (!jwt) return;
+      const localId = activeLocalIdRef.current;
+      if (!localId) return;
+
+      checkAndPullFreshVersion({
+        cloudId,
+        knownVersion: serverVersion,
+        localId,
+        jwt,
+        internalRef,
+        dataVersionRef,
+        dispatch,
+        needsVersionSyncRef,
+        lastFreshnessCheckRef,
+        updateCloudMetadata,
+        setInternal,
+      }).catch((err) => {
+        if (import.meta.env.DEV) console.warn('Freshness check failed:', err);
+      });
+    };
+
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  // All deps are refs or stable functions — empty array is correct
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Re-evaluate ownership when auth state changes or the active cloud project
   // changes while authenticated. Covers: (1) JWT validated after startup,
