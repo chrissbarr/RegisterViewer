@@ -327,6 +327,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
           status: 'idle',
           shareUrl,
           lastCloudSavedAt: importResult.updatedAt,
+          serverVersion: importResult.version,
         }));
       } catch (err) {
         if (err instanceof ApiError && err.status === 404) {
