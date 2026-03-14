@@ -45,21 +45,45 @@ export async function saveProjectToCloudImpl(
   jsonPayload: unknown,
   existingCloudId: string | null,
   jwt: string,
+  serverVersion?: number,
 ): Promise<SaveResult> {
   if (existingCloudId) {
     try {
-      const result = await apiUpdateProject(existingCloudId, jsonPayload, jwt);
-      return { kind: 'updated', cloudId: existingCloudId, timestamp: result.updatedAt };
+      const result = await apiUpdateProject(
+        existingCloudId,
+        jsonPayload,
+        jwt,
+        serverVersion ?? 1,
+      );
+      return {
+        kind: 'updated',
+        cloudId: existingCloudId,
+        timestamp: result.updatedAt,
+        version: result.version,
+      };
     } catch (err) {
-      if (err instanceof ApiError && err.status === 404) {
-        return { kind: 'not-found' };
+      if (err instanceof ApiError) {
+        if (err.status === 404) {
+          return { kind: 'not-found' };
+        }
+        if (err.status === 409) {
+          const currentVersion = typeof err.errorBody?.currentVersion === 'number'
+            ? err.errorBody.currentVersion
+            : 0;
+          return { kind: 'conflict', serverVersion: currentVersion };
+        }
       }
       throw err;
     }
   }
 
   const result = await apiCreateProject(jsonPayload, jwt);
-  return { kind: 'created', cloudId: result.id, timestamp: result.createdAt };
+  return {
+    kind: 'created',
+    cloudId: result.id,
+    timestamp: result.createdAt,
+    version: 1,
+  };
 }
 
 /**
