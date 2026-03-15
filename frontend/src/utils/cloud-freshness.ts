@@ -1,8 +1,8 @@
 import type { MutableRefObject } from 'react';
 import { getProject } from './api-client';
 import { parseProjectData } from './cloud-project-loader';
-import { patchProjectState } from './project-storage';
-import { serializeState } from './storage';
+import { patchProjectState, loadProject } from './project-storage';
+import { serializeState, deserializeState } from './storage';
 import type { ImportStateAction } from '../context/app-context';
 import type { InternalCloudSyncState, CloudMetadataUpdate } from '../types/cloud-sync';
 
@@ -67,16 +67,21 @@ export async function checkAndPullFreshVersion(params: FreshnessCheckParams): Pr
     addressUnitBits: parsed.addressUnitBits,
   });
 
-  // Update localStorage with fresh data
+  // Update localStorage with fresh data, preserving local-only UI fields
+  // (activeRegisterId, mapTableWidth, mapShowGaps, mapSortDescending).
+  // These fields are not synced to the server, so overwriting them with
+  // defaults would reset the user's view preferences.
+  const existingProject = loadProject(localId);
+  const existingState = existingProject ? deserializeState(existingProject.state) : null;
   patchProjectState(localId, serializeState({
     registers: parsed.registers,
     registerValues: parsed.values,
-    activeRegisterId: parsed.registers[0]?.id ?? '',
+    activeRegisterId: existingState?.activeRegisterId ?? parsed.registers[0]?.id ?? '',
     project: parsed.project,
     addressUnitBits: parsed.addressUnitBits ?? 8,
-    mapTableWidth: 32,
-    mapShowGaps: true,
-    mapSortDescending: false,
+    mapTableWidth: existingState?.mapTableWidth ?? 32,
+    mapShowGaps: existingState?.mapShowGaps ?? true,
+    mapSortDescending: existingState?.mapSortDescending ?? false,
   }));
   needsVersionSyncRef.current = true;
 
