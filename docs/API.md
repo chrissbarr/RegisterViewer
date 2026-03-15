@@ -438,6 +438,7 @@ Lists all projects owned by the authenticated user.
   "projects": [
     {
       "id": "AbCdEfGhIjKl",
+      "title": "My Project",
       "visibility": "private",
       "createdAt": "2026-02-23T09:00:00.000Z",
       "updatedAt": "2026-02-23T09:00:00.000Z",

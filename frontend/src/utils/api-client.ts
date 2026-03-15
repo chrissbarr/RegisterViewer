@@ -139,12 +139,17 @@ export async function updateProject(
   );
 }
 
+interface PatchVisibilityResponse {
+  id: string;
+  updatedAt: string;
+}
+
 export async function patchProjectVisibility(
   id: string,
   visibility: Visibility,
   jwt: string,
-): Promise<UpdateProjectResponse> {
-  return apiFetch<UpdateProjectResponse>(
+): Promise<PatchVisibilityResponse> {
+  return apiFetch<PatchVisibilityResponse>(
     `/api/projects/${encodeURIComponent(id)}`,
     {
       method: 'PATCH',
