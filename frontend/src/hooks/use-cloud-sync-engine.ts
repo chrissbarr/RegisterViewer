@@ -27,7 +27,7 @@ export interface UseCloudSyncEngineDeps {
   saveToCloud: () => Promise<boolean>;
 }
 
-export interface UseCloudSyncEngineResult {
+interface UseCloudSyncEngineResult {
   isDirty: boolean;
   syncStatus: SyncStatus;
   flushCloudSync: () => Promise<void>;

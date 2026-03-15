@@ -8,21 +8,21 @@ import {
 } from './api-client';
 import type { Visibility } from '../types/project';
 
-export type SaveCreatedResult = {
+type SaveCreatedResult = {
   kind: 'created';
   cloudId: string;
   timestamp: string;
   version: number;
 };
 
-export type SaveUpdatedResult = {
+type SaveUpdatedResult = {
   kind: 'updated';
   cloudId: string;
   timestamp: string;
   version: number;
 };
 
-export type SaveNotFoundResult = {
+type SaveNotFoundResult = {
   kind: 'not-found';
 };
 
@@ -31,7 +31,7 @@ export type SaveConflictResult = {
   serverVersion: number;
 };
 
-export type SaveResult = SaveCreatedResult | SaveUpdatedResult | SaveNotFoundResult | SaveConflictResult;
+type SaveResult = SaveCreatedResult | SaveUpdatedResult | SaveNotFoundResult | SaveConflictResult;
 
 /**
  * Save project data to the cloud (create or update).
