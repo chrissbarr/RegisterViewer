@@ -123,12 +123,13 @@ function dbUpdateProjectVersioned(
     string $visibility,
     ?string $title,
     int $clientVersion,
+    int $userId,
 ): array {
     $stmt = $db->prepare(
         'UPDATE projects
          SET data = :data, visibility = :visibility, title = :title,
              version = version + 1, updated_at = NOW(), last_accessed_at = NOW()
-         WHERE public_id = :public_id AND version = :version'
+         WHERE public_id = :public_id AND version = :version AND user_id = :user_id'
     );
     $stmt->execute([
         'data'       => $data,
@@ -136,6 +137,7 @@ function dbUpdateProjectVersioned(
         'title'      => $title,
         'public_id'  => $publicId,
         'version'    => $clientVersion,
+        'user_id'    => $userId,
     ]);
 
     if ($stmt->rowCount() === 0) {

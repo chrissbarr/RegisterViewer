@@ -73,6 +73,7 @@ final class VersionedUpdateTest extends TestCase
             'private',
             'Updated',
             1, // matches default version
+            self::$testUserId,
         );
 
         $this->assertTrue($result['updated']);
@@ -88,7 +89,7 @@ final class VersionedUpdateTest extends TestCase
         $result1 = dbUpdateProjectVersioned(
             self::$db, 'test_ver_001',
             '{"registers":[],"registerValues":{}}',
-            'private', 'V2', 1,
+            'private', 'V2', 1, self::$testUserId,
         );
         $this->assertTrue($result1['updated']);
 
@@ -96,7 +97,7 @@ final class VersionedUpdateTest extends TestCase
         $result2 = dbUpdateProjectVersioned(
             self::$db, 'test_ver_001',
             '{"registers":[],"registerValues":{}}',
-            'private', 'Stale', 1,
+            'private', 'Stale', 1, self::$testUserId,
         );
         $this->assertFalse($result2['updated']);
         $this->assertSame(2, $result2['version']); // current server version
@@ -115,7 +116,7 @@ final class VersionedUpdateTest extends TestCase
         $r1 = dbUpdateProjectVersioned(
             self::$db, 'test_ver_001',
             '{"registers":[],"registerValues":{}}',
-            'private', 'V2', 1,
+            'private', 'V2', 1, self::$testUserId,
         );
         $this->assertSame(2, $r1['version']);
 
@@ -123,7 +124,7 @@ final class VersionedUpdateTest extends TestCase
         $r2 = dbUpdateProjectVersioned(
             self::$db, 'test_ver_001',
             '{"registers":[],"registerValues":{}}',
-            'private', 'V3', 2,
+            'private', 'V3', 2, self::$testUserId,
         );
         $this->assertSame(3, $r2['version']);
 

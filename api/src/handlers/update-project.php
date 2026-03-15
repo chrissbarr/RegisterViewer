@@ -54,6 +54,7 @@ function handleUpdateProject(PDO $db, string $id, array $auth, array $parsed): A
         $visibility,
         $title,
         $clientVersion,
+        $auth['userId'],
     );
 
     if (!$result['updated']) {
