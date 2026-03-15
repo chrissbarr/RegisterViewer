@@ -4,6 +4,7 @@ import {
   patchProjectVisibility as apiPatchVisibility,
   deleteProject as apiDeleteProject,
   ApiError,
+  isConflictError,
 } from './api-client';
 import type { Visibility } from '../types/project';
 
@@ -71,11 +72,8 @@ export async function saveProjectToCloudImpl(
         if (err.status === 404) {
           return { kind: 'not-found' };
         }
-        if (err.status === 409) {
-          const currentVersion = typeof err.errorBody?.currentVersion === 'number'
-            ? err.errorBody.currentVersion
-            : 0;
-          return { kind: 'conflict', serverVersion: currentVersion };
+        if (isConflictError(err)) {
+          return { kind: 'conflict', serverVersion: err.errorBody.currentVersion };
         }
       }
       throw err;

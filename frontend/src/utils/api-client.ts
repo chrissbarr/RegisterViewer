@@ -20,6 +20,13 @@ export class ApiError extends Error {
   }
 }
 
+/** Type guard for 409 conflict responses with version info. */
+export function isConflictError(err: unknown): err is ApiError & { errorBody: { currentVersion: number } } {
+  return err instanceof ApiError
+    && err.status === 409
+    && typeof (err.errorBody as Record<string, unknown>)?.currentVersion === 'number';
+}
+
 const API_TIMEOUT_MS = 15_000;
 
 async function apiRequest(path: string, options?: RequestInit): Promise<Response> {

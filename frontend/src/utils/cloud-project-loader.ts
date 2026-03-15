@@ -15,6 +15,7 @@ interface CloudProjectLoadResult extends ImportResult {
 export function parseProjectData(data: unknown): ImportResult | null {
   try {
     const parsed = typeof data === 'string' ? JSON.parse(data) : data;
+    if (typeof parsed !== 'object' || parsed === null) return null;
     const result = importFromObject(parsed as Record<string, unknown>);
     if (!result || result.registers.length === 0) return null;
     return result;
