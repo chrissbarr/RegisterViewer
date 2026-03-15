@@ -115,6 +115,7 @@ function buildDeps() {
     dataVersionRef: makeRef(1),
     mutationLockRef: makeRef(false),
     needsVersionSyncRef: makeRef(false),
+    lastFreshnessCheckRef: makeRef(0),
     updateCloudMetadata: vi.fn(),
     createNewProject: vi.fn(() => 'new-local-id'),
     getJwt: vi.fn((): string | null => TEST_JWT),
@@ -366,6 +367,36 @@ describe('useActiveProjectCloudOps', () => {
         expect.objectContaining({
           cloudId: TEST_CLOUD_ID,
           force: true,
+        }),
+      );
+    });
+
+    it('clean 409 passes shared lastFreshnessCheckRef (not a throwaway ref)', async () => {
+      const deps = makeDefaultDeps();
+      deps.internalRef.current = {
+        ...INITIAL_INTERNAL_STATE,
+        cloudId: TEST_CLOUD_ID,
+        isOwner: true,
+        serverVersion: 2,
+      };
+      deps.dataVersionRef.current = 1;
+
+      (saveProjectToCloudImpl as Mock).mockResolvedValue({
+        kind: 'conflict',
+        serverVersion: 5,
+      });
+      (checkAndPullFreshVersion as Mock).mockResolvedValue(undefined);
+
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+
+      await act(async () => {
+        await result.current.saveToCloud();
+      });
+
+      // checkAndPullFreshVersion should have been called with the shared lastFreshnessCheckRef
+      expect(checkAndPullFreshVersion).toHaveBeenCalledWith(
+        expect.objectContaining({
+          lastFreshnessCheckRef: deps.lastFreshnessCheckRef,
         }),
       );
     });
@@ -723,6 +754,32 @@ describe('useActiveProjectCloudOps', () => {
         status: 'idle',
         cloudId: null,
         error: expect.stringContaining('not found'),
+      });
+    });
+
+    it('threads server version into internal state', async () => {
+      const deps = makeDefaultDeps();
+      (fetchAndParseCloudProject as Mock).mockResolvedValue({
+        registers: [],
+        values: {},
+        project: { title: 'Versioned Project' },
+        addressUnitBits: 8,
+        isOwner: true,
+        updatedAt: TEST_TIMESTAMP,
+        version: 5,
+      });
+
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+
+      await act(async () => {
+        await result.current.loadCloudProject(TEST_CLOUD_ID);
+      });
+
+      // setInternal should include serverVersion: 5
+      const lastSetCall = deps.setInternal.mock.calls.at(-1)![0];
+      const loadedState = typeof lastSetCall === 'function' ? lastSetCall(INITIAL_INTERNAL_STATE) : lastSetCall;
+      expect(loadedState).toMatchObject({
+        serverVersion: 5,
       });
     });
 

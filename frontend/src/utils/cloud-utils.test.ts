@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { type MutableRefObject } from 'react';
-import { withMutationLock } from './cloud-utils';
+import { withMutationLock, requireJwt } from './cloud-utils';
 
 function makeRef(initial: boolean): MutableRefObject<boolean> {
   return { current: initial };
@@ -35,6 +35,19 @@ describe('withMutationLock', () => {
     expect(fn).not.toHaveBeenCalled();
   });
 
+  it('returns executed: false for concurrent re-entrant call', async () => {
+    const ref = makeRef(false);
+    let innerResult: { executed: boolean } | undefined;
+
+    await withMutationLock(ref, async () => {
+      // Attempt a second lock while the first is held
+      innerResult = await withMutationLock(ref, async () => 'should not run');
+    });
+
+    expect(innerResult).toEqual({ executed: false });
+    expect(ref.current).toBe(false); // lock released after outer completes
+  });
+
   it('releases the lock even when fn throws', async () => {
     const ref = makeRef(false);
 
@@ -45,5 +58,17 @@ describe('withMutationLock', () => {
     ).rejects.toThrow('boom');
 
     expect(ref.current).toBe(false);
+  });
+});
+
+describe('requireJwt', () => {
+  it('returns JWT when getJwt returns a string', () => {
+    const getJwt = () => 'my-jwt-token';
+    expect(requireJwt(getJwt)).toBe('my-jwt-token');
+  });
+
+  it('throws when getJwt returns null', () => {
+    const getJwt = () => null;
+    expect(() => requireJwt(getJwt)).toThrow('Authentication required');
   });
 });

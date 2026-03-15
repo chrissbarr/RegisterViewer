@@ -172,7 +172,13 @@ describe('checkAndPullFreshVersion', () => {
 
     // Should pull despite throttle, stale version, and dirty state
     expect(getProject).toHaveBeenCalledTimes(1);
-    expect(params.dispatch).toHaveBeenCalled();
+    expect(params.dispatch).toHaveBeenCalledWith({
+      type: 'IMPORT_STATE',
+      registers: PARSED_DATA.registers,
+      values: PARSED_DATA.values,
+      project: PARSED_DATA.project,
+      addressUnitBits: PARSED_DATA.addressUnitBits,
+    });
     expect(params.updateCloudMetadata).toHaveBeenCalled();
   });
 
@@ -202,6 +208,7 @@ describe('checkAndPullFreshVersion', () => {
     await checkAndPullFreshVersion(params);
 
     expect(params.dispatch).not.toHaveBeenCalled();
+    expect(patchProjectState).not.toHaveBeenCalled();
     expect(params.updateCloudMetadata).not.toHaveBeenCalled();
   });
 

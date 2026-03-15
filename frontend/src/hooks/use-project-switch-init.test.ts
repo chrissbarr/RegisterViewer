@@ -221,6 +221,36 @@ describe('useProjectSwitchInit', () => {
       expect(saveProjectToCloudImpl).not.toHaveBeenCalled();
     });
 
+    it('skips save when departing project has serverVersion: 0 (falsy guard)', () => {
+      const deps = buildDeps();
+      // Project A has cloudId but serverVersion: 0
+      const cloudProjectV0 = makeProjectEntry({
+        localId: PROJECT_A_LOCAL_ID,
+        cloudId: PROJECT_A_CLOUD_ID,
+        storage: 'cloud',
+        serverVersion: 0, // falsy — should prevent best-effort save
+      });
+      deps.projects = [cloudProjectV0, deps.projects[1]];
+      deps.projectsRef.current = deps.projects;
+      deps.internalRef.current = {
+        ...initialInternalState,
+        cloudId: PROJECT_A_CLOUD_ID,
+        isOwner: true,
+        lastSavedVersion: 0, // differs from dataVersionRef.current (1) => dirty
+      };
+
+      const { rerender } = renderHook(
+        (props: { activeLocalId: string | null }) =>
+          useProjectSwitchInit({ ...deps, activeLocalId: props.activeLocalId }),
+        { initialProps: { activeLocalId: PROJECT_A_LOCAL_ID } },
+      );
+
+      rerender({ activeLocalId: PROJECT_B_LOCAL_ID });
+
+      // The `prevEntry.serverVersion` guard is falsy for 0, so save should NOT fire
+      expect(saveProjectToCloudImpl).not.toHaveBeenCalled();
+    });
+
     it('save failure does not block switch', async () => {
       const deps = buildDeps();
       deps.internalRef.current = {

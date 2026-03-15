@@ -50,7 +50,7 @@ describe('deriveSyncStatus', () => {
     [true, true, 'syncing' as const, 'syncing'],
     [true, false, 'syncing' as const, 'syncing'],
     [true, true, 'offline' as const, 'offline'],
-    [true, true, null, 'saved'],
+    [true, true, null, 'saved'], // BP-4: isDirty during debounce window shows 'saved' (intentional UX choice)
   ] as const)(
     'deriveSyncStatus(%s, %s, %s) -> %s',
     (canAutoSync, isDirty, asyncOverride, expected) => {
