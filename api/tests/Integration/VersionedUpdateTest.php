@@ -134,6 +134,27 @@ final class VersionedUpdateTest extends TestCase
     }
 
     #[Test]
+    public function concurrentSameVersionUpdateOnlyOneSucceeds(): void
+    {
+        $this->createTestProject();
+
+        $result1 = dbUpdateProjectVersioned(
+            self::$db, 'test_ver_001',
+            '{"registers":[],"registerValues":{}}',
+            'private', 'Edit A', 1, self::$testUserId,
+        );
+        $result2 = dbUpdateProjectVersioned(
+            self::$db, 'test_ver_001',
+            '{"registers":[],"registerValues":{}}',
+            'private', 'Edit B', 1, self::$testUserId,
+        );
+
+        $this->assertTrue($result1['updated']);
+        $this->assertFalse($result2['updated']);
+        $this->assertSame(2, $result2['version']);
+    }
+
+    #[Test]
     public function getProjectVersionFallsBackTo1ForMissingProject(): void
     {
         $v = dbGetProjectVersion(self::$db, 'nonexistent_xx');
