@@ -115,6 +115,8 @@ function dbUpdateProject(
  *
  * Version is in the request body (not ETag/If-Match) because this API
  * uses JSON-only request/response — simpler for the SPA client.
+ *
+ * @return array{updated: bool, version: int}
  */
 function dbUpdateProjectVersioned(
     PDO $db,

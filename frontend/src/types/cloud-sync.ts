@@ -16,6 +16,14 @@ export interface InternalCloudSyncState {
   conflict: { serverVersion: number } | null; // non-null triggers conflict UX
 }
 
+/**
+ * Default cloud sync state. Object.freeze prevents accidental mutation.
+ *
+ * React's useState setter uses Object.is comparison — passing this frozen
+ * object to setInternal(initialInternalState) will bail out of re-render if
+ * the state is already the initial state (same reference). This is intentional
+ * and desirable for the sign-out reset path.
+ */
 export const initialInternalState: InternalCloudSyncState = Object.freeze({
   cloudId: null,
   isOwner: false,
