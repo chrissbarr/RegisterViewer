@@ -42,7 +42,7 @@ import { useCloudSyncEngine, type SyncStatus } from '../hooks/use-cloud-sync-eng
 import { useAuthTransition } from '../hooks/use-auth-transition';
 import { useProjectSwitchInit } from '../hooks/use-project-switch-init';
 import { syncCloudProjectsFromServer } from '../utils/cloud-sync';
-import { checkAndPullFreshVersion } from '../utils/cloud-freshness';
+import { checkAndPullFreshVersion, type FreshnessCheckContext } from '../utils/cloud-freshness';
 import type { Visibility } from '../types/project';
 import { initialInternalState, type CloudSyncCore, type InternalCloudSyncState, type SyncResult } from '../types/cloud-sync';
 
@@ -185,6 +185,17 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     saveToCloud: saveToCloudStable,
   });
 
+  // Shared freshness check context — stable refs and callbacks reused across all call sites.
+  // All items are refs or stable functions — empty deps array is correct.
+  const freshnessCtx: FreshnessCheckContext = useMemo(
+    () => ({
+      internalRef, dataVersionRef, dispatch, needsVersionSyncRef,
+      lastFreshnessCheckRef, updateCloudMetadata, setInternal,
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
   // Active-project cloud operations (save, fork, delete, visibility, load)
   // Login guard state (loginRequired, pendingOpRef, dismissLogin) is now
   // absorbed into useActiveProjectCloudOps.
@@ -307,18 +318,11 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       const localId = activeLocalIdRef.current;
       if (!localId) return;
 
-      checkAndPullFreshVersion({
+      checkAndPullFreshVersion(freshnessCtx, {
         cloudId,
         knownVersion: serverVersion,
         localId,
         jwt,
-        internalRef,
-        dataVersionRef,
-        dispatch,
-        needsVersionSyncRef,
-        lastFreshnessCheckRef,
-        updateCloudMetadata,
-        setInternal,
       }).catch((err) => {
         if (import.meta.env.DEV) console.warn('Freshness check failed:', err);
       });
@@ -369,23 +373,16 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     const localId = activeLocalIdRef.current;
     if (!localId) return;
 
-    await checkAndPullFreshVersion({
+    await checkAndPullFreshVersion(freshnessCtx, {
       cloudId,
       knownVersion: 0,
       localId,
       jwt,
-      internalRef,
-      dataVersionRef,
-      dispatch,
-      needsVersionSyncRef,
-      lastFreshnessCheckRef,
-      updateCloudMetadata,
-      setInternal,
       force: true,
     });
 
     setInternal((prev) => ({ ...prev, conflict: null }));
-  }, [dispatch, getJwt, updateCloudMetadata, dataVersionRef, needsVersionSyncRef]);
+  }, [freshnessCtx, getJwt]);
 
   const actions = useMemo(
     () => ({

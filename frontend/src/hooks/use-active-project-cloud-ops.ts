@@ -2,7 +2,7 @@ import { useCallback, useMemo, useRef, useState, type Dispatch, type MutableRefO
 import { exportToObject, serializeState } from '../utils/storage';
 import { isCloudEnabled, ApiError } from '../utils/api-client';
 import { fetchAndParseCloudProject } from '../utils/cloud-project-loader';
-import { checkAndPullFreshVersion } from '../utils/cloud-freshness';
+import { checkAndPullFreshVersion, type FreshnessCheckContext } from '../utils/cloud-freshness';
 import { friendlyErrorMessage } from '../utils/friendly-error';
 import { buildProjectUrl } from '../utils/project-storage';
 import { setCloudUrl, clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock, requireJwt } from '../utils/cloud-utils';
@@ -58,18 +58,15 @@ async function handleConflictResult(params: ConflictHandlerParams): Promise<void
   try {
     const freshJwt = getJwt();
     if (freshJwt && capturedLocalId && existingCloudId) {
-      await checkAndPullFreshVersion({
+      const freshnessCtx: FreshnessCheckContext = {
+        internalRef, dataVersionRef, dispatch, needsVersionSyncRef,
+        lastFreshnessCheckRef, updateCloudMetadata, setInternal,
+      };
+      await checkAndPullFreshVersion(freshnessCtx, {
         cloudId: existingCloudId,
         knownVersion: 0,
         localId: capturedLocalId,
         jwt: freshJwt,
-        internalRef,
-        dataVersionRef,
-        dispatch,
-        needsVersionSyncRef,
-        lastFreshnessCheckRef,
-        updateCloudMetadata,
-        setInternal,
         force: true,
       });
     }

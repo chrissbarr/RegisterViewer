@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
-import { checkAndPullFreshVersion, type FreshnessCheckParams } from './cloud-freshness';
+import { checkAndPullFreshVersion, type FreshnessCheckContext, type FreshnessCheckCall } from './cloud-freshness';
 import { initialInternalState, type InternalCloudSyncState } from '../types/cloud-sync';
 
 // ── Mocks ────────────────────────────────────────────────────────────
@@ -37,12 +37,8 @@ function makeInternalState(overrides: Partial<InternalCloudSyncState> = {}): Int
   return { ...initialInternalState, cloudId: TEST_CLOUD_ID, lastSavedVersion: 5, serverVersion: 1, ...overrides };
 }
 
-function makeParams(overrides: Partial<FreshnessCheckParams> = {}): FreshnessCheckParams {
+function makeCtx(overrides: Partial<FreshnessCheckContext> = {}): FreshnessCheckContext {
   return {
-    cloudId: TEST_CLOUD_ID,
-    knownVersion: 1,
-    localId: TEST_LOCAL_ID,
-    jwt: TEST_JWT,
     internalRef: { current: makeInternalState() },
     dataVersionRef: { current: 5 }, // matches lastSavedVersion => not dirty
     dispatch: vi.fn(),
@@ -50,6 +46,16 @@ function makeParams(overrides: Partial<FreshnessCheckParams> = {}): FreshnessChe
     lastFreshnessCheckRef: { current: 0 }, // never checked before
     updateCloudMetadata: vi.fn(),
     setInternal: vi.fn(),
+    ...overrides,
+  };
+}
+
+function makeCall(overrides: Partial<FreshnessCheckCall> = {}): FreshnessCheckCall {
+  return {
+    cloudId: TEST_CLOUD_ID,
+    knownVersion: 1,
+    localId: TEST_LOCAL_ID,
+    jwt: TEST_JWT,
     ...overrides,
   };
 }
@@ -71,7 +77,8 @@ beforeEach(() => {
 
 describe('checkAndPullFreshVersion', () => {
   it('pulls fresh version when server has newer version', async () => {
-    const params = makeParams();
+    const ctx = makeCtx();
+    const call = makeCall();
     (getProject as Mock).mockResolvedValue({
       data: { version: 1, registers: [], registerValues: {} },
       updatedAt: '2024-06-01T00:00:00Z',
@@ -79,11 +86,11 @@ describe('checkAndPullFreshVersion', () => {
     });
     (parseProjectData as Mock).mockReturnValue(PARSED_DATA);
 
-    await checkAndPullFreshVersion(params);
+    await checkAndPullFreshVersion(ctx, call);
 
     expect(getProject).toHaveBeenCalledTimes(1);
     expect(getProject).toHaveBeenCalledWith(TEST_CLOUD_ID, TEST_JWT);
-    expect(params.dispatch).toHaveBeenCalledWith({
+    expect(ctx.dispatch).toHaveBeenCalledWith({
       type: 'IMPORT_STATE',
       registers: PARSED_DATA.registers,
       values: PARSED_DATA.values,
@@ -91,74 +98,80 @@ describe('checkAndPullFreshVersion', () => {
       addressUnitBits: PARSED_DATA.addressUnitBits,
     });
     expect(patchProjectState).toHaveBeenCalledWith(TEST_LOCAL_ID, expect.anything());
-    expect(params.needsVersionSyncRef.current).toBe(true);
-    expect(params.setInternal).toHaveBeenCalled();
-    expect(params.updateCloudMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, {
+    expect(ctx.needsVersionSyncRef.current).toBe(true);
+    expect(ctx.setInternal).toHaveBeenCalled();
+    expect(ctx.updateCloudMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, {
       cloudSavedAt: '2024-06-01T00:00:00Z',
       serverVersion: 3,
     });
   });
 
   it('skips when server version equals known version (cache is fresh)', async () => {
-    const params = makeParams({ knownVersion: 2 });
+    const ctx = makeCtx();
+    const call = makeCall({ knownVersion: 2 });
     (getProject as Mock).mockResolvedValue({
       data: {},
       updatedAt: '2024-06-01T00:00:00Z',
       version: 2, // same as knownVersion
     });
 
-    await checkAndPullFreshVersion(params);
+    await checkAndPullFreshVersion(ctx, call);
 
     expect(getProject).toHaveBeenCalledTimes(1);
-    expect(params.dispatch).not.toHaveBeenCalled();
-    expect(params.updateCloudMetadata).not.toHaveBeenCalled();
+    expect(ctx.dispatch).not.toHaveBeenCalled();
+    expect(ctx.updateCloudMetadata).not.toHaveBeenCalled();
   });
 
   it('skips when server version is less than known version', async () => {
-    const params = makeParams({ knownVersion: 5 });
+    const ctx = makeCtx();
+    const call = makeCall({ knownVersion: 5 });
     (getProject as Mock).mockResolvedValue({
       data: {},
       updatedAt: '2024-06-01T00:00:00Z',
       version: 3, // less than knownVersion
     });
 
-    await checkAndPullFreshVersion(params);
+    await checkAndPullFreshVersion(ctx, call);
 
-    expect(params.dispatch).not.toHaveBeenCalled();
+    expect(ctx.dispatch).not.toHaveBeenCalled();
   });
 
   it('skips when project is dirty (user has edited)', async () => {
-    const params = makeParams({
+    const ctx = makeCtx({
       dataVersionRef: { current: 10 }, // different from lastSavedVersion (5)
     });
+    const call = makeCall();
     (getProject as Mock).mockResolvedValue({
       data: {},
       updatedAt: '2024-06-01T00:00:00Z',
       version: 3, // newer
     });
 
-    await checkAndPullFreshVersion(params);
+    await checkAndPullFreshVersion(ctx, call);
 
     expect(getProject).toHaveBeenCalledTimes(1);
-    expect(params.dispatch).not.toHaveBeenCalled();
+    expect(ctx.dispatch).not.toHaveBeenCalled();
   });
 
   it('skips when throttled (second call within 30s)', async () => {
-    const params = makeParams({
+    const ctx = makeCtx({
       lastFreshnessCheckRef: { current: Date.now() - 5_000 }, // 5 seconds ago
     });
+    const call = makeCall();
 
-    await checkAndPullFreshVersion(params);
+    await checkAndPullFreshVersion(ctx, call);
 
     expect(getProject).not.toHaveBeenCalled();
-    expect(params.dispatch).not.toHaveBeenCalled();
+    expect(ctx.dispatch).not.toHaveBeenCalled();
   });
 
   it('force: bypasses throttle, version check, and isDirty guard', async () => {
-    const params = makeParams({
-      knownVersion: 5,
+    const ctx = makeCtx({
       lastFreshnessCheckRef: { current: Date.now() - 1_000 }, // recent = throttled
       dataVersionRef: { current: 10 }, // dirty
+    });
+    const call = makeCall({
+      knownVersion: 5,
       force: true,
     });
     (getProject as Mock).mockResolvedValue({
@@ -168,22 +181,23 @@ describe('checkAndPullFreshVersion', () => {
     });
     (parseProjectData as Mock).mockReturnValue(PARSED_DATA);
 
-    await checkAndPullFreshVersion(params);
+    await checkAndPullFreshVersion(ctx, call);
 
     // Should pull despite throttle, stale version, and dirty state
     expect(getProject).toHaveBeenCalledTimes(1);
-    expect(params.dispatch).toHaveBeenCalledWith({
+    expect(ctx.dispatch).toHaveBeenCalledWith({
       type: 'IMPORT_STATE',
       registers: PARSED_DATA.registers,
       values: PARSED_DATA.values,
       project: PARSED_DATA.project,
       addressUnitBits: PARSED_DATA.addressUnitBits,
     });
-    expect(params.updateCloudMetadata).toHaveBeenCalled();
+    expect(ctx.updateCloudMetadata).toHaveBeenCalled();
   });
 
   it('calls getProject exactly once (single-fetch pattern)', async () => {
-    const params = makeParams();
+    const ctx = makeCtx();
+    const call = makeCall();
     (getProject as Mock).mockResolvedValue({
       data: { version: 1, registers: [], registerValues: {} },
       updatedAt: '2024-06-01T00:00:00Z',
@@ -191,13 +205,14 @@ describe('checkAndPullFreshVersion', () => {
     });
     (parseProjectData as Mock).mockReturnValue(PARSED_DATA);
 
-    await checkAndPullFreshVersion(params);
+    await checkAndPullFreshVersion(ctx, call);
 
     expect(getProject).toHaveBeenCalledTimes(1);
   });
 
   it('does not update state when parseProjectData returns null', async () => {
-    const params = makeParams();
+    const ctx = makeCtx();
+    const call = makeCall();
     (getProject as Mock).mockResolvedValue({
       data: 'invalid-data',
       updatedAt: '2024-06-01T00:00:00Z',
@@ -205,15 +220,16 @@ describe('checkAndPullFreshVersion', () => {
     });
     (parseProjectData as Mock).mockReturnValue(null);
 
-    await checkAndPullFreshVersion(params);
+    await checkAndPullFreshVersion(ctx, call);
 
-    expect(params.dispatch).not.toHaveBeenCalled();
+    expect(ctx.dispatch).not.toHaveBeenCalled();
     expect(patchProjectState).not.toHaveBeenCalled();
-    expect(params.updateCloudMetadata).not.toHaveBeenCalled();
+    expect(ctx.updateCloudMetadata).not.toHaveBeenCalled();
   });
 
   it('preserves existing UI fields (mapTableWidth, mapShowGaps, etc.) during pull', async () => {
-    const params = makeParams();
+    const ctx = makeCtx();
+    const call = makeCall();
     (getProject as Mock).mockResolvedValue({
       data: { version: 1, registers: [], registerValues: {} },
       updatedAt: '2024-06-01T00:00:00Z',
@@ -242,7 +258,7 @@ describe('checkAndPullFreshVersion', () => {
       mapSortDescending: true,
     });
 
-    await checkAndPullFreshVersion(params);
+    await checkAndPullFreshVersion(ctx, call);
 
     expect(patchProjectState).toHaveBeenCalledWith(
       TEST_LOCAL_ID,
@@ -256,7 +272,8 @@ describe('checkAndPullFreshVersion', () => {
   });
 
   it('falls back to defaults when no existing project data', async () => {
-    const params = makeParams();
+    const ctx = makeCtx();
+    const call = makeCall();
     (getProject as Mock).mockResolvedValue({
       data: { version: 1, registers: [], registerValues: {} },
       updatedAt: '2024-06-01T00:00:00Z',
@@ -265,7 +282,7 @@ describe('checkAndPullFreshVersion', () => {
     (parseProjectData as Mock).mockReturnValue(PARSED_DATA);
     (loadProject as Mock).mockReturnValue(null);
 
-    await checkAndPullFreshVersion(params);
+    await checkAndPullFreshVersion(ctx, call);
 
     expect(patchProjectState).toHaveBeenCalledWith(
       TEST_LOCAL_ID,
@@ -279,9 +296,10 @@ describe('checkAndPullFreshVersion', () => {
   });
 
   it('updates lastFreshnessCheckRef timestamp', async () => {
-    const params = makeParams({
+    const ctx = makeCtx({
       lastFreshnessCheckRef: { current: 0 },
     });
+    const call = makeCall();
     (getProject as Mock).mockResolvedValue({
       data: {},
       updatedAt: '2024-06-01T00:00:00Z',
@@ -289,10 +307,10 @@ describe('checkAndPullFreshVersion', () => {
     });
 
     const before = Date.now();
-    await checkAndPullFreshVersion(params);
+    await checkAndPullFreshVersion(ctx, call);
     const after = Date.now();
 
-    expect(params.lastFreshnessCheckRef.current).toBeGreaterThanOrEqual(before);
-    expect(params.lastFreshnessCheckRef.current).toBeLessThanOrEqual(after);
+    expect(ctx.lastFreshnessCheckRef.current).toBeGreaterThanOrEqual(before);
+    expect(ctx.lastFreshnessCheckRef.current).toBeLessThanOrEqual(after);
   });
 });

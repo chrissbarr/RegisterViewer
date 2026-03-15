@@ -6,11 +6,8 @@ import { serializeState, deserializeState } from './storage';
 import type { ImportStateAction } from '../context/app-context';
 import type { InternalCloudSyncState, CloudMetadataUpdate } from '../types/cloud-sync';
 
-export interface FreshnessCheckParams {
-  cloudId: string;
-  knownVersion: number;
-  localId: string;
-  jwt: string;
+/** Stable refs and callbacks — same across all freshness check calls within a provider. */
+export interface FreshnessCheckContext {
   internalRef: MutableRefObject<InternalCloudSyncState>;
   dataVersionRef: MutableRefObject<number>;
   dispatch: (action: ImportStateAction) => void;
@@ -18,6 +15,14 @@ export interface FreshnessCheckParams {
   lastFreshnessCheckRef: MutableRefObject<number>;
   updateCloudMetadata: (localId: string, updates: CloudMetadataUpdate) => void;
   setInternal: (updater: (prev: InternalCloudSyncState) => InternalCloudSyncState) => void;
+}
+
+/** Per-call parameters that vary on each invocation. */
+export interface FreshnessCheckCall {
+  cloudId: string;
+  knownVersion: number;
+  localId: string;
+  jwt: string;
   force?: boolean;
 }
 
@@ -34,14 +39,16 @@ const FRESHNESS_CHECK_INTERVAL = 30_000; // 30 seconds
  * Uses a single fetch — the full project data from getProject() is parsed
  * directly via parseProjectData() to avoid a double-fetch.
  */
-export async function checkAndPullFreshVersion(params: FreshnessCheckParams): Promise<void> {
+export async function checkAndPullFreshVersion(
+  ctx: FreshnessCheckContext,
+  call: FreshnessCheckCall,
+): Promise<void> {
   const {
-    cloudId, knownVersion, localId, jwt,
     internalRef, dataVersionRef, dispatch,
     needsVersionSyncRef, lastFreshnessCheckRef,
     updateCloudMetadata, setInternal,
-    force = false,
-  } = params;
+  } = ctx;
+  const { cloudId, knownVersion, localId, jwt, force = false } = call;
 
   // Throttle check (visibilitychange can fire rapidly)
   if (!force && Date.now() - lastFreshnessCheckRef.current < FRESHNESS_CHECK_INTERVAL) return;

@@ -3,7 +3,7 @@ import { buildProjectUrl, loadProject } from '../utils/project-storage';
 import { setCloudUrl, clearCloudUrl } from '../utils/cloud-utils';
 import { exportToObject, deserializeState } from '../utils/storage';
 import { saveProjectToCloudImpl } from '../utils/cloud-operations';
-import { checkAndPullFreshVersion } from '../utils/cloud-freshness';
+import { checkAndPullFreshVersion, type FreshnessCheckContext } from '../utils/cloud-freshness';
 import { type CloudSyncCore, initialInternalState } from '../types/cloud-sync';
 import type { CloudMetadataUpdate } from '../types/cloud-sync';
 import type { ProjectListEntry } from '../types/project';
@@ -38,7 +38,7 @@ interface UseProjectSwitchInitDeps {
  */
 export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
   const {
-    core: { internalRef, activeLocalIdRef: _activeLocalIdRef, setInternal },
+    core: { internalRef, setInternal },
     activeLocalId, projects,
     projectsRef, needsVersionSyncRef, syncTimerRef,
     dataVersionRef, getJwt, lastFreshnessCheckRef, updateCloudMetadata, dispatch,
@@ -131,18 +131,15 @@ export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
       // Freshness check for incoming project
       const jwt = getJwt();
       if (jwt && entry?.serverVersion) {
-        checkAndPullFreshVersion({
+        const freshnessCtx: FreshnessCheckContext = {
+          internalRef, dataVersionRef, dispatch, needsVersionSyncRef,
+          lastFreshnessCheckRef, updateCloudMetadata, setInternal,
+        };
+        checkAndPullFreshVersion(freshnessCtx, {
           cloudId,
           knownVersion: entry.serverVersion,
           localId: activeLocalId,
           jwt,
-          internalRef,
-          dataVersionRef,
-          dispatch,
-          needsVersionSyncRef,
-          lastFreshnessCheckRef,
-          updateCloudMetadata,
-          setInternal,
         }).catch((err) => {
           if (import.meta.env.DEV) console.warn('Freshness check failed:', err);
         });
