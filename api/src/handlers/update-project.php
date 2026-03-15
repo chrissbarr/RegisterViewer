@@ -11,10 +11,13 @@ function handleUpdateProject(PDO $db, string $id, array $auth, array $parsed): A
 
     $body = $parsed['assoc'];
 
-    // Validate version field (required for optimistic concurrency)
+    // Validate version field for optimistic concurrency.
+    // When omitted (stale frontend), fall back to the server's current version
+    // so the save succeeds without concurrency protection — better than a hard 400.
+    // TODO: Remove fallback after one release cycle (all frontends will send version).
     $clientVersion = $body['version'] ?? null;
     if ($clientVersion === null) {
-        return new ApiResponse(['error' => 'version field is required'], 400);
+        $clientVersion = dbGetProjectVersion($db, $id);
     }
     if (!is_int($clientVersion) || $clientVersion < 1) {
         return new ApiResponse(['error' => 'version must be a positive integer'], 400);
