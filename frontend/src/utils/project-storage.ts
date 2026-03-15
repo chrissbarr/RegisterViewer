@@ -310,6 +310,8 @@ export function evictProjectData(localId: string): void {
  * Used for quota pressure — only evicts storage:'cloud' projects (they can
  * be re-fetched). Manifest entry stays so the project still appears in the list.
  * Uses localSavedAt as LRU proxy (best available — no lastViewedAt field).
+ *
+ * Note: loadManifest() uses an in-memory cache — no JSON.parse on repeated calls.
  */
 export function evictLeastRecentCloudProject(excludeLocalId: string | null): boolean {
   const manifest = loadManifest();
