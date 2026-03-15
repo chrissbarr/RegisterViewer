@@ -64,6 +64,30 @@ describe('saveProjectToCloudImpl', () => {
     expect(updateProject).toHaveBeenCalledWith('cloud-abc', payload, jwt, 1);
   });
 
+  it('defaults to version 1 when serverVersion is undefined', async () => {
+    (updateProject as Mock).mockResolvedValue({
+      id: 'cloud-abc',
+      updatedAt: '2024-01-02T00:00:00Z',
+      version: 2,
+    });
+
+    await saveProjectToCloudImpl(payload, 'cloud-abc', jwt, undefined);
+
+    expect(updateProject).toHaveBeenCalledWith('cloud-abc', payload, jwt, 1);
+  });
+
+  it('passes explicit serverVersion when provided', async () => {
+    (updateProject as Mock).mockResolvedValue({
+      id: 'cloud-abc',
+      updatedAt: '2024-01-02T00:00:00Z',
+      version: 4,
+    });
+
+    await saveProjectToCloudImpl(payload, 'cloud-abc', jwt, 3);
+
+    expect(updateProject).toHaveBeenCalledWith('cloud-abc', payload, jwt, 3);
+  });
+
   it('returns not-found when update gets 404', async () => {
     (updateProject as Mock).mockRejectedValue(
       new ApiError(404, { error: 'Not found' }),

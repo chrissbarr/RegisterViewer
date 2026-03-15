@@ -446,6 +446,35 @@ describe('useActiveProjectCloudOps', () => {
       expect(hasConflictFallback).toBe(true);
     });
 
+    it('passes undefined (not 0) when serverVersion is 0 (falsy coercion guard)', async () => {
+      const deps = makeDefaultDeps();
+      deps.internalRef.current = {
+        ...INITIAL_INTERNAL_STATE,
+        cloudId: TEST_CLOUD_ID,
+        isOwner: true,
+        serverVersion: 0, // falsy — should become undefined, not 0
+      };
+      (saveProjectToCloudImpl as Mock).mockResolvedValue({
+        kind: 'updated',
+        cloudId: TEST_CLOUD_ID,
+        timestamp: TEST_TIMESTAMP,
+        version: 1,
+      });
+
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+
+      await act(async () => {
+        await result.current.saveToCloud();
+      });
+
+      expect(saveProjectToCloudImpl).toHaveBeenCalledWith(
+        expect.anything(),
+        TEST_CLOUD_ID,
+        TEST_JWT,
+        undefined, // NOT 0 — the `serverVersion > 0 ? serverVersion : undefined` guard
+      );
+    });
+
     it('successful save updates serverVersion', async () => {
       const deps = makeDefaultDeps();
       deps.internalRef.current = {
