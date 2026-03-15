@@ -12,6 +12,11 @@ vi.mock('./api-client', () => ({
       this.errorBody = errorBody;
     }
   },
+  isConflictError: (err: unknown): boolean => {
+    if (!(err instanceof Error) || !('status' in err) || !('errorBody' in err)) return false;
+    const e = err as Error & { status: number; errorBody: Record<string, unknown> };
+    return e.status === 409 && typeof e.errorBody?.currentVersion === 'number';
+  },
   createProject: vi.fn(),
   updateProject: vi.fn(),
   patchProjectVisibility: vi.fn(),

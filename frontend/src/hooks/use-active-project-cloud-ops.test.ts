@@ -362,8 +362,11 @@ describe('useActiveProjectCloudOps', () => {
       });
       expect(hasServerVersionUpdate).toBe(true);
 
-      // checkAndPullFreshVersion should have been called with force: true
+      // checkAndPullFreshVersion should have been called with (ctx, call) two-arg signature
       expect(checkAndPullFreshVersion).toHaveBeenCalledWith(
+        expect.objectContaining({
+          lastFreshnessCheckRef: deps.lastFreshnessCheckRef,
+        }),
         expect.objectContaining({
           cloudId: TEST_CLOUD_ID,
           force: true,
@@ -397,6 +400,10 @@ describe('useActiveProjectCloudOps', () => {
       expect(checkAndPullFreshVersion).toHaveBeenCalledWith(
         expect.objectContaining({
           lastFreshnessCheckRef: deps.lastFreshnessCheckRef,
+        }),
+        expect.objectContaining({
+          cloudId: TEST_CLOUD_ID,
+          force: true,
         }),
       );
     });
