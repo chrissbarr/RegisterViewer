@@ -33,13 +33,17 @@ export type SaveConflictResult = {
 export type SaveResult = SaveCreatedResult | SaveUpdatedResult | SaveNotFoundResult | SaveConflictResult;
 
 /**
- * Save a project to the cloud. Creates or updates depending on whether
- * existingCloudId is provided.
+ * Save project data to the cloud (create or update).
  *
  * Returns a discriminated union:
  * - `created` — new cloud project created
  * - `updated` — existing cloud project updated
  * - `not-found` — 404 on update (project deleted server-side)
+ * - `conflict` — 409 on update (version mismatch)
+ *
+ * @param serverVersion - Last known server version. Defaults to 1 when omitted
+ *   (first save for a project that predates version tracking). Callers should
+ *   pass `undefined` explicitly when the version is unknown (serverVersion: 0).
  */
 export async function saveProjectToCloudImpl(
   jsonPayload: unknown,
@@ -53,6 +57,7 @@ export async function saveProjectToCloudImpl(
         existingCloudId,
         jsonPayload,
         jwt,
+        // Default to version 1 for projects created before version tracking existed.
         serverVersion ?? 1,
       );
       return {
