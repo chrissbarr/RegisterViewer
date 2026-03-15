@@ -6,11 +6,83 @@ import { checkAndPullFreshVersion } from '../utils/cloud-freshness';
 import { friendlyErrorMessage } from '../utils/friendly-error';
 import { buildProjectUrl } from '../utils/project-storage';
 import { setCloudUrl, clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock, requireJwt } from '../utils/cloud-utils';
-import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
+import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl, type SaveConflictResult } from '../utils/cloud-operations';
 import { DEFAULT_PROJECT_NAME, type Visibility } from '../types/project';
 import type { AppState } from '../types/register';
-import { type CloudSyncCore, type CloudMetadataUpdate, initialInternalState } from '../types/cloud-sync';
+import { type CloudSyncCore, type CloudMetadataUpdate, type InternalCloudSyncState, initialInternalState } from '../types/cloud-sync';
 import type { ImportStateAction } from '../context/app-context';
+
+interface ConflictHandlerParams {
+  result: SaveConflictResult;
+  preDataVersion: number;
+  dataVersionRef: MutableRefObject<number>;
+  capturedLocalId: string | null;
+  existingCloudId: string | null;
+  activeLocalIdRef: MutableRefObject<string | null>;
+  internalRef: MutableRefObject<InternalCloudSyncState>;
+  lastFreshnessCheckRef: MutableRefObject<number>;
+  needsVersionSyncRef: MutableRefObject<boolean>;
+  updateCloudMetadata: (localId: string, updates: CloudMetadataUpdate) => void;
+  setInternal: (updater: (prev: InternalCloudSyncState) => InternalCloudSyncState) => void;
+  dispatch: (action: ImportStateAction) => void;
+  getJwt: () => string | null;
+}
+
+async function handleConflictResult(params: ConflictHandlerParams): Promise<void> {
+  const {
+    result, preDataVersion, dataVersionRef, capturedLocalId, existingCloudId,
+    activeLocalIdRef, internalRef, lastFreshnessCheckRef, needsVersionSyncRef,
+    updateCloudMetadata, setInternal, dispatch, getJwt,
+  } = params;
+
+  const stillDirty = dataVersionRef.current !== preDataVersion;
+
+  if (stillDirty) {
+    // Dirty 409: user edited during save — update version + show conflict UX in one call
+    setInternal((prev) => ({
+      ...prev,
+      status: 'idle',
+      serverVersion: result.serverVersion,
+      conflict: { serverVersion: result.serverVersion },
+    }));
+    return;
+  }
+
+  // Clean 409: no local edits — update version and pull server version silently
+  setInternal((prev) => ({
+    ...prev,
+    status: 'idle',
+    serverVersion: result.serverVersion,
+  }));
+
+  try {
+    const freshJwt = getJwt();
+    if (freshJwt && capturedLocalId && existingCloudId) {
+      await checkAndPullFreshVersion({
+        cloudId: existingCloudId,
+        knownVersion: 0,
+        localId: capturedLocalId,
+        jwt: freshJwt,
+        internalRef,
+        dataVersionRef,
+        dispatch,
+        needsVersionSyncRef,
+        lastFreshnessCheckRef,
+        updateCloudMetadata,
+        setInternal,
+        force: true,
+      });
+    }
+  } catch {
+    // Pull failed — show conflict UX as fallback
+    if (capturedLocalId !== null && activeLocalIdRef.current === capturedLocalId) {
+      setInternal((prev) => ({
+        ...prev,
+        conflict: { serverVersion: result.serverVersion },
+      }));
+    }
+  }
+}
 
 interface ActiveProjectCloudOpsDeps {
   core: CloudSyncCore;
@@ -148,52 +220,11 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
         }
 
         if (result.kind === 'conflict') {
-          // Update serverVersion from 409 response (prevents livelock)
-          setInternal((prev) => ({
-            ...prev,
-            status: 'idle',
-            serverVersion: result.serverVersion,
-          }));
-
-          // Check if user has made edits since we started saving
-          const stillDirty = dataVersionRef.current !== preDataVersion;
-
-          if (stillDirty) {
-            // Dirty 409: user edited during save — show conflict UX
-            setInternal((prev) => ({
-              ...prev,
-              conflict: { serverVersion: result.serverVersion },
-            }));
-          } else {
-            // Clean 409: no local edits — pull server version silently
-            try {
-              const freshJwt2 = getJwt();
-              if (freshJwt2 && capturedLocalId && existingCloudId) {
-                await checkAndPullFreshVersion({
-                  cloudId: existingCloudId,
-                  knownVersion: 0,
-                  localId: capturedLocalId,
-                  jwt: freshJwt2,
-                  internalRef,
-                  dataVersionRef,
-                  dispatch,
-                  needsVersionSyncRef,
-                  lastFreshnessCheckRef,
-                  updateCloudMetadata,
-                  setInternal,
-                  force: true,
-                });
-              }
-            } catch {
-              // Pull failed — show conflict UX as fallback
-              if (capturedLocalId !== null && activeLocalIdRef.current === capturedLocalId) {
-                setInternal((prev) => ({
-                  ...prev,
-                  conflict: { serverVersion: result.serverVersion },
-                }));
-              }
-            }
-          }
+          await handleConflictResult({
+            result, preDataVersion, dataVersionRef, capturedLocalId, existingCloudId,
+            activeLocalIdRef, internalRef, lastFreshnessCheckRef, needsVersionSyncRef,
+            updateCloudMetadata, setInternal, dispatch, getJwt,
+          });
           return;
         }
 
