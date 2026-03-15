@@ -14,15 +14,18 @@ vi.mock('./cloud-project-loader', () => ({
 
 vi.mock('./project-storage', () => ({
   patchProjectState: vi.fn(),
+  loadProject: vi.fn(),
 }));
 
 vi.mock('./storage', () => ({
   serializeState: vi.fn((state: unknown) => state),
+  deserializeState: vi.fn((state: unknown) => state),
 }));
 
 import { getProject } from './api-client';
 import { parseProjectData } from './cloud-project-loader';
-import { patchProjectState } from './project-storage';
+import { patchProjectState, loadProject } from './project-storage';
+import { deserializeState } from './storage';
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -200,6 +203,72 @@ describe('checkAndPullFreshVersion', () => {
 
     expect(params.dispatch).not.toHaveBeenCalled();
     expect(params.updateCloudMetadata).not.toHaveBeenCalled();
+  });
+
+  it('preserves existing UI fields (mapTableWidth, mapShowGaps, etc.) during pull', async () => {
+    const params = makeParams();
+    (getProject as Mock).mockResolvedValue({
+      data: { version: 1, registers: [], registerValues: {} },
+      updatedAt: '2024-06-01T00:00:00Z',
+      version: 3,
+    });
+    (parseProjectData as Mock).mockReturnValue(PARSED_DATA);
+
+    // Mock existing project with custom UI state
+    (loadProject as Mock).mockReturnValue({
+      localId: TEST_LOCAL_ID,
+      state: {
+        registers: [],
+        activeRegisterId: 'REG_X',
+        registerValues: {},
+        mapTableWidth: 64,
+        mapShowGaps: false,
+        mapSortDescending: true,
+      },
+    });
+    (deserializeState as Mock).mockReturnValue({
+      registers: [],
+      activeRegisterId: 'REG_X',
+      registerValues: {},
+      mapTableWidth: 64,
+      mapShowGaps: false,
+      mapSortDescending: true,
+    });
+
+    await checkAndPullFreshVersion(params);
+
+    expect(patchProjectState).toHaveBeenCalledWith(
+      TEST_LOCAL_ID,
+      expect.objectContaining({
+        activeRegisterId: 'REG_X',
+        mapTableWidth: 64,
+        mapShowGaps: false,
+        mapSortDescending: true,
+      }),
+    );
+  });
+
+  it('falls back to defaults when no existing project data', async () => {
+    const params = makeParams();
+    (getProject as Mock).mockResolvedValue({
+      data: { version: 1, registers: [], registerValues: {} },
+      updatedAt: '2024-06-01T00:00:00Z',
+      version: 3,
+    });
+    (parseProjectData as Mock).mockReturnValue(PARSED_DATA);
+    (loadProject as Mock).mockReturnValue(null);
+
+    await checkAndPullFreshVersion(params);
+
+    expect(patchProjectState).toHaveBeenCalledWith(
+      TEST_LOCAL_ID,
+      expect.objectContaining({
+        activeRegisterId: 'r1', // first register ID from PARSED_DATA
+        mapTableWidth: 32,
+        mapShowGaps: true,
+        mapSortDescending: false,
+      }),
+    );
   });
 
   it('updates lastFreshnessCheckRef timestamp', async () => {
