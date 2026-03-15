@@ -118,7 +118,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
         const jsonPayload = exportToObject(appStateRef.current);
         const freshJwt = requireJwt(getJwt);
         const preDataVersion = dataVersionRef.current;
-        const result = await saveProjectToCloudImpl(jsonPayload, existingCloudId, freshJwt, serverVersion || undefined);
+        const result = await saveProjectToCloudImpl(jsonPayload, existingCloudId, freshJwt, serverVersion > 0 ? serverVersion : undefined);
 
         // Guard: only update internal cloud state if still on the same
         // saved project. When capturedLocalId is null (unsaved project),
