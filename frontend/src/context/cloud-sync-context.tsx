@@ -190,7 +190,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   // absorbed into useActiveProjectCloudOps.
   const { loginRequired, pendingOpRef, dismissLogin, ...rawActiveOps } = useActiveProjectCloudOps({
     core, appStateRef,
-    dataVersionRef, mutationLockRef, needsVersionSyncRef,
+    dataVersionRef, mutationLockRef, needsVersionSyncRef, lastFreshnessCheckRef,
     updateCloudMetadata, createNewProject, getJwt, dispatch,
   });
   saveToCloudRef.current = rawActiveOps.saveToCloud;

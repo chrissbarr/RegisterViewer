@@ -18,6 +18,7 @@ interface ActiveProjectCloudOpsDeps {
   dataVersionRef: MutableRefObject<number>;
   mutationLockRef: MutableRefObject<boolean>;
   needsVersionSyncRef: MutableRefObject<boolean>;
+  lastFreshnessCheckRef: MutableRefObject<number>;
   updateCloudMetadata: (localId: string, updates: CloudMetadataUpdate) => void;
   createNewProject: (name: string, state: ReturnType<typeof serializeState>) => string;
   getJwt: () => string | null;
@@ -50,7 +51,7 @@ interface ActiveProjectCloudOps {
 export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): ActiveProjectCloudOps {
   const {
     core: { internalRef, activeLocalIdRef, setInternal },
-    appStateRef, dataVersionRef, mutationLockRef, needsVersionSyncRef,
+    appStateRef, dataVersionRef, mutationLockRef, needsVersionSyncRef, lastFreshnessCheckRef,
     updateCloudMetadata, createNewProject, getJwt, dispatch,
   } = deps;
 
@@ -177,7 +178,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
                   dataVersionRef,
                   dispatch,
                   needsVersionSyncRef,
-                  lastFreshnessCheckRef: { current: 0 } as MutableRefObject<number>,
+                  lastFreshnessCheckRef,
                   updateCloudMetadata,
                   setInternal,
                   force: true,
@@ -225,7 +226,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
       }
     });
     return lockResult.executed;
-  }, [updateCloudMetadata, applyCreatedResult, mutationLockRef, dataVersionRef, getJwt, internalRef, appStateRef, activeLocalIdRef, setInternal, dispatch, needsVersionSyncRef]);
+  }, [updateCloudMetadata, applyCreatedResult, mutationLockRef, dataVersionRef, getJwt, internalRef, appStateRef, activeLocalIdRef, setInternal, dispatch, needsVersionSyncRef, lastFreshnessCheckRef]);
 
   const fork = useCallback(async () => {
     if (!isCloudEnabled()) return;
