@@ -57,7 +57,7 @@ jobs:
           cp api/.htaccess deploy/api/
 
       - name: Deploy via FTPS
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.6
+        uses: SamKirkland/FTP-Deploy-Action@v4.4.0
         with:
           server: ${{ secrets.FTP_HOST }}
           username: ${{ secrets.FTP_USERNAME }}
