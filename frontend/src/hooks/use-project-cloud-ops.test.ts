@@ -42,7 +42,7 @@ function makeInitialState() {
   return { ...initialInternalState };
 }
 
-function makeProjectList(entries: Array<{ localId: string; cloudId?: string | null }>): ProjectListEntry[] {
+function makeProjectList(entries: Array<{ localId: string; cloudId?: string | null; serverVersion?: number | null }>): ProjectListEntry[] {
   return entries.map(p => ({
     localId: p.localId,
     cloudId: p.cloudId ?? null,
@@ -51,6 +51,7 @@ function makeProjectList(entries: Array<{ localId: string; cloudId?: string | nu
     createdAt: '2026-01-01T00:00:00Z',
     localSavedAt: '2026-01-01T00:00:00Z',
     cloudSavedAt: null,
+    serverVersion: p.serverVersion ?? null,
     storage: (p.cloudId ?? null) !== null ? 'cloud' as const : 'local' as const,
   }));
 }
@@ -138,10 +139,15 @@ describe('useProjectCloudOps', () => {
     });
 
     it('updates an existing non-active cloud project', async () => {
-      const deps = makeDeps({ activeLocalId: 'other-local' });
+      const deps = makeDeps({
+        activeLocalId: 'other-local',
+        projects: makeProjectList([{ localId: 'local-1', cloudId: 'cloud-1', serverVersion: 8 }]),
+      });
+      (loadProject as Mock).mockReturnValue({ state: '{}', cloudId: 'cloud-1', serverVersion: 7 });
       (saveProjectToCloudImpl as Mock).mockResolvedValue({
         kind: 'updated',
         timestamp: '2026-01-02T00:00:00Z',
+        version: 9,
       });
 
       const { result } = renderHook(() => useProjectCloudOps(deps));
@@ -150,11 +156,44 @@ describe('useProjectCloudOps', () => {
         await result.current.saveProjectToCloud('local-1');
       });
 
+      expect(saveProjectToCloudImpl).toHaveBeenCalledWith(
+        { version: 1, registers: [] },
+        'cloud-1',
+        'mock-jwt',
+        8,
+      );
       expect(deps.updateCloudMetadata).toHaveBeenCalledWith('local-1', {
         cloudSavedAt: '2026-01-02T00:00:00Z',
         storage: 'cloud',
+        serverVersion: 9,
       });
       expect(setCloudUrl).not.toHaveBeenCalled();
+    });
+
+    it('uses stored serverVersion when manifest version is missing for non-active save', async () => {
+      const deps = makeDeps({
+        activeLocalId: 'other-local',
+        projects: makeProjectList([{ localId: 'local-1', cloudId: 'cloud-1', serverVersion: null }]),
+      });
+      (loadProject as Mock).mockReturnValue({ state: '{}', cloudId: 'cloud-1', serverVersion: 6 });
+      (saveProjectToCloudImpl as Mock).mockResolvedValue({
+        kind: 'updated',
+        timestamp: '2026-01-02T00:00:00Z',
+        version: 7,
+      });
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      await act(async () => {
+        await result.current.saveProjectToCloud('local-1');
+      });
+
+      expect(saveProjectToCloudImpl).toHaveBeenCalledWith(
+        { version: 1, registers: [] },
+        'cloud-1',
+        'mock-jwt',
+        6,
+      );
     });
 
     it('throws when non-active project not found locally', async () => {

@@ -149,7 +149,7 @@ describe('checkAndPullFreshVersion', () => {
 
     await checkAndPullFreshVersion(ctx, call);
 
-    expect(getProject).toHaveBeenCalledTimes(1);
+    expect(getProject).not.toHaveBeenCalled();
     expect(ctx.dispatch).not.toHaveBeenCalled();
   });
 
@@ -165,14 +165,14 @@ describe('checkAndPullFreshVersion', () => {
     expect(ctx.dispatch).not.toHaveBeenCalled();
   });
 
-  it('force: bypasses throttle, version check, and isDirty guard', async () => {
+  it('replace-with-server bypasses throttle, version check, and isDirty guard', async () => {
     const ctx = makeCtx({
       lastFreshnessCheckRef: { current: Date.now() - 1_000 }, // recent = throttled
       dataVersionRef: { current: 10 }, // dirty
     });
     const call = makeCall({
       knownVersion: 5,
-      force: true,
+      mode: 'replace-with-server',
     });
     (getProject as Mock).mockResolvedValue({
       data: { version: 1, registers: [], registerValues: {} },
@@ -193,6 +193,73 @@ describe('checkAndPullFreshVersion', () => {
       addressUnitBits: PARSED_DATA.addressUnitBits,
     });
     expect(ctx.updateCloudMetadata).toHaveBeenCalled();
+  });
+
+  it('pull-if-clean bypasses throttle and version check but refuses dirty overwrite', async () => {
+    const ctx = makeCtx({
+      lastFreshnessCheckRef: { current: Date.now() - 1_000 },
+      dataVersionRef: { current: 10 },
+    });
+    const call = makeCall({
+      knownVersion: 5,
+      mode: 'pull-if-clean',
+      expectedDataVersion: 5,
+    });
+
+    const result = await checkAndPullFreshVersion(ctx, call);
+
+    expect(result).toEqual({ applied: false, reason: 'dirty' });
+    expect(getProject).not.toHaveBeenCalled();
+    expect(ctx.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('pull-if-clean aborts when user edits during the fetch', async () => {
+    const ctx = makeCtx();
+    const call = makeCall({
+      knownVersion: 5,
+      mode: 'pull-if-clean',
+      expectedDataVersion: 5,
+    });
+    (getProject as Mock).mockImplementation(async () => {
+      ctx.dataVersionRef.current = 6;
+      return {
+        data: { version: 1, registers: [], registerValues: {} },
+        updatedAt: '2024-06-01T00:00:00Z',
+        version: 3,
+      };
+    });
+    (parseProjectData as Mock).mockReturnValue(PARSED_DATA);
+
+    const result = await checkAndPullFreshVersion(ctx, call);
+
+    expect(result).toEqual({ applied: false, reason: 'dirty', serverVersion: 3 });
+    expect(ctx.dispatch).not.toHaveBeenCalled();
+    expect(patchProjectState).not.toHaveBeenCalled();
+  });
+
+  it('pulls into memory without localStorage writes when no localId exists', async () => {
+    const ctx = makeCtx();
+    const call = makeCall({ localId: null, mode: 'replace-with-server' });
+    (getProject as Mock).mockResolvedValue({
+      data: { version: 1, registers: [], registerValues: {} },
+      updatedAt: '2024-06-01T00:00:00Z',
+      version: 3,
+    });
+    (parseProjectData as Mock).mockReturnValue(PARSED_DATA);
+
+    const result = await checkAndPullFreshVersion(ctx, call);
+
+    expect(result).toEqual({ applied: true, serverVersion: 3 });
+    expect(ctx.dispatch).toHaveBeenCalledWith({
+      type: 'IMPORT_STATE',
+      registers: PARSED_DATA.registers,
+      values: PARSED_DATA.values,
+      project: PARSED_DATA.project,
+      addressUnitBits: PARSED_DATA.addressUnitBits,
+    });
+    expect(patchProjectState).not.toHaveBeenCalled();
+    expect(ctx.updateCloudMetadata).not.toHaveBeenCalled();
+    expect(ctx.needsVersionSyncRef.current).toBe(true);
   });
 
   it('calls getProject exactly once (single-fetch pattern)', async () => {

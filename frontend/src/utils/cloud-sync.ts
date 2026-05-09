@@ -88,6 +88,7 @@ interface PlaceholderData {
   cloudId: string;
   visibility: Visibility;
   cloudSavedAt: string;
+  serverVersion: number;
 }
 
 interface SyncCallbacks {
@@ -126,6 +127,7 @@ export async function syncCloudProjectsFromServer(
       cloudId: sp.id,
       visibility: sp.visibility,
       cloudSavedAt: sp.updatedAt,
+      serverVersion: sp.version,
     });
   }
 

@@ -14,7 +14,7 @@ import type { ImportStateAction } from '../context/app-context';
 
 interface ConflictHandlerParams {
   result: SaveConflictResult;
-  preDataVersion: number;
+  attempt: SaveAttemptSnapshot;
   dataVersionRef: MutableRefObject<number>;
   capturedLocalId: string | null;
   existingCloudId: string | null;
@@ -28,17 +28,48 @@ interface ConflictHandlerParams {
   getJwt: () => string | null;
 }
 
+interface SaveAttemptSnapshot {
+  dataVersion: number;
+  lastSavedVersion: number;
+  serverVersion: number;
+}
+
+function isSameActiveSaveTarget(
+  capturedLocalId: string | null,
+  expectedCloudId: string | null,
+  activeLocalIdRef: MutableRefObject<string | null>,
+  internalRef: MutableRefObject<InternalCloudSyncState>,
+): boolean {
+  if (capturedLocalId !== null) {
+    return activeLocalIdRef.current === capturedLocalId;
+  }
+  return activeLocalIdRef.current === null
+    && internalRef.current.cloudId === expectedCloudId;
+}
+
 async function handleConflictResult(params: ConflictHandlerParams): Promise<void> {
   const {
-    result, preDataVersion, dataVersionRef, capturedLocalId, existingCloudId,
+    result, attempt, dataVersionRef, capturedLocalId, existingCloudId,
     activeLocalIdRef, internalRef, lastFreshnessCheckRef, needsVersionSyncRef,
     updateCloudMetadata, setInternal, dispatch, getJwt,
   } = params;
 
-  const stillDirty = dataVersionRef.current !== preDataVersion;
+  const dirtyAtSaveStart = attempt.dataVersion !== attempt.lastSavedVersion;
+  const editedDuringSave = dataVersionRef.current !== attempt.dataVersion;
+  const stillOnSameProject = isSameActiveSaveTarget(
+    capturedLocalId,
+    existingCloudId,
+    activeLocalIdRef,
+    internalRef,
+  );
 
-  if (stillDirty) {
-    // Dirty 409: user edited during save — update version + show conflict UX in one call
+  if (capturedLocalId) {
+    updateCloudMetadata(capturedLocalId, { serverVersion: result.serverVersion });
+  }
+
+  if (dirtyAtSaveStart || editedDuringSave) {
+    if (!stillOnSameProject) return;
+    // Dirty 409: preserve local edits and wait for explicit user action.
     setInternal((prev) => ({
       ...prev,
       status: 'idle',
@@ -48,7 +79,9 @@ async function handleConflictResult(params: ConflictHandlerParams): Promise<void
     return;
   }
 
-  // Clean 409: no local edits — update version and pull server version silently
+  if (!stillOnSameProject) return;
+
+  // Clean 409: no local edits; pull server version silently unless a new edit appears.
   setInternal((prev) => ({
     ...prev,
     status: 'idle',
@@ -57,22 +90,35 @@ async function handleConflictResult(params: ConflictHandlerParams): Promise<void
 
   try {
     const freshJwt = getJwt();
-    if (freshJwt && capturedLocalId && existingCloudId) {
-      const freshnessCtx: FreshnessCheckContext = {
-        internalRef, dataVersionRef, dispatch, needsVersionSyncRef,
-        lastFreshnessCheckRef, updateCloudMetadata, setInternal,
-      };
-      await checkAndPullFreshVersion(freshnessCtx, {
-        cloudId: existingCloudId,
-        knownVersion: 0,
-        localId: capturedLocalId,
-        jwt: freshJwt,
-        force: true,
-      });
+    if (!freshJwt || !existingCloudId) {
+      setInternal((prev) => ({
+        ...prev,
+        conflict: { serverVersion: result.serverVersion },
+      }));
+      return;
+    }
+
+    const freshnessCtx: FreshnessCheckContext = {
+      internalRef, dataVersionRef, dispatch, needsVersionSyncRef,
+      lastFreshnessCheckRef, updateCloudMetadata, setInternal,
+    };
+    const pullResult = await checkAndPullFreshVersion(freshnessCtx, {
+      cloudId: existingCloudId,
+      knownVersion: 0,
+      localId: capturedLocalId,
+      jwt: freshJwt,
+      mode: 'pull-if-clean',
+      expectedDataVersion: attempt.dataVersion,
+    });
+    if (!pullResult.applied) {
+      setInternal((prev) => ({
+        ...prev,
+        conflict: { serverVersion: result.serverVersion },
+      }));
     }
   } catch {
     // Pull failed — show conflict UX as fallback
-    if (capturedLocalId !== null && activeLocalIdRef.current === capturedLocalId) {
+    if (isSameActiveSaveTarget(capturedLocalId, existingCloudId, activeLocalIdRef, internalRef)) {
       setInternal((prev) => ({
         ...prev,
         conflict: { serverVersion: result.serverVersion },
@@ -133,7 +179,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
     pendingOpRef.current = null;
   }, []);
 
-  const applyCreatedResult = useCallback((result: { cloudId: string; timestamp: string; version: number }) => {
+  const applyCreatedResult = useCallback((result: { cloudId: string; timestamp: string; version: number }, savedDataVersion: number) => {
     let currentLocalId = activeLocalIdRef.current;
 
     // When forking a shared project, no local project exists yet — create one
@@ -161,11 +207,11 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
       status: 'idle',
       shareUrl,
       lastCloudSavedAt: result.timestamp,
-      lastSavedVersion: dataVersionRef.current,
+      lastSavedVersion: savedDataVersion,
       serverVersion: result.version,
       conflict: null,
     }));
-  }, [updateCloudMetadata, createNewProject, dataVersionRef, activeLocalIdRef, appStateRef, setInternal]);
+  }, [updateCloudMetadata, createNewProject, activeLocalIdRef, appStateRef, setInternal]);
 
   const saveToCloud = useCallback(async (): Promise<boolean> => {
     if (!isCloudEnabled()) return true;
@@ -180,21 +226,27 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
 
     const lockResult = await withMutationLock(mutationLockRef, async () => {
       const capturedLocalId = activeLocalIdRef.current;
+      let existingCloudId: string | null = null;
       try {
-        const { cloudId, isOwner, serverVersion } = internalRef.current;
-        const existingCloudId = (cloudId && isOwner) ? cloudId : null;
+        const { cloudId, isOwner, serverVersion, lastSavedVersion } = internalRef.current;
+        existingCloudId = (cloudId && isOwner) ? cloudId : null;
 
         setInternal((prev) => ({ ...prev, status: 'saving', error: null }));
+        const attempt: SaveAttemptSnapshot = {
+          dataVersion: dataVersionRef.current,
+          lastSavedVersion,
+          serverVersion,
+        };
         const jsonPayload = exportToObject(appStateRef.current);
         const freshJwt = requireJwt(getJwt);
-        const preDataVersion = dataVersionRef.current;
         const result = await saveProjectToCloudImpl(jsonPayload, existingCloudId, freshJwt, serverVersion > 0 ? serverVersion : undefined);
 
-        // Guard: only update internal cloud state if still on the same
-        // saved project. When capturedLocalId is null (unsaved project),
-        // skip all internal state updates.
-        const stillOnSameProject = capturedLocalId !== null
-          && activeLocalIdRef.current === capturedLocalId;
+        const stillOnSameProject = isSameActiveSaveTarget(
+          capturedLocalId,
+          existingCloudId,
+          activeLocalIdRef,
+          internalRef,
+        );
 
         if (result.kind === 'not-found') {
           if (capturedLocalId) {
@@ -218,7 +270,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
 
         if (result.kind === 'conflict') {
           await handleConflictResult({
-            result, preDataVersion, dataVersionRef, capturedLocalId, existingCloudId,
+            result, attempt, dataVersionRef, capturedLocalId, existingCloudId,
             activeLocalIdRef, internalRef, lastFreshnessCheckRef, needsVersionSyncRef,
             updateCloudMetadata, setInternal, dispatch, getJwt,
           });
@@ -227,7 +279,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
 
         if (result.kind === 'created') {
           if (stillOnSameProject) {
-            applyCreatedResult(result);
+            applyCreatedResult(result, attempt.dataVersion);
           }
         } else {
           if (capturedLocalId) {
@@ -238,14 +290,14 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
               ...prev,
               status: 'idle',
               lastCloudSavedAt: result.timestamp,
-              lastSavedVersion: dataVersionRef.current,
+              lastSavedVersion: attempt.dataVersion,
               serverVersion: result.version,
               conflict: null,
             }));
           }
         }
       } catch (err) {
-        if (capturedLocalId !== null && activeLocalIdRef.current === capturedLocalId) {
+        if (isSameActiveSaveTarget(capturedLocalId, existingCloudId, activeLocalIdRef, internalRef)) {
           const next = { ...internalRef.current, status: 'idle' as const, error: friendlyErrorMessage(err, 'Failed to save project.') };
           internalRef.current = next;
           setInternal(next);
@@ -270,16 +322,17 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
     await withMutationLock(mutationLockRef, async () => {
       setInternal((prev) => ({ ...prev, status: 'saving', error: null }));
       try {
+        const attemptDataVersion = dataVersionRef.current;
         const jsonPayload = exportToObject(appStateRef.current);
         const freshJwt = requireJwt(getJwt);
         const result = await saveProjectToCloudImpl(jsonPayload, null, freshJwt);
         if (result.kind !== 'created') throw new Error('Failed to save copy.');
-        applyCreatedResult(result);
+        applyCreatedResult(result, attemptDataVersion);
       } catch (err) {
         setInternal((prev) => ({ ...prev, status: 'idle', error: friendlyErrorMessage(err, 'Failed to save copy.') }));
       }
     });
-  }, [applyCreatedResult, mutationLockRef, getJwt, appStateRef, setInternal]);
+  }, [applyCreatedResult, mutationLockRef, dataVersionRef, getJwt, appStateRef, setInternal]);
 
   const deleteFromCloud = useCallback(async () => {
     const { cloudId } = internalRef.current;

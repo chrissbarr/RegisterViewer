@@ -176,6 +176,7 @@ describe('useActiveProjectCloudOps', () => {
         cloudId: TEST_CLOUD_ID,
         isOwner: true,
         serverVersion: 2,
+        lastSavedVersion: 1,
       };
       (saveProjectToCloudImpl as Mock).mockResolvedValue({
         kind: 'updated',
@@ -337,6 +338,7 @@ describe('useActiveProjectCloudOps', () => {
         cloudId: TEST_CLOUD_ID,
         isOwner: true,
         serverVersion: 2,
+        lastSavedVersion: 1,
       };
       // dataVersionRef stays at 1 throughout (no local edits during save)
       deps.dataVersionRef.current = 1;
@@ -345,7 +347,7 @@ describe('useActiveProjectCloudOps', () => {
         kind: 'conflict',
         serverVersion: 5,
       });
-      (checkAndPullFreshVersion as Mock).mockResolvedValue(undefined);
+      (checkAndPullFreshVersion as Mock).mockResolvedValue({ applied: true, serverVersion: 5 });
 
       const { result } = renderHook(() => useActiveProjectCloudOps(deps));
 
@@ -369,7 +371,8 @@ describe('useActiveProjectCloudOps', () => {
         }),
         expect.objectContaining({
           cloudId: TEST_CLOUD_ID,
-          force: true,
+          mode: 'pull-if-clean',
+          expectedDataVersion: 1,
         }),
       );
     });
@@ -381,6 +384,7 @@ describe('useActiveProjectCloudOps', () => {
         cloudId: TEST_CLOUD_ID,
         isOwner: true,
         serverVersion: 2,
+        lastSavedVersion: 1,
       };
       deps.dataVersionRef.current = 1;
 
@@ -388,7 +392,7 @@ describe('useActiveProjectCloudOps', () => {
         kind: 'conflict',
         serverVersion: 5,
       });
-      (checkAndPullFreshVersion as Mock).mockResolvedValue(undefined);
+      (checkAndPullFreshVersion as Mock).mockResolvedValue({ applied: true, serverVersion: 5 });
 
       const { result } = renderHook(() => useActiveProjectCloudOps(deps));
 
@@ -403,7 +407,110 @@ describe('useActiveProjectCloudOps', () => {
         }),
         expect.objectContaining({
           cloudId: TEST_CLOUD_ID,
-          force: true,
+          mode: 'pull-if-clean',
+          expectedDataVersion: 1,
+        }),
+      );
+    });
+
+    it('already-dirty 409 shows conflict UX instead of auto-pulling server version', async () => {
+      const deps = makeDefaultDeps();
+      deps.internalRef.current = {
+        ...INITIAL_INTERNAL_STATE,
+        cloudId: TEST_CLOUD_ID,
+        isOwner: true,
+        serverVersion: 2,
+        lastSavedVersion: 0,
+      };
+      deps.dataVersionRef.current = 1;
+
+      (saveProjectToCloudImpl as Mock).mockResolvedValue({
+        kind: 'conflict',
+        serverVersion: 5,
+      });
+
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+
+      await act(async () => {
+        await result.current.saveToCloud();
+      });
+
+      const setInternalCalls = deps.setInternal.mock.calls;
+      const hasConflict = setInternalCalls.some((call) => {
+        const arg = call[0];
+        const state = typeof arg === 'function' ? arg(deps.internalRef.current) : arg;
+        return state.conflict?.serverVersion === 5;
+      });
+      expect(hasConflict).toBe(true);
+      expect(checkAndPullFreshVersion).not.toHaveBeenCalled();
+      expect(deps.updateCloudMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, { serverVersion: 5 });
+    });
+
+    it('already-dirty 409 shows conflict UX for direct cloud URL with no localId', async () => {
+      const deps = makeDefaultDeps();
+      deps.activeLocalIdRef.current = null;
+      deps.internalRef.current = {
+        ...INITIAL_INTERNAL_STATE,
+        cloudId: TEST_CLOUD_ID,
+        isOwner: true,
+        serverVersion: 2,
+        lastSavedVersion: 0,
+      };
+      deps.dataVersionRef.current = 1;
+
+      (saveProjectToCloudImpl as Mock).mockResolvedValue({
+        kind: 'conflict',
+        serverVersion: 5,
+      });
+
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+
+      await act(async () => {
+        await result.current.saveToCloud();
+      });
+
+      const setInternalCalls = deps.setInternal.mock.calls;
+      const hasConflict = setInternalCalls.some((call) => {
+        const arg = call[0];
+        const state = typeof arg === 'function' ? arg(deps.internalRef.current) : arg;
+        return state.conflict?.serverVersion === 5 && state.serverVersion === 5;
+      });
+      expect(hasConflict).toBe(true);
+      expect(checkAndPullFreshVersion).not.toHaveBeenCalled();
+      expect(deps.updateCloudMetadata).not.toHaveBeenCalled();
+    });
+
+    it('clean 409 can pull for direct cloud URL with no localId', async () => {
+      const deps = makeDefaultDeps();
+      deps.activeLocalIdRef.current = null;
+      deps.internalRef.current = {
+        ...INITIAL_INTERNAL_STATE,
+        cloudId: TEST_CLOUD_ID,
+        isOwner: true,
+        serverVersion: 2,
+        lastSavedVersion: 1,
+      };
+      deps.dataVersionRef.current = 1;
+
+      (saveProjectToCloudImpl as Mock).mockResolvedValue({
+        kind: 'conflict',
+        serverVersion: 5,
+      });
+      (checkAndPullFreshVersion as Mock).mockResolvedValue({ applied: true, serverVersion: 5 });
+
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+
+      await act(async () => {
+        await result.current.saveToCloud();
+      });
+
+      expect(checkAndPullFreshVersion).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          cloudId: TEST_CLOUD_ID,
+          localId: null,
+          mode: 'pull-if-clean',
+          expectedDataVersion: 1,
         }),
       );
     });
@@ -415,6 +522,7 @@ describe('useActiveProjectCloudOps', () => {
         cloudId: TEST_CLOUD_ID,
         isOwner: true,
         serverVersion: 2,
+        lastSavedVersion: 1,
       };
       deps.dataVersionRef.current = 1;
 
@@ -450,6 +558,7 @@ describe('useActiveProjectCloudOps', () => {
         cloudId: TEST_CLOUD_ID,
         isOwner: true,
         serverVersion: 2,
+        lastSavedVersion: 1,
       };
       deps.dataVersionRef.current = 1;
 
@@ -542,6 +651,41 @@ describe('useActiveProjectCloudOps', () => {
         return state.serverVersion === 3 && state.status === 'idle';
       });
       expect(hasVersionUpdate).toBe(true);
+    });
+
+    it('successful save marks only the request generation as saved when edits happen in flight', async () => {
+      const deps = makeDefaultDeps();
+      deps.internalRef.current = {
+        ...INITIAL_INTERNAL_STATE,
+        cloudId: TEST_CLOUD_ID,
+        isOwner: true,
+        serverVersion: 2,
+        lastSavedVersion: 0,
+      };
+      deps.dataVersionRef.current = 1;
+      (saveProjectToCloudImpl as Mock).mockImplementation(async () => {
+        deps.dataVersionRef.current = 2;
+        return {
+          kind: 'updated',
+          cloudId: TEST_CLOUD_ID,
+          timestamp: TEST_TIMESTAMP,
+          version: 3,
+        };
+      });
+
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+
+      await act(async () => {
+        await result.current.saveToCloud();
+      });
+
+      const setInternalCalls = deps.setInternal.mock.calls;
+      const hasCapturedGenerationUpdate = setInternalCalls.some((call) => {
+        const arg = call[0];
+        const state = typeof arg === 'function' ? arg(deps.internalRef.current) : arg;
+        return state.serverVersion === 3 && state.lastSavedVersion === 1;
+      });
+      expect(hasCapturedGenerationUpdate).toBe(true);
     });
   });
 

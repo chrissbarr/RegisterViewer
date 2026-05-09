@@ -16,6 +16,15 @@ export interface InternalCloudSyncState {
   conflict: { serverVersion: number } | null; // non-null triggers conflict UX
 }
 
+export interface CloudInit {
+  projectId: string;
+  isOwner: boolean;
+  storage?: 'local' | 'cloud';
+  serverVersion?: number | null;
+  cloudSavedAt?: string | null;
+  visibility?: Visibility;
+}
+
 /**
  * Default cloud sync state. Object.freeze prevents accidental mutation.
  *

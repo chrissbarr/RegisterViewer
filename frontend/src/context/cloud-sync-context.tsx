@@ -44,7 +44,7 @@ import { useProjectSwitchInit } from '../hooks/use-project-switch-init';
 import { syncCloudProjectsFromServer } from '../utils/cloud-sync';
 import { checkAndPullFreshVersion, type FreshnessCheckContext } from '../utils/cloud-freshness';
 import type { Visibility } from '../types/project';
-import { initialInternalState, type CloudSyncCore, type InternalCloudSyncState, type SyncResult } from '../types/cloud-sync';
+import { initialInternalState, type CloudInit, type CloudSyncCore, type InternalCloudSyncState, type SyncResult } from '../types/cloud-sync';
 
 export type { SyncStatus };
 
@@ -84,7 +84,12 @@ interface CloudSyncActions {
   dismissError: () => void;
   /** Dismiss the login dialog and cancel any pending cloud operation. */
   dismissLogin: () => void;
-  initFromProject: (cloudId: string | null, isOwner: boolean, storage?: 'local' | 'cloud') => void;
+  initFromProject: (
+    cloudId: string | null,
+    isOwner: boolean,
+    storage?: 'local' | 'cloud',
+    metadata?: Pick<CloudInit, 'serverVersion' | 'cloudSavedAt' | 'visibility'>,
+  ) => void;
   syncCloudProjects: () => Promise<SyncResult>;
   unlinkCloudProject: (localId: string) => void;
   /** Pull the latest server version, replacing local state. Used by the conflict banner. */
@@ -216,7 +221,12 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
    *                  automatically set up for auto-sync.
    */
   const initFromProject = useCallback(
-    (cloudId: string | null, isOwner: boolean, storage: 'local' | 'cloud' = cloudId && isOwner ? 'cloud' : 'local') => {
+    (
+      cloudId: string | null,
+      isOwner: boolean,
+      storage: 'local' | 'cloud' = cloudId && isOwner ? 'cloud' : 'local',
+      metadata: Pick<CloudInit, 'serverVersion' | 'cloudSavedAt' | 'visibility'> = {},
+    ) => {
       if (cloudId === null) {
         const next = { ...initialInternalState, storage };
         internalRef.current = next;
@@ -230,8 +240,11 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
           storage,
           shareUrl: buildProjectUrl(cloudId),
           lastSavedVersion: dataVersionRef.current,
-          lastCloudSavedAt: null,
+          lastCloudSavedAt: metadata.cloudSavedAt ?? null,
           error: null,
+          visibility: metadata.visibility ?? 'private',
+          serverVersion: metadata.serverVersion ?? 0,
+          conflict: null,
         };
         // Synchronous ref write so the activeLocalId effect's guard
         // (cloudId === internalRef.current.cloudId) sees this in the same commit.
@@ -268,6 +281,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
             cloudId: data.cloudId,
             visibility: data.visibility,
             cloudSavedAt: data.cloudSavedAt,
+            serverVersion: data.serverVersion,
             storage: 'cloud',
           });
         } catch (err) {
@@ -316,7 +330,6 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       const jwt = getJwt();
       if (!jwt) return;
       const localId = activeLocalIdRef.current;
-      if (!localId) return;
 
       checkAndPullFreshVersion(freshnessCtx, {
         cloudId,
@@ -371,17 +384,18 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     const jwt = getJwt();
     if (!jwt) return;
     const localId = activeLocalIdRef.current;
-    if (!localId) return;
 
-    await checkAndPullFreshVersion(freshnessCtx, {
+    const pullResult = await checkAndPullFreshVersion(freshnessCtx, {
       cloudId,
       knownVersion: 0,
       localId,
       jwt,
-      force: true,
+      mode: 'replace-with-server',
     });
 
-    setInternal((prev) => ({ ...prev, conflict: null }));
+    if (pullResult.applied) {
+      setInternal((prev) => ({ ...prev, conflict: null }));
+    }
   }, [freshnessCtx, getJwt]);
 
   const actions = useMemo(

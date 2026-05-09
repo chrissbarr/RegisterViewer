@@ -52,9 +52,13 @@ export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
 
       const entry = projectsRef.current.find(p => p.localId === localId);
       const existingCloudId = entry?.cloudId ?? project.cloudId;
+      const knownServerVersion = entry?.serverVersion ?? project.serverVersion ?? undefined;
+      const serverVersion = typeof knownServerVersion === 'number' && knownServerVersion > 0
+        ? knownServerVersion
+        : undefined;
 
       const jwt = requireJwt(getJwt);
-      const result = await saveProjectToCloudImpl(jsonPayload, existingCloudId, jwt);
+      const result = await saveProjectToCloudImpl(jsonPayload, existingCloudId, jwt, serverVersion);
 
       if (result.kind === 'not-found') {
         throw new Error('Cloud project not found on server.');

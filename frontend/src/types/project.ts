@@ -37,6 +37,7 @@ export interface StoredLocalProject {
   createdAt: string;
   localSavedAt: string;
   cloudSavedAt: string | null;
+  serverVersion?: number | null;
   storage: 'local' | 'cloud';
   state: import('./register').SerializedAppState;
 }

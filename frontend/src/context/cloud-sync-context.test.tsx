@@ -884,6 +884,33 @@ describe('CloudSyncProvider', () => {
       expect(result.current.state.shareUrl).toBe('https://example.com/#/p/cloud-init');
     });
 
+    it('uses initialized server version on the first active-project save', async () => {
+      (apiUpdateProject as Mock).mockResolvedValue({
+        id: 'cloud-init',
+        updatedAt: '2024-01-02T12:00:00Z',
+        version: 8,
+      });
+      const { result } = renderCloudSync();
+
+      act(() => {
+        result.current.actions.initFromProject('cloud-init', true, 'cloud', {
+          serverVersion: 7,
+          cloudSavedAt: '2024-01-01T00:00:00Z',
+        });
+      });
+
+      await act(async () => {
+        await result.current.actions.saveToCloud();
+      });
+
+      expect(apiUpdateProject).toHaveBeenCalledWith(
+        'cloud-init',
+        { version: 1, registers: [], values: {} },
+        'mock-jwt-token',
+        7,
+      );
+    });
+
     it('clears cloud state when cloudId is null', () => {
       const { result } = renderCloudSync();
 

@@ -39,6 +39,7 @@ function makeStoredProject(overrides?: Partial<StoredLocalProject>): StoredLocal
     createdAt: '2026-01-01T00:00:00.000Z',
     localSavedAt: '2026-01-01T00:00:00.000Z',
     cloudSavedAt: null,
+    serverVersion: null,
     storage: 'local',
     state: makeSerializedState(),
     ...overrides,
@@ -247,6 +248,19 @@ describe('saveProject', () => {
     expect(manifest.projects).toHaveLength(1);
     expect(manifest.projects[0].name).toBe('Updated Name');
   });
+
+  it('persists serverVersion into the manifest entry', () => {
+    const project = makeStoredProject({
+      cloudId: 'cloud-1',
+      storage: 'cloud',
+      serverVersion: 7,
+    });
+
+    saveProject(project);
+
+    const manifest = loadManifest();
+    expect(manifest.projects[0].serverVersion).toBe(7);
+  });
 });
 
 describe('createProject', () => {
@@ -277,6 +291,21 @@ describe('createProject', () => {
     const localId = createProject(state);
     const project = loadProject(localId);
     expect(project!.state.mapTableWidth).toBe(16);
+  });
+
+  it('creates cloud placeholders with serverVersion', () => {
+    const localId = createProject(makeSerializedState(), 'Cloud', {
+      cloudId: 'cloud-1',
+      visibility: 'private',
+      cloudSavedAt: '2026-02-01T00:00:00.000Z',
+      serverVersion: 4,
+      storage: 'cloud',
+    });
+
+    const project = loadProject(localId);
+    const entry = loadManifest().projects.find(p => p.localId === localId);
+    expect(project!.serverVersion).toBe(4);
+    expect(entry!.serverVersion).toBe(4);
   });
 });
 
@@ -317,6 +346,16 @@ describe('updateProjectMetadata', () => {
     const project = loadProject(localId);
     expect(project!.cloudId).toBe('abc123def456');
     expect(project!.cloudSavedAt).toBe('2026-02-01T00:00:00.000Z');
+  });
+
+  it('updates serverVersion in project and manifest metadata', () => {
+    const localId = createProject(makeSerializedState());
+    updateProjectMetadata(localId, { serverVersion: 9 });
+
+    const project = loadProject(localId);
+    const entry = loadManifest().projects.find(p => p.localId === localId);
+    expect(project!.serverVersion).toBe(9);
+    expect(entry!.serverVersion).toBe(9);
   });
 
   it('updates visibility', () => {

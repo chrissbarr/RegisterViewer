@@ -23,10 +23,11 @@ import {
   loadUnsavedProject,
   saveUnsavedProjectState,
 } from '../utils/project-storage';
+import type { CloudInit } from '../types/cloud-sync';
 
 type LoaderState =
   | { phase: 'loading' }
-  | { phase: 'ready'; initialState: AppState | undefined; cloudInit?: { projectId: string; isOwner: boolean }; localId?: string; unsaved?: { name: string; source: UnsavedProjectSource } }
+  | { phase: 'ready'; initialState: AppState | undefined; cloudInit?: CloudInit; localId?: string; unsaved?: { name: string; source: UnsavedProjectSource } }
   | { phase: 'error'; message: string };
 
 /** Build an AppState from import-style data, filling in map/sort defaults. */
@@ -163,7 +164,13 @@ export function AppLoader() {
             setState({
               phase: 'ready',
               initialState: loadedState,
-              cloudInit: { projectId: resolution.cloudId, isOwner: importResult.isOwner },
+              cloudInit: {
+                projectId: resolution.cloudId,
+                isOwner: importResult.isOwner,
+                storage: importResult.isOwner ? 'cloud' : 'local',
+                serverVersion: importResult.version,
+                cloudSavedAt: importResult.updatedAt,
+              },
             });
           })
           .catch((err) => {
@@ -177,7 +184,14 @@ export function AppLoader() {
         if (project) {
           const appState = deserializeState(project.state);
           const cloudInit = project.cloudId
-            ? { projectId: project.cloudId, isOwner: !!readStartupJwt() }
+            ? {
+                projectId: project.cloudId,
+                isOwner: project.storage === 'cloud',
+                storage: project.storage,
+                serverVersion: project.serverVersion ?? null,
+                cloudSavedAt: project.cloudSavedAt ?? null,
+                visibility: project.visibility,
+              }
             : undefined;
           setState({ phase: 'ready', initialState: appState, localId: resolution.localId, cloudInit });
         } else {

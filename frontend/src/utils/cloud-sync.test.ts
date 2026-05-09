@@ -274,6 +274,7 @@ describe('syncCloudProjectsFromServer', () => {
       cloudId: 'c-new',
       visibility: 'unlisted',
       cloudSavedAt: '2024-05-01T00:00:00Z',
+      serverVersion: 1,
     });
     expect(result.placeholdersCreated).toBe(1);
   });

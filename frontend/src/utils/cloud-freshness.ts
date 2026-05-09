@@ -6,7 +6,7 @@ import { serializeState, deserializeState } from './storage';
 import type { ImportStateAction } from '../context/app-context';
 import type { InternalCloudSyncState, CloudMetadataUpdate } from '../types/cloud-sync';
 
-/** Stable refs and callbacks — same across all freshness check calls within a provider. */
+/** Stable refs and callbacks; same across all freshness check calls within a provider. */
 export interface FreshnessCheckContext {
   internalRef: MutableRefObject<InternalCloudSyncState>;
   dataVersionRef: MutableRefObject<number>;
@@ -21,10 +21,19 @@ export interface FreshnessCheckContext {
 export interface FreshnessCheckCall {
   cloudId: string;
   knownVersion: number;
-  localId: string;
+  localId?: string | null;
   jwt: string;
-  force?: boolean;
+  mode?: 'normal' | 'pull-if-clean' | 'replace-with-server';
+  expectedDataVersion?: number;
 }
+
+type FreshnessCheckResult =
+  | { applied: true; serverVersion: number }
+  | {
+      applied: false;
+      reason: 'throttled' | 'fresh' | 'dirty' | 'changed-during-pull' | 'parse-failed';
+      serverVersion?: number;
+    };
 
 const FRESHNESS_CHECK_INTERVAL = 30_000; // 30 seconds
 
@@ -33,38 +42,64 @@ const FRESHNESS_CHECK_INTERVAL = 30_000; // 30 seconds
  * If it does and the user hasn't started editing (isDirty=false), pull the latest.
  *
  * Throttled to at most once per 30 seconds (reset on project switch).
- * Use `force: true` to bypass throttle, version check, and isDirty guard
- * (used by the Load button in the conflict banner).
+ * `pull-if-clean` bypasses throttle/version checks for clean 409 recovery,
+ * but still refuses to overwrite local edits. `replace-with-server` is for
+ * explicit user action from the conflict UI.
  *
- * Uses a single fetch — the full project data from getProject() is parsed
+ * Uses a single fetch; the full project data from getProject() is parsed
  * directly via parseProjectData() to avoid a double-fetch.
  */
 export async function checkAndPullFreshVersion(
   ctx: FreshnessCheckContext,
   call: FreshnessCheckCall,
-): Promise<void> {
+): Promise<FreshnessCheckResult> {
   const {
     internalRef, dataVersionRef, dispatch,
     needsVersionSyncRef, lastFreshnessCheckRef,
     updateCloudMetadata, setInternal,
   } = ctx;
-  const { cloudId, knownVersion, localId, jwt, force = false } = call;
+  const {
+    cloudId,
+    knownVersion,
+    localId,
+    jwt,
+    mode = 'normal',
+    expectedDataVersion,
+  } = call;
+  const bypassThrottle = mode !== 'normal';
+  const bypassVersionCheck = mode !== 'normal';
+  const allowDirtyOverwrite = mode === 'replace-with-server';
 
-  // Throttle check (visibilitychange can fire rapidly)
-  if (!force && Date.now() - lastFreshnessCheckRef.current < FRESHNESS_CHECK_INTERVAL) return;
+  // Throttle check (visibilitychange can fire rapidly).
+  if (!bypassThrottle && Date.now() - lastFreshnessCheckRef.current < FRESHNESS_CHECK_INTERVAL) {
+    return { applied: false, reason: 'throttled' };
+  }
   lastFreshnessCheckRef.current = Date.now();
+
+  if (!allowDirtyOverwrite && dataVersionRef.current !== internalRef.current.lastSavedVersion) {
+    return { applied: false, reason: 'dirty' };
+  }
+  if (expectedDataVersion !== undefined && dataVersionRef.current !== expectedDataVersion) {
+    return { applied: false, reason: 'changed-during-pull' };
+  }
 
   const serverResponse = await getProject(cloudId, jwt);
   const serverVersion = serverResponse.version ?? knownVersion;
 
-  if (!force && serverVersion <= knownVersion) return; // Cache is fresh
+  if (!bypassVersionCheck && serverVersion <= knownVersion) {
+    return { applied: false, reason: 'fresh', serverVersion };
+  }
 
-  // Only update if user hasn't started editing (unless forced)
-  if (!force && dataVersionRef.current !== internalRef.current.lastSavedVersion) return; // isDirty
+  // Re-check after the network round-trip so a new edit cannot be overwritten.
+  if (!allowDirtyOverwrite && dataVersionRef.current !== internalRef.current.lastSavedVersion) {
+    return { applied: false, reason: 'dirty', serverVersion };
+  }
+  if (expectedDataVersion !== undefined && dataVersionRef.current !== expectedDataVersion) {
+    return { applied: false, reason: 'changed-during-pull', serverVersion };
+  }
 
-  // Parse the data we already fetched (single-fetch pattern)
   const parsed = parseProjectData(serverResponse.data);
-  if (!parsed) return; // Parse failed — keep cached version
+  if (!parsed) return { applied: false, reason: 'parse-failed', serverVersion };
 
   dispatch({
     type: 'IMPORT_STATE',
@@ -74,22 +109,24 @@ export async function checkAndPullFreshVersion(
     addressUnitBits: parsed.addressUnitBits,
   });
 
-  // Update localStorage with fresh data, preserving local-only UI fields
-  // (activeRegisterId, mapTableWidth, mapShowGaps, mapSortDescending).
-  // These fields are not synced to the server, so overwriting them with
-  // defaults would reset the user's view preferences.
-  const existingProject = loadProject(localId);
-  const existingState = existingProject ? deserializeState(existingProject.state) : null;
-  patchProjectState(localId, serializeState({
-    registers: parsed.registers,
-    registerValues: parsed.values,
-    activeRegisterId: existingState?.activeRegisterId ?? parsed.registers[0]?.id ?? '',
-    project: parsed.project,
-    addressUnitBits: parsed.addressUnitBits ?? 8,
-    mapTableWidth: existingState?.mapTableWidth ?? 32,
-    mapShowGaps: existingState?.mapShowGaps ?? true,
-    mapSortDescending: existingState?.mapSortDescending ?? false,
-  }));
+  if (localId) {
+    // Update localStorage with fresh data, preserving local-only UI fields
+    // (activeRegisterId, mapTableWidth, mapShowGaps, mapSortDescending).
+    // These fields are not synced to the server, so overwriting them with
+    // defaults would reset the user's view preferences.
+    const existingProject = loadProject(localId);
+    const existingState = existingProject ? deserializeState(existingProject.state) : null;
+    patchProjectState(localId, serializeState({
+      registers: parsed.registers,
+      registerValues: parsed.values,
+      activeRegisterId: existingState?.activeRegisterId ?? parsed.registers[0]?.id ?? '',
+      project: parsed.project,
+      addressUnitBits: parsed.addressUnitBits ?? 8,
+      mapTableWidth: existingState?.mapTableWidth ?? 32,
+      mapShowGaps: existingState?.mapShowGaps ?? true,
+      mapSortDescending: existingState?.mapSortDescending ?? false,
+    }));
+  }
   needsVersionSyncRef.current = true;
 
   setInternal((prev) => ({
@@ -99,8 +136,12 @@ export async function checkAndPullFreshVersion(
     conflict: null,
   }));
 
-  updateCloudMetadata(localId, {
-    cloudSavedAt: serverResponse.updatedAt,
-    serverVersion,
-  });
+  if (localId) {
+    updateCloudMetadata(localId, {
+      cloudSavedAt: serverResponse.updatedAt,
+      serverVersion,
+    });
+  }
+
+  return { applied: true, serverVersion };
 }

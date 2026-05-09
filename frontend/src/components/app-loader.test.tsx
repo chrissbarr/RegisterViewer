@@ -50,11 +50,13 @@ vi.mock('../context/app-context', () => ({
 }));
 
 vi.mock('./layout/app-shell', () => ({
-  AppShell: ({ cloudInit, initialLocalId, initialUnsaved }: { cloudInit?: { projectId: string; isOwner: boolean }; initialLocalId?: string | null; initialUnsaved?: { name: string; source: string } | null }) => (
+  AppShell: ({ cloudInit, initialLocalId, initialUnsaved }: { cloudInit?: { projectId: string; isOwner: boolean; storage?: string; serverVersion?: number | null }; initialLocalId?: string | null; initialUnsaved?: { name: string; source: string } | null }) => (
     <div
       data-testid="app-shell"
       data-cloud-id={cloudInit?.projectId ?? ''}
       data-is-owner={String(cloudInit?.isOwner ?? false)}
+      data-storage={cloudInit?.storage ?? ''}
+      data-server-version={cloudInit?.serverVersion?.toString() ?? ''}
       data-local-id={initialLocalId ?? ''}
       data-unsaved-name={initialUnsaved?.name ?? ''}
       data-unsaved-source={initialUnsaved?.source ?? ''}
@@ -294,7 +296,7 @@ describe('AppLoader', () => {
     });
 
     it('passes isOwner from server response', async () => {
-      const importResult = makeImportResult({ isOwner: true });
+      const importResult = makeImportResult({ isOwner: true, version: 7 });
       (resolveInitialProject as Mock).mockReturnValue({ type: 'cloud', cloudId: 'cloud-abc123' });
       (fetchAndParseCloudProject as Mock).mockResolvedValue(importResult);
 
@@ -304,6 +306,8 @@ describe('AppLoader', () => {
         const shell = screen.getByTestId('app-shell');
         expect(shell.dataset.isOwner).toBe('true');
         expect(shell.dataset.cloudId).toBe('cloud-abc123');
+        expect(shell.dataset.storage).toBe('cloud');
+        expect(shell.dataset.serverVersion).toBe('7');
       });
     });
 
@@ -397,7 +401,12 @@ describe('AppLoader', () => {
     });
 
     it('includes cloudInit when stored project has a cloudId', async () => {
-      const stored = makeStoredProject({ localId: 'local-abc', cloudId: 'cloud-xyz' });
+      const stored = makeStoredProject({
+        localId: 'local-abc',
+        cloudId: 'cloud-xyz',
+        storage: 'cloud',
+        serverVersion: 9,
+      });
       (resolveInitialProject as Mock).mockReturnValue({ type: 'local', localId: 'local-abc' });
       (loadProject as Mock).mockReturnValue(stored);
       (deserializeState as Mock).mockReturnValue(TEST_APP_STATE);
@@ -407,9 +416,37 @@ describe('AppLoader', () => {
       await waitFor(() => {
         const shell = screen.getByTestId('app-shell');
         expect(shell.dataset.cloudId).toBe('cloud-xyz');
-        // isOwner defaults to false; server re-evaluation promotes it after mount
-        expect(shell.dataset.isOwner).toBe('false');
+        expect(shell.dataset.isOwner).toBe('true');
+        expect(shell.dataset.storage).toBe('cloud');
+        expect(shell.dataset.serverVersion).toBe('9');
       });
+    });
+
+    it('does not treat stored shared cloud projects as owned just because a JWT exists', async () => {
+      const stored = makeStoredProject({
+        localId: 'local-shared',
+        cloudId: 'shared-cloud',
+        storage: 'local',
+        serverVersion: 4,
+      });
+      localStorage.setItem('register-viewer-jwt', 'test-jwt-token');
+      (resolveInitialProject as Mock).mockReturnValue({ type: 'local', localId: 'local-shared' });
+      (loadProject as Mock).mockReturnValue(stored);
+      (deserializeState as Mock).mockReturnValue(TEST_APP_STATE);
+
+      try {
+        render(<AppLoader />);
+
+        await waitFor(() => {
+          const shell = screen.getByTestId('app-shell');
+          expect(shell.dataset.cloudId).toBe('shared-cloud');
+          expect(shell.dataset.isOwner).toBe('false');
+          expect(shell.dataset.storage).toBe('local');
+          expect(shell.dataset.serverVersion).toBe('4');
+        });
+      } finally {
+        localStorage.removeItem('register-viewer-jwt');
+      }
     });
 
     it('falls back to unsaved seed when local project record is missing', async () => {

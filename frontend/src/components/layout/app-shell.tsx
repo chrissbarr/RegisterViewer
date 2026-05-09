@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { ChevronRight } from 'lucide-react';
 import { SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MAX, type AppState, type SerializedAppState } from '../../types/register';
 import type { UnsavedProjectSource } from '../../types/project';
+import type { CloudInit } from '../../types/cloud-sync';
 import { useAppState } from '../../context/app-context';
 import { EditProvider } from '../../context/edit-context';
 import { PreferencesProvider, usePreferences, usePreferencesActions } from '../../context/preferences-context';
@@ -14,6 +15,7 @@ import { Header } from './header';
 import { Sidebar } from './sidebar';
 import { MainPanel } from '../viewer/main-panel';
 import { Toast } from '../common/toast';
+import { CloudConflictBanner } from '../common/cloud-conflict-banner';
 import { LoginDialog } from '../auth/login-dialog';
 import { ToastPortalProvider } from '../../context/toast-portal-context';
 import { AuthProvider } from '../../context/auth-context';
@@ -28,7 +30,7 @@ import { SAVE_DEBOUNCE_MS } from '../../constants';
  * - `initialLocalId` is consumed by the outer `AppShell` and passed to `ProjectStorageProvider`
  */
 interface AppShellProps {
-  cloudInit?: { projectId: string; isOwner: boolean };
+  cloudInit?: CloudInit;
   initialLocalId?: string | null;
   initialUnsaved?: { name: string; source: UnsavedProjectSource } | null;
 }
@@ -66,7 +68,11 @@ function AppShellInner({ cloudInit }: AppShellProps) {
   useEffect(() => {
     const init = cloudInitRef.current;
     if (init) {
-      cloudActions.initFromProject(init.projectId, init.isOwner);
+      cloudActions.initFromProject(init.projectId, init.isOwner, init.storage, {
+        serverVersion: init.serverVersion,
+        cloudSavedAt: init.cloudSavedAt,
+        visibility: init.visibility,
+      });
       cloudInitRef.current = undefined;
     }
   }, [cloudActions]);
@@ -193,6 +199,13 @@ function AppShellInner({ cloudInit }: AppShellProps) {
   return (
     <div className="h-screen flex flex-col bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100">
       <Header />
+      {cloud.conflict && (
+        <CloudConflictBanner
+          serverVersion={cloud.conflict.serverVersion}
+          onKeepLocalVersion={cloudActions.saveToCloud}
+          onLoadServerVersion={cloudActions.loadServerVersion}
+        />
+      )}
       <AnimatePresence>
         {cloud.error && (
           <Toast

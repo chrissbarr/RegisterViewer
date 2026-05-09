@@ -55,7 +55,7 @@ function toManifestEntry(project: StoredLocalProject): ProjectManifestEntry {
     createdAt: project.createdAt,
     localSavedAt: project.localSavedAt,
     cloudSavedAt: project.cloudSavedAt,
-    serverVersion: null,
+    serverVersion: project.serverVersion ?? null,
     storage: project.storage ?? 'local',
   };
 }
@@ -187,6 +187,7 @@ interface CreateProjectCloudMeta {
   cloudId: string;
   visibility: import('../types/project').Visibility;
   cloudSavedAt: string;
+  serverVersion?: number | null;
   storage?: 'local' | 'cloud';
 }
 
@@ -202,6 +203,7 @@ export function createProject(initialState: SerializedAppState, name?: string, c
     createdAt: now,
     localSavedAt: now,
     cloudSavedAt: cloudMeta?.cloudSavedAt ?? null,
+    serverVersion: cloudMeta?.serverVersion ?? null,
     storage: cloudMeta?.storage ?? 'local',
     state: initialState,
   };
@@ -258,7 +260,7 @@ export function patchProjectState(localId: string, state: SerializedAppState): v
 /** Update metadata fields on a project (name, cloudId, visibility, etc.) */
 export function updateProjectMetadata(
   localId: string,
-  updates: Partial<Pick<StoredLocalProject, 'name' | 'cloudId' | 'visibility' | 'cloudSavedAt' | 'storage'>>,
+  updates: Partial<Pick<StoredLocalProject, 'name' | 'cloudId' | 'visibility' | 'cloudSavedAt' | 'storage' | 'serverVersion'>>,
 ): void {
   const project = loadProject(localId);
   if (!project) return;
