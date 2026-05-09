@@ -200,11 +200,13 @@ function AppShellInner({ cloudInit }: AppShellProps) {
     <div className="h-screen flex flex-col bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100">
       <Header />
       {cloud.conflict && (
-        <CloudConflictBanner
-          serverVersion={cloud.conflict.serverVersion}
-          onKeepLocalVersion={cloudActions.saveToCloud}
-          onLoadServerVersion={cloudActions.loadServerVersion}
-        />
+        <div className="mx-4 mt-3 shrink-0">
+          <CloudConflictBanner
+            serverVersion={cloud.conflict.serverVersion}
+            onKeepLocalVersion={cloudActions.saveToCloud}
+            onLoadServerVersion={cloudActions.loadServerVersion}
+          />
+        </div>
       )}
       <AnimatePresence>
         {cloud.error && (

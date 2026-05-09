@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { AlertTriangle, CloudDownload, CloudUpload } from 'lucide-react';
 
 interface CloudConflictBannerProps {
   serverVersion: number;
@@ -30,32 +29,44 @@ export function CloudConflictBanner({
   return (
     <div
       role="alert"
-      className="flex flex-wrap items-center gap-3 border-b border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-950 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100"
+      className="flex flex-col gap-1 px-3 py-2.5
+        bg-amber-50 dark:bg-amber-950/40
+        border border-amber-200 dark:border-amber-800
+        rounded-lg
+        text-amber-800 dark:text-amber-200 text-sm"
     >
-      <AlertTriangle size={16} aria-hidden="true" className="shrink-0" />
-      <p className="min-w-0 flex-1">
-        Cloud conflict. Another session saved version {serverVersion}; your local edits are preserved.
-      </p>
-      <div className="flex shrink-0 items-center gap-2">
-        <button
-          type="button"
-          onClick={() => runAction('keep-local', onKeepLocalVersion)}
-          disabled={disabled}
-          className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-white px-2.5 py-1 font-medium text-amber-950 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100 dark:hover:bg-amber-900"
-        >
-          <CloudUpload size={14} aria-hidden="true" />
-          {pendingAction === 'keep-local' ? 'Saving...' : 'Keep local'}
-        </button>
-        <button
-          type="button"
-          onClick={() => runAction('load-server', onLoadServerVersion)}
-          disabled={disabled}
-          className="inline-flex items-center gap-1.5 rounded-md bg-amber-600 px-2.5 py-1 font-medium text-white transition-colors hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-amber-500 dark:text-amber-950 dark:hover:bg-amber-400"
-        >
-          <CloudDownload size={14} aria-hidden="true" />
-          {pendingAction === 'load-server' ? 'Loading...' : 'Load server'}
-        </button>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span>Cloud conflict</span>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => runAction('keep-local', onKeepLocalVersion)}
+            disabled={disabled}
+            className="px-2.5 py-0.5 rounded text-xs font-medium
+              bg-amber-200 dark:bg-amber-800
+              hover:bg-amber-300 dark:hover:bg-amber-700
+              disabled:opacity-50 disabled:cursor-not-allowed
+              transition-colors"
+          >
+            {pendingAction === 'keep-local' ? 'Saving...' : 'Keep local'}
+          </button>
+          <button
+            type="button"
+            onClick={() => runAction('load-server', onLoadServerVersion)}
+            disabled={disabled}
+            className="px-2.5 py-0.5 rounded text-xs font-medium
+              bg-amber-200 dark:bg-amber-800
+              hover:bg-amber-300 dark:hover:bg-amber-700
+              disabled:opacity-50 disabled:cursor-not-allowed
+              transition-colors"
+          >
+            {pendingAction === 'load-server' ? 'Loading...' : 'Load server'}
+          </button>
+        </div>
       </div>
+      <p className="text-xs leading-relaxed text-amber-700/80 dark:text-amber-300/70">
+        Another session saved version {serverVersion}; your local edits are preserved.
+      </p>
     </div>
   );
 }
