@@ -163,6 +163,7 @@ describe('useActiveProjectCloudOps', () => {
         cloudSavedAt: TEST_TIMESTAMP,
         storage: 'cloud',
         serverVersion: 1,
+        cloudConflictVersion: null,
       });
       expect(setCloudUrl).toHaveBeenCalledWith(TEST_CLOUD_ID);
       // setInternal should have been called with status 'saving' then with the created result
@@ -200,6 +201,7 @@ describe('useActiveProjectCloudOps', () => {
       expect(deps.updateCloudMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, {
         cloudSavedAt: TEST_TIMESTAMP,
         serverVersion: 3,
+        cloudConflictVersion: null,
       });
     });
 
@@ -222,6 +224,7 @@ describe('useActiveProjectCloudOps', () => {
         cloudId: null,
         visibility: 'private',
         cloudSavedAt: null,
+        cloudConflictVersion: null,
         storage: 'local',
       });
       expect(clearCloudUrl).toHaveBeenCalled();
@@ -275,6 +278,7 @@ describe('useActiveProjectCloudOps', () => {
       expect(deps.updateCloudMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, {
         cloudSavedAt: TEST_TIMESTAMP,
         serverVersion: 2,
+        cloudConflictVersion: null,
       });
       // setInternal should NOT have been called with the timestamp update
       // because the active project changed (only the 'saving' status update runs)
@@ -443,7 +447,10 @@ describe('useActiveProjectCloudOps', () => {
       });
       expect(hasConflict).toBe(true);
       expect(checkAndPullFreshVersion).not.toHaveBeenCalled();
-      expect(deps.updateCloudMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, { serverVersion: 5 });
+      expect(deps.updateCloudMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, {
+        serverVersion: 5,
+        cloudConflictVersion: 5,
+      });
     });
 
     it('already-dirty 409 shows conflict UX for direct cloud URL with no localId', async () => {
@@ -716,6 +723,7 @@ describe('useActiveProjectCloudOps', () => {
         cloudSavedAt: TEST_TIMESTAMP,
         storage: 'cloud',
         serverVersion: 1,
+        cloudConflictVersion: null,
       });
       expect(setCloudUrl).toHaveBeenCalledWith('forked-cloud-id');
     });
@@ -742,6 +750,7 @@ describe('useActiveProjectCloudOps', () => {
         cloudSavedAt: TEST_TIMESTAMP,
         storage: 'cloud',
         serverVersion: 1,
+        cloudConflictVersion: null,
       });
     });
   });
@@ -767,6 +776,7 @@ describe('useActiveProjectCloudOps', () => {
         cloudId: null,
         visibility: 'private',
         cloudSavedAt: null,
+        cloudConflictVersion: null,
         storage: 'local',
       });
       expect(clearCloudUrl).toHaveBeenCalled();

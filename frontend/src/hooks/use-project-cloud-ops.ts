@@ -74,9 +74,15 @@ export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
           cloudSavedAt: result.timestamp,
           storage: 'cloud',
           serverVersion: result.version,
+          cloudConflictVersion: null,
         });
       } else {
-        updateCloudMetadata(localId, { cloudSavedAt: result.timestamp, storage: 'cloud', serverVersion: result.version });
+        updateCloudMetadata(localId, {
+          cloudSavedAt: result.timestamp,
+          storage: 'cloud',
+          serverVersion: result.version,
+          cloudConflictVersion: null,
+        });
       }
     });
     if (!lockResult.executed) {

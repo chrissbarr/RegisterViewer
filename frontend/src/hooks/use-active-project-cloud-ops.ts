@@ -63,11 +63,13 @@ async function handleConflictResult(params: ConflictHandlerParams): Promise<void
     internalRef,
   );
 
-  if (capturedLocalId) {
-    updateCloudMetadata(capturedLocalId, { serverVersion: result.serverVersion });
-  }
-
   if (dirtyAtSaveStart || editedDuringSave) {
+    if (capturedLocalId) {
+      updateCloudMetadata(capturedLocalId, {
+        serverVersion: result.serverVersion,
+        cloudConflictVersion: result.serverVersion,
+      });
+    }
     if (!stillOnSameProject) return;
     // Dirty 409: preserve local edits and wait for explicit user action.
     setInternal((prev) => ({
@@ -80,6 +82,10 @@ async function handleConflictResult(params: ConflictHandlerParams): Promise<void
   }
 
   if (!stillOnSameProject) return;
+
+  if (capturedLocalId) {
+    updateCloudMetadata(capturedLocalId, { serverVersion: result.serverVersion });
+  }
 
   // Clean 409: no local edits; pull server version silently unless a new edit appears.
   setInternal((prev) => ({
@@ -194,6 +200,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
       cloudSavedAt: result.timestamp,
       storage: 'cloud',
       serverVersion: result.version,
+      cloudConflictVersion: null,
     });
 
     const shareUrl = buildProjectUrl(result.cloudId);
@@ -283,7 +290,11 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
           }
         } else {
           if (capturedLocalId) {
-            updateCloudMetadata(capturedLocalId, { cloudSavedAt: result.timestamp, serverVersion: result.version });
+            updateCloudMetadata(capturedLocalId, {
+              cloudSavedAt: result.timestamp,
+              serverVersion: result.version,
+              cloudConflictVersion: null,
+            });
           }
           if (stillOnSameProject) {
             setInternal((prev) => ({

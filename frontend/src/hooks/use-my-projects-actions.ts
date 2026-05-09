@@ -79,8 +79,9 @@ export function useMyProjectsActions(
           visibility: project.visibility,
           createdAt: project.createdAt,
           localSavedAt: new Date().toISOString(),
-          cloudSavedAt: project.cloudSavedAt,
+          cloudSavedAt: result.updatedAt,
           storage: project.storage,
+          serverVersion: result.version,
           state: {
             registers: result.registers,
             activeRegisterId: result.registers[0]?.id ?? null,
@@ -89,6 +90,7 @@ export function useMyProjectsActions(
             addressUnitBits: result.addressUnitBits,
           },
         });
+        refreshProjectList();
       } catch (err) {
         setDownloadingLocalId(null);
         setCloudError(friendlyErrorMessage(err, 'Failed to download project from cloud.'));
@@ -105,7 +107,7 @@ export function useMyProjectsActions(
       onClose();
     }
     announce('Project opened');
-  }, [projects, switchProject, announce, onClose, getJwt, setCloudError, onSwitchProject]);
+  }, [projects, switchProject, announce, onClose, getJwt, setCloudError, onSwitchProject, refreshProjectList]);
 
   const handleDelete = useCallback(async (localId: string) => {
     const project = projects.find(p => p.localId === localId);

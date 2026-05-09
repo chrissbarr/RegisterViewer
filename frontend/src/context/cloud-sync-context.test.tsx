@@ -13,25 +13,31 @@ import { ApiError } from '../utils/api-client';
 
 // ── Mocks ────────────────────────────────────────────────────────────
 
-vi.mock('../utils/api-client', () => ({
-  isCloudEnabled: vi.fn(() => true),
-  ApiError: class ApiError extends Error {
+vi.mock('../utils/api-client', () => {
+  class MockApiError extends Error {
     status: number;
-    errorBody: { error: string };
-    constructor(status: number, errorBody: { error: string }) {
-      super(errorBody.error);
+    errorBody: Record<string, unknown>;
+    constructor(status: number, errorBody: Record<string, unknown>) {
+      super(String(errorBody.error));
       this.name = 'ApiError';
       this.status = status;
       this.errorBody = errorBody;
     }
-  },
-  createProject: vi.fn(),
-  updateProject: vi.fn(),
-  patchProjectVisibility: vi.fn(),
-  getProject: vi.fn(),
-  deleteProject: vi.fn(),
-  listProjects: vi.fn(),
-}));
+  }
+  return {
+    isCloudEnabled: vi.fn(() => true),
+    isConflictError: vi.fn((err: unknown) => err instanceof MockApiError
+      && err.status === 409
+      && typeof err.errorBody.currentVersion === 'number'),
+    ApiError: MockApiError,
+    createProject: vi.fn(),
+    updateProject: vi.fn(),
+    patchProjectVisibility: vi.fn(),
+    getProject: vi.fn(),
+    deleteProject: vi.fn(),
+    listProjects: vi.fn(),
+  };
+});
 
 vi.mock('../utils/cloud-project-loader', () => ({
   fetchAndParseCloudProject: vi.fn(),
@@ -42,6 +48,7 @@ vi.mock('../utils/project-storage', () => ({
   loadManifest: vi.fn(() => ({ version: 1, projects: [] })),
   saveManifest: vi.fn(),
   loadProject: vi.fn(() => null),
+  flushProjectState: vi.fn(),
   buildProjectUrl: vi.fn((id: string) => `https://example.com/#/p/${id}`),
   createProject: vi.fn(),
   deleteProject: vi.fn(),
@@ -100,6 +107,7 @@ import { fetchAndParseCloudProject } from '../utils/cloud-project-loader';
 import {
   loadManifest,
   loadProject,
+  flushProjectState,
   updateProjectMetadata,
   evictProjectData,
 } from '../utils/project-storage';
@@ -173,6 +181,7 @@ beforeEach(() => {
   (isCloudEnabled as Mock).mockReturnValue(true);
   (loadManifest as Mock).mockReturnValue({ version: 1, projects: [] });
   (loadProject as Mock).mockReturnValue(null);
+  (flushProjectState as Mock).mockReturnValue(null);
   (exportToObject as Mock).mockReturnValue({ version: 1, registers: [], values: {} });
   // getProject is called by the ownership re-evaluation effect; default to a resolved promise
   (apiGetProject as Mock).mockResolvedValue({ id: 'test', data: '{}', createdAt: '', updatedAt: '', isOwner: false, version: 1 });
@@ -719,6 +728,7 @@ describe('CloudSyncProvider', () => {
         result.current.actions.initFromProject('cloud-existing', true, 'cloud');
       });
 
+      (loadProject as Mock).mockClear();
       await act(async () => {
         await result.current.actions.saveProjectToCloud(TEST_LOCAL_ID);
       });
@@ -745,6 +755,7 @@ describe('CloudSyncProvider', () => {
 
       const { result } = renderCloudSync();
 
+      (loadProject as Mock).mockClear();
       await act(async () => {
         await result.current.actions.saveProjectToCloud(TEST_LOCAL_ID);
       });
@@ -1387,10 +1398,7 @@ describe('CloudSyncProvider', () => {
       expect(evictProjectData).not.toHaveBeenCalledWith(PREV_LOCAL_ID);
     });
 
-    it('best-effort save reads previous project from localStorage on switch', async () => {
-      // The best-effort save reads from localStorage via loadProject()
-      // to get the departing project's state (not appStateRef which
-      // may already point to the new project).
+    it('flushes a fast edit locally before switch and saves that departing payload to cloud', async () => {
       authMock.getJwt.mockReturnValue('mock-jwt');
 
       (loadManifest as Mock).mockReturnValue({
@@ -1401,10 +1409,9 @@ describe('CloudSyncProvider', () => {
         ],
       });
 
-      // Return distinct states so we can tell which one was saved
-      const prevProjectState = makeState({
+      const latestPrevProjectState = makeState({
         registers: [makeRegister({ id: 'reg-1' })],
-        registerValues: { 'reg-1': 0xAAn },
+        registerValues: { 'reg-1': 0x42n },
       });
       const nextProjectState = makeState({
         registers: [makeRegister({ id: 'reg-2' })],
@@ -1412,8 +1419,24 @@ describe('CloudSyncProvider', () => {
       });
       (loadProject as Mock).mockImplementation((id: string) => ({
         localId: id,
-        state: id === NEXT_LOCAL_ID ? nextProjectState : prevProjectState,
+        cloudId: id === PREV_LOCAL_ID ? 'cloud-prev' : null,
+        storage: id === PREV_LOCAL_ID ? 'cloud' : 'local',
+        serverVersion: id === PREV_LOCAL_ID ? 1 : null,
+        state: id === NEXT_LOCAL_ID ? nextProjectState : latestPrevProjectState,
       }));
+      (flushProjectState as Mock).mockImplementation((id: string, state: unknown) => {
+        return {
+          localId: id,
+          cloudId: 'cloud-prev',
+          storage: 'cloud',
+          serverVersion: 1,
+          cloudSavedAt: '2025-01-01T00:00:00Z',
+          visibility: 'private',
+          state,
+        };
+      });
+      const latestCloudPayload = { registerValues: { 'reg-1': 0x42n } };
+      (exportToObject as Mock).mockReturnValue(latestCloudPayload);
 
       // Cloud update succeeds
       (apiUpdateProject as Mock).mockResolvedValue({ id: 'cloud-prev', updatedAt: '2026-01-01T00:00:00Z', version: 2 });
@@ -1427,12 +1450,13 @@ describe('CloudSyncProvider', () => {
       });
 
       // Make data dirty so the best-effort save fires
-      act(() => {
+      await act(async () => {
         result.current.dispatch({
           type: 'SET_REGISTER_VALUE',
           registerId: 'reg-1',
           value: 0x42n,
         });
+        await Promise.resolve();
       });
 
       // Switch to the next project — triggers best-effort save
@@ -1445,15 +1469,241 @@ describe('CloudSyncProvider', () => {
         await new Promise(r => setTimeout(r, 50));
       });
 
-      // loadProject should have been called with the PREVIOUS project's localId
-      // to read its state from localStorage (not from appStateRef)
+      expect(flushProjectState).toHaveBeenCalledWith(
+        PREV_LOCAL_ID,
+        expect.objectContaining({
+          registerValues: { 'reg-1': 0x42n },
+        }),
+      );
       expect(loadProject).toHaveBeenCalledWith(PREV_LOCAL_ID);
-      // The API update should have been called for the previous project
       expect(apiUpdateProject).toHaveBeenCalledWith(
         'cloud-prev',
-        expect.anything(),
+        latestCloudPayload,
         'mock-jwt',
-        1, // serverVersion
+        1,
+      );
+    });
+
+    it('does not PUT on a clean switch after the incoming project bumps dataVersion', async () => {
+      authMock.getJwt.mockReturnValue('mock-jwt');
+      (loadManifest as Mock).mockReturnValue({
+        version: 1,
+        projects: [
+          makeManifestEntry({ localId: PREV_LOCAL_ID, cloudId: 'cloud-prev', storage: 'cloud', serverVersion: 5 }),
+          makeManifestEntry({ localId: NEXT_LOCAL_ID, cloudId: null, name: 'Next' }),
+        ],
+      });
+      (loadProject as Mock).mockImplementation((id: string) => ({
+        localId: id,
+        cloudId: id === PREV_LOCAL_ID ? 'cloud-prev' : null,
+        storage: id === PREV_LOCAL_ID ? 'cloud' : 'local',
+        serverVersion: id === PREV_LOCAL_ID ? 5 : null,
+        state: id === NEXT_LOCAL_ID
+          ? makeState({ registers: [makeRegister({ id: 'reg-2' })] })
+          : makeState({ registers: [makeRegister({ id: 'reg-1' })], registerValues: { 'reg-1': 0xFFn } }),
+      }));
+      (flushProjectState as Mock).mockImplementation((id: string, state: unknown) => ({
+        localId: id,
+        cloudId: 'cloud-prev',
+        storage: 'cloud',
+        serverVersion: 5,
+        cloudSavedAt: '2025-01-01T00:00:00Z',
+        visibility: 'private',
+        state,
+      }));
+      (apiGetProject as Mock).mockReturnValue(new Promise(() => {}));
+
+      const { result } = renderWithProjectSwitch();
+
+      await act(async () => {
+        result.current.actions.initFromProject('cloud-prev', true, 'cloud', { serverVersion: 5 });
+      });
+
+      await act(async () => {
+        result.current.storageActions.switchProject(NEXT_LOCAL_ID);
+      });
+
+      await act(async () => {
+        await new Promise(r => setTimeout(r, 50));
+      });
+
+      expect(flushProjectState).toHaveBeenCalledWith(PREV_LOCAL_ID, expect.anything());
+      expect(apiUpdateProject).not.toHaveBeenCalled();
+    });
+
+    it('skips departing switch save when JWT is unavailable', async () => {
+      authMock.user = null;
+      authMock.getJwt.mockReturnValue(null);
+      (loadManifest as Mock).mockReturnValue({
+        version: 1,
+        projects: [
+          makeManifestEntry({ localId: PREV_LOCAL_ID, cloudId: 'cloud-prev', storage: 'cloud', serverVersion: 1 }),
+          makeManifestEntry({ localId: NEXT_LOCAL_ID, cloudId: null, name: 'Next' }),
+        ],
+      });
+      (loadProject as Mock).mockImplementation((id: string) => ({
+        localId: id,
+        cloudId: id === PREV_LOCAL_ID ? 'cloud-prev' : null,
+        storage: id === PREV_LOCAL_ID ? 'cloud' : 'local',
+        serverVersion: id === PREV_LOCAL_ID ? 1 : null,
+        state: makeState({ registers: [makeRegister({ id: id === PREV_LOCAL_ID ? 'reg-1' : 'reg-2' })] }),
+      }));
+      (flushProjectState as Mock).mockImplementation((id: string, state: unknown) => ({
+        localId: id,
+        cloudId: 'cloud-prev',
+        storage: 'cloud',
+        serverVersion: 1,
+        cloudSavedAt: '2025-01-01T00:00:00Z',
+        visibility: 'private',
+        state,
+      }));
+
+      const { result } = renderWithProjectSwitch();
+
+      await act(async () => {
+        result.current.actions.initFromProject('cloud-prev', true, 'cloud', { serverVersion: 1 });
+      });
+      await act(async () => {
+        result.current.dispatch({
+          type: 'SET_REGISTER_VALUE',
+          registerId: 'reg-1',
+          value: 0x42n,
+        });
+        await Promise.resolve();
+      });
+      await act(async () => {
+        result.current.storageActions.switchProject(NEXT_LOCAL_ID);
+      });
+
+      expect(flushProjectState).toHaveBeenCalled();
+      expect(apiUpdateProject).not.toHaveBeenCalled();
+    });
+
+    it('marks departing non-active switch-save conflicts for later recovery', async () => {
+      authMock.getJwt.mockReturnValue('mock-jwt');
+      (loadManifest as Mock).mockReturnValue({
+        version: 1,
+        projects: [
+          makeManifestEntry({ localId: PREV_LOCAL_ID, cloudId: 'cloud-prev', storage: 'cloud', serverVersion: 1 }),
+          makeManifestEntry({ localId: NEXT_LOCAL_ID, cloudId: null, name: 'Next' }),
+        ],
+      });
+      (loadProject as Mock).mockImplementation((id: string) => ({
+        localId: id,
+        cloudId: id === PREV_LOCAL_ID ? 'cloud-prev' : null,
+        storage: id === PREV_LOCAL_ID ? 'cloud' : 'local',
+        serverVersion: id === PREV_LOCAL_ID ? 1 : null,
+        state: makeState({ registers: [makeRegister({ id: id === PREV_LOCAL_ID ? 'reg-1' : 'reg-2' })] }),
+      }));
+      (flushProjectState as Mock).mockImplementation((id: string, state: unknown) => ({
+        localId: id,
+        cloudId: 'cloud-prev',
+        storage: 'cloud',
+        serverVersion: 1,
+        cloudSavedAt: '2025-01-01T00:00:00Z',
+        visibility: 'private',
+        state,
+      }));
+      (apiUpdateProject as Mock).mockRejectedValue(
+        new ApiError(409, { error: 'version_conflict', currentVersion: 9 }),
+      );
+      (apiGetProject as Mock).mockReturnValue(new Promise(() => {}));
+
+      const { result } = renderWithProjectSwitch();
+
+      await act(async () => {
+        result.current.actions.initFromProject('cloud-prev', true, 'cloud', { serverVersion: 1 });
+      });
+      await act(async () => {
+        result.current.dispatch({
+          type: 'SET_REGISTER_VALUE',
+          registerId: 'reg-1',
+          value: 0x42n,
+        });
+        await Promise.resolve();
+      });
+      await act(async () => {
+        result.current.storageActions.switchProject(NEXT_LOCAL_ID);
+      });
+      await act(async () => {
+        await new Promise(r => setTimeout(r, 50));
+      });
+
+      expect(updateProjectMetadata).toHaveBeenCalledWith(PREV_LOCAL_ID, {
+        serverVersion: 9,
+        cloudConflictVersion: 9,
+      });
+      expect(result.current.state.conflict).toBeNull();
+    });
+
+    it('defers departing switch save while an active save holds the mutation lock', async () => {
+      authMock.getJwt.mockReturnValue('mock-jwt');
+      (loadManifest as Mock).mockReturnValue({
+        version: 1,
+        projects: [
+          makeManifestEntry({ localId: PREV_LOCAL_ID, cloudId: 'cloud-prev', storage: 'cloud', serverVersion: 1 }),
+          makeManifestEntry({ localId: NEXT_LOCAL_ID, cloudId: null, name: 'Next' }),
+        ],
+      });
+      (loadProject as Mock).mockImplementation((id: string) => ({
+        localId: id,
+        cloudId: id === PREV_LOCAL_ID ? 'cloud-prev' : null,
+        storage: id === PREV_LOCAL_ID ? 'cloud' : 'local',
+        serverVersion: id === PREV_LOCAL_ID ? 2 : null,
+        state: makeState({ registers: [makeRegister({ id: id === PREV_LOCAL_ID ? 'reg-1' : 'reg-2' })] }),
+      }));
+      (flushProjectState as Mock).mockImplementation((id: string, state: unknown) => ({
+        localId: id,
+        cloudId: 'cloud-prev',
+        storage: 'cloud',
+        serverVersion: 1,
+        cloudSavedAt: '2025-01-01T00:00:00Z',
+        visibility: 'private',
+        state,
+      }));
+      (exportToObject as Mock).mockReturnValue({ registerValues: { 'reg-1': 0x42n } });
+
+      let resolveActiveSave: ((value: unknown) => void) | undefined;
+      (apiUpdateProject as Mock)
+        .mockImplementationOnce(() => new Promise((resolve) => { resolveActiveSave = resolve; }))
+        .mockResolvedValueOnce({ id: 'cloud-prev', updatedAt: '2026-01-01T00:00:00Z', version: 3 });
+      (apiGetProject as Mock).mockReturnValue(new Promise(() => {}));
+
+      const { result } = renderWithProjectSwitch();
+
+      await act(async () => {
+        result.current.actions.initFromProject('cloud-prev', true, 'cloud', { serverVersion: 1 });
+      });
+      await act(async () => {
+        result.current.dispatch({
+          type: 'SET_REGISTER_VALUE',
+          registerId: 'reg-1',
+          value: 0x42n,
+        });
+        await Promise.resolve();
+      });
+
+      act(() => {
+        void result.current.actions.saveToCloud();
+      });
+      expect(apiUpdateProject).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        result.current.storageActions.switchProject(NEXT_LOCAL_ID);
+      });
+      expect(apiUpdateProject).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        resolveActiveSave?.({ id: 'cloud-prev', updatedAt: '2026-01-01T00:00:00Z', version: 2 });
+        await new Promise(r => setTimeout(r, 300));
+      });
+
+      expect(apiUpdateProject).toHaveBeenCalledTimes(2);
+      expect(apiUpdateProject).toHaveBeenLastCalledWith(
+        'cloud-prev',
+        { registerValues: { 'reg-1': 0x42n } },
+        'mock-jwt',
+        2,
       );
     });
   });

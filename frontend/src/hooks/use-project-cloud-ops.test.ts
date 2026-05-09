@@ -120,6 +120,7 @@ describe('useProjectCloudOps', () => {
         kind: 'created',
         cloudId: 'new-cloud',
         timestamp: '2026-01-01T00:00:00Z',
+        version: 1,
       });
 
       const { result } = renderHook(() => useProjectCloudOps(deps));
@@ -132,6 +133,8 @@ describe('useProjectCloudOps', () => {
         cloudId: 'new-cloud',
         cloudSavedAt: '2026-01-01T00:00:00Z',
         storage: 'cloud',
+        serverVersion: 1,
+        cloudConflictVersion: null,
       });
       // Should NOT update active project cloud state
       expect(setCloudUrl).not.toHaveBeenCalled();
@@ -166,6 +169,7 @@ describe('useProjectCloudOps', () => {
         cloudSavedAt: '2026-01-02T00:00:00Z',
         storage: 'cloud',
         serverVersion: 9,
+        cloudConflictVersion: null,
       });
       expect(setCloudUrl).not.toHaveBeenCalled();
     });
@@ -279,6 +283,7 @@ describe('useProjectCloudOps', () => {
         cloudId: null,
         visibility: 'private',
         cloudSavedAt: null,
+        cloudConflictVersion: null,
         storage: 'local',
       });
     });
@@ -376,6 +381,7 @@ describe('useProjectCloudOps', () => {
         cloudId: null,
         visibility: 'private',
         cloudSavedAt: null,
+        cloudConflictVersion: null,
         storage: 'local',
       });
     });

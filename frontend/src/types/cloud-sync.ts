@@ -67,6 +67,7 @@ export interface CloudMetadataUpdate {
   visibility?: Visibility;
   storage?: 'local' | 'cloud';
   serverVersion?: number | null;
+  cloudConflictVersion?: number | null;
 }
 
 export interface SyncResult {

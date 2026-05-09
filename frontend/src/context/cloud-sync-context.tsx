@@ -129,8 +129,8 @@ const CloudSyncActionsContext = createContext<CloudSyncActions | null>(null);
 export function CloudSyncProvider({ children }: { children: ReactNode }) {
   const appState = useAppState();
   const dispatch = useAppDispatch();
-  const { activeLocalId, projects } = useProjectStorage();
-  const { updateCloudMetadata, createNewProject, refreshProjectList, switchProject } = useProjectStorageActions();
+  const { activeLocalId, projects, lastDeparture } = useProjectStorage();
+  const { updateCloudMetadata, createNewProject, refreshProjectList, switchProject, registerDepartureSnapshotter } = useProjectStorageActions();
   const { user: authUser } = useAuth();
   const { getJwt } = useAuthActions();
 
@@ -189,6 +189,22 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     getJwt,
     saveToCloud: saveToCloudStable,
   });
+
+  useEffect(() => {
+    registerDepartureSnapshotter((meta) => {
+      const current = internalRef.current;
+      const isDepartingActiveProject = activeLocalIdRef.current === meta.localId
+        && current.cloudId === meta.cloudId;
+      const wasDirty = isDepartingActiveProject
+        && current.cloudId !== null
+        && dataVersionRef.current !== current.lastSavedVersion;
+      return {
+        wasDirty,
+        serverVersion: current.serverVersion > 0 ? current.serverVersion : meta.serverVersion,
+      };
+    });
+    return () => registerDepartureSnapshotter(null);
+  }, [registerDepartureSnapshotter, dataVersionRef]);
 
   // Shared freshness check context — stable refs and callbacks reused across all call sites.
   // All items are refs or stable functions — empty deps array is correct.
@@ -313,8 +329,9 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   useProjectSwitchInit({
     core, activeLocalId, projects,
     projectsRef, needsVersionSyncRef, syncTimerRef,
-    dataVersionRef, getJwt, lastFreshnessCheckRef, updateCloudMetadata,
+    dataVersionRef, mutationLockRef, getJwt, lastFreshnessCheckRef, updateCloudMetadata,
     dispatch,
+    lastDeparture,
   });
 
   // Freshness check when tab regains focus

@@ -93,9 +93,12 @@ function AppShellInner({ cloudInit }: AppShellProps) {
   useEffect(() => {
     if (!activeLocalId && !isUnsaved) return;
     pendingStateRef.current = state;
+    const targetLocalId = activeLocalId;
+    const targetIsUnsaved = isUnsaved;
+    const targetUnsavedName = unsavedName;
     const timer = setTimeout(() => {
-      if (isUnsavedRef.current) {
-        const name = state.project?.title?.trim() || unsavedNameRef.current || 'Untitled Project';
+      if (targetIsUnsaved) {
+        const name = state.project?.title?.trim() || targetUnsavedName || 'Untitled Project';
         try {
           saveUnsavedProjectState(name, serializeState(state));
         } catch (err) {
@@ -104,15 +107,14 @@ function AppShellInner({ cloudInit }: AppShellProps) {
           }
         }
       } else {
-        const id = activeLocalIdRef.current;
-        if (id) {
-          safePatchProjectState(id, serializeState(state));
+        if (targetLocalId) {
+          safePatchProjectState(targetLocalId, serializeState(state));
         }
       }
       pendingStateRef.current = null;
     }, SAVE_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [state, activeLocalId, isUnsaved]);
+  }, [state, activeLocalId, isUnsaved, unsavedName]);
 
   // Flush any pending save on unmount or page unload.
   // Ref-based so the effect is set up once — avoids stale-closure flush

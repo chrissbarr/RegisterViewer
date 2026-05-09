@@ -7,6 +7,7 @@ import {
   createProject,
   deleteProject,
   updateProjectMetadata,
+  flushProjectState,
   getMostRecentProjectId,
   getStorageUsage,
   runMigrationIfNeeded,
@@ -375,6 +376,33 @@ describe('updateProjectMetadata', () => {
 
   it('does nothing for nonexistent project', () => {
     expect(() => updateProjectMetadata('nonexistent', { name: 'X' })).not.toThrow();
+  });
+});
+
+describe('flushProjectState', () => {
+  it('updates state and preserves cloud metadata including serverVersion', () => {
+    const localId = createProject(makeSerializedState({ registerValues: { reg1: '0x1' } }), 'Cloud', {
+      cloudId: 'cloud-1',
+      visibility: 'unlisted',
+      cloudSavedAt: '2026-02-01T00:00:00.000Z',
+      serverVersion: 7,
+      storage: 'cloud',
+    });
+
+    const flushed = flushProjectState(localId, makeSerializedState({
+      registerValues: { reg1: '0x42' },
+      project: { title: 'Renamed Cloud' } as SerializedAppState['project'],
+    }));
+
+    const stored = loadProject(localId);
+    const entry = loadManifest().projects.find(p => p.localId === localId);
+    expect(flushed!.state.registerValues).toEqual({ reg1: '0x42' });
+    expect(stored!.cloudId).toBe('cloud-1');
+    expect(stored!.visibility).toBe('unlisted');
+    expect(stored!.cloudSavedAt).toBe('2026-02-01T00:00:00.000Z');
+    expect(stored!.serverVersion).toBe(7);
+    expect(stored!.name).toBe('Renamed Cloud');
+    expect(entry!.serverVersion).toBe(7);
   });
 });
 

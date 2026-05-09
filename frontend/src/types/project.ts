@@ -14,6 +14,7 @@ export interface ProjectManifestEntry {
   localSavedAt: string;     // ISO 8601
   cloudSavedAt: string | null;
   serverVersion?: number | null; // null/undefined for local-only projects
+  cloudConflictVersion?: number | null; // non-null when local data needs conflict recovery
   /**
    * Persistence strategy. `'local'` = local-only or shared/non-owned cloud project.
    * `'cloud'` = user-owned cloud-backed project (eligible for auto-sync, eviction, sign-out purge).
@@ -38,6 +39,7 @@ export interface StoredLocalProject {
   localSavedAt: string;
   cloudSavedAt: string | null;
   serverVersion?: number | null;
+  cloudConflictVersion?: number | null;
   storage: 'local' | 'cloud';
   state: import('./register').SerializedAppState;
 }

@@ -103,6 +103,7 @@ describe('checkAndPullFreshVersion', () => {
     expect(ctx.updateCloudMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, {
       cloudSavedAt: '2024-06-01T00:00:00Z',
       serverVersion: 3,
+      cloudConflictVersion: null,
     });
   });
 

@@ -14,6 +14,7 @@ vi.mock('../utils/project-storage', () => ({
   saveManifest: vi.fn(),
   loadProject: vi.fn(() => null),
   saveProject: vi.fn(),
+  flushProjectState: vi.fn(),
   createProject: vi.fn(() => 'new-local-id'),
   deleteProject: vi.fn(),
   updateProjectMetadata: vi.fn(),
@@ -46,6 +47,7 @@ import {
   loadManifest,
   loadProject,
   saveProject,
+  flushProjectState,
   createProject as createProjectInStorage,
   deleteProject as deleteProjectFromStorage,
   updateProjectMetadata,
@@ -300,6 +302,32 @@ describe('ProjectStorageProvider', () => {
       });
 
       expect(sessionStorage.getItem('register-viewer-active-project')).toBe('other-project');
+    });
+
+    it('flushes departing saved project before loading the next project', () => {
+      const otherProject = makeStoredProject({ localId: 'other-project' });
+      const flushedProject = makeStoredProject({
+        localId: TEST_LOCAL_ID,
+        cloudId: 'cloud-prev',
+        storage: 'cloud',
+        serverVersion: 7,
+      });
+      (loadProject as Mock).mockReturnValueOnce(otherProject);
+      (flushProjectState as Mock).mockReturnValue(flushedProject);
+
+      const { result } = renderWithDispatch();
+
+      act(() => {
+        result.current.actions.switchProject('other-project');
+      });
+
+      expect(flushProjectState).toHaveBeenCalledWith(
+        TEST_LOCAL_ID,
+        expect.objectContaining({
+          registers: expect.any(Array),
+          registerValues: expect.any(Object),
+        }),
+      );
     });
   });
 

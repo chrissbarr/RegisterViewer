@@ -140,6 +140,7 @@ export async function checkAndPullFreshVersion(
     updateCloudMetadata(localId, {
       cloudSavedAt: serverResponse.updatedAt,
       serverVersion,
+      cloudConflictVersion: null,
     });
   }
 

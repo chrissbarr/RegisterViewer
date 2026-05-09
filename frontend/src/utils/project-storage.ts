@@ -56,6 +56,7 @@ function toManifestEntry(project: StoredLocalProject): ProjectManifestEntry {
     localSavedAt: project.localSavedAt,
     cloudSavedAt: project.cloudSavedAt,
     serverVersion: project.serverVersion ?? null,
+    cloudConflictVersion: project.cloudConflictVersion ?? null,
     storage: project.storage ?? 'local',
   };
 }
@@ -204,6 +205,7 @@ export function createProject(initialState: SerializedAppState, name?: string, c
     localSavedAt: now,
     cloudSavedAt: cloudMeta?.cloudSavedAt ?? null,
     serverVersion: cloudMeta?.serverVersion ?? null,
+    cloudConflictVersion: null,
     storage: cloudMeta?.storage ?? 'local',
     state: initialState,
   };
@@ -257,10 +259,32 @@ export function patchProjectState(localId: string, state: SerializedAppState): v
   }
 }
 
+/**
+ * Persist a saved project's latest in-memory state through the full project
+ * record path so cloud metadata such as serverVersion is preserved.
+ */
+export function flushProjectState(localId: string, state: SerializedAppState): StoredLocalProject | null {
+  const project = loadProject(localId);
+  if (!project) return null;
+
+  const name = state.project?.title?.trim() || project.name;
+  if (name === project.name && JSON.stringify(state) === JSON.stringify(project.state)) {
+    return project;
+  }
+
+  const updated: StoredLocalProject = {
+    ...project,
+    state,
+    name,
+  };
+  saveProject(updated);
+  return loadProject(localId) ?? updated;
+}
+
 /** Update metadata fields on a project (name, cloudId, visibility, etc.) */
 export function updateProjectMetadata(
   localId: string,
-  updates: Partial<Pick<StoredLocalProject, 'name' | 'cloudId' | 'visibility' | 'cloudSavedAt' | 'storage' | 'serverVersion'>>,
+  updates: Partial<Pick<StoredLocalProject, 'name' | 'cloudId' | 'visibility' | 'cloudSavedAt' | 'storage' | 'serverVersion' | 'cloudConflictVersion'>>,
 ): void {
   const project = loadProject(localId);
   if (!project) return;

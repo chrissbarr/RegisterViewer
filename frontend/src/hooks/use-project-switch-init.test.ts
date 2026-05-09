@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { useProjectSwitchInit } from './use-project-switch-init';
 import { initialInternalState, type InternalCloudSyncState } from '../types/cloud-sync';
 import type { ProjectListEntry } from '../types/project';
+import type { ProjectDepartureSnapshot } from '../context/project-storage-context';
 
 // ── Mocks ────────────────────────────────────────────────────────────
 
@@ -17,6 +18,15 @@ vi.mock('../utils/cloud-freshness', () => ({
 vi.mock('../utils/cloud-utils', () => ({
   setCloudUrl: vi.fn(),
   clearCloudUrl: vi.fn(),
+  withMutationLock: vi.fn(async (ref: { current: boolean }, fn: () => Promise<unknown>) => {
+    if (ref.current) return { executed: false };
+    ref.current = true;
+    try {
+      return { executed: true, result: await fn() };
+    } finally {
+      ref.current = false;
+    }
+  }),
 }));
 
 vi.mock('../utils/project-storage', () => ({
@@ -68,6 +78,21 @@ function makeProjectEntry(overrides: Partial<ProjectListEntry> = {}): ProjectLis
   };
 }
 
+function makeDeparture(overrides: Partial<ProjectDepartureSnapshot> = {}): ProjectDepartureSnapshot {
+  return {
+    localId: PROJECT_A_LOCAL_ID,
+    cloudId: PROJECT_A_CLOUD_ID,
+    storage: 'cloud' as const,
+    serverVersion: 2,
+    cloudConflictVersion: null,
+    cloudSavedAt: '2024-06-01T00:00:00Z',
+    visibility: 'private' as const,
+    sequence: 1,
+    wasDirty: true,
+    ...overrides,
+  };
+}
+
 function buildDeps(overrides: Partial<ReturnType<typeof buildDefaultDeps>> = {}) {
   return { ...buildDefaultDeps(), ...overrides };
 }
@@ -108,10 +133,12 @@ function buildDefaultDeps() {
     needsVersionSyncRef: makeRef(false),
     syncTimerRef: makeRef<ReturnType<typeof setTimeout> | null>(null),
     dataVersionRef: makeRef(1),
+    mutationLockRef: makeRef(false),
     getJwt: vi.fn((): string | null => TEST_JWT),
     lastFreshnessCheckRef: makeRef(0),
     updateCloudMetadata: vi.fn(),
     dispatch: vi.fn(),
+    lastDeparture: null as ProjectDepartureSnapshot | null,
   };
 }
 
@@ -136,6 +163,7 @@ describe('useProjectSwitchInit', () => {
         isOwner: true,
         lastSavedVersion: 0, // differs from dataVersionRef.current (1) => dirty
       };
+      deps.lastDeparture = makeDeparture();
 
       (loadProject as Mock).mockReturnValue({
         localId: PROJECT_A_LOCAL_ID,
@@ -173,6 +201,7 @@ describe('useProjectSwitchInit', () => {
         expect(deps.updateCloudMetadata).toHaveBeenCalledWith(PROJECT_A_LOCAL_ID, {
           cloudSavedAt: '2024-06-02T00:00:00Z',
           serverVersion: 3,
+          cloudConflictVersion: null,
         });
       });
     });
@@ -209,6 +238,7 @@ describe('useProjectSwitchInit', () => {
         isOwner: true,
         lastSavedVersion: 0,
       };
+      deps.lastDeparture = makeDeparture();
 
       const { rerender } = renderHook(
         (props: { activeLocalId: string | null }) =>
@@ -221,7 +251,7 @@ describe('useProjectSwitchInit', () => {
       expect(saveProjectToCloudImpl).not.toHaveBeenCalled();
     });
 
-    it('skips save when departing project has serverVersion: 0 (falsy guard)', () => {
+    it('saves with unknown serverVersion when departing project has serverVersion: 0', async () => {
       const deps = buildDeps();
       // Project A has cloudId but serverVersion: 0
       const cloudProjectV0 = makeProjectEntry({
@@ -238,6 +268,18 @@ describe('useProjectSwitchInit', () => {
         isOwner: true,
         lastSavedVersion: 0, // differs from dataVersionRef.current (1) => dirty
       };
+      deps.lastDeparture = makeDeparture({ serverVersion: 0 });
+      (loadProject as Mock).mockReturnValue({
+        localId: PROJECT_A_LOCAL_ID,
+        serverVersion: 0,
+        state: { registers: [], activeRegisterId: null, registerValues: {} },
+      });
+      (saveProjectToCloudImpl as Mock).mockResolvedValue({
+        kind: 'updated',
+        cloudId: PROJECT_A_CLOUD_ID,
+        timestamp: '2024-06-02T00:00:00Z',
+        version: 1,
+      });
 
       const { rerender } = renderHook(
         (props: { activeLocalId: string | null }) =>
@@ -247,8 +289,14 @@ describe('useProjectSwitchInit', () => {
 
       rerender({ activeLocalId: PROJECT_B_LOCAL_ID });
 
-      // The `prevEntry.serverVersion` guard is falsy for 0, so save should NOT fire
-      expect(saveProjectToCloudImpl).not.toHaveBeenCalled();
+      await vi.waitFor(() => {
+        expect(saveProjectToCloudImpl).toHaveBeenCalledWith(
+          expect.anything(),
+          PROJECT_A_CLOUD_ID,
+          TEST_JWT,
+          undefined,
+        );
+      });
     });
 
     it('save failure does not block switch', async () => {
@@ -259,6 +307,7 @@ describe('useProjectSwitchInit', () => {
         isOwner: true,
         lastSavedVersion: 0,
       };
+      deps.lastDeparture = makeDeparture();
 
       (loadProject as Mock).mockReturnValue({
         localId: PROJECT_A_LOCAL_ID,
@@ -286,6 +335,99 @@ describe('useProjectSwitchInit', () => {
         PROJECT_A_LOCAL_ID,
         expect.objectContaining({ cloudSavedAt: expect.any(String) }),
       );
+    });
+
+    it('keeps retrying while the mutation lock is held', async () => {
+      vi.useFakeTimers();
+      const deps = buildDeps();
+      deps.mutationLockRef.current = true;
+      deps.lastDeparture = makeDeparture();
+      (loadProject as Mock).mockReturnValue({
+        localId: PROJECT_A_LOCAL_ID,
+        serverVersion: 2,
+        state: { registers: [], activeRegisterId: null, registerValues: {} },
+      });
+      (saveProjectToCloudImpl as Mock).mockResolvedValue({
+        kind: 'updated',
+        cloudId: PROJECT_A_CLOUD_ID,
+        timestamp: '2024-06-02T00:00:00Z',
+        version: 3,
+      });
+
+      try {
+        const { rerender } = renderHook(
+          (props: { activeLocalId: string | null }) =>
+            useProjectSwitchInit({ ...deps, activeLocalId: props.activeLocalId }),
+          { initialProps: { activeLocalId: PROJECT_A_LOCAL_ID } },
+        );
+
+        rerender({ activeLocalId: PROJECT_B_LOCAL_ID });
+
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(saveProjectToCloudImpl).not.toHaveBeenCalled();
+
+        deps.mutationLockRef.current = false;
+        await vi.advanceTimersByTimeAsync(250);
+
+        await vi.waitFor(() => {
+          expect(saveProjectToCloudImpl).toHaveBeenCalled();
+        });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('marks non-active switch-save conflicts for later recovery', async () => {
+      const deps = buildDeps();
+      deps.lastDeparture = makeDeparture();
+      (loadProject as Mock).mockReturnValue({
+        localId: PROJECT_A_LOCAL_ID,
+        serverVersion: 2,
+        state: { registers: [], activeRegisterId: null, registerValues: {} },
+      });
+      (saveProjectToCloudImpl as Mock).mockResolvedValue({
+        kind: 'conflict',
+        serverVersion: 9,
+      });
+
+      const { rerender } = renderHook(
+        (props: { activeLocalId: string | null }) =>
+          useProjectSwitchInit({ ...deps, activeLocalId: props.activeLocalId }),
+        { initialProps: { activeLocalId: PROJECT_A_LOCAL_ID } },
+      );
+
+      rerender({ activeLocalId: PROJECT_B_LOCAL_ID });
+
+      await vi.waitFor(() => {
+        expect(deps.updateCloudMetadata).toHaveBeenCalledWith(PROJECT_A_LOCAL_ID, {
+          serverVersion: 9,
+          cloudConflictVersion: 9,
+        });
+      });
+    });
+
+    it('does not overwrite a project that already has a stored conflict marker', async () => {
+      const deps = buildDeps();
+      deps.lastDeparture = makeDeparture({ serverVersion: 9 });
+      (loadProject as Mock).mockReturnValue({
+        localId: PROJECT_A_LOCAL_ID,
+        serverVersion: 9,
+        cloudConflictVersion: 9,
+        state: { registers: [], activeRegisterId: null, registerValues: {} },
+      });
+
+      const { rerender } = renderHook(
+        (props: { activeLocalId: string | null }) =>
+          useProjectSwitchInit({ ...deps, activeLocalId: props.activeLocalId }),
+        { initialProps: { activeLocalId: PROJECT_A_LOCAL_ID } },
+      );
+
+      rerender({ activeLocalId: PROJECT_B_LOCAL_ID });
+
+      await vi.waitFor(() => {
+        expect(loadProject).toHaveBeenCalledWith(PROJECT_A_LOCAL_ID);
+      });
+      expect(saveProjectToCloudImpl).not.toHaveBeenCalled();
     });
   });
 
@@ -317,6 +459,48 @@ describe('useProjectSwitchInit', () => {
       expect(deps.lastFreshnessCheckRef.current).toBe(0);
 
       clearTimeout(mockTimer);
+    });
+  });
+
+  describe('cloud state initialization', () => {
+    it('restores stored conflict state and skips freshness pull', () => {
+      const deps = buildDeps();
+      const localProject = makeProjectEntry({
+        localId: PROJECT_A_LOCAL_ID,
+        cloudId: null,
+        storage: 'local',
+      });
+      const conflictedProject = makeProjectEntry({
+        localId: PROJECT_B_LOCAL_ID,
+        cloudId: PROJECT_A_CLOUD_ID,
+        storage: 'cloud',
+        serverVersion: 9,
+        cloudConflictVersion: 9,
+      });
+      deps.projects = [localProject, conflictedProject];
+      deps.projectsRef.current = deps.projects;
+      (loadProject as Mock).mockImplementation((id: string) => id === PROJECT_B_LOCAL_ID
+        ? {
+            localId: PROJECT_B_LOCAL_ID,
+            cloudId: PROJECT_A_CLOUD_ID,
+            storage: 'cloud',
+            serverVersion: 9,
+            cloudConflictVersion: 9,
+            visibility: 'private',
+            state: { registers: [], activeRegisterId: null, registerValues: {} },
+          }
+        : null);
+
+      const { rerender } = renderHook(
+        (props: { activeLocalId: string | null }) =>
+          useProjectSwitchInit({ ...deps, activeLocalId: props.activeLocalId }),
+        { initialProps: { activeLocalId: PROJECT_A_LOCAL_ID } },
+      );
+
+      rerender({ activeLocalId: PROJECT_B_LOCAL_ID });
+
+      expect(deps.internalRef.current.conflict).toEqual({ serverVersion: 9 });
+      expect(checkAndPullFreshVersion).not.toHaveBeenCalled();
     });
   });
 });

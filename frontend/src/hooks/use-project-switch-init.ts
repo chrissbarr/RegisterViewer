@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, type MutableRefObject } from 'react';
 import { buildProjectUrl, loadProject } from '../utils/project-storage';
-import { setCloudUrl, clearCloudUrl } from '../utils/cloud-utils';
+import { setCloudUrl, clearCloudUrl, withMutationLock } from '../utils/cloud-utils';
 import { exportToObject, deserializeState } from '../utils/storage';
 import { saveProjectToCloudImpl } from '../utils/cloud-operations';
 import { checkAndPullFreshVersion, type FreshnessCheckContext } from '../utils/cloud-freshness';
@@ -8,6 +8,7 @@ import { type CloudSyncCore, initialInternalState } from '../types/cloud-sync';
 import type { CloudMetadataUpdate } from '../types/cloud-sync';
 import type { ProjectListEntry } from '../types/project';
 import type { ImportStateAction } from '../context/app-context';
+import type { ProjectDepartureSnapshot } from '../context/project-storage-context';
 
 interface UseProjectSwitchInitDeps {
   core: CloudSyncCore;
@@ -17,10 +18,12 @@ interface UseProjectSwitchInitDeps {
   needsVersionSyncRef: MutableRefObject<boolean>;
   syncTimerRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
   dataVersionRef: MutableRefObject<number>;
+  mutationLockRef: MutableRefObject<boolean>;
   getJwt: () => string | null;
   lastFreshnessCheckRef: MutableRefObject<number>;
   updateCloudMetadata: (localId: string, updates: CloudMetadataUpdate) => void;
   dispatch: (action: ImportStateAction) => void;
+  lastDeparture: ProjectDepartureSnapshot | null;
 }
 
 /**
@@ -34,17 +37,20 @@ interface UseProjectSwitchInitDeps {
  * 3. **Cleanup**: Clears auto-sync timer and freshness throttle.
  *
  * Unlike the previous useProjectSwitchEviction, this hook does NOT evict
- * localStorage data — cloud projects stay cached locally.
+ * localStorage data - cloud projects stay cached locally.
  */
 export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
   const {
     core: { internalRef, setInternal },
     activeLocalId, projects,
     projectsRef, needsVersionSyncRef, syncTimerRef,
-    dataVersionRef, getJwt, lastFreshnessCheckRef, updateCloudMetadata, dispatch,
+    dataVersionRef, mutationLockRef, getJwt, lastFreshnessCheckRef, updateCloudMetadata, dispatch,
+    lastDeparture,
   } = deps;
 
   const prevActiveLocalIdRef = useRef<string | null>(null);
+  const pendingDepartureSequencesRef = useRef<Set<number>>(new Set());
+  const retryTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
 
   const activeCloudId = useMemo(
     () => projects.find(p => p.localId === activeLocalId)?.cloudId ?? null,
@@ -64,33 +70,70 @@ export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
       // Reset freshness throttle for new project
       lastFreshnessCheckRef.current = 0;
 
-      // Best-effort save for departing project (fire-and-forget)
+      const departure = lastDeparture?.localId === prevLocalId ? lastDeparture : null;
       const prevEntry = projectsRef.current.find(p => p.localId === prevLocalId);
-      if (prevEntry?.storage === 'cloud' && prevEntry.cloudId && prevEntry.serverVersion) {
+      const departingCloudId = departure?.cloudId ?? prevEntry?.cloudId ?? null;
+      const departingStorage = departure?.storage ?? prevEntry?.storage ?? 'local';
+
+      if (
+        departure?.wasDirty
+        && departingStorage === 'cloud'
+        && departingCloudId
+        && !pendingDepartureSequencesRef.current.has(departure.sequence)
+      ) {
         const jwt = getJwt();
         if (jwt) {
-          const isDirty = dataVersionRef.current !== internalRef.current.lastSavedVersion;
-          if (isDirty) {
-            const project = loadProject(prevLocalId);
-            if (project) {
+          pendingDepartureSequencesRef.current.add(departure.sequence);
+
+          const scheduleRetry = () => {
+            const timer = setTimeout(() => {
+              retryTimersRef.current.delete(timer);
+              attemptSave();
+            }, 250);
+            retryTimersRef.current.add(timer);
+          };
+
+          const attemptSave = () => {
+            void withMutationLock(mutationLockRef, async () => {
+              const project = loadProject(prevLocalId);
+              if (!project) return;
+              if (project.cloudConflictVersion) return;
+
               try {
                 const state = deserializeState(project.state);
                 const payload = exportToObject(state);
-                saveProjectToCloudImpl(payload, prevEntry.cloudId, jwt, prevEntry.serverVersion)
-                  .then((result) => {
-                    if (result.kind === 'updated' || result.kind === 'created') {
-                      updateCloudMetadata(prevLocalId, {
-                        cloudSavedAt: result.timestamp,
-                        serverVersion: result.version,
-                      });
-                    }
-                  })
-                  .catch(() => { /* best-effort — data still in localStorage */ });
+                const latestEntry = projectsRef.current.find(p => p.localId === prevLocalId);
+                const knownVersion = project.serverVersion ?? latestEntry?.serverVersion ?? departure.serverVersion ?? undefined;
+                const serverVersion = typeof knownVersion === 'number' && knownVersion > 0
+                  ? knownVersion
+                  : undefined;
+                const result = await saveProjectToCloudImpl(payload, departingCloudId, jwt, serverVersion);
+                if (result.kind === 'updated' || result.kind === 'created') {
+                  updateCloudMetadata(prevLocalId, {
+                    cloudSavedAt: result.timestamp,
+                    serverVersion: result.version,
+                    cloudConflictVersion: null,
+                  });
+                } else if (result.kind === 'conflict') {
+                  updateCloudMetadata(prevLocalId, {
+                    serverVersion: result.serverVersion,
+                    cloudConflictVersion: result.serverVersion,
+                  });
+                }
               } catch {
-                // deserializeState failed — data still in localStorage
+                // Best-effort - data still in localStorage
               }
-            }
-          }
+            }).then((result) => {
+              if (!result.executed) {
+                scheduleRetry();
+              } else {
+                pendingDepartureSequencesRef.current.delete(departure.sequence);
+              }
+            }).catch(() => {
+              pendingDepartureSequencesRef.current.delete(departure.sequence);
+            });
+          };
+          attemptSave();
         }
       }
     }
@@ -105,39 +148,43 @@ export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
     }
 
     const entry = projectsRef.current.find(p => p.localId === activeLocalId);
-    const cloudId = entry?.cloudId ?? null;
+    const storedProject = loadProject(activeLocalId);
+    const cloudId = entry?.cloudId ?? storedProject?.cloudId ?? null;
     if (cloudId === internalRef.current.cloudId) return;
 
-    const isOwner = entry?.storage === 'cloud';
+    const storage = entry?.storage ?? storedProject?.storage ?? 'local';
+    const isOwner = storage === 'cloud';
     if (cloudId === null) {
       setInternal(initialInternalState);
       clearCloudUrl();
     } else {
+      const conflictVersion = entry?.cloudConflictVersion ?? storedProject?.cloudConflictVersion ?? null;
+      const serverVersion = entry?.serverVersion ?? storedProject?.serverVersion ?? 0;
       needsVersionSyncRef.current = true;
       setCloudUrl(cloudId);
       setInternal((prev) => ({
         ...prev,
         cloudId,
         isOwner,
-        storage: entry?.storage ?? 'local',
+        storage,
         shareUrl: buildProjectUrl(cloudId),
         lastCloudSavedAt: null,
         error: null,
-        visibility: entry?.visibility ?? 'private',
-        serverVersion: entry?.serverVersion ?? 0,
-        conflict: null,
+        visibility: entry?.visibility ?? storedProject?.visibility ?? 'private',
+        serverVersion,
+        conflict: conflictVersion ? { serverVersion: conflictVersion } : null,
       }));
 
       // Freshness check for incoming project
       const jwt = getJwt();
-      if (jwt && entry?.serverVersion) {
+      if (jwt && serverVersion && !conflictVersion) {
         const freshnessCtx: FreshnessCheckContext = {
           internalRef, dataVersionRef, dispatch, needsVersionSyncRef,
           lastFreshnessCheckRef, updateCloudMetadata, setInternal,
         };
         checkAndPullFreshVersion(freshnessCtx, {
           cloudId,
-          knownVersion: entry.serverVersion,
+          knownVersion: serverVersion,
           localId: activeLocalId,
           jwt,
         }).catch((err) => {
@@ -146,5 +193,13 @@ export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeLocalId, activeCloudId]);
+  }, [activeLocalId, activeCloudId, lastDeparture?.sequence]);
+
+  useEffect(() => () => {
+    for (const timer of retryTimersRef.current) {
+      clearTimeout(timer);
+    }
+    retryTimersRef.current.clear();
+    pendingDepartureSequencesRef.current.clear();
+  }, []);
 }
