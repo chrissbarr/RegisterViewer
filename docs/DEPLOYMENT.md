@@ -124,6 +124,7 @@ After first deployment:
 2. Open browser DevTools and check Network tab for calls to the API URL
 3. Test save functionality: create a project and share the link
 4. Verify project data persists by opening the shared link in a new tab
+5. Confirm deploy smoke tests passed the API internal-path checks. `/api/src`, `/api/vendor`, `/api/database`, and `/api/tests` must return `403`, never `200`.
 
 ---
 
@@ -232,6 +233,11 @@ To manually deploy an existing CI artifact without rebuilding:
 - Verify `config.production.php` exists on the server with correct database credentials
 - Ensure PHP 8.3+ is enabled and `mod_rewrite` is active
 - Verify database tables exist (run migration SQL)
+
+**Error: "Expected /api/... to be blocked with 403"**
+- Confirm the deployed `api/.htaccess` file exists on the server
+- Confirm Apache `.htaccess` overrides and `mod_rewrite` are enabled for the API directory
+- Treat any `200` response from `/api/src`, `/api/vendor`, `/api/database`, or `/api/tests` as a failed deployment
 
 ---
 

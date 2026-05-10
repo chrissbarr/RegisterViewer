@@ -2,6 +2,10 @@
 
 Base URL: `https://<your-domain>/api`
 
+## Public HTTP Surface
+
+Only documented routes under `/api/health`, `/api/health/email`, `/api/auth/*`, and `/api/projects*` are public API contract. PHP source files, Composer/vendor files, migrations, database files, config files, tests, and deployment internals under paths such as `/api/src`, `/api/vendor`, `/api/database`, and `/api/tests` are implementation details. Production deployments must deny those paths with `403`.
+
 ## Authentication
 
 The API supports two authentication methods. The server auto-detects which is in use by inspecting the token format.

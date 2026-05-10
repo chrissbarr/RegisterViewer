@@ -2,6 +2,9 @@ Options -Indexes
 
 RewriteEngine On
 
+# Block direct HTTP access to internal API directories before front-controller routing.
+RewriteRule ^(?:database|vendor|src|tests)(?:/|$) - [F,L,NC]
+
 # Pass Authorization header to PHP (cPanel/Apache strips it by default)
 RewriteCond %{HTTP:Authorization} .
 RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
@@ -29,10 +32,6 @@ RewriteRule ^(.*)$ index.php [QSA,L]
 <FilesMatch "(composer\.(json|lock)|phpunit\.xml|Dockerfile|docker-compose\.yml)$">
     Require all denied
 </FilesMatch>
-
-# Block access to internal directories
-RedirectMatch 403 ^/(database|vendor|src|tests)(/.*)?$
-
 # Enable gzip compression for JSON responses
 <IfModule mod_deflate.c>
     AddOutputFilterByType DEFLATE application/json

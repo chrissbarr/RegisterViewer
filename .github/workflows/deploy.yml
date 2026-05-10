@@ -331,3 +331,23 @@ jobs:
           else
             echo "::warning::Auth endpoint returned unexpected status ${AUTH_STATUS} (expected 400)"
           fi
+          echo "Checking API internal paths are blocked..."
+          blocked_paths=(
+            "/api/vendor/composer/installed.json"
+            "/api/src/auth.php"
+            "/api/database/migrations/001_create_projects_table.sql"
+            "/api/tests/bootstrap.php"
+            "/api/vendor"
+            "/api/src"
+            "/api/database"
+            "/api/tests"
+          )
+          for path in "${blocked_paths[@]}"; do
+            status=$(curl -sS -o /dev/null -w '%{http_code}' --retry 3 --retry-delay 5 "${VITE_API_URL}${path}")
+            if [ "${status}" != "403" ]; then
+              echo "::error::Expected ${path} to be blocked with 403, got ${status}"
+              exit 1
+            fi
+            echo "Blocked ${path} (${status})"
+          done
+          echo "API internals blocked"
