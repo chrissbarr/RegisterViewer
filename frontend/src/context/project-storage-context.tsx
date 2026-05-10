@@ -25,6 +25,7 @@ interface ProjectStorageState {
   projects: ProjectListEntry[];
   isUnsaved: boolean;
   unsavedName: string | null;
+  unsavedSource: UnsavedProjectSource | null;
   lastDeparture: ProjectDepartureSnapshot | null;
 }
 
@@ -94,16 +95,7 @@ export function ProjectStorageProvider({ children, initialLocalId, initialUnsave
   const [activeLocalId, setActiveLocalId] = useState<string | null>(() => {
     // Unsaved projects have no localId
     if (initialUnsaved) return null;
-    // Try initialLocalId first, then sessionStorage
-    if (initialLocalId) return initialLocalId;
-    try {
-      const sessionId = sessionStorage.getItem(ACTIVE_PROJECT_SESSION_KEY);
-      // Don't restore the unsaved sentinel as a localId
-      if (sessionId === UNSAVED_SESSION_SENTINEL) return null;
-      return sessionId;
-    } catch {
-      return null;
-    }
+    return initialLocalId;
   });
 
   const [projects, setProjects] = useState<ProjectListEntry[]>(() => {
@@ -113,7 +105,7 @@ export function ProjectStorageProvider({ children, initialLocalId, initialUnsave
 
   const [isUnsaved, setIsUnsaved] = useState<boolean>(() => !!initialUnsaved);
   const [unsavedName, setUnsavedName] = useState<string | null>(() => initialUnsaved?.name ?? null);
-  const unsavedSourceRef = useRef<UnsavedProjectSource>(initialUnsaved?.source ?? 'new');
+  const [unsavedSource, setUnsavedSource] = useState<UnsavedProjectSource | null>(() => initialUnsaved?.source ?? null);
   const [lastDeparture, setLastDeparture] = useState<ProjectDepartureSnapshot | null>(null);
   const departureSequenceRef = useRef(0);
   const departureSnapshotterRef = useRef<DepartureSnapshotter | null>(null);
@@ -229,6 +221,7 @@ export function ProjectStorageProvider({ children, initialLocalId, initialUnsave
     setIsUnsaved(false);
     isUnsavedRef.current = false;
     setUnsavedName(null);
+    setUnsavedSource(null);
     return true;
   }, [dispatch, flushDepartingSavedProject, setActiveAndPersist]);
 
@@ -319,7 +312,7 @@ export function ProjectStorageProvider({ children, initialLocalId, initialUnsave
     setIsUnsaved(true);
     isUnsavedRef.current = true;
     setUnsavedName(name);
-    unsavedSourceRef.current = source;
+    setUnsavedSource(source);
     // Auto-save effect will persist to register-viewer-unsaved on next tick
     return true;
   }, [dispatch, exitEditMode, flushDepartingSavedProject, setActiveAndPersist]);
@@ -351,6 +344,7 @@ export function ProjectStorageProvider({ children, initialLocalId, initialUnsave
     setIsUnsaved(false);
     isUnsavedRef.current = false;
     setUnsavedName(null);
+    setUnsavedSource(null);
     refreshProjectList();
     return localId;
   }, [setActiveAndPersist, refreshProjectList]);
@@ -360,6 +354,7 @@ export function ProjectStorageProvider({ children, initialLocalId, initialUnsave
     setIsUnsaved(false);
     isUnsavedRef.current = false;
     setUnsavedName(null);
+    setUnsavedSource(null);
 
     const mostRecentId = getMostRecentProjectId();
     if (mostRecentId) {
@@ -374,8 +369,8 @@ export function ProjectStorageProvider({ children, initialLocalId, initialUnsave
   }, []);
 
   const state = useMemo<ProjectStorageState>(
-    () => ({ activeLocalId, projects, isUnsaved, unsavedName, lastDeparture }),
-    [activeLocalId, projects, isUnsaved, unsavedName, lastDeparture],
+    () => ({ activeLocalId, projects, isUnsaved, unsavedName, unsavedSource: isUnsaved ? unsavedSource : null, lastDeparture }),
+    [activeLocalId, projects, isUnsaved, unsavedName, unsavedSource, lastDeparture],
   );
 
   const actions = useMemo<ProjectStorageActions>(

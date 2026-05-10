@@ -12,12 +12,13 @@ import { friendlyErrorMessage } from '../utils/friendly-error';
 import { fetchAndParseCloudProject } from '../utils/cloud-project-loader';
 import { JWT_STORAGE_KEY } from '../context/auth-context';
 import { resolveInitialProject } from '../utils/project-resolution';
-import type { ProjectManifestEntry, UnsavedProjectSource } from '../types/project';
+import { DEFAULT_PROJECT_NAME, type ProjectManifest, type ProjectManifestEntry, type StoredLocalProject, type UnsavedProjectSource } from '../types/project';
 import {
   runMigrationIfNeeded,
   loadManifest,
   loadProject,
   saveProject,
+  createProject,
   getMostRecentProjectId,
   ACTIVE_PROJECT_SESSION_KEY,
   UNSAVED_SESSION_SENTINEL,
@@ -30,7 +31,20 @@ type CloudProjectLoadResult = Awaited<ReturnType<typeof fetchAndParseCloudProjec
 
 type LoaderState =
   | { phase: 'loading' }
-  | { phase: 'ready'; initialState: AppState | undefined; cloudInit?: CloudInit; localId?: string; unsaved?: { name: string; source: UnsavedProjectSource } }
+  | {
+      phase: 'ready';
+      initialState: AppState | undefined;
+      cloudInit?: CloudInit;
+      localId: string;
+      unsaved?: undefined;
+    }
+  | {
+      phase: 'ready';
+      initialState: AppState | undefined;
+      cloudInit?: CloudInit;
+      localId?: undefined;
+      unsaved: { name: string; source: UnsavedProjectSource };
+    }
   | { phase: 'error'; message: string };
 
 /** Build an AppState from import-style data, filling in map/sort defaults. */
@@ -70,11 +84,33 @@ function createSeedState(): AppState {
 
 function createDefaultUnsavedProject(): { state: AppState; unsaved: { name: string; source: UnsavedProjectSource } } {
   const seedState = createSeedState();
-  saveUnsavedProjectState('Example Project', serializeState(seedState), 'seed');
+  persistUnsavedProjectState('Example Project', seedState, 'seed');
+  return { state: seedState, unsaved: { name: 'Example Project', source: 'seed' } };
+}
+
+function getStateDisplayName(state: AppState): string {
+  return state.project?.title?.trim() || DEFAULT_PROJECT_NAME;
+}
+
+function getImportDisplayName(importResult: Pick<CloudProjectLoadResult, 'project'>): string {
+  return importResult.project?.title?.trim() || DEFAULT_PROJECT_NAME;
+}
+
+function persistUnsavedProjectState(
+  name: string,
+  state: AppState,
+  source: UnsavedProjectSource,
+): { name: string; source: UnsavedProjectSource } {
+  const result = saveUnsavedProjectState(name, serializeState(state), source);
+  if (!result.ok) throw new Error(`Failed to persist unsaved project: ${result.status}`);
   try {
     sessionStorage.setItem(ACTIVE_PROJECT_SESSION_KEY, UNSAVED_SESSION_SENTINEL);
   } catch { /* sessionStorage unavailable */ }
-  return { state: seedState, unsaved: { name: 'Example Project', source: 'seed' } };
+  return { name, source };
+}
+
+function clearHashAfterSuccessfulLoad(): void {
+  history.replaceState(null, '', window.location.pathname + window.location.search);
 }
 
 async function parseSnapshotHash(hash: string): Promise<AppState | null> {
@@ -117,13 +153,13 @@ function persistDownloadedCloudProject(
   localId: string,
   entry: ProjectManifestEntry & { cloudId: string },
   importResult: CloudProjectLoadResult,
+  storage: 'local' | 'cloud' = entry.storage === 'cloud' && importResult.isOwner ? 'cloud' : 'local',
 ): 'local' | 'cloud' {
-  const storage = entry.storage === 'cloud' && importResult.isOwner ? 'cloud' : 'local';
   const result = saveProject({
     localId,
     cloudId: entry.cloudId,
     name: entry.name,
-    visibility: entry.visibility,
+    visibility: importResult.visibility,
     createdAt: entry.createdAt,
     localSavedAt: new Date().toISOString(),
     cloudSavedAt: importResult.updatedAt,
@@ -135,6 +171,122 @@ function persistDownloadedCloudProject(
   }, { protectedLocalIds: [localId] });
   if (!result.ok) throw new Error(`Failed to persist downloaded project: ${result.status}`);
   return storage;
+}
+
+function isCloudCacheDirtyOrConflicted(entry: ProjectManifestEntry, project: StoredLocalProject | null): boolean {
+  return !!entry.cloudConflictVersion
+    || !!project?.cloudConflictVersion
+    || entry.hasUnsyncedChanges === true
+    || project?.hasUnsyncedChanges === true;
+}
+
+function findReusableOwnedCloudEntry(manifest: ProjectManifest, cloudId: string): ProjectManifestEntry | null {
+  return manifest.projects.find(p => p.cloudId === cloudId) ?? null;
+}
+
+function cloudInitFromStoredProject(project: StoredLocalProject): CloudInit | undefined {
+  if (!project.cloudId) return undefined;
+  return {
+    projectId: project.cloudId,
+    isOwner: project.storage === 'cloud',
+    storage: project.storage,
+    serverVersion: project.serverVersion ?? null,
+    cloudSavedAt: project.cloudSavedAt ?? null,
+    visibility: project.visibility,
+    cloudConflictVersion: project.cloudConflictVersion ?? null,
+    hasUnsyncedChanges: project.hasUnsyncedChanges,
+  };
+}
+
+function readyFromStoredProject(localId: string, project: StoredLocalProject): Extract<LoaderState, { phase: 'ready'; localId: string }> {
+  return {
+    phase: 'ready',
+    initialState: deserializeState(project.state),
+    localId,
+    cloudInit: cloudInitFromStoredProject(project),
+  };
+}
+
+function findCachedCloudProject(manifest: ProjectManifest, cloudId: string): { entry: ProjectManifestEntry; project: StoredLocalProject } | null {
+  for (const entry of manifest.projects) {
+    if (entry.cloudId !== cloudId) continue;
+    const project = loadProject(entry.localId);
+    if (project) return { entry, project };
+  }
+  return null;
+}
+
+function createOwnedCloudProject(importResult: CloudProjectLoadResult, cloudId: string): string {
+  return createProject(
+    serializeImportResult(importResult),
+    getImportDisplayName(importResult),
+    {
+      cloudId,
+      visibility: importResult.visibility,
+      cloudSavedAt: importResult.updatedAt,
+      serverVersion: importResult.version,
+      hasUnsyncedChanges: false,
+      storage: 'cloud',
+    },
+    { protectedLocalIds: [getSessionActiveId()] },
+  );
+}
+
+function hydrateOrLoadOwnedCloudProject(
+  manifest: ProjectManifest,
+  cloudId: string,
+  importResult: CloudProjectLoadResult,
+): { state: AppState; localId: string; cloudInit: CloudInit } {
+  const reusableEntry = findReusableOwnedCloudEntry(manifest, cloudId);
+
+  if (reusableEntry) {
+    const cachedProject = loadProject(reusableEntry.localId);
+    if (cachedProject && isCloudCacheDirtyOrConflicted(reusableEntry, cachedProject)) {
+      const cachedState = cachedProject ? deserializeState(cachedProject.state) : buildCloudAppState(importResult);
+      return {
+        state: cachedState,
+        localId: reusableEntry.localId,
+        cloudInit: {
+          projectId: cloudId,
+          isOwner: true,
+          storage: 'cloud',
+          serverVersion: cachedProject?.serverVersion ?? reusableEntry.serverVersion ?? importResult.version,
+          cloudSavedAt: cachedProject?.cloudSavedAt ?? reusableEntry.cloudSavedAt ?? importResult.updatedAt,
+          visibility: cachedProject?.visibility ?? reusableEntry.visibility,
+          cloudConflictVersion: cachedProject?.cloudConflictVersion ?? reusableEntry.cloudConflictVersion ?? null,
+          hasUnsyncedChanges: cachedProject?.hasUnsyncedChanges ?? reusableEntry.hasUnsyncedChanges,
+        },
+      };
+    }
+
+    const storage = persistDownloadedCloudProject(reusableEntry.localId, { ...reusableEntry, cloudId }, importResult, 'cloud');
+    return {
+      state: buildCloudAppState(importResult),
+      localId: reusableEntry.localId,
+      cloudInit: {
+        projectId: cloudId,
+        isOwner: storage === 'cloud',
+        storage,
+        serverVersion: importResult.version,
+        cloudSavedAt: importResult.updatedAt,
+        visibility: importResult.visibility,
+      },
+    };
+  }
+
+  const localId = createOwnedCloudProject(importResult, cloudId);
+  return {
+    state: buildCloudAppState(importResult),
+    localId,
+    cloudInit: {
+      projectId: cloudId,
+      isOwner: true,
+      storage: 'cloud',
+      serverVersion: importResult.version,
+      cloudSavedAt: importResult.updatedAt,
+      visibility: importResult.visibility,
+    },
+  };
 }
 
 /** Read JWT from localStorage before auth context is available. */
@@ -174,7 +326,9 @@ export function AppLoader() {
         parseSnapshotHash(hash)
           .then((parsed) => {
             if (parsed) {
-              setState({ phase: 'ready', initialState: parsed });
+              const unsaved = persistUnsavedProjectState(getStateDisplayName(parsed), parsed, 'import');
+              clearHashAfterSuccessfulLoad();
+              setState({ phase: 'ready', initialState: parsed, unsaved });
             } else {
               setState({ phase: 'error', message: 'Failed to decode shared snapshot. The URL may be corrupted or invalid.' });
             }
@@ -192,19 +346,40 @@ export function AppLoader() {
           .then((importResult) => {
             const loadedState = buildCloudAppState(importResult);
 
+            if (!importResult.isOwner) {
+              const unsaved = persistUnsavedProjectState(getImportDisplayName(importResult), loadedState, 'cloud');
+              clearHashAfterSuccessfulLoad();
+              setState({
+                phase: 'ready',
+                initialState: loadedState,
+                unsaved,
+                cloudInit: {
+                  projectId: resolution.cloudId,
+                  isOwner: false,
+                  storage: 'local',
+                  serverVersion: importResult.version,
+                  cloudSavedAt: importResult.updatedAt,
+                  visibility: importResult.visibility,
+                },
+              });
+              return;
+            }
+
+            const owned = hydrateOrLoadOwnedCloudProject(manifest, resolution.cloudId, importResult);
+
             setState({
               phase: 'ready',
-              initialState: loadedState,
-              cloudInit: {
-                projectId: resolution.cloudId,
-                isOwner: importResult.isOwner,
-                storage: importResult.isOwner ? 'cloud' : 'local',
-                serverVersion: importResult.version,
-                cloudSavedAt: importResult.updatedAt,
-              },
+              initialState: owned.state,
+              localId: owned.localId,
+              cloudInit: owned.cloudInit,
             });
           })
           .catch((err) => {
+            const cached = findCachedCloudProject(manifest, resolution.cloudId);
+            if (cached) {
+              setState(readyFromStoredProject(cached.entry.localId, cached.project));
+              return;
+            }
             setState({ phase: 'error', message: friendlyErrorMessage(err, 'Failed to load project.') });
           });
         break;
@@ -213,19 +388,8 @@ export function AppLoader() {
       case 'local': {
         const project = loadProject(resolution.localId);
         if (project) {
-          const appState = deserializeState(project.state);
-          const cloudInit = project.cloudId
-            ? {
-                projectId: project.cloudId,
-                isOwner: project.storage === 'cloud',
-                storage: project.storage,
-                serverVersion: project.serverVersion ?? null,
-                cloudSavedAt: project.cloudSavedAt ?? null,
-                visibility: project.visibility,
-              }
-            : undefined;
           void Promise.resolve().then(() => {
-            setState({ phase: 'ready', initialState: appState, localId: resolution.localId, cloudInit });
+            setState(readyFromStoredProject(resolution.localId, project));
           });
         } else {
           const entry = manifest.projects.find(p => p.localId === resolution.localId);
@@ -246,7 +410,7 @@ export function AppLoader() {
                     storage,
                     serverVersion: importResult.version,
                     cloudSavedAt: importResult.updatedAt,
-                    visibility: entry.visibility,
+                    visibility: importResult.visibility,
                   },
                 });
               })
@@ -281,9 +445,8 @@ export function AppLoader() {
           if (mostRecentId) {
             const project = loadProject(mostRecentId);
             if (project) {
-              const appState = deserializeState(project.state);
               void Promise.resolve().then(() => {
-                setState({ phase: 'ready', initialState: appState, localId: mostRecentId });
+                setState(readyFromStoredProject(mostRecentId, project));
               });
               break;
             }
@@ -314,8 +477,7 @@ export function AppLoader() {
     if (mostRecentId) {
       const project = loadProject(mostRecentId);
       if (project) {
-        const appState = deserializeState(project.state);
-        setState({ phase: 'ready', initialState: appState, localId: mostRecentId });
+        setState(readyFromStoredProject(mostRecentId, project));
         return;
       }
     }

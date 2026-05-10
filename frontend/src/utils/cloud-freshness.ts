@@ -127,6 +127,7 @@ export async function checkAndPullFreshVersion(
     }
     const metadataResult = updateCloudMetadata(localId, {
       cloudSavedAt: serverResponse.updatedAt,
+      visibility: serverResponse.visibility,
       serverVersion,
       cloudConflictVersion: null,
       hasUnsyncedChanges: false,
@@ -152,6 +153,7 @@ export async function checkAndPullFreshVersion(
     ...prev,
     serverVersion,
     lastCloudSavedAt: serverResponse.updatedAt,
+    visibility: serverResponse.visibility,
     conflict: null,
   }));
 

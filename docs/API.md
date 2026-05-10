@@ -279,6 +279,7 @@ Retrieves a project by its 12-character base62 ID.
   "data": { "version": 1, "registers": [...], "registerValues": {...} },
   "createdAt": "2026-02-23T09:00:00.000Z",
   "updatedAt": "2026-02-23T09:00:00.000Z",
+  "visibility": "unlisted",
   "version": 3,
   "isOwner": true
 }
@@ -286,7 +287,9 @@ Retrieves a project by its 12-character base62 ID.
 
 `version` is the current optimistic concurrency version. Pass this value in the `PUT` request body to update the project.
 
-`isOwner` is `true` when the requesting user owns this project (via token hash or JWT user ID), `false` otherwise.
+`visibility` is `private` or `unlisted`.
+
+`isOwner` is `true` when the requesting user owns this project via JWT user ID, `false` otherwise.
 
 **Cache-Control:**
 - Private projects: `private, no-store`

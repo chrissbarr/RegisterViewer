@@ -40,6 +40,7 @@ interface PendingLocalSave {
   localId: string | null;
   isUnsaved: boolean;
   unsavedName: string | null;
+  unsavedSource: UnsavedProjectSource;
 }
 
 function warnLocalSaveFailure(scope: string, result: ProjectStorageWriteResult): void {
@@ -54,7 +55,7 @@ function localSaveOk(): ProjectStorageWriteResult {
 function persistPendingLocalSave(pending: PendingLocalSave): ProjectStorageWriteResult {
   if (pending.isUnsaved) {
     const name = pending.state.project?.title?.trim() || pending.unsavedName || 'Untitled Project';
-    const result = saveUnsavedProjectState(name, serializeState(pending.state));
+    const result = saveUnsavedProjectState(name, serializeState(pending.state), pending.unsavedSource);
     warnLocalSaveFailure('Unsaved project local save', result);
     return result;
   }
@@ -73,7 +74,7 @@ function AppShellInner({ cloudInit }: AppShellProps) {
   const [localSaveError, setLocalSaveError] = useState<string | null>(null);
   const cloud = useCloudSync();
   const cloudActions = useCloudSyncActions();
-  const { activeLocalId, isUnsaved, unsavedName } = useProjectStorage();
+  const { activeLocalId, isUnsaved, unsavedName, unsavedSource } = useProjectStorage();
 
   // Initialize cloud state from props (when loaded from #/p/{id} URL)
   const cloudInitRef = useRef(cloudInit);
@@ -84,6 +85,8 @@ function AppShellInner({ cloudInit }: AppShellProps) {
         serverVersion: init.serverVersion,
         cloudSavedAt: init.cloudSavedAt,
         visibility: init.visibility,
+        cloudConflictVersion: init.cloudConflictVersion,
+        hasUnsyncedChanges: init.hasUnsyncedChanges,
       });
       cloudInitRef.current = undefined;
     }
@@ -97,6 +100,7 @@ function AppShellInner({ cloudInit }: AppShellProps) {
       localId: activeLocalId,
       isUnsaved,
       unsavedName,
+      unsavedSource: unsavedSource ?? 'new',
     };
     pendingSaveRef.current = pending;
     const timer = setTimeout(() => {
@@ -109,7 +113,7 @@ function AppShellInner({ cloudInit }: AppShellProps) {
       }
     }, SAVE_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [state, activeLocalId, isUnsaved, unsavedName]);
+  }, [state, activeLocalId, isUnsaved, unsavedName, unsavedSource]);
 
   // Flush any pending save on unmount or page unload.
   // Ref-based so the effect is set up once — avoids stale-closure flush

@@ -174,7 +174,7 @@ export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
       const lastSavedVersion = hasStoredUnsyncedChanges
         ? STORED_UNSYNCED_LAST_SAVED_VERSION
         : dataVersionRef.current;
-      needsVersionSyncRef.current = true;
+      needsVersionSyncRef.current = !hasStoredUnsyncedChanges;
       setCloudUrl(cloudId);
       const next = {
         ...internalRef.current,

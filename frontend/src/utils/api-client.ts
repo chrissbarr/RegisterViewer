@@ -99,6 +99,7 @@ interface GetProjectResponse {
   createdAt: string;
   updatedAt: string;
   isOwner: boolean;
+  visibility: Visibility;
   version: number;
 }
 

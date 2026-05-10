@@ -4,6 +4,7 @@ import { importFromObject, type ImportResult } from './storage';
 interface CloudProjectLoadResult extends ImportResult {
   updatedAt: string;
   isOwner: boolean;
+  visibility: import('../types/project').Visibility;
   version: number;
 }
 
@@ -36,5 +37,11 @@ export async function fetchAndParseCloudProject(id: string, jwt?: string): Promi
   if (!parsed) {
     throw new Error('Failed to parse project data from cloud.');
   }
-  return { ...parsed, updatedAt: result.updatedAt, isOwner: result.isOwner, version: result.version };
+  return {
+    ...parsed,
+    updatedAt: result.updatedAt,
+    isOwner: result.isOwner,
+    visibility: result.visibility,
+    version: result.version,
+  };
 }

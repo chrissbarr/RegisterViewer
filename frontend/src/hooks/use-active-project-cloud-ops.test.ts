@@ -56,6 +56,13 @@ vi.mock('../utils/project-storage', () => ({
 vi.mock('../utils/storage', () => ({
   exportToObject: vi.fn(() => ({ version: 1, registers: [], values: {} })),
   serializeState: vi.fn(() => ({ registers: [], activeRegisterId: null, registerValues: {} })),
+  serializeImportResult: vi.fn((result: { registers: unknown[]; values: Record<string, bigint>; project?: unknown; addressUnitBits?: unknown }) => ({
+    registers: result.registers,
+    activeRegisterId: null,
+    registerValues: {},
+    project: result.project,
+    addressUnitBits: result.addressUnitBits,
+  })),
 }));
 
 vi.mock('../utils/friendly-error', () => ({
@@ -125,6 +132,7 @@ function buildDeps() {
     lastFreshnessCheckRef: makeRef(0),
     updateCloudMetadata: vi.fn(() => writeOk()),
     createNewProject: vi.fn(() => 'new-local-id'),
+    loadAsUnsaved: vi.fn(() => true),
     getJwt: vi.fn((): string | null => TEST_JWT),
     dispatch: vi.fn(),
   };

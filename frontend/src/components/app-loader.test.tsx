@@ -64,13 +64,14 @@ vi.mock('../context/app-context', () => ({
 }));
 
 vi.mock('./layout/app-shell', () => ({
-  AppShell: ({ cloudInit, initialLocalId, initialUnsaved }: { cloudInit?: { projectId: string; isOwner: boolean; storage?: string; serverVersion?: number | null }; initialLocalId?: string | null; initialUnsaved?: { name: string; source: string } | null }) => (
+  AppShell: ({ cloudInit, initialLocalId, initialUnsaved }: { cloudInit?: { projectId: string; isOwner: boolean; storage?: string; serverVersion?: number | null; visibility?: string }; initialLocalId?: string | null; initialUnsaved?: { name: string; source: string } | null }) => (
     <div
       data-testid="app-shell"
       data-cloud-id={cloudInit?.projectId ?? ''}
       data-is-owner={String(cloudInit?.isOwner ?? false)}
       data-storage={cloudInit?.storage ?? ''}
       data-server-version={cloudInit?.serverVersion?.toString() ?? ''}
+      data-visibility={cloudInit?.visibility ?? ''}
       data-local-id={initialLocalId ?? ''}
       data-unsaved-name={initialUnsaved?.name ?? ''}
       data-unsaved-source={initialUnsaved?.source ?? ''}
@@ -114,6 +115,10 @@ function makeImportResult(overrides: Record<string, unknown> = {}) {
     values: { 'reg-1': 0xFFn },
     project: { title: 'Test Project' },
     addressUnitBits: 8,
+    updatedAt: '2024-06-01T00:00:00Z',
+    isOwner: false,
+    visibility: 'private',
+    version: 1,
     ...overrides,
   };
 }
@@ -152,6 +157,7 @@ beforeEach(() => {
   (deserializeState as Mock).mockReturnValue(TEST_APP_STATE);
   (loadProject as Mock).mockReturnValue(null);
   (saveProject as Mock).mockReturnValue({ ok: true, status: 'ok', evictedLocalIds: [] });
+  (saveUnsavedProjectState as Mock).mockReturnValue({ ok: true, status: 'ok', evictedLocalIds: [] });
   (getMostRecentProjectId as Mock).mockReturnValue(null);
   (decompressSnapshot as Mock).mockReturnValue(Promise.resolve('{}'));
   (importFromJson as Mock).mockReturnValue(null);
@@ -248,6 +254,16 @@ describe('AppLoader', () => {
 
       expect(decompressSnapshot).toHaveBeenCalled();
       expect(importFromJson).toHaveBeenCalled();
+      const shell = screen.getByTestId('app-shell');
+      expect(shell.dataset.localId).toBe('');
+      expect(shell.dataset.unsavedName).toBe('Test Project');
+      expect(shell.dataset.unsavedSource).toBe('import');
+      expect(history.replaceState).toHaveBeenCalledWith(null, '', '/');
+      expect(saveUnsavedProjectState).toHaveBeenCalledWith(
+        'Test Project',
+        {},
+        'import',
+      );
     });
 
     it('shows error state when snapshot parse fails', async () => {
@@ -312,7 +328,7 @@ describe('AppLoader', () => {
     });
 
     it('passes isOwner from server response', async () => {
-      const importResult = makeImportResult({ isOwner: true, version: 7 });
+      const importResult = makeImportResult({ isOwner: true, version: 7, visibility: 'unlisted' });
       (resolveInitialProject as Mock).mockReturnValue({ type: 'cloud', cloudId: 'cloud-abc123' });
       (fetchAndParseCloudProject as Mock).mockResolvedValue(importResult);
 
@@ -324,7 +340,177 @@ describe('AppLoader', () => {
         expect(shell.dataset.cloudId).toBe('cloud-abc123');
         expect(shell.dataset.storage).toBe('cloud');
         expect(shell.dataset.serverVersion).toBe('7');
+        expect(shell.dataset.visibility).toBe('unlisted');
+        expect(shell.dataset.localId).toBe('new-local-id');
       });
+    });
+
+    it('loads non-owned cloud projects as unsaved cloud-source workspaces', async () => {
+      const importResult = makeImportResult({
+        isOwner: false,
+        version: 3,
+        visibility: 'unlisted',
+        project: { title: 'Shared Project' },
+      });
+      (resolveInitialProject as Mock).mockReturnValue({ type: 'cloud', cloudId: 'cloud-shared' });
+      (fetchAndParseCloudProject as Mock).mockResolvedValue(importResult);
+      sessionStorage.setItem('register-viewer-active-project', 'stale-local-id');
+
+      render(<AppLoader />);
+
+      await waitFor(() => {
+        const shell = screen.getByTestId('app-shell');
+        expect(shell.dataset.localId).toBe('');
+        expect(shell.dataset.unsavedName).toBe('Shared Project');
+        expect(shell.dataset.unsavedSource).toBe('cloud');
+        expect(shell.dataset.cloudId).toBe('cloud-shared');
+        expect(shell.dataset.isOwner).toBe('false');
+        expect(shell.dataset.storage).toBe('local');
+        expect(shell.dataset.visibility).toBe('unlisted');
+      });
+
+      expect(createProject).not.toHaveBeenCalled();
+      expect(saveProject).not.toHaveBeenCalled();
+      expect(saveUnsavedProjectState).toHaveBeenCalledWith(
+        'Shared Project',
+        {},
+        'cloud',
+      );
+      expect(history.replaceState).toHaveBeenCalledWith(null, '', '/');
+    });
+
+    it('creates a local cloud project before rendering owned cloud URLs', async () => {
+      const importResult = makeImportResult({
+        isOwner: true,
+        version: 7,
+        visibility: 'unlisted',
+        updatedAt: '2024-07-01T00:00:00Z',
+      });
+      (resolveInitialProject as Mock).mockReturnValue({ type: 'cloud', cloudId: 'owned-cloud' });
+      (fetchAndParseCloudProject as Mock).mockResolvedValue(importResult);
+      (createProject as Mock).mockReturnValue('owned-local-id');
+
+      render(<AppLoader />);
+
+      await waitFor(() => {
+        const shell = screen.getByTestId('app-shell');
+        expect(shell.dataset.localId).toBe('owned-local-id');
+        expect(shell.dataset.cloudId).toBe('owned-cloud');
+        expect(shell.dataset.isOwner).toBe('true');
+        expect(shell.dataset.storage).toBe('cloud');
+        expect(shell.dataset.serverVersion).toBe('7');
+        expect(shell.dataset.visibility).toBe('unlisted');
+      });
+
+      expect(createProject).toHaveBeenCalledWith(
+        expect.objectContaining({
+          activeRegisterId: 'reg-1',
+          registerValues: { 'reg-1': '0xff' },
+        }),
+        'Test Project',
+        expect.objectContaining({
+          cloudId: 'owned-cloud',
+          visibility: 'unlisted',
+          cloudSavedAt: '2024-07-01T00:00:00Z',
+          serverVersion: 7,
+          hasUnsyncedChanges: false,
+          storage: 'cloud',
+        }),
+        expect.objectContaining({ protectedLocalIds: [null] }),
+      );
+    });
+
+    it('reuses and hydrates a clean owned cloud manifest entry', async () => {
+      const importResult = makeImportResult({
+        isOwner: true,
+        version: 8,
+        visibility: 'unlisted',
+      });
+      const manifestEntry = {
+        localId: 'existing-cloud-local',
+        cloudId: 'owned-cloud',
+        name: 'Existing Cloud',
+        visibility: 'private',
+        createdAt: '2024-01-01T00:00:00Z',
+        localSavedAt: '2024-05-01T00:00:00Z',
+        cloudSavedAt: '2024-05-01T00:00:00Z',
+        serverVersion: 7,
+        storage: 'cloud',
+        hasUnsyncedChanges: false,
+      };
+      (loadManifest as Mock).mockReturnValue({ version: 1, projects: [manifestEntry] });
+      (resolveInitialProject as Mock).mockReturnValue({ type: 'cloud', cloudId: 'owned-cloud' });
+      (fetchAndParseCloudProject as Mock).mockResolvedValue(importResult);
+      (loadProject as Mock).mockReturnValue(null);
+
+      render(<AppLoader />);
+
+      await waitFor(() => {
+        const shell = screen.getByTestId('app-shell');
+        expect(shell.dataset.localId).toBe('existing-cloud-local');
+        expect(shell.dataset.cloudId).toBe('owned-cloud');
+        expect(shell.dataset.storage).toBe('cloud');
+        expect(shell.dataset.serverVersion).toBe('8');
+        expect(shell.dataset.visibility).toBe('unlisted');
+      });
+
+      expect(createProject).not.toHaveBeenCalled();
+      expect(saveProject).toHaveBeenCalledWith(expect.objectContaining({
+        localId: 'existing-cloud-local',
+        cloudId: 'owned-cloud',
+        storage: 'cloud',
+        serverVersion: 8,
+        visibility: 'unlisted',
+        hasUnsyncedChanges: false,
+      }), { protectedLocalIds: ['existing-cloud-local'] });
+    });
+
+    it('does not overwrite an existing dirty owned cloud cache from a direct URL fetch', async () => {
+      const importResult = makeImportResult({
+        isOwner: true,
+        version: 9,
+        project: { title: 'Server Copy' },
+      });
+      const dirtyState = makeState({
+        registers: [makeRegister({ id: 'dirty-reg', name: 'DIRTY' })],
+        activeRegisterId: 'dirty-reg',
+      });
+      const manifestEntry = {
+        localId: 'dirty-local',
+        cloudId: 'owned-cloud',
+        name: 'Dirty Local',
+        visibility: 'private',
+        createdAt: '2024-01-01T00:00:00Z',
+        localSavedAt: '2024-05-01T00:00:00Z',
+        cloudSavedAt: '2024-05-01T00:00:00Z',
+        serverVersion: 4,
+        storage: 'cloud',
+        hasUnsyncedChanges: true,
+      };
+      (loadManifest as Mock).mockReturnValue({ version: 1, projects: [manifestEntry] });
+      (resolveInitialProject as Mock).mockReturnValue({ type: 'cloud', cloudId: 'owned-cloud' });
+      (fetchAndParseCloudProject as Mock).mockResolvedValue(importResult);
+      (loadProject as Mock).mockReturnValue(makeStoredProject({
+        localId: 'dirty-local',
+        cloudId: 'owned-cloud',
+        storage: 'cloud',
+        serverVersion: 4,
+        hasUnsyncedChanges: true,
+        state: dirtyState,
+      }));
+      (deserializeState as Mock).mockReturnValue(dirtyState);
+
+      render(<AppLoader />);
+
+      await waitFor(() => {
+        const shell = screen.getByTestId('app-shell');
+        expect(shell.dataset.localId).toBe('dirty-local');
+        expect(shell.dataset.serverVersion).toBe('4');
+      });
+
+      expect(saveProject).not.toHaveBeenCalled();
+      expect(createProject).not.toHaveBeenCalled();
+      expect(deserializeState).toHaveBeenCalledWith(dirtyState);
     });
 
     it('sends JWT when available in localStorage', async () => {

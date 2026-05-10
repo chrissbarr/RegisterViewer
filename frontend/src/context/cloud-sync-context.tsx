@@ -33,7 +33,7 @@ import {
   getProject,
 } from '../utils/api-client';
 import { useAuth, useAuthActions } from './auth-context';
-import { buildProjectUrl, createProject, evictProjectData } from '../utils/project-storage';
+import { buildProjectUrl, createProject, evictProjectData, loadManifest } from '../utils/project-storage';
 import { EMPTY_SERIALIZED_STATE } from '../utils/storage';
 import { clearCloudUrl } from '../utils/cloud-utils';
 import { useActiveProjectCloudOps } from '../hooks/use-active-project-cloud-ops';
@@ -88,7 +88,7 @@ interface CloudSyncActions {
     cloudId: string | null,
     isOwner: boolean,
     storage?: 'local' | 'cloud',
-    metadata?: Pick<CloudInit, 'serverVersion' | 'cloudSavedAt' | 'visibility'>,
+    metadata?: Pick<CloudInit, 'serverVersion' | 'cloudSavedAt' | 'visibility' | 'cloudConflictVersion' | 'hasUnsyncedChanges'>,
   ) => void;
   syncCloudProjects: () => Promise<SyncResult>;
   unlinkCloudProject: (localId: string) => void;
@@ -129,8 +129,16 @@ const CloudSyncActionsContext = createContext<CloudSyncActions | null>(null);
 export function CloudSyncProvider({ children }: { children: ReactNode }) {
   const appState = useAppState();
   const dispatch = useAppDispatch();
-  const { activeLocalId, projects, lastDeparture } = useProjectStorage();
-  const { updateCloudMetadata, createNewProject, refreshProjectList, switchProject, registerDepartureSnapshotter } = useProjectStorageActions();
+  const { activeLocalId, projects, lastDeparture, isUnsaved } = useProjectStorage();
+  const {
+    updateCloudMetadata,
+    createNewProject,
+    refreshProjectList,
+    switchProject,
+    registerDepartureSnapshotter,
+    loadAsUnsaved,
+    saveCurrentProject,
+  } = useProjectStorageActions();
   const { user: authUser } = useAuth();
   const { getJwt } = useAuthActions();
 
@@ -140,6 +148,11 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     activeLocalIdRef.current = activeLocalId;
   }, [activeLocalId]);
+
+  const isUnsavedRef = useRef(isUnsaved);
+  useEffect(() => {
+    isUnsavedRef.current = isUnsaved;
+  }, [isUnsaved]);
 
   const projectsRef = useRef(projects);
   useEffect(() => {
@@ -223,7 +236,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   const { loginRequired, pendingOpRef, dismissLogin, ...rawActiveOps } = useActiveProjectCloudOps({
     core, appStateRef,
     dataVersionRef, mutationLockRef, needsVersionSyncRef, lastFreshnessCheckRef,
-    updateCloudMetadata, createNewProject, getJwt, dispatch,
+    updateCloudMetadata, createNewProject, loadAsUnsaved, getJwt, dispatch,
   });
   saveToCloudRef.current = rawActiveOps.saveToCloud;
 
@@ -241,7 +254,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       cloudId: string | null,
       isOwner: boolean,
       storage: 'local' | 'cloud' = cloudId && isOwner ? 'cloud' : 'local',
-      metadata: Pick<CloudInit, 'serverVersion' | 'cloudSavedAt' | 'visibility'> = {},
+      metadata: Pick<CloudInit, 'serverVersion' | 'cloudSavedAt' | 'visibility' | 'cloudConflictVersion' | 'hasUnsyncedChanges'> = {},
     ) => {
       if (cloudId === null) {
         const next = { ...initialInternalState, storage };
@@ -249,18 +262,19 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
         setInternal(next);
         clearCloudUrl();
       } else {
+        const hasStoredUnsyncedChanges = metadata.hasUnsyncedChanges === true;
         const next = {
           ...internalRef.current,
           cloudId,
           isOwner,
           storage,
           shareUrl: buildProjectUrl(cloudId),
-          lastSavedVersion: dataVersionRef.current,
+          lastSavedVersion: hasStoredUnsyncedChanges ? Number.MAX_SAFE_INTEGER : dataVersionRef.current,
           lastCloudSavedAt: metadata.cloudSavedAt ?? null,
           error: null,
           visibility: metadata.visibility ?? 'private',
           serverVersion: metadata.serverVersion ?? 0,
-          conflict: null,
+          conflict: metadata.cloudConflictVersion ? { serverVersion: metadata.cloudConflictVersion } : null,
         };
         // Synchronous ref write so the activeLocalId effect's guard
         // (cloudId === internalRef.current.cloudId) sees this in the same commit.
@@ -292,6 +306,13 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       // The context action would trigger additional side effects (project switching)
       // that are undesirable for background placeholder creation.
       createPlaceholder: (data) => {
+        const latestManifest = loadManifest();
+        if (
+          internalRef.current.cloudId === data.cloudId ||
+          latestManifest.projects.some(p => p.cloudId === data.cloudId)
+        ) {
+          return;
+        }
         try {
           const localId = createProject(EMPTY_SERIALIZED_STATE, data.title, {
             cloudId: data.cloudId,
@@ -380,17 +401,59 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     const jwt = getJwt();
     if (!jwt) return;
 
+    const checkedCloudId = internal.cloudId;
     let cancelled = false;
-    getProject(internal.cloudId, jwt)
+    getProject(checkedCloudId, jwt)
       .then((res) => {
         // Verify user is still authenticated when response arrives (SEC-M3)
-        if (!cancelled && res.isOwner && getJwt()) {
-          setInternal((prev) => prev.cloudId === internal.cloudId ? { ...prev, isOwner: true } : prev);
+        if (cancelled || !res.isOwner || !getJwt()) return;
+
+        let promotedLocalId = activeLocalIdRef.current;
+        if (!promotedLocalId && isUnsavedRef.current) {
+          promotedLocalId = saveCurrentProject();
+          if (!promotedLocalId) {
+            setInternal((prev) => prev.cloudId === checkedCloudId
+              ? { ...prev, error: 'Cloud ownership was confirmed, but the project could not be saved locally.' }
+              : prev);
+            return;
+          }
         }
+
+        const hasLocalEdits = dataVersionRef.current !== internalRef.current.lastSavedVersion;
+        const confirmedCloudSavedAt = res.updatedAt ?? internalRef.current.lastCloudSavedAt;
+        const confirmedVisibility = res.visibility ?? internalRef.current.visibility;
+        if (promotedLocalId) {
+          const metadataResult = updateCloudMetadata(promotedLocalId, {
+            cloudId: checkedCloudId,
+            storage: 'cloud',
+            serverVersion: res.version,
+            cloudSavedAt: confirmedCloudSavedAt,
+            visibility: confirmedVisibility,
+            cloudConflictVersion: null,
+            hasUnsyncedChanges: hasLocalEdits,
+          });
+          if (!metadataResult.ok) {
+            setInternal((prev) => prev.cloudId === checkedCloudId
+              ? { ...prev, error: 'Cloud ownership was confirmed, but local cloud metadata could not be persisted.' }
+              : prev);
+            return;
+          }
+        }
+
+        setInternal((prev) => prev.cloudId === checkedCloudId
+          ? {
+              ...prev,
+              isOwner: true,
+              storage: 'cloud',
+              serverVersion: res.version,
+              lastCloudSavedAt: confirmedCloudSavedAt,
+              visibility: confirmedVisibility,
+            }
+          : prev);
       })
       .catch(() => { /* best-effort; ownership stays false */ });
     return () => { cancelled = true; };
-  }, [authUser, getJwt, internal.cloudId, internal.isOwner]);
+  }, [authUser, getJwt, internal.cloudId, internal.isOwner, saveCurrentProject, updateCloudMetadata, dataVersionRef]);
 
   // By-localId cloud operations (used by My Projects dialog)
   const projectOps = useProjectCloudOps({

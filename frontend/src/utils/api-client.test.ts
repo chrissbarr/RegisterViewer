@@ -184,6 +184,9 @@ describe('getProject', () => {
       data: '{"version":1,"registers":[]}',
       createdAt: '2024-01-01T00:00:00Z',
       updatedAt: '2024-01-02T00:00:00Z',
+      visibility: 'unlisted',
+      isOwner: true,
+      version: 4,
     };
 
     mockFetch.mockResolvedValueOnce({
@@ -307,6 +310,29 @@ describe('updateProject', () => {
       },
     );
     expect(result).toEqual(responseData);
+  });
+
+  it('returns visibility from the GET response', async () => {
+    const responseData = {
+      id: 'ABC123DEF456',
+      data: '{"version":1,"registers":[]}',
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-02T00:00:00Z',
+      isOwner: true,
+      visibility: 'unlisted',
+      version: 4,
+    };
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => responseData,
+    });
+
+    const result = await getProject('ABC123DEF456');
+
+    expect(result.visibility).toBe('unlisted');
   });
 
   it('sends only data and version in the PUT body', async () => {

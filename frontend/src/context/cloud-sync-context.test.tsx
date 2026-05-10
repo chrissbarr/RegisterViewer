@@ -80,6 +80,13 @@ vi.mock('../utils/storage', () => ({
   exportToObject: vi.fn(() => ({ version: 1, registers: [], values: {} })),
   deserializeState: vi.fn((data: unknown) => data),
   serializeState: vi.fn((state: unknown) => state),
+  serializeImportResult: vi.fn((result: { registers: unknown[]; values: Record<string, bigint>; project?: unknown; addressUnitBits?: unknown }) => ({
+    registers: result.registers,
+    activeRegisterId: null,
+    registerValues: {},
+    project: result.project,
+    addressUnitBits: result.addressUnitBits,
+  })),
   EMPTY_SERIALIZED_STATE: { registers: [], activeRegisterId: null, registerValues: {} },
 }));
 
@@ -863,9 +870,36 @@ describe('CloudSyncProvider', () => {
         addressUnitBits: 8,
         updatedAt: '2024-01-01T12:00:00Z',
         isOwner: true,
+        visibility: 'unlisted',
         version: 1,
       };
       (fetchAndParseCloudProject as Mock).mockResolvedValue(importResult);
+      (updateProjectMetadata as Mock).mockImplementation((localId: string, updates: Partial<StoredLocalProject>) => {
+        (loadManifest as Mock).mockReturnValue({
+          version: 1,
+          projects: [makeManifestEntry({
+            localId,
+            cloudId: updates.cloudId ?? null,
+            storage: updates.storage ?? 'local',
+            serverVersion: updates.serverVersion ?? null,
+            cloudSavedAt: updates.cloudSavedAt ?? null,
+            visibility: updates.visibility ?? 'private',
+            hasUnsyncedChanges: updates.hasUnsyncedChanges,
+            cloudConflictVersion: updates.cloudConflictVersion,
+          })],
+        });
+        (loadProject as Mock).mockReturnValue(makeStoredProject({
+          localId,
+          cloudId: updates.cloudId ?? null,
+          storage: updates.storage ?? 'local',
+          serverVersion: updates.serverVersion ?? null,
+          cloudSavedAt: updates.cloudSavedAt ?? null,
+          visibility: updates.visibility ?? 'private',
+          hasUnsyncedChanges: updates.hasUnsyncedChanges,
+          cloudConflictVersion: updates.cloudConflictVersion,
+        }));
+        return writeOk(makeStoredProject({ localId, ...updates }));
+      });
 
       const { result } = renderCloudSync();
 
@@ -1893,7 +1927,12 @@ describe('CloudSyncProvider', () => {
       });
 
       // Server confirms ownership
-      (apiGetProject as Mock).mockResolvedValue({ isOwner: true, version: 1 });
+      (apiGetProject as Mock).mockResolvedValue({
+        isOwner: true,
+        version: 6,
+        updatedAt: '2024-08-01T00:00:00Z',
+        visibility: 'unlisted',
+      });
 
       const { result } = renderCloudSync();
 
@@ -1907,7 +1946,176 @@ describe('CloudSyncProvider', () => {
       });
 
       expect(apiGetProject).toHaveBeenCalledWith('my-cloud-id', 'mock-jwt-token');
+      expect(updateProjectMetadata).toHaveBeenCalledWith(
+        TEST_LOCAL_ID,
+        {
+          cloudId: 'my-cloud-id',
+          storage: 'cloud',
+          serverVersion: 6,
+          cloudSavedAt: '2024-08-01T00:00:00Z',
+          visibility: 'unlisted',
+          cloudConflictVersion: null,
+          hasUnsyncedChanges: false,
+        },
+        { protectedLocalIds: [TEST_LOCAL_ID] },
+      );
       expect(result.current.state.isOwner).toBe(true);
+      expect(result.current.state.visibility).toBe('unlisted');
+      expect(result.current.state.lastCloudSavedAt).toBe('2024-08-01T00:00:00Z');
+    });
+
+    it('saves an unsaved active cloud-source project before promoting ownership metadata', async () => {
+      authMock.user = { id: 1, email: 'user@example.com' };
+      authMock.getJwt.mockReturnValue('mock-jwt-token');
+      (apiGetProject as Mock).mockResolvedValue({
+        isOwner: true,
+        version: 3,
+        updatedAt: '2024-08-02T00:00:00Z',
+        visibility: 'private',
+      });
+      (createProjectInStorage as Mock).mockReturnValue('saved-from-unsaved');
+      (updateProjectMetadata as Mock).mockImplementation((localId: string, updates: Partial<StoredLocalProject>) => {
+        (loadManifest as Mock).mockReturnValue({
+          version: 1,
+          projects: [makeManifestEntry({
+            localId,
+            cloudId: updates.cloudId ?? null,
+            storage: updates.storage ?? 'local',
+            serverVersion: updates.serverVersion ?? null,
+            cloudSavedAt: updates.cloudSavedAt ?? null,
+            visibility: updates.visibility ?? 'private',
+            hasUnsyncedChanges: updates.hasUnsyncedChanges,
+            cloudConflictVersion: updates.cloudConflictVersion,
+          })],
+        });
+        (loadProject as Mock).mockReturnValue(makeStoredProject({
+          localId,
+          cloudId: updates.cloudId ?? null,
+          storage: updates.storage ?? 'local',
+          serverVersion: updates.serverVersion ?? null,
+          cloudSavedAt: updates.cloudSavedAt ?? null,
+          visibility: updates.visibility ?? 'private',
+          hasUnsyncedChanges: updates.hasUnsyncedChanges,
+          cloudConflictVersion: updates.cloudConflictVersion,
+        }));
+        return writeOk(makeStoredProject({ localId, ...updates }));
+      });
+
+      const { result } = renderHook(
+        () => ({
+          state: useCloudSync(),
+          actions: useCloudSyncActions(),
+        }),
+        {
+          wrapper: ({ children }: { children: ReactNode }) => (
+            <AppProvider savedState={makeState({ registers: [makeRegister({ id: 'reg-1' })] })}>
+              <EditProvider>
+                <ProjectStorageProvider
+                  initialLocalId={null}
+                  initialUnsaved={{ name: 'Shared Cloud', source: 'cloud' }}
+                >
+                  <CloudSyncProvider>{children}</CloudSyncProvider>
+                </ProjectStorageProvider>
+              </EditProvider>
+            </AppProvider>
+          ),
+        },
+      );
+
+      await act(async () => {
+        result.current.actions.initFromProject('my-cloud-id', false, 'local', {
+          serverVersion: 3,
+          cloudSavedAt: '2024-08-02T00:00:00Z',
+          visibility: 'private',
+        });
+      });
+
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(createProjectInStorage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          registers: expect.any(Array),
+          registerValues: expect.any(Object),
+        }),
+        'Shared Cloud',
+        undefined,
+        expect.objectContaining({ protectedLocalIds: [null] }),
+      );
+      expect(updateProjectMetadata).toHaveBeenCalledWith(
+        'saved-from-unsaved',
+        expect.objectContaining({
+          cloudId: 'my-cloud-id',
+          storage: 'cloud',
+          serverVersion: 3,
+          cloudSavedAt: '2024-08-02T00:00:00Z',
+          visibility: 'private',
+          cloudConflictVersion: null,
+          hasUnsyncedChanges: false,
+        }),
+        { protectedLocalIds: ['saved-from-unsaved'] },
+      );
+      await vi.waitFor(() => {
+        expect(result.current.state.isOwner).toBe(true);
+      });
+    });
+
+    it('does not promote ownership when saving the unsaved workspace fails', async () => {
+      authMock.user = { id: 1, email: 'user@example.com' };
+      authMock.getJwt.mockReturnValue('mock-jwt-token');
+      (apiGetProject as Mock).mockResolvedValue({
+        isOwner: true,
+        version: 3,
+        updatedAt: '2024-08-02T00:00:00Z',
+        visibility: 'private',
+      });
+      (createProjectInStorage as Mock).mockImplementation(() => {
+        throw new Error('quota');
+      });
+
+      const { result } = renderHook(
+        () => ({
+          state: useCloudSync(),
+          actions: useCloudSyncActions(),
+        }),
+        {
+          wrapper: ({ children }: { children: ReactNode }) => (
+            <AppProvider savedState={makeState({ registers: [makeRegister({ id: 'reg-1' })] })}>
+              <EditProvider>
+                <ProjectStorageProvider
+                  initialLocalId={null}
+                  initialUnsaved={{ name: 'Shared Cloud', source: 'cloud' }}
+                >
+                  <CloudSyncProvider>{children}</CloudSyncProvider>
+                </ProjectStorageProvider>
+              </EditProvider>
+            </AppProvider>
+          ),
+        },
+      );
+
+      await act(async () => {
+        result.current.actions.initFromProject('my-cloud-id', false, 'local', {
+          serverVersion: 3,
+          cloudSavedAt: '2024-08-02T00:00:00Z',
+          visibility: 'private',
+        });
+      });
+
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(updateProjectMetadata).not.toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ storage: 'cloud' }),
+        expect.anything(),
+      );
+      expect(result.current.state.isOwner).toBe(false);
+      expect(result.current.state.error).toContain('could not be saved locally');
     });
   });
 });

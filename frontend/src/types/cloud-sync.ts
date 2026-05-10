@@ -23,6 +23,8 @@ export interface CloudInit {
   serverVersion?: number | null;
   cloudSavedAt?: string | null;
   visibility?: Visibility;
+  cloudConflictVersion?: number | null;
+  hasUnsyncedChanges?: boolean;
 }
 
 /**

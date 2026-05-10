@@ -165,10 +165,10 @@ describe('ProjectStorageProvider', () => {
       expect(result.current.state.activeLocalId).toBe(TEST_LOCAL_ID);
     });
 
-    it('falls back to sessionStorage when no initialLocalId', () => {
+    it('does not restore stale sessionStorage when no initial identity is provided', () => {
       sessionStorage.setItem('register-viewer-active-project', 'session-id');
       const { result } = renderProjectStorage(null);
-      expect(result.current.state.activeLocalId).toBe('session-id');
+      expect(result.current.state.activeLocalId).toBeNull();
     });
 
     it('loads project list from manifest on mount', () => {

@@ -626,6 +626,7 @@ describe('useProjectSwitchInit', () => {
       rerender({ activeLocalId: PROJECT_B_LOCAL_ID });
 
       expect(deps.internalRef.current.lastSavedVersion).not.toBe(deps.dataVersionRef.current);
+      expect(deps.needsVersionSyncRef.current).toBe(false);
       expect(checkAndPullFreshVersion).not.toHaveBeenCalled();
     });
 

@@ -183,6 +183,21 @@ final class ProjectApiTest extends TestCase
     }
 
     #[Test]
+    public function handleGetProjectIncludesVisibility(): void
+    {
+        $userId = $this->createTestUser('get-visibility@example.com');
+        $id = generatePublicId();
+        dbCreateProject(self::$db, $id, 'unlisted', self::validDataJson(), null, $userId);
+
+        $response = handleGetProject(self::$db, $id, ['kind' => 'none']);
+
+        $this->assertSame(200, $response->status);
+        $body = json_decode($response->rawJson ?? '', true);
+        $this->assertSame('unlisted', $body['visibility']);
+        $this->assertFalse($body['isOwner']);
+    }
+
+    #[Test]
     public function countProjectsByUserIdReturnsCorrectCount(): void
     {
         $userId = $this->createTestUser('counter@example.com');

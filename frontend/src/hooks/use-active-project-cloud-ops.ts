@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState, type Dispatch, type MutableRefObject } from 'react';
-import { exportToObject, serializeState } from '../utils/storage';
+import { exportToObject, serializeImportResult, serializeState } from '../utils/storage';
 import { isCloudEnabled, ApiError } from '../utils/api-client';
 import { fetchAndParseCloudProject } from '../utils/cloud-project-loader';
 import { checkAndPullFreshVersion, type FreshnessCheckContext } from '../utils/cloud-freshness';
@@ -145,6 +145,7 @@ interface ActiveProjectCloudOpsDeps {
   lastFreshnessCheckRef: MutableRefObject<number>;
   updateCloudMetadata: (localId: string, updates: CloudMetadataUpdate) => ProjectStorageWriteResult;
   createNewProject: (name: string, state: ReturnType<typeof serializeState>) => string | null;
+  loadAsUnsaved: (result: Awaited<ReturnType<typeof fetchAndParseCloudProject>>, name: string, source: 'cloud') => boolean;
   getJwt: () => string | null;
   dispatch: Dispatch<ImportStateAction>;
 }
@@ -176,7 +177,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
   const {
     core: { internalRef, activeLocalIdRef, setInternal },
     appStateRef, dataVersionRef, mutationLockRef, needsVersionSyncRef, lastFreshnessCheckRef,
-    updateCloudMetadata, createNewProject, getJwt, dispatch,
+    updateCloudMetadata, createNewProject, loadAsUnsaved, getJwt, dispatch,
   } = deps;
 
   // Login guard state (absorbed from useLoginGuard)
@@ -487,17 +488,53 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
         // JWT is intentionally optional — unauthenticated users can load public/unlisted projects
         const jwt = getJwt();
         const importResult = await fetchAndParseCloudProject(cloudId, jwt ?? undefined);
-
-        dispatch({
-          type: 'IMPORT_STATE',
-          registers: importResult.registers,
-          values: importResult.values,
-          project: importResult.project,
-          addressUnitBits: importResult.addressUnitBits,
-        });
-
         const isOwner = importResult.isOwner;
+        const name = importResult.project?.title?.trim() || DEFAULT_PROJECT_NAME;
         const shareUrl = buildProjectUrl(cloudId);
+
+        if (isOwner) {
+          const localId = createNewProject(name, serializeImportResult(importResult));
+          if (!localId) {
+            setInternal((prev) => ({
+              ...prev,
+              status: 'idle',
+              error: 'Cloud project loaded, but the local workspace could not be created.',
+            }));
+            return;
+          }
+          activeLocalIdRef.current = localId;
+          const metadataResult = updateCloudMetadata(localId, {
+            cloudId,
+            storage: 'cloud',
+            cloudSavedAt: importResult.updatedAt,
+            visibility: importResult.visibility,
+            serverVersion: importResult.version,
+            cloudConflictVersion: null,
+            hasUnsyncedChanges: false,
+          });
+          if (!metadataResult.ok) {
+            setInternal((prev) => ({
+              ...prev,
+              status: 'idle',
+              error: 'Cloud project loaded, but local cloud metadata could not be persisted.',
+            }));
+            return;
+          }
+          dispatch({
+            type: 'IMPORT_STATE',
+            registers: importResult.registers,
+            values: importResult.values,
+            project: importResult.project,
+            addressUnitBits: importResult.addressUnitBits,
+          });
+        } else if (!loadAsUnsaved(importResult, name, 'cloud')) {
+          setInternal((prev) => ({
+            ...prev,
+            status: 'idle',
+            error: 'Cloud project loaded, but the unsaved workspace could not be created.',
+          }));
+          return;
+        }
 
         // Signal the version-tracking useEffect to capture lastSavedVersion
         needsVersionSyncRef.current = true;
@@ -506,10 +543,12 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
           ...prev,
           cloudId,
           isOwner,
+          storage: isOwner ? 'cloud' : 'local',
           status: 'idle',
           shareUrl,
           lastCloudSavedAt: importResult.updatedAt,
           serverVersion: importResult.version,
+          visibility: importResult.visibility,
         }));
       } catch (err) {
         if (err instanceof ApiError && err.status === 404) {
@@ -528,7 +567,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
         }));
       }
     },
-    [dispatch, needsVersionSyncRef, getJwt, setInternal],
+    [activeLocalIdRef, createNewProject, dispatch, loadAsUnsaved, needsVersionSyncRef, getJwt, setInternal, updateCloudMetadata],
   );
 
   const ops = useMemo(

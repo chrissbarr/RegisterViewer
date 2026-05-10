@@ -31,6 +31,7 @@ function makeGetProjectResponse(dataOverride?: unknown) {
     createdAt: '2024-01-01T00:00:00Z',
     updatedAt: '2024-06-15T12:00:00Z',
     isOwner: false,
+    visibility: 'private',
     version: 1,
   };
 }
@@ -97,6 +98,17 @@ describe('fetchAndParseCloudProject', () => {
     const result = await fetchAndParseCloudProject('ABC123DEF456');
 
     expect(result.isOwner).toBe(true);
+  });
+
+  it('threads visibility from the API response', async () => {
+    const apiResponse = { ...makeGetProjectResponse(), visibility: 'unlisted' as const };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockGetProject.mockResolvedValue(apiResponse as any);
+    mockImportFromObject.mockRestore();
+
+    const result = await fetchAndParseCloudProject('ABC123DEF456');
+
+    expect(result.visibility).toBe('unlisted');
   });
 
   it('passes jwt parameter through to getProject', async () => {
