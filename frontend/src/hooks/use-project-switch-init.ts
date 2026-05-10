@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, type MutableRefObject } from 'react';
-import { buildProjectUrl, loadProject } from '../utils/project-storage';
+import { buildProjectUrl, loadProject, type ProjectStorageWriteResult } from '../utils/project-storage';
 import { setCloudUrl, clearCloudUrl, withMutationLock } from '../utils/cloud-utils';
 import { exportToObject, deserializeState } from '../utils/storage';
 import { saveProjectToCloudImpl } from '../utils/cloud-operations';
@@ -21,7 +21,7 @@ interface UseProjectSwitchInitDeps {
   mutationLockRef: MutableRefObject<boolean>;
   getJwt: () => string | null;
   lastFreshnessCheckRef: MutableRefObject<number>;
-  updateCloudMetadata: (localId: string, updates: CloudMetadataUpdate) => void;
+  updateCloudMetadata: (localId: string, updates: CloudMetadataUpdate) => ProjectStorageWriteResult;
   dispatch: (action: ImportStateAction) => void;
   lastDeparture: ProjectDepartureSnapshot | null;
 }
@@ -102,6 +102,7 @@ export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
               try {
                 const state = deserializeState(project.state);
                 const payload = exportToObject(state);
+                const savedStateFingerprint = JSON.stringify(project.state);
                 const latestEntry = projectsRef.current.find(p => p.localId === prevLocalId);
                 const knownVersion = project.serverVersion ?? latestEntry?.serverVersion ?? departure.serverVersion ?? undefined;
                 const serverVersion = typeof knownVersion === 'number' && knownVersion > 0
@@ -109,15 +110,20 @@ export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
                   : undefined;
                 const result = await saveProjectToCloudImpl(payload, departingCloudId, jwt, serverVersion);
                 if (result.kind === 'updated' || result.kind === 'created') {
+                  const latestProject = loadProject(prevLocalId);
+                  const changedDuringSave = !!latestProject &&
+                    JSON.stringify(latestProject.state) !== savedStateFingerprint;
                   updateCloudMetadata(prevLocalId, {
                     cloudSavedAt: result.timestamp,
                     serverVersion: result.version,
                     cloudConflictVersion: null,
+                    hasUnsyncedChanges: changedDuringSave,
                   });
                 } else if (result.kind === 'conflict') {
                   updateCloudMetadata(prevLocalId, {
                     serverVersion: result.serverVersion,
                     cloudConflictVersion: result.serverVersion,
+                    hasUnsyncedChanges: true,
                   });
                 }
               } catch {
@@ -162,18 +168,21 @@ export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
       const serverVersion = entry?.serverVersion ?? storedProject?.serverVersion ?? 0;
       needsVersionSyncRef.current = true;
       setCloudUrl(cloudId);
-      setInternal((prev) => ({
-        ...prev,
+      const next = {
+        ...internalRef.current,
         cloudId,
         isOwner,
         storage,
         shareUrl: buildProjectUrl(cloudId),
+        lastSavedVersion: dataVersionRef.current,
         lastCloudSavedAt: null,
         error: null,
         visibility: entry?.visibility ?? storedProject?.visibility ?? 'private',
         serverVersion,
         conflict: conflictVersion ? { serverVersion: conflictVersion } : null,
-      }));
+      };
+      internalRef.current = next;
+      setInternal(next);
 
       // Freshness check for incoming project
       const jwt = getJwt();

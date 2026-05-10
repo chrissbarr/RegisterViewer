@@ -10,7 +10,7 @@ const mockProjects = [
 
 const mockStorageActions = {
   createNewProject: vi.fn(() => 'new-id'),
-  switchProject: vi.fn(),
+  switchProject: vi.fn(() => true),
   deleteLocalProject: vi.fn(),
   renameProject: vi.fn(),
   refreshProjectList: vi.fn(),
@@ -51,7 +51,7 @@ vi.mock('../utils/api-client', () => ({
 
 vi.mock('../utils/project-storage', () => ({
   loadProject: vi.fn(() => null),
-  saveProject: vi.fn(),
+  saveProject: vi.fn(() => ({ ok: true, status: 'ok', evictedLocalIds: [] })),
   hasLocalData: vi.fn(() => true),
 }));
 
@@ -69,6 +69,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   (isCloudEnabled as Mock).mockReturnValue(true);
   mockStorageActions.createNewProject.mockReturnValue('new-id');
+  mockStorageActions.switchProject.mockReturnValue(true);
   mockCloudActions.syncCloudProjects.mockResolvedValue({ staleCloudIds: [], updatedCount: 0, placeholdersCreated: 0 });
 });
 

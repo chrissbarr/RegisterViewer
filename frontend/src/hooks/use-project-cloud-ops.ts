@@ -1,7 +1,7 @@
 import { useCallback, useMemo, type MutableRefObject } from 'react';
 import { exportToObject, deserializeState } from '../utils/storage';
 import { isCloudEnabled } from '../utils/api-client';
-import { loadProject } from '../utils/project-storage';
+import { loadProject, type ProjectStorageWriteResult } from '../utils/project-storage';
 import { clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock, requireJwt } from '../utils/cloud-utils';
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
 import type { Visibility, ProjectListEntry } from '../types/project';
@@ -9,7 +9,7 @@ import { type CloudSyncCore, type CloudMetadataUpdate, initialInternalState } fr
 
 interface ProjectCloudOpsDeps {
   core: CloudSyncCore;
-  updateCloudMetadata: (localId: string, updates: CloudMetadataUpdate) => void;
+  updateCloudMetadata: (localId: string, updates: CloudMetadataUpdate) => ProjectStorageWriteResult;
   projectsRef: MutableRefObject<ProjectListEntry[]>;
   mutationLockRef: MutableRefObject<boolean>;
   getJwt: () => string | null;
@@ -38,7 +38,8 @@ export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
     // Active project: delegate to the live-state path which handles
     // dirty tracking, status indicators, and reads fresh React state.
     if (localId === activeLocalIdRef.current) {
-      await activeProjectSave();
+      const saved = await activeProjectSave();
+      if (!saved) throw new Error('Failed to save active project to cloud.');
       return;
     }
 
@@ -69,20 +70,24 @@ export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
       }
 
       if (result.kind === 'created') {
-        updateCloudMetadata(localId, {
+        const metadataResult = updateCloudMetadata(localId, {
           cloudId: result.cloudId,
           cloudSavedAt: result.timestamp,
           storage: 'cloud',
           serverVersion: result.version,
           cloudConflictVersion: null,
+          hasUnsyncedChanges: false,
         });
+        if (!metadataResult.ok) throw new Error('Saved to cloud, but failed to persist local cloud metadata.');
       } else {
-        updateCloudMetadata(localId, {
+        const metadataResult = updateCloudMetadata(localId, {
           cloudSavedAt: result.timestamp,
           storage: 'cloud',
           serverVersion: result.version,
           cloudConflictVersion: null,
+          hasUnsyncedChanges: false,
         });
+        if (!metadataResult.ok) throw new Error('Saved to cloud, but failed to persist local cloud metadata.');
       }
     });
     if (!lockResult.executed) {
@@ -97,7 +102,8 @@ export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
 
       const entry = projectsRef.current.find(p => p.cloudId === cloudId);
       if (entry) {
-        updateCloudMetadata(entry.localId, CLEARED_CLOUD_METADATA);
+        const metadataResult = updateCloudMetadata(entry.localId, CLEARED_CLOUD_METADATA);
+        if (!metadataResult.ok) throw new Error('Deleted cloud project, but failed to persist local metadata.');
       }
 
       // If the currently active cloud project is this one, clear cloud state
@@ -115,7 +121,8 @@ export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
     const jwt = requireJwt(getJwt);
     await patchVisibilityImpl(entry.cloudId, v, jwt);
 
-    updateCloudMetadata(localId, { visibility: v });
+    const metadataResult = updateCloudMetadata(localId, { visibility: v });
+    if (!metadataResult.ok) throw new Error('Visibility changed on server, but failed to persist local metadata.');
 
     // If this is the active project, update cloud state too
     if (localId === activeLocalIdRef.current) {
@@ -128,7 +135,8 @@ export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
     if (!entry || !entry.cloudId) return;
 
     const cloudId = entry.cloudId;
-    updateCloudMetadata(localId, CLEARED_CLOUD_METADATA);
+    const metadataResult = updateCloudMetadata(localId, CLEARED_CLOUD_METADATA);
+    if (!metadataResult.ok) return;
 
     // If the currently active cloud project is this one, clear cloud state
     if (internalRef.current.cloudId === cloudId) {

@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { useActiveProjectCloudOps } from './use-active-project-cloud-ops';
 import { initialInternalState, type InternalCloudSyncState } from '../types/cloud-sync';
 import type { AppState } from '../types/register';
+import type { ProjectStorageWriteResult } from '../utils/project-storage';
 import { makeState, makeRegister } from '../test/helpers';
 // ApiError import resolves to the mocked class — needed for instanceof checks in source
 import { ApiError } from '../utils/api-client';
@@ -49,6 +50,7 @@ vi.mock('../utils/cloud-utils', async () => {
 
 vi.mock('../utils/project-storage', () => ({
   buildProjectUrl: vi.fn((id: string) => `https://example.com/#/p/${id}`),
+  patchProjectState: vi.fn(() => ({ ok: true, status: 'ok', evictedLocalIds: [] })),
 }));
 
 vi.mock('../utils/storage', () => ({
@@ -71,6 +73,7 @@ import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl
 import { setCloudUrl, clearCloudUrl } from '../utils/cloud-utils';
 import { checkAndPullFreshVersion } from '../utils/cloud-freshness';
 import { exportToObject } from '../utils/storage';
+import { patchProjectState } from '../utils/project-storage';
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -83,6 +86,10 @@ const INITIAL_INTERNAL_STATE: InternalCloudSyncState = { ...initialInternalState
 
 function makeRef<T>(value: T): { current: T } {
   return { current: value };
+}
+
+function writeOk(): ProjectStorageWriteResult {
+  return { ok: true, status: 'ok', evictedLocalIds: [] };
 }
 
 function makeDefaultDeps(overrides: Partial<ReturnType<typeof buildDeps>> = {}) {
@@ -116,7 +123,7 @@ function buildDeps() {
     mutationLockRef: makeRef(false),
     needsVersionSyncRef: makeRef(false),
     lastFreshnessCheckRef: makeRef(0),
-    updateCloudMetadata: vi.fn(),
+    updateCloudMetadata: vi.fn(() => writeOk()),
     createNewProject: vi.fn(() => 'new-local-id'),
     getJwt: vi.fn((): string | null => TEST_JWT),
     dispatch: vi.fn(),
@@ -164,6 +171,7 @@ describe('useActiveProjectCloudOps', () => {
         storage: 'cloud',
         serverVersion: 1,
         cloudConflictVersion: null,
+        hasUnsyncedChanges: false,
       });
       expect(setCloudUrl).toHaveBeenCalledWith(TEST_CLOUD_ID);
       // setInternal should have been called with status 'saving' then with the created result
@@ -202,6 +210,41 @@ describe('useActiveProjectCloudOps', () => {
         cloudSavedAt: TEST_TIMESTAMP,
         serverVersion: 3,
         cloudConflictVersion: null,
+        hasUnsyncedChanges: false,
+      });
+    });
+
+    it('keeps local cloud data protected when edits arrive during a save', async () => {
+      const deps = makeDefaultDeps();
+      deps.internalRef.current = {
+        ...INITIAL_INTERNAL_STATE,
+        cloudId: TEST_CLOUD_ID,
+        isOwner: true,
+        serverVersion: 2,
+        lastSavedVersion: 1,
+      };
+      (saveProjectToCloudImpl as Mock).mockImplementation(async () => {
+        deps.dataVersionRef.current = 2;
+        return {
+          kind: 'updated',
+          cloudId: TEST_CLOUD_ID,
+          timestamp: TEST_TIMESTAMP,
+          version: 3,
+        };
+      });
+
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+
+      await act(async () => {
+        await result.current.saveToCloud();
+      });
+
+      expect(patchProjectState).toHaveBeenCalled();
+      expect(deps.updateCloudMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, {
+        cloudSavedAt: TEST_TIMESTAMP,
+        serverVersion: 3,
+        cloudConflictVersion: null,
+        hasUnsyncedChanges: true,
       });
     });
 
@@ -225,6 +268,7 @@ describe('useActiveProjectCloudOps', () => {
         visibility: 'private',
         cloudSavedAt: null,
         cloudConflictVersion: null,
+        hasUnsyncedChanges: undefined,
         storage: 'local',
       });
       expect(clearCloudUrl).toHaveBeenCalled();
@@ -279,6 +323,7 @@ describe('useActiveProjectCloudOps', () => {
         cloudSavedAt: TEST_TIMESTAMP,
         serverVersion: 2,
         cloudConflictVersion: null,
+        hasUnsyncedChanges: false,
       });
       // setInternal should NOT have been called with the timestamp update
       // because the active project changed (only the 'saving' status update runs)
@@ -379,6 +424,7 @@ describe('useActiveProjectCloudOps', () => {
           expectedDataVersion: 1,
         }),
       );
+      expect(deps.updateCloudMetadata).not.toHaveBeenCalled();
     });
 
     it('clean 409 passes shared lastFreshnessCheckRef (not a throwaway ref)', async () => {
@@ -450,6 +496,7 @@ describe('useActiveProjectCloudOps', () => {
       expect(deps.updateCloudMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, {
         serverVersion: 5,
         cloudConflictVersion: 5,
+        hasUnsyncedChanges: true,
       });
     });
 
@@ -724,6 +771,7 @@ describe('useActiveProjectCloudOps', () => {
         storage: 'cloud',
         serverVersion: 1,
         cloudConflictVersion: null,
+        hasUnsyncedChanges: false,
       });
       expect(setCloudUrl).toHaveBeenCalledWith('forked-cloud-id');
     });
@@ -751,6 +799,7 @@ describe('useActiveProjectCloudOps', () => {
         storage: 'cloud',
         serverVersion: 1,
         cloudConflictVersion: null,
+        hasUnsyncedChanges: false,
       });
     });
   });
@@ -777,6 +826,7 @@ describe('useActiveProjectCloudOps', () => {
         visibility: 'private',
         cloudSavedAt: null,
         cloudConflictVersion: null,
+        hasUnsyncedChanges: undefined,
         storage: 'local',
       });
       expect(clearCloudUrl).toHaveBeenCalled();

@@ -5,6 +5,7 @@ import { patchProjectState, loadProject } from './project-storage';
 import { serializeState, deserializeState } from './storage';
 import type { ImportStateAction } from '../context/app-context';
 import type { InternalCloudSyncState, CloudMetadataUpdate } from '../types/cloud-sync';
+import type { ProjectStorageWriteResult } from './project-storage';
 
 /** Stable refs and callbacks; same across all freshness check calls within a provider. */
 export interface FreshnessCheckContext {
@@ -13,7 +14,7 @@ export interface FreshnessCheckContext {
   dispatch: (action: ImportStateAction) => void;
   needsVersionSyncRef: MutableRefObject<boolean>;
   lastFreshnessCheckRef: MutableRefObject<number>;
-  updateCloudMetadata: (localId: string, updates: CloudMetadataUpdate) => void;
+  updateCloudMetadata: (localId: string, updates: CloudMetadataUpdate) => ProjectStorageWriteResult;
   setInternal: (updater: (prev: InternalCloudSyncState) => InternalCloudSyncState) => void;
 }
 
@@ -31,7 +32,7 @@ type FreshnessCheckResult =
   | { applied: true; serverVersion: number }
   | {
       applied: false;
-      reason: 'throttled' | 'fresh' | 'dirty' | 'changed-during-pull' | 'parse-failed';
+      reason: 'throttled' | 'fresh' | 'dirty' | 'changed-during-pull' | 'parse-failed' | 'local-persist-failed';
       serverVersion?: number;
     };
 
@@ -101,14 +102,6 @@ export async function checkAndPullFreshVersion(
   const parsed = parseProjectData(serverResponse.data);
   if (!parsed) return { applied: false, reason: 'parse-failed', serverVersion };
 
-  dispatch({
-    type: 'IMPORT_STATE',
-    registers: parsed.registers,
-    values: parsed.values,
-    project: parsed.project,
-    addressUnitBits: parsed.addressUnitBits,
-  });
-
   if (localId) {
     // Update localStorage with fresh data, preserving local-only UI fields
     // (activeRegisterId, mapTableWidth, mapShowGaps, mapSortDescending).
@@ -116,7 +109,7 @@ export async function checkAndPullFreshVersion(
     // defaults would reset the user's view preferences.
     const existingProject = loadProject(localId);
     const existingState = existingProject ? deserializeState(existingProject.state) : null;
-    patchProjectState(localId, serializeState({
+    const persistResult = patchProjectState(localId, serializeState({
       registers: parsed.registers,
       registerValues: parsed.values,
       activeRegisterId: existingState?.activeRegisterId ?? parsed.registers[0]?.id ?? '',
@@ -126,7 +119,33 @@ export async function checkAndPullFreshVersion(
       mapShowGaps: existingState?.mapShowGaps ?? true,
       mapSortDescending: existingState?.mapSortDescending ?? false,
     }));
+    if (!persistResult.ok) {
+      if (import.meta.env.DEV) {
+        console.warn('[cloud-freshness] Failed to persist pulled project:', localId, persistResult.status, persistResult.error);
+      }
+      return { applied: false, reason: 'local-persist-failed', serverVersion };
+    }
+    const metadataResult = updateCloudMetadata(localId, {
+      cloudSavedAt: serverResponse.updatedAt,
+      serverVersion,
+      cloudConflictVersion: null,
+      hasUnsyncedChanges: false,
+    });
+    if (!metadataResult.ok) {
+      if (import.meta.env.DEV) {
+        console.warn('[cloud-freshness] Failed to persist pulled project metadata:', localId, metadataResult.status, metadataResult.error);
+      }
+      return { applied: false, reason: 'local-persist-failed', serverVersion };
+    }
   }
+
+  dispatch({
+    type: 'IMPORT_STATE',
+    registers: parsed.registers,
+    values: parsed.values,
+    project: parsed.project,
+    addressUnitBits: parsed.addressUnitBits,
+  });
   needsVersionSyncRef.current = true;
 
   setInternal((prev) => ({
@@ -135,14 +154,6 @@ export async function checkAndPullFreshVersion(
     lastCloudSavedAt: serverResponse.updatedAt,
     conflict: null,
   }));
-
-  if (localId) {
-    updateCloudMetadata(localId, {
-      cloudSavedAt: serverResponse.updatedAt,
-      serverVersion,
-      cloudConflictVersion: null,
-    });
-  }
 
   return { applied: true, serverVersion };
 }

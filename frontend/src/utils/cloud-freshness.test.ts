@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { checkAndPullFreshVersion, type FreshnessCheckContext, type FreshnessCheckCall } from './cloud-freshness';
 import { initialInternalState, type InternalCloudSyncState } from '../types/cloud-sync';
+import type { ProjectStorageWriteResult } from './project-storage';
 
 // ── Mocks ────────────────────────────────────────────────────────────
 
@@ -33,6 +34,10 @@ const TEST_CLOUD_ID = 'cloud-abc';
 const TEST_LOCAL_ID = 'local-123';
 const TEST_JWT = 'mock-jwt';
 
+function writeOk(): ProjectStorageWriteResult {
+  return { ok: true, status: 'ok', evictedLocalIds: [] };
+}
+
 function makeInternalState(overrides: Partial<InternalCloudSyncState> = {}): InternalCloudSyncState {
   return { ...initialInternalState, cloudId: TEST_CLOUD_ID, lastSavedVersion: 5, serverVersion: 1, ...overrides };
 }
@@ -44,7 +49,7 @@ function makeCtx(overrides: Partial<FreshnessCheckContext> = {}): FreshnessCheck
     dispatch: vi.fn(),
     needsVersionSyncRef: { current: false },
     lastFreshnessCheckRef: { current: 0 }, // never checked before
-    updateCloudMetadata: vi.fn(),
+    updateCloudMetadata: vi.fn(() => writeOk()),
     setInternal: vi.fn(),
     ...overrides,
   };
@@ -71,6 +76,7 @@ const PARSED_DATA = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  (patchProjectState as Mock).mockReturnValue(writeOk());
 });
 
 // ── Tests ────────────────────────────────────────────────────────────
@@ -104,6 +110,7 @@ describe('checkAndPullFreshVersion', () => {
       cloudSavedAt: '2024-06-01T00:00:00Z',
       serverVersion: 3,
       cloudConflictVersion: null,
+      hasUnsyncedChanges: false,
     });
   });
 
@@ -292,6 +299,30 @@ describe('checkAndPullFreshVersion', () => {
 
     expect(ctx.dispatch).not.toHaveBeenCalled();
     expect(patchProjectState).not.toHaveBeenCalled();
+    expect(ctx.updateCloudMetadata).not.toHaveBeenCalled();
+  });
+
+  it('does not dispatch or update metadata when local payload persistence fails', async () => {
+    const ctx = makeCtx();
+    const call = makeCall();
+    (getProject as Mock).mockResolvedValue({
+      data: { version: 1, registers: [], registerValues: {} },
+      updatedAt: '2024-06-01T00:00:00Z',
+      version: 3,
+    });
+    (parseProjectData as Mock).mockReturnValue(PARSED_DATA);
+    (patchProjectState as Mock).mockReturnValue({
+      ok: false,
+      status: 'quota-exceeded',
+      evictedLocalIds: ['cached-cloud'],
+    });
+
+    const result = await checkAndPullFreshVersion(ctx, call);
+
+    expect(result).toEqual({ applied: false, reason: 'local-persist-failed', serverVersion: 3 });
+    expect(ctx.dispatch).not.toHaveBeenCalled();
+    expect(ctx.needsVersionSyncRef.current).toBe(false);
+    expect(ctx.setInternal).not.toHaveBeenCalled();
     expect(ctx.updateCloudMetadata).not.toHaveBeenCalled();
   });
 

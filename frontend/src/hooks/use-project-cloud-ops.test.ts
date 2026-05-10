@@ -68,7 +68,7 @@ function makeDeps(overrides: Record<string, unknown> = {}) {
     internalRef,
     activeLocalIdRef,
     setInternal,
-    updateCloudMetadata: vi.fn() as Mock,
+    updateCloudMetadata: vi.fn(() => ({ ok: true, status: 'ok', evictedLocalIds: [] })) as Mock,
     projectsRef: { current: projects },
     mutationLockRef: { current: false },
     getJwt: (overrides.getJwt as (() => string | null)) ?? (() => 'mock-jwt'),
@@ -113,6 +113,19 @@ describe('useProjectCloudOps', () => {
       ).rejects.toThrow('Network failure');
     });
 
+    it('throws when activeProjectSave reports that the save did not complete', async () => {
+      const activeProjectSave = vi.fn(async () => false);
+      const deps = makeDeps({ activeProjectSave });
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      await expect(
+        act(async () => {
+          await result.current.saveProjectToCloud('local-1');
+        }),
+      ).rejects.toThrow('Failed to save active project to cloud.');
+    });
+
     it('creates a new cloud project for non-active project', async () => {
       const deps = makeDeps({ activeLocalId: 'other-local', projects: makeProjectList([{ localId: 'local-1', cloudId: null }]) });
       (loadProject as Mock).mockReturnValue({ state: '{}', cloudId: null });
@@ -135,6 +148,7 @@ describe('useProjectCloudOps', () => {
         storage: 'cloud',
         serverVersion: 1,
         cloudConflictVersion: null,
+        hasUnsyncedChanges: false,
       });
       // Should NOT update active project cloud state
       expect(setCloudUrl).not.toHaveBeenCalled();
@@ -170,6 +184,7 @@ describe('useProjectCloudOps', () => {
         storage: 'cloud',
         serverVersion: 9,
         cloudConflictVersion: null,
+        hasUnsyncedChanges: false,
       });
       expect(setCloudUrl).not.toHaveBeenCalled();
     });
@@ -284,6 +299,7 @@ describe('useProjectCloudOps', () => {
         visibility: 'private',
         cloudSavedAt: null,
         cloudConflictVersion: null,
+        hasUnsyncedChanges: undefined,
         storage: 'local',
       });
     });
@@ -382,6 +398,7 @@ describe('useProjectCloudOps', () => {
         visibility: 'private',
         cloudSavedAt: null,
         cloudConflictVersion: null,
+        hasUnsyncedChanges: undefined,
         storage: 'local',
       });
     });

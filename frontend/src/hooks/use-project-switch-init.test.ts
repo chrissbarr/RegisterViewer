@@ -202,6 +202,7 @@ describe('useProjectSwitchInit', () => {
           cloudSavedAt: '2024-06-02T00:00:00Z',
           serverVersion: 3,
           cloudConflictVersion: null,
+          hasUnsyncedChanges: false,
         });
       });
     });
@@ -402,6 +403,48 @@ describe('useProjectSwitchInit', () => {
         expect(deps.updateCloudMetadata).toHaveBeenCalledWith(PROJECT_A_LOCAL_ID, {
           serverVersion: 9,
           cloudConflictVersion: 9,
+          hasUnsyncedChanges: true,
+        });
+      });
+    });
+
+    it('keeps departing project marked unsynced when it changes during the background save', async () => {
+      const deps = buildDeps();
+      deps.lastDeparture = makeDeparture();
+      (loadProject as Mock).mockImplementation((id: string) => {
+        if (id !== PROJECT_A_LOCAL_ID) return null;
+        const callsForProjectA = (loadProject as Mock).mock.calls.filter(([calledId]) => calledId === PROJECT_A_LOCAL_ID).length;
+        return {
+          localId: PROJECT_A_LOCAL_ID,
+          serverVersion: 2,
+          state: {
+            registers: [],
+            activeRegisterId: null,
+            registerValues: callsForProjectA <= 2 ? {} : { reg: '0x1' },
+          },
+        };
+      });
+      (saveProjectToCloudImpl as Mock).mockResolvedValue({
+        kind: 'updated',
+        cloudId: PROJECT_A_CLOUD_ID,
+        timestamp: '2024-06-02T00:00:00Z',
+        version: 3,
+      });
+
+      const { rerender } = renderHook(
+        (props: { activeLocalId: string | null }) =>
+          useProjectSwitchInit({ ...deps, activeLocalId: props.activeLocalId }),
+        { initialProps: { activeLocalId: PROJECT_A_LOCAL_ID } },
+      );
+
+      rerender({ activeLocalId: PROJECT_B_LOCAL_ID });
+
+      await vi.waitFor(() => {
+        expect(deps.updateCloudMetadata).toHaveBeenCalledWith(PROJECT_A_LOCAL_ID, {
+          cloudSavedAt: '2024-06-02T00:00:00Z',
+          serverVersion: 3,
+          cloudConflictVersion: null,
+          hasUnsyncedChanges: true,
         });
       });
     });
@@ -463,6 +506,43 @@ describe('useProjectSwitchInit', () => {
   });
 
   describe('cloud state initialization', () => {
+    it('marks the incoming cloud project clean before running its freshness check', () => {
+      const deps = buildDeps();
+      deps.dataVersionRef.current = 4;
+      const localProject = makeProjectEntry({
+        localId: PROJECT_A_LOCAL_ID,
+        cloudId: null,
+        storage: 'local',
+      });
+      const incomingProject = makeProjectEntry({
+        localId: PROJECT_B_LOCAL_ID,
+        cloudId: PROJECT_A_CLOUD_ID,
+        storage: 'cloud',
+        serverVersion: 9,
+      });
+      deps.projects = [localProject, incomingProject];
+      deps.projectsRef.current = deps.projects;
+      (loadProject as Mock).mockReturnValue({
+        localId: PROJECT_B_LOCAL_ID,
+        cloudId: PROJECT_A_CLOUD_ID,
+        storage: 'cloud',
+        serverVersion: 9,
+        visibility: 'private',
+        state: { registers: [], activeRegisterId: null, registerValues: {} },
+      });
+
+      const { rerender } = renderHook(
+        (props: { activeLocalId: string | null }) =>
+          useProjectSwitchInit({ ...deps, activeLocalId: props.activeLocalId }),
+        { initialProps: { activeLocalId: PROJECT_A_LOCAL_ID } },
+      );
+
+      rerender({ activeLocalId: PROJECT_B_LOCAL_ID });
+
+      expect(deps.internalRef.current.lastSavedVersion).toBe(4);
+      expect(checkAndPullFreshVersion).toHaveBeenCalled();
+    });
+
     it('restores stored conflict state and skips freshness pull', () => {
       const deps = buildDeps();
       const localProject = makeProjectEntry({

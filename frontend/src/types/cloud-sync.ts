@@ -68,6 +68,7 @@ export interface CloudMetadataUpdate {
   storage?: 'local' | 'cloud';
   serverVersion?: number | null;
   cloudConflictVersion?: number | null;
+  hasUnsyncedChanges?: boolean;
 }
 
 export interface SyncResult {

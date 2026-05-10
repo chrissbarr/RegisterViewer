@@ -15,6 +15,7 @@ export interface ProjectManifestEntry {
   cloudSavedAt: string | null;
   serverVersion?: number | null; // null/undefined for local-only projects
   cloudConflictVersion?: number | null; // non-null when local data needs conflict recovery
+  hasUnsyncedChanges?: boolean; // true when cached cloud data is not safe to evict
   /**
    * Persistence strategy. `'local'` = local-only or shared/non-owned cloud project.
    * `'cloud'` = user-owned cloud-backed project (eligible for auto-sync, eviction, sign-out purge).
@@ -40,6 +41,7 @@ export interface StoredLocalProject {
   cloudSavedAt: string | null;
   serverVersion?: number | null;
   cloudConflictVersion?: number | null;
+  hasUnsyncedChanges?: boolean;
   storage: 'local' | 'cloud';
   state: import('./register').SerializedAppState;
 }

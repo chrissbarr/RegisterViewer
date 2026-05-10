@@ -7,7 +7,8 @@ import { EditProvider } from './edit-context';
 import { ProjectStorageProvider, useProjectStorageActions } from './project-storage-context';
 import { useAppDispatch } from './app-context';
 import { makeState, makeRegister } from '../test/helpers';
-import type { ProjectManifestEntry } from '../types/project';
+import type { ProjectManifestEntry, StoredLocalProject } from '../types/project';
+import type { SerializedAppState } from '../types/register';
 // ApiError import resolves to the mocked class — needed for instanceof checks in source
 import { ApiError } from '../utils/api-client';
 
@@ -49,6 +50,7 @@ vi.mock('../utils/project-storage', () => ({
   saveManifest: vi.fn(),
   loadProject: vi.fn(() => null),
   flushProjectState: vi.fn(),
+  patchProjectState: vi.fn(() => ({ ok: true, status: 'ok', evictedLocalIds: [] })),
   buildProjectUrl: vi.fn((id: string) => `https://example.com/#/p/${id}`),
   createProject: vi.fn(),
   deleteProject: vi.fn(),
@@ -116,6 +118,11 @@ import { exportToObject, deserializeState } from '../utils/storage';
 // ── Helpers ──────────────────────────────────────────────────────────
 
 const TEST_LOCAL_ID = 'local-123';
+const EMPTY_SERIALIZED_STATE: SerializedAppState = {
+  registers: [],
+  activeRegisterId: null,
+  registerValues: {},
+};
 
 function makeManifestEntry(overrides: Partial<ProjectManifestEntry> = {}) {
   return {
@@ -130,6 +137,26 @@ function makeManifestEntry(overrides: Partial<ProjectManifestEntry> = {}) {
     storage: 'local' as const,
     ...overrides,
   };
+}
+
+function makeStoredProject(overrides: Partial<StoredLocalProject> = {}): StoredLocalProject {
+  return {
+    localId: TEST_LOCAL_ID,
+    cloudId: null,
+    name: 'Test Project',
+    visibility: 'private',
+    createdAt: '2024-01-01T00:00:00Z',
+    localSavedAt: '2024-01-01T00:00:00Z',
+    cloudSavedAt: null,
+    serverVersion: null,
+    storage: 'local',
+    state: EMPTY_SERIALIZED_STATE,
+    ...overrides,
+  };
+}
+
+function writeOk(project?: StoredLocalProject) {
+  return { ok: true, status: 'ok' as const, evictedLocalIds: [], project };
 }
 
 function wrapper({ children }: { children: ReactNode }) {
@@ -181,7 +208,8 @@ beforeEach(() => {
   (isCloudEnabled as Mock).mockReturnValue(true);
   (loadManifest as Mock).mockReturnValue({ version: 1, projects: [] });
   (loadProject as Mock).mockReturnValue(null);
-  (flushProjectState as Mock).mockReturnValue(null);
+  (flushProjectState as Mock).mockReturnValue(writeOk(makeStoredProject()));
+  (updateProjectMetadata as Mock).mockReturnValue(writeOk(makeStoredProject()));
   (exportToObject as Mock).mockReturnValue({ version: 1, registers: [], values: {} });
   // getProject is called by the ownership re-evaluation effect; default to a resolved promise
   (apiGetProject as Mock).mockResolvedValue({ id: 'test', data: '{}', createdAt: '', updatedAt: '', isOwner: false, version: 1 });
@@ -996,11 +1024,15 @@ describe('CloudSyncProvider', () => {
       expect(syncResult!.updatedCount).toBe(1);
       expect(syncResult!.staleCloudIds).toHaveLength(0);
       // Patches are routed through updateCloudMetadata → updateProjectMetadata
-      expect(updateProjectMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, {
-        cloudSavedAt: '2024-02-01T00:00:00Z',
-        visibility: 'unlisted',
-        serverVersion: 1,
-      });
+      expect(updateProjectMetadata).toHaveBeenCalledWith(
+        TEST_LOCAL_ID,
+        {
+          cloudSavedAt: '2024-02-01T00:00:00Z',
+          visibility: 'unlisted',
+          serverVersion: 1,
+        },
+        { protectedLocalIds: [TEST_LOCAL_ID] },
+      );
     });
 
     it('detects stale cloud IDs not present on server', async () => {
@@ -1107,6 +1139,7 @@ describe('CloudSyncProvider', () => {
       expect(updateProjectMetadata).toHaveBeenCalledWith(
         TEST_LOCAL_ID,
         expect.objectContaining({ cloudId: null }),
+        { protectedLocalIds: [TEST_LOCAL_ID] },
       );
     });
 
@@ -1409,10 +1442,11 @@ describe('CloudSyncProvider', () => {
         ],
       });
 
-      const latestPrevProjectState = makeState({
+      const latestPrevProjectState: SerializedAppState = {
         registers: [makeRegister({ id: 'reg-1' })],
-        registerValues: { 'reg-1': 0x42n },
-      });
+        activeRegisterId: null,
+        registerValues: { 'reg-1': '0x42' },
+      };
       const nextProjectState = makeState({
         registers: [makeRegister({ id: 'reg-2' })],
         registerValues: { 'reg-2': 0xBBn },
@@ -1424,17 +1458,15 @@ describe('CloudSyncProvider', () => {
         serverVersion: id === PREV_LOCAL_ID ? 1 : null,
         state: id === NEXT_LOCAL_ID ? nextProjectState : latestPrevProjectState,
       }));
-      (flushProjectState as Mock).mockImplementation((id: string, state: unknown) => {
-        return {
-          localId: id,
-          cloudId: 'cloud-prev',
-          storage: 'cloud',
-          serverVersion: 1,
-          cloudSavedAt: '2025-01-01T00:00:00Z',
-          visibility: 'private',
-          state,
-        };
-      });
+      (flushProjectState as Mock).mockImplementation((id: string, state: StoredLocalProject['state']) => writeOk(makeStoredProject({
+        localId: id,
+        cloudId: 'cloud-prev',
+        storage: 'cloud',
+        serverVersion: 1,
+        cloudSavedAt: '2025-01-01T00:00:00Z',
+        visibility: 'private',
+        state,
+      })));
       const latestCloudPayload = { registerValues: { 'reg-1': 0x42n } };
       (exportToObject as Mock).mockReturnValue(latestCloudPayload);
 
@@ -1458,6 +1490,9 @@ describe('CloudSyncProvider', () => {
         });
         await Promise.resolve();
       });
+      await vi.waitFor(() => {
+        expect(result.current.state.isDirty).toBe(true);
+      });
 
       // Switch to the next project — triggers best-effort save
       await act(async () => {
@@ -1473,6 +1508,9 @@ describe('CloudSyncProvider', () => {
         PREV_LOCAL_ID,
         expect.objectContaining({
           registerValues: { 'reg-1': 0x42n },
+        }),
+        expect.objectContaining({
+          protectedLocalIds: [NEXT_LOCAL_ID],
         }),
       );
       expect(loadProject).toHaveBeenCalledWith(PREV_LOCAL_ID);
@@ -1502,7 +1540,7 @@ describe('CloudSyncProvider', () => {
           ? makeState({ registers: [makeRegister({ id: 'reg-2' })] })
           : makeState({ registers: [makeRegister({ id: 'reg-1' })], registerValues: { 'reg-1': 0xFFn } }),
       }));
-      (flushProjectState as Mock).mockImplementation((id: string, state: unknown) => ({
+      (flushProjectState as Mock).mockImplementation((id: string, state: StoredLocalProject['state']) => writeOk(makeStoredProject({
         localId: id,
         cloudId: 'cloud-prev',
         storage: 'cloud',
@@ -1510,7 +1548,7 @@ describe('CloudSyncProvider', () => {
         cloudSavedAt: '2025-01-01T00:00:00Z',
         visibility: 'private',
         state,
-      }));
+      })));
       (apiGetProject as Mock).mockReturnValue(new Promise(() => {}));
 
       const { result } = renderWithProjectSwitch();
@@ -1527,7 +1565,13 @@ describe('CloudSyncProvider', () => {
         await new Promise(r => setTimeout(r, 50));
       });
 
-      expect(flushProjectState).toHaveBeenCalledWith(PREV_LOCAL_ID, expect.anything());
+      expect(flushProjectState).toHaveBeenCalledWith(
+        PREV_LOCAL_ID,
+        expect.anything(),
+        expect.objectContaining({
+          protectedLocalIds: [NEXT_LOCAL_ID],
+        }),
+      );
       expect(apiUpdateProject).not.toHaveBeenCalled();
     });
 
@@ -1548,7 +1592,7 @@ describe('CloudSyncProvider', () => {
         serverVersion: id === PREV_LOCAL_ID ? 1 : null,
         state: makeState({ registers: [makeRegister({ id: id === PREV_LOCAL_ID ? 'reg-1' : 'reg-2' })] }),
       }));
-      (flushProjectState as Mock).mockImplementation((id: string, state: unknown) => ({
+      (flushProjectState as Mock).mockImplementation((id: string, state: StoredLocalProject['state']) => writeOk(makeStoredProject({
         localId: id,
         cloudId: 'cloud-prev',
         storage: 'cloud',
@@ -1556,7 +1600,7 @@ describe('CloudSyncProvider', () => {
         cloudSavedAt: '2025-01-01T00:00:00Z',
         visibility: 'private',
         state,
-      }));
+      })));
 
       const { result } = renderWithProjectSwitch();
 
@@ -1595,7 +1639,7 @@ describe('CloudSyncProvider', () => {
         serverVersion: id === PREV_LOCAL_ID ? 1 : null,
         state: makeState({ registers: [makeRegister({ id: id === PREV_LOCAL_ID ? 'reg-1' : 'reg-2' })] }),
       }));
-      (flushProjectState as Mock).mockImplementation((id: string, state: unknown) => ({
+      (flushProjectState as Mock).mockImplementation((id: string, state: StoredLocalProject['state']) => writeOk(makeStoredProject({
         localId: id,
         cloudId: 'cloud-prev',
         storage: 'cloud',
@@ -1603,7 +1647,7 @@ describe('CloudSyncProvider', () => {
         cloudSavedAt: '2025-01-01T00:00:00Z',
         visibility: 'private',
         state,
-      }));
+      })));
       (apiUpdateProject as Mock).mockRejectedValue(
         new ApiError(409, { error: 'version_conflict', currentVersion: 9 }),
       );
@@ -1629,10 +1673,15 @@ describe('CloudSyncProvider', () => {
         await new Promise(r => setTimeout(r, 50));
       });
 
-      expect(updateProjectMetadata).toHaveBeenCalledWith(PREV_LOCAL_ID, {
-        serverVersion: 9,
-        cloudConflictVersion: 9,
-      });
+      expect(updateProjectMetadata).toHaveBeenCalledWith(
+        PREV_LOCAL_ID,
+        {
+          serverVersion: 9,
+          cloudConflictVersion: 9,
+          hasUnsyncedChanges: true,
+        },
+        { protectedLocalIds: [NEXT_LOCAL_ID] },
+      );
       expect(result.current.state.conflict).toBeNull();
     });
 
@@ -1652,7 +1701,7 @@ describe('CloudSyncProvider', () => {
         serverVersion: id === PREV_LOCAL_ID ? 2 : null,
         state: makeState({ registers: [makeRegister({ id: id === PREV_LOCAL_ID ? 'reg-1' : 'reg-2' })] }),
       }));
-      (flushProjectState as Mock).mockImplementation((id: string, state: unknown) => ({
+      (flushProjectState as Mock).mockImplementation((id: string, state: StoredLocalProject['state']) => writeOk(makeStoredProject({
         localId: id,
         cloudId: 'cloud-prev',
         storage: 'cloud',
@@ -1660,7 +1709,7 @@ describe('CloudSyncProvider', () => {
         cloudSavedAt: '2025-01-01T00:00:00Z',
         visibility: 'private',
         state,
-      }));
+      })));
       (exportToObject as Mock).mockReturnValue({ registerValues: { 'reg-1': 0x42n } });
 
       let resolveActiveSave: ((value: unknown) => void) | undefined;

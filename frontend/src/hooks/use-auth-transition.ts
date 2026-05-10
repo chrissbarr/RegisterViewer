@@ -13,8 +13,8 @@ interface UseAuthTransitionDeps {
   syncCloudProjectsRef: MutableRefObject<(() => Promise<SyncResult>) | null>;
   syncTimerRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
   refreshProjectList: () => void;
-  switchProject: (id: string) => void;
-  createNewProject: () => string;
+  switchProject: (id: string) => boolean;
+  createNewProject: () => string | null;
 }
 
 /**
@@ -82,7 +82,7 @@ export function useAuthTransition(deps: UseAuthTransitionDeps): void {
           switchProject(remaining);
         } else {
           const newId = createNewProject();
-          switchProject(newId);
+          if (newId) switchProject(newId);
         }
       }
 

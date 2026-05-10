@@ -6,6 +6,7 @@ import {
   saveProject,
   createProject,
   deleteProject,
+  patchProjectState,
   updateProjectMetadata,
   flushProjectState,
   getMostRecentProjectId,
@@ -45,6 +46,43 @@ function makeStoredProject(overrides?: Partial<StoredLocalProject>): StoredLocal
     state: makeSerializedState(),
     ...overrides,
   };
+}
+
+function setProjectSavedAt(localId: string, localSavedAt: string): void {
+  const project = loadProject(localId)!;
+  localStorage.setItem(projectStorageKey(localId), JSON.stringify({ ...project, localSavedAt }));
+  const manifest = loadManifest();
+  const entry = manifest.projects.find(p => p.localId === localId)!;
+  entry.localSavedAt = localSavedAt;
+  saveManifest(manifest);
+}
+
+function mockProjectSetItemFailures(error: unknown, failures = Number.POSITIVE_INFINITY) {
+  const originalSetItem = Storage.prototype.setItem;
+  let remaining = failures;
+  return vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key: string, value: string) {
+    if (key.startsWith('register-viewer-project:') && remaining > 0) {
+      remaining--;
+      throw error;
+    }
+    return originalSetItem.call(this, key, value);
+  });
+}
+
+function mockManifestSetItemFailures(error: unknown, failures = Number.POSITIVE_INFINITY) {
+  const originalSetItem = Storage.prototype.setItem;
+  let remaining = failures;
+  return vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key: string, value: string) {
+    if (key === 'register-viewer-manifest' && remaining > 0) {
+      remaining--;
+      throw error;
+    }
+    return originalSetItem.call(this, key, value);
+  });
+}
+
+function quotaError(): DOMException {
+  return new DOMException('quota exceeded', 'QuotaExceededError');
 }
 
 beforeEach(() => {
@@ -396,7 +434,8 @@ describe('flushProjectState', () => {
 
     const stored = loadProject(localId);
     const entry = loadManifest().projects.find(p => p.localId === localId);
-    expect(flushed!.state.registerValues).toEqual({ reg1: '0x42' });
+    expect(flushed.ok).toBe(true);
+    expect(flushed.project!.state.registerValues).toEqual({ reg1: '0x42' });
     expect(stored!.cloudId).toBe('cloud-1');
     expect(stored!.visibility).toBe('unlisted');
     expect(stored!.cloudSavedAt).toBe('2026-02-01T00:00:00.000Z');
@@ -742,5 +781,340 @@ describe('evictLeastRecentCloudProject', () => {
 
     expect(result).toBe(false);
     expect(hasLocalData(localId)).toBe(true); // local project data preserved
+  });
+});
+
+describe('quota-aware project writes', () => {
+  it('retries a patched state write after evicting one cached cloud project', () => {
+    const targetId = createProject(makeSerializedState({ project: { title: 'Target' } as SerializedAppState['project'] }), 'Target');
+    const cachedId = createProject(makeSerializedState(), 'Cached Cloud', {
+      cloudId: 'cloud-cached',
+      visibility: 'private',
+      cloudSavedAt: '2026-02-01T00:00:00.000Z',
+      storage: 'cloud',
+    });
+    setProjectSavedAt(cachedId, '2020-01-01T00:00:00.000Z');
+    mockProjectSetItemFailures(quotaError(), 1);
+
+    const result = patchProjectState(targetId, makeSerializedState({
+      project: { title: 'Saved Target' } as SerializedAppState['project'],
+    }));
+
+    expect(result.ok).toBe(true);
+    expect(result.evictedLocalIds).toEqual([cachedId]);
+    expect(loadProject(targetId)!.name).toBe('Saved Target');
+    expect(hasLocalData(cachedId)).toBe(false);
+    expect(loadManifest().projects.some(p => p.localId === cachedId)).toBe(true);
+  });
+
+  it('recognizes Firefox-style quota errors', () => {
+    const targetId = createProject(makeSerializedState(), 'Target');
+    const cachedId = createProject(makeSerializedState(), 'Cached Cloud', {
+      cloudId: 'cloud-cached',
+      visibility: 'private',
+      cloudSavedAt: '2026-02-01T00:00:00.000Z',
+      storage: 'cloud',
+    });
+    mockProjectSetItemFailures({ name: 'NS_ERROR_DOM_QUOTA_REACHED', code: 1014 }, 1);
+
+    const result = patchProjectState(targetId, makeSerializedState({
+      project: { title: 'Changed Target' } as SerializedAppState['project'],
+    }));
+
+    expect(result.ok).toBe(true);
+    expect(result.evictedLocalIds).toEqual([cachedId]);
+  });
+
+  it('reports quota-exceeded without eviction when there is no eligible candidate', () => {
+    const targetId = createProject(makeSerializedState(), 'Target');
+    mockProjectSetItemFailures(quotaError());
+
+    const result = patchProjectState(targetId, makeSerializedState({
+      project: { title: 'Unsaved' } as SerializedAppState['project'],
+    }));
+
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe('quota-exceeded');
+    expect(result.evictedLocalIds).toEqual([]);
+    expect(loadProject(targetId)!.name).toBe('Target');
+  });
+
+  it('does not evict for non-quota storage errors', () => {
+    const targetId = createProject(makeSerializedState(), 'Target');
+    const cachedId = createProject(makeSerializedState(), 'Cached Cloud', {
+      cloudId: 'cloud-cached',
+      visibility: 'private',
+      cloudSavedAt: '2026-02-01T00:00:00.000Z',
+      storage: 'cloud',
+    });
+    mockProjectSetItemFailures(new Error('disk failed'), 1);
+
+    const result = patchProjectState(targetId, makeSerializedState({
+      project: { title: 'Changed Target' } as SerializedAppState['project'],
+    }));
+
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe('unknown-error');
+    expect(result.evictedLocalIds).toEqual([]);
+    expect(hasLocalData(cachedId)).toBe(true);
+  });
+
+  it('reports missing and corrupt project records without retrying', () => {
+    const missing = patchProjectState('missing-id', makeSerializedState());
+    expect(missing).toMatchObject({ ok: false, status: 'missing', evictedLocalIds: [] });
+
+    localStorage.setItem(projectStorageKey('bad-id'), '{bad json');
+    const corrupt = patchProjectState('bad-id', makeSerializedState());
+    expect(corrupt).toMatchObject({ ok: false, status: 'corrupt', evictedLocalIds: [] });
+  });
+
+  it('excludes target, protected, local-only, and conflicted projects from quota eviction', () => {
+    const targetId = createProject(makeSerializedState(), 'Target Cloud', {
+      cloudId: 'cloud-target',
+      visibility: 'private',
+      cloudSavedAt: '2026-02-01T00:00:00.000Z',
+      storage: 'cloud',
+    });
+    const protectedId = createProject(makeSerializedState(), 'Protected Cloud', {
+      cloudId: 'cloud-protected',
+      visibility: 'private',
+      cloudSavedAt: '2026-02-01T00:00:00.000Z',
+      storage: 'cloud',
+    });
+    const localId = createProject(makeSerializedState(), 'Local Only');
+    const conflictedId = createProject(makeSerializedState(), 'Conflicted Cloud', {
+      cloudId: 'cloud-conflicted',
+      visibility: 'private',
+      cloudSavedAt: '2026-02-01T00:00:00.000Z',
+      storage: 'cloud',
+    });
+    updateProjectMetadata(conflictedId, { cloudConflictVersion: 12 });
+    const eligibleId = createProject(makeSerializedState(), 'Eligible Cloud', {
+      cloudId: 'cloud-eligible',
+      visibility: 'private',
+      cloudSavedAt: '2026-02-01T00:00:00.000Z',
+      storage: 'cloud',
+    });
+
+    setProjectSavedAt(targetId, '2018-01-01T00:00:00.000Z');
+    setProjectSavedAt(protectedId, '2019-01-01T00:00:00.000Z');
+    setProjectSavedAt(localId, '2020-01-01T00:00:00.000Z');
+    setProjectSavedAt(conflictedId, '2021-01-01T00:00:00.000Z');
+    setProjectSavedAt(eligibleId, '2022-01-01T00:00:00.000Z');
+    mockProjectSetItemFailures(quotaError(), 1);
+
+    const result = patchProjectState(targetId, makeSerializedState({
+      project: { title: 'Changed Target' } as SerializedAppState['project'],
+    }), {
+      protectedLocalIds: [protectedId],
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.evictedLocalIds).toEqual([eligibleId]);
+    expect(hasLocalData(targetId)).toBe(true);
+    expect(hasLocalData(protectedId)).toBe(true);
+    expect(hasLocalData(localId)).toBe(true);
+    expect(hasLocalData(conflictedId)).toBe(true);
+    expect(hasLocalData(eligibleId)).toBe(false);
+  });
+
+  it('does not evict cloud projects with unsynced local changes', () => {
+    const targetId = createProject(makeSerializedState(), 'Target');
+    const dirtyCloudId = createProject(makeSerializedState(), 'Dirty Cloud', {
+      cloudId: 'dirty-cloud',
+      visibility: 'private',
+      cloudSavedAt: '2026-02-01T00:00:00.000Z',
+      storage: 'cloud',
+    });
+    const cleanCloudId = createProject(makeSerializedState(), 'Clean Cloud', {
+      cloudId: 'clean-cloud',
+      visibility: 'private',
+      cloudSavedAt: '2026-02-01T00:00:00.000Z',
+      storage: 'cloud',
+    });
+    patchProjectState(dirtyCloudId, makeSerializedState({
+      project: { title: 'Dirty Cloud Edited' } as SerializedAppState['project'],
+    }));
+    setProjectSavedAt(dirtyCloudId, '2019-01-01T00:00:00.000Z');
+    setProjectSavedAt(cleanCloudId, '2020-01-01T00:00:00.000Z');
+    mockProjectSetItemFailures(quotaError(), 1);
+
+    const result = patchProjectState(targetId, makeSerializedState({
+      project: { title: 'Changed Target' } as SerializedAppState['project'],
+    }));
+
+    expect(result.ok).toBe(true);
+    expect(result.evictedLocalIds).toEqual([cleanCloudId]);
+    expect(hasLocalData(dirtyCloudId)).toBe(true);
+    expect(hasLocalData(cleanCloudId)).toBe(false);
+    expect(loadManifest().projects.find(p => p.localId === dirtyCloudId)!.hasUnsyncedChanges).toBe(true);
+  });
+
+  it('does not mark a clean cloud project dirty for a no-op state patch', () => {
+    const cloudId = createProject(makeSerializedState(), 'Clean Cloud', {
+      cloudId: 'clean-cloud',
+      visibility: 'private',
+      cloudSavedAt: '2026-02-01T00:00:00.000Z',
+      storage: 'cloud',
+    });
+    const before = loadProject(cloudId)!;
+
+    const result = patchProjectState(cloudId, before.state);
+
+    expect(result.ok).toBe(true);
+    expect(loadProject(cloudId)!.hasUnsyncedChanges).toBe(false);
+    expect(loadManifest().projects.find(p => p.localId === cloudId)!.hasUnsyncedChanges).toBe(false);
+  });
+
+  it('can evict legacy clean cloud records without an explicit unsynced marker', () => {
+    const targetId = createProject(makeSerializedState(), 'Target');
+    const legacyId = createProject(makeSerializedState(), 'Legacy Clean Cloud', {
+      cloudId: 'legacy-cloud',
+      visibility: 'private',
+      cloudSavedAt: '2026-02-01T00:00:00.000Z',
+      storage: 'cloud',
+    });
+    const legacyProject = loadProject(legacyId)!;
+    localStorage.setItem(projectStorageKey(legacyId), JSON.stringify({
+      ...legacyProject,
+      localSavedAt: '2026-01-01T00:00:00.000Z',
+      hasUnsyncedChanges: undefined,
+    }));
+    const manifest = loadManifest();
+    const entry = manifest.projects.find(p => p.localId === legacyId)!;
+    entry.localSavedAt = '2026-01-01T00:00:00.000Z';
+    entry.hasUnsyncedChanges = undefined;
+    saveManifest(manifest);
+    mockProjectSetItemFailures(quotaError(), 1);
+
+    const result = patchProjectState(targetId, makeSerializedState({
+      project: { title: 'Changed Target' } as SerializedAppState['project'],
+    }));
+
+    expect(result.ok).toBe(true);
+    expect(result.evictedLocalIds).toEqual([legacyId]);
+    expect(hasLocalData(legacyId)).toBe(false);
+  });
+
+  it('uses the stored dirty marker when manifest metadata is stale after a partial failure', () => {
+    const targetId = createProject(makeSerializedState(), 'Target');
+    const dirtyCloudId = createProject(makeSerializedState(), 'Dirty Cloud', {
+      cloudId: 'dirty-cloud',
+      visibility: 'private',
+      cloudSavedAt: '2026-02-01T00:00:00.000Z',
+      storage: 'cloud',
+    });
+    const cleanCloudId = createProject(makeSerializedState(), 'Clean Cloud', {
+      cloudId: 'clean-cloud',
+      visibility: 'private',
+      cloudSavedAt: '2026-02-01T00:00:00.000Z',
+      storage: 'cloud',
+    });
+    const dirtyProject = loadProject(dirtyCloudId)!;
+    localStorage.setItem(projectStorageKey(dirtyCloudId), JSON.stringify({
+      ...dirtyProject,
+      hasUnsyncedChanges: true,
+    }));
+    const manifest = loadManifest();
+    manifest.projects.find(p => p.localId === dirtyCloudId)!.hasUnsyncedChanges = false;
+    saveManifest(manifest);
+    setProjectSavedAt(dirtyCloudId, '2020-01-01T00:00:00.000Z');
+    setProjectSavedAt(cleanCloudId, '2021-01-01T00:00:00.000Z');
+    mockProjectSetItemFailures(quotaError(), 1);
+
+    const result = patchProjectState(targetId, makeSerializedState({
+      project: { title: 'Changed Target' } as SerializedAppState['project'],
+    }));
+
+    expect(result.ok).toBe(true);
+    expect(result.evictedLocalIds).toEqual([cleanCloudId]);
+    expect(hasLocalData(dirtyCloudId)).toBe(true);
+    expect(hasLocalData(cleanCloudId)).toBe(false);
+  });
+
+  it('bounds quota eviction to three cached cloud projects', () => {
+    const targetId = createProject(makeSerializedState(), 'Target');
+    const cachedIds = [1, 2, 3, 4].map((n) => createProject(makeSerializedState(), `Cloud ${n}`, {
+      cloudId: `cloud-${n}`,
+      visibility: 'private',
+      cloudSavedAt: '2026-02-01T00:00:00.000Z',
+      storage: 'cloud',
+    }));
+    cachedIds.forEach((id, index) => setProjectSavedAt(id, `2020-01-0${index + 1}T00:00:00.000Z`));
+    mockProjectSetItemFailures(quotaError());
+
+    const result = patchProjectState(targetId, makeSerializedState({
+      project: { title: 'Changed Target' } as SerializedAppState['project'],
+    }));
+
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe('quota-exceeded');
+    expect(result.evictedLocalIds).toEqual(cachedIds.slice(0, 3));
+    expect(hasLocalData(cachedIds[3])).toBe(true);
+  });
+
+  it('uses the same quota recovery for full-record saves, metadata updates, and flushes', () => {
+    const saveTarget = makeStoredProject({ localId: 'full-save-target', name: 'Full Save Target' });
+    const saveCandidate = createProject(makeSerializedState(), 'Save Candidate', {
+      cloudId: 'save-candidate',
+      visibility: 'private',
+      cloudSavedAt: '2026-02-01T00:00:00.000Z',
+      storage: 'cloud',
+    });
+    mockProjectSetItemFailures(quotaError(), 1);
+    const saveResult = saveProject(saveTarget);
+    expect(saveResult.ok).toBe(true);
+    expect(saveResult.evictedLocalIds).toEqual([saveCandidate]);
+
+    vi.restoreAllMocks();
+    const metadataTarget = createProject(makeSerializedState(), 'Metadata Target');
+    const metadataCandidate = createProject(makeSerializedState(), 'Metadata Candidate', {
+      cloudId: 'metadata-candidate',
+      visibility: 'private',
+      cloudSavedAt: '2026-02-01T00:00:00.000Z',
+      storage: 'cloud',
+    });
+    mockProjectSetItemFailures(quotaError(), 1);
+    const metadataResult = updateProjectMetadata(metadataTarget, { name: 'Metadata Updated' });
+    expect(metadataResult.ok).toBe(true);
+    expect(metadataResult.evictedLocalIds).toEqual([metadataCandidate]);
+    expect(loadProject(metadataTarget)!.name).toBe('Metadata Updated');
+
+    vi.restoreAllMocks();
+    const flushTarget = createProject(makeSerializedState(), 'Flush Target');
+    const flushCandidate = createProject(makeSerializedState(), 'Flush Candidate', {
+      cloudId: 'flush-candidate',
+      visibility: 'private',
+      cloudSavedAt: '2026-02-01T00:00:00.000Z',
+      storage: 'cloud',
+    });
+    mockProjectSetItemFailures(quotaError(), 1);
+    const flushResult = flushProjectState(flushTarget, makeSerializedState({
+      project: { title: 'Flush Updated' } as SerializedAppState['project'],
+    }));
+    expect(flushResult.ok).toBe(true);
+    expect(flushResult.evictedLocalIds).toEqual([flushCandidate]);
+    expect(flushResult.project!.name).toBe('Flush Updated');
+  });
+
+  it('retries when quota is hit while writing the manifest', () => {
+    const targetId = createProject(makeSerializedState(), 'Target');
+    const cachedId = createProject(makeSerializedState(), 'Cached Cloud', {
+      cloudId: 'cloud-cached',
+      visibility: 'private',
+      cloudSavedAt: '2026-02-01T00:00:00.000Z',
+      storage: 'cloud',
+    });
+    setProjectSavedAt(cachedId, '2020-01-01T00:00:00.000Z');
+    mockManifestSetItemFailures(quotaError(), 1);
+
+    const result = patchProjectState(targetId, makeSerializedState({
+      project: { title: 'Manifest Retry' } as SerializedAppState['project'],
+    }));
+
+    expect(result.ok).toBe(true);
+    expect(result.evictedLocalIds).toEqual([cachedId]);
+    expect(loadManifest().projects.find(p => p.localId === targetId)!.name).toBe('Manifest Retry');
+    expect(hasLocalData(cachedId)).toBe(false);
   });
 });

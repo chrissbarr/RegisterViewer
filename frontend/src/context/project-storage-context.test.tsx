@@ -142,10 +142,18 @@ function renderWithDispatch(initialLocalId: string | null = TEST_LOCAL_ID) {
 beforeEach(() => {
   vi.clearAllMocks();
   sessionStorage.clear();
+  (saveProject as Mock).mockReturnValue({ ok: true, status: 'ok', evictedLocalIds: [] });
+  (updateProjectMetadata as Mock).mockReturnValue({ ok: true, status: 'ok', evictedLocalIds: [] });
 
   // Default: manifest with one project (toProjectListEntry impl lives in vi.mock factory)
   const entry = makeManifestEntry();
   (loadManifest as Mock).mockReturnValue({ version: 1, projects: [entry] });
+  (flushProjectState as Mock).mockReturnValue({
+    ok: true,
+    status: 'ok',
+    evictedLocalIds: [],
+    project: makeStoredProject(),
+  });
 });
 
 // ── Tests ────────────────────────────────────────────────────────────
@@ -197,7 +205,7 @@ describe('ProjectStorageProvider', () => {
       (createProjectInStorage as Mock).mockReturnValue('brand-new-id');
       const { result } = renderProjectStorage();
 
-      let newId: string;
+      let newId: string | null = null;
       act(() => {
         newId = result.current.actions.createNewProject('My Project');
       });
@@ -210,6 +218,8 @@ describe('ProjectStorageProvider', () => {
           registerValues: {},
         }),
         'My Project',
+        undefined,
+        expect.objectContaining({ protectedLocalIds: [TEST_LOCAL_ID] }),
       );
     });
 
@@ -247,6 +257,41 @@ describe('ProjectStorageProvider', () => {
       });
 
       expect(loadManifest).toHaveBeenCalled();
+    });
+
+    it('does not activate a new project when persistence fails', () => {
+      (createProjectInStorage as Mock).mockImplementation(() => {
+        throw new Error('quota');
+      });
+      const { result } = renderProjectStorage();
+
+      let newId: string | null = null;
+      act(() => {
+        newId = result.current.actions.createNewProject('My Project');
+      });
+
+      expect(newId!).toBeNull();
+      expect(result.current.state.activeLocalId).toBe(TEST_LOCAL_ID);
+    });
+
+    it('creates a replacement project when the active project was already removed from the manifest', () => {
+      (loadManifest as Mock).mockReturnValue({ version: 1, projects: [] });
+      (flushProjectState as Mock).mockReturnValue({
+        ok: false,
+        status: 'missing',
+        evictedLocalIds: [],
+      });
+      (createProjectInStorage as Mock).mockReturnValue('replacement-id');
+      const { result } = renderProjectStorage();
+
+      let newId: string | null = null;
+      act(() => {
+        newId = result.current.actions.createNewProject('Replacement');
+      });
+
+      expect(newId).toBe('replacement-id');
+      expect(createProjectInStorage).toHaveBeenCalled();
+      expect(result.current.state.activeLocalId).toBe('replacement-id');
     });
   });
 
@@ -313,7 +358,12 @@ describe('ProjectStorageProvider', () => {
         serverVersion: 7,
       });
       (loadProject as Mock).mockReturnValueOnce(otherProject);
-      (flushProjectState as Mock).mockReturnValue(flushedProject);
+      (flushProjectState as Mock).mockReturnValue({
+        ok: true,
+        status: 'ok',
+        evictedLocalIds: [],
+        project: flushedProject,
+      });
 
       const { result } = renderWithDispatch();
 
@@ -327,7 +377,49 @@ describe('ProjectStorageProvider', () => {
           registers: expect.any(Array),
           registerValues: expect.any(Object),
         }),
+        { protectedLocalIds: ['other-project'] },
       );
+    });
+
+    it('does not create a departure snapshot when departing flush fails', () => {
+      const otherProject = makeStoredProject({ localId: 'other-project' });
+      (loadProject as Mock).mockReturnValueOnce(otherProject);
+      (flushProjectState as Mock).mockReturnValue({
+        ok: false,
+        status: 'quota-exceeded',
+        evictedLocalIds: [],
+      });
+
+      const { result } = renderWithDispatch();
+
+      act(() => {
+        result.current.actions.registerDepartureSnapshotter(() => ({ wasDirty: true, serverVersion: 8 }));
+        result.current.actions.switchProject('other-project');
+      });
+
+      expect(result.current.state.lastDeparture).toBeNull();
+      expect(result.current.state.activeLocalId).toBe(TEST_LOCAL_ID);
+      expect(deserializeState).not.toHaveBeenCalled();
+    });
+
+    it('does not replace the workspace when departing flush fails', () => {
+      const otherProject = makeStoredProject({ localId: 'other-project' });
+      (loadProject as Mock).mockReturnValueOnce(otherProject);
+      (flushProjectState as Mock).mockReturnValue({
+        ok: false,
+        status: 'quota-exceeded',
+        evictedLocalIds: [],
+      });
+
+      const { result } = renderWithDispatch();
+
+      act(() => {
+        const switched = result.current.actions.switchProject('other-project');
+        expect(switched).toBe(false);
+      });
+
+      expect(result.current.state.activeLocalId).toBe(TEST_LOCAL_ID);
+      expect(deserializeState).not.toHaveBeenCalled();
     });
   });
 
@@ -409,12 +501,15 @@ describe('ProjectStorageProvider', () => {
         result.current.actions.renameProject(TEST_LOCAL_ID, 'New Name');
       });
 
-      expect(saveProject).toHaveBeenCalledWith(expect.objectContaining({
-        name: 'New Name',
-        state: expect.objectContaining({
-          project: expect.objectContaining({ title: 'New Name' }),
+      expect(saveProject).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'New Name',
+          state: expect.objectContaining({
+            project: expect.objectContaining({ title: 'New Name' }),
+          }),
         }),
-      }));
+        expect.objectContaining({ protectedLocalIds: [TEST_LOCAL_ID] }),
+      );
     });
 
     it('dispatches SET_PROJECT_METADATA when renaming active project', () => {
@@ -466,10 +561,14 @@ describe('ProjectStorageProvider', () => {
       });
 
       // updateProjectMetadata handles both project record and manifest update
-      expect(updateProjectMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, {
-        cloudId: 'cloud-123',
-        cloudSavedAt: '2024-06-01T00:00:00Z',
-      });
+      expect(updateProjectMetadata).toHaveBeenCalledWith(
+        TEST_LOCAL_ID,
+        {
+          cloudId: 'cloud-123',
+          cloudSavedAt: '2024-06-01T00:00:00Z',
+        },
+        expect.objectContaining({ protectedLocalIds: [TEST_LOCAL_ID] }),
+      );
     });
 
     it('updates visibility via updateProjectMetadata', () => {
@@ -481,9 +580,11 @@ describe('ProjectStorageProvider', () => {
         });
       });
 
-      expect(updateProjectMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, {
-        visibility: 'unlisted',
-      });
+      expect(updateProjectMetadata).toHaveBeenCalledWith(
+        TEST_LOCAL_ID,
+        { visibility: 'unlisted' },
+        expect.objectContaining({ protectedLocalIds: [TEST_LOCAL_ID] }),
+      );
     });
 
     it('handles clearing cloud metadata (null values)', () => {
@@ -496,10 +597,14 @@ describe('ProjectStorageProvider', () => {
         });
       });
 
-      expect(updateProjectMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, {
-        cloudId: null,
-        cloudSavedAt: null,
-      });
+      expect(updateProjectMetadata).toHaveBeenCalledWith(
+        TEST_LOCAL_ID,
+        {
+          cloudId: null,
+          cloudSavedAt: null,
+        },
+        expect.objectContaining({ protectedLocalIds: [TEST_LOCAL_ID] }),
+      );
     });
 
     it('delegates to updateProjectMetadata even if project not in manifest', () => {
@@ -509,7 +614,11 @@ describe('ProjectStorageProvider', () => {
         result.current.actions.updateCloudMetadata('nonexistent', { cloudId: 'abc' });
       });
 
-      expect(updateProjectMetadata).toHaveBeenCalledWith('nonexistent', { cloudId: 'abc' });
+      expect(updateProjectMetadata).toHaveBeenCalledWith(
+        'nonexistent',
+        { cloudId: 'abc' },
+        expect.objectContaining({ protectedLocalIds: [TEST_LOCAL_ID] }),
+      );
     });
 
     it('refreshes project list after update', () => {
@@ -525,6 +634,24 @@ describe('ProjectStorageProvider', () => {
       });
 
       expect(toProjectListEntry).toHaveBeenCalled();
+    });
+
+    it('returns a failed write result and skips refresh when metadata persistence fails', () => {
+      (updateProjectMetadata as Mock).mockReturnValue({
+        ok: false,
+        status: 'quota-exceeded',
+        evictedLocalIds: [],
+      });
+      const { result } = renderProjectStorage();
+      (toProjectListEntry as Mock).mockClear();
+
+      let writeResult: unknown;
+      act(() => {
+        writeResult = result.current.actions.updateCloudMetadata(TEST_LOCAL_ID, { visibility: 'unlisted' });
+      });
+
+      expect(writeResult).toMatchObject({ ok: false, status: 'quota-exceeded' });
+      expect(toProjectListEntry).not.toHaveBeenCalled();
     });
 
   });

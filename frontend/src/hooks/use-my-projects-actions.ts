@@ -17,7 +17,7 @@ export function useMyProjectsActions(
   open: boolean,
   onClose: () => void,
   onBeforeNewProject?: () => void,
-  onSwitchProject?: (localId: string) => void,
+  onSwitchProject?: (localId: string) => boolean | void,
 ) {
   const { activeLocalId, projects } = useProjectStorage();
   const { createNewProject, switchProject, deleteLocalProject, renameProject, refreshProjectList } = useProjectStorageActions();
@@ -51,6 +51,10 @@ export function useMyProjectsActions(
 
   const handleNewProject = useCallback(() => {
     const localId = createNewProject();
+    if (!localId) {
+      setCloudError('Failed to create project. Local storage may be full.');
+      return;
+    }
     switchProject(localId);
     announce('New project created');
     onBeforeNewProject?.();
@@ -72,7 +76,7 @@ export function useMyProjectsActions(
         for (const [id, value] of Object.entries(result.values)) {
           serializedValues[id] = '0x' + value.toString(16);
         }
-        saveProject({
+        const saveResult = saveProject({
           localId,
           cloudId: project.cloudId,
           name: project.name,
@@ -82,6 +86,7 @@ export function useMyProjectsActions(
           cloudSavedAt: result.updatedAt,
           storage: project.storage,
           serverVersion: result.version,
+          hasUnsyncedChanges: false,
           state: {
             registers: result.registers,
             activeRegisterId: result.registers[0]?.id ?? null,
@@ -89,7 +94,10 @@ export function useMyProjectsActions(
             project: result.project,
             addressUnitBits: result.addressUnitBits,
           },
-        });
+        }, { protectedLocalIds: [activeLocalId] });
+        if (!saveResult.ok) {
+          throw new Error(`Failed to persist downloaded project: ${saveResult.status}`);
+        }
         refreshProjectList();
       } catch (err) {
         setDownloadingLocalId(null);
@@ -101,13 +109,14 @@ export function useMyProjectsActions(
 
     // Use guarded switch if provided (handles unsaved project prompt)
     if (onSwitchProject) {
-      onSwitchProject(localId);
+      const switched = onSwitchProject(localId);
+      if (switched === false) return;
     } else {
-      switchProject(localId);
+      if (!switchProject(localId)) return;
       onClose();
     }
     announce('Project opened');
-  }, [projects, switchProject, announce, onClose, getJwt, setCloudError, onSwitchProject, refreshProjectList]);
+  }, [projects, switchProject, announce, onClose, getJwt, setCloudError, onSwitchProject, refreshProjectList, activeLocalId]);
 
   const handleDelete = useCallback(async (localId: string) => {
     const project = projects.find(p => p.localId === localId);
@@ -167,15 +176,20 @@ export function useMyProjectsActions(
 
     const sanitized = sanitizeProjectMetadata(data.metadata);
     // Title from settings overrides the manifest name; if cleared, keep existing name
-    saveProject({
+    const saveResult = saveProject({
       ...project,
       name: sanitized?.title ?? project.name,
+      hasUnsyncedChanges: project.storage === 'cloud' ? true : project.hasUnsyncedChanges,
       state: {
         ...project.state,
         project: sanitized,
         addressUnitBits: data.addressUnitBits,
       },
-    });
+    }, { protectedLocalIds: [activeLocalId] });
+    if (!saveResult.ok) {
+      setCloudError('Failed to save project settings. Local storage may be full.');
+      return;
+    }
 
     // If editing the active project, also update AppState
     if (settingsLocalId === activeLocalId) {

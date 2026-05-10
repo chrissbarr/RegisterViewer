@@ -71,7 +71,9 @@ export function Header() {
     }
 
     if (result.registers.length > 0) {
-      loadAsUnsaved(result, name, 'import');
+      if (!loadAsUnsaved(result, name, 'import')) {
+        setImportFeedback({ kind: 'error', message: 'Failed to import: current project could not be saved locally.' });
+      }
     }
   }
 
@@ -79,8 +81,9 @@ export function Header() {
     unsavedGuard.guard(() => {
       const result = importFromJson(json);
       if (!result || result.registers.length === 0) return;
-      loadAsUnsaved(result, name, 'example');
-      setExamplesOpen(false);
+      if (loadAsUnsaved(result, name, 'example')) {
+        setExamplesOpen(false);
+      }
     });
   }
 
@@ -116,7 +119,7 @@ export function Header() {
 
   function handleNewProject() {
     unsavedGuard.guard(() => {
-      loadAsUnsaved(
+      void loadAsUnsaved(
         { registers: [], values: {}, warnings: [] },
         'Untitled Project',
         'new',
@@ -126,20 +129,22 @@ export function Header() {
 
   function handleNewProjectFromMyProjects() {
     unsavedGuard.guard(() => {
-      loadAsUnsaved(
+      const loaded = loadAsUnsaved(
         { registers: [], values: {}, warnings: [] },
         'Untitled Project',
         'new',
       );
-      setMyProjectsOpen(false);
+      if (loaded) setMyProjectsOpen(false);
     });
   }
 
   function handleSwitchProject(localId: string) {
+    let switched = false;
     unsavedGuard.guard(() => {
-      switchProject(localId);
-      setMyProjectsOpen(false);
+      switched = switchProject(localId);
+      if (switched) setMyProjectsOpen(false);
     });
+    return switched;
   }
 
   function clearFeedback() {

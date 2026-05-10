@@ -26,6 +26,7 @@ export const CLEARED_CLOUD_METADATA = {
   visibility: 'private' as const,
   cloudSavedAt: null,
   cloudConflictVersion: null,
+  hasUnsyncedChanges: undefined,
   storage: 'local' as const,
 };
 

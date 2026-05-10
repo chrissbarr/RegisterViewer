@@ -128,6 +128,7 @@ describe('MyProjectsDialog', () => {
     mockProjects = [];
     mockActiveLocalId = null;
     mockCloudEnabled = false;
+    mockSwitchProject.mockReturnValue(true);
     mockDeleteProjectFromCloud.mockResolvedValue(undefined);
     mockSyncCloudProjects.mockResolvedValue({ updatedCount: 0, staleCloudIds: [], placeholdersCreated: 0 });
   });
@@ -202,6 +203,7 @@ describe('MyProjectsDialog interactions', () => {
     mockProjects = [];
     mockActiveLocalId = null;
     mockCloudEnabled = false;
+    mockSwitchProject.mockReturnValue(true);
     mockDeleteProjectFromCloud.mockResolvedValue(undefined);
     mockSyncCloudProjects.mockResolvedValue({ updatedCount: 0, staleCloudIds: [], placeholdersCreated: 0 });
   });

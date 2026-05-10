@@ -298,7 +298,10 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
             visibility: data.visibility,
             cloudSavedAt: data.cloudSavedAt,
             serverVersion: data.serverVersion,
+            hasUnsyncedChanges: false,
             storage: 'cloud',
+          }, {
+            protectedLocalIds: [activeLocalIdRef.current],
           });
         } catch (err) {
           console.warn('[cloud-sync] Failed to create placeholder for cloud project', data.cloudId, err);
