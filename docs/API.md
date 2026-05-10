@@ -310,21 +310,20 @@ Private projects return 404 (not 401/403) to prevent information leakage.
 PUT /api/projects/{id}
 ```
 
-Replaces all project data. Visibility is optional (keeps existing if omitted). Uses optimistic concurrency via a `version` field.
+Replaces all project data and preserves the current visibility. Uses optimistic concurrency via a `version` field. Visibility changes must use `PATCH /api/projects/{id}`.
 
 **Auth:** Required (must be owner)
 
-**Request Body:** Same schema as Create, plus a required `version` field:
+**Request Body:** Project data plus a required `version` field:
 
 ```jsonc
 {
   "version": 3,                                    // Required — client's last-known version
-  "data": { /* same as Create */ },
-  "visibility": "private"                           // Optional
+  "data": { /* same data schema as Create */ }
 }
 ```
 
-The `version` must match the server's current version. On success, the server increments the version atomically.
+The `version` must match the server's current version. On success, the server increments the version atomically. A top-level `visibility` field is rejected with `400`; use the PATCH endpoint below instead.
 
 **Size limit:** 512 KB
 
@@ -354,7 +353,7 @@ The client should fetch the latest version and either merge or let the user choo
 
 | Status | Reason |
 |--------|--------|
-| 400 | Invalid JSON, validation error, invalid visibility, payload too large, missing/invalid version |
+| 400 | Invalid JSON, validation error, top-level visibility field, payload too large, missing/invalid version |
 | 401 | Missing or invalid Authorization header |
 | 404 | Project not found or not owner |
 | 409 | Version conflict — another session updated the project |
@@ -367,7 +366,7 @@ The client should fetch the latest version and either merge or let the user choo
 PATCH /api/projects/{id}
 ```
 
-Updates only the project visibility without touching data.
+Updates only the project visibility without touching data or incrementing the project data version.
 
 **Auth:** Required (must be owner)
 

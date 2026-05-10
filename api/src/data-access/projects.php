@@ -84,32 +84,30 @@ function dbCreateProject(
 }
 
 /**
- * Full update of a project's data, visibility, and title.
+ * Full update of a project's data and title.
  * Explicitly sets updated_at and last_accessed_at to match previous API behavior.
  */
 function dbUpdateProject(
     PDO $db,
     string $publicId,
     string $data,
-    string $visibility,
     ?string $title,
 ): void {
     $stmt = $db->prepare(
         'UPDATE projects
-         SET data = :data, visibility = :visibility, title = :title,
+         SET data = :data, title = :title,
              updated_at = NOW(), last_accessed_at = NOW()
          WHERE public_id = :public_id'
     );
     $stmt->execute([
         'data'       => $data,
-        'visibility' => $visibility,
         'title'      => $title,
         'public_id'  => $publicId,
     ]);
 }
 
 /**
- * Update project with optimistic concurrency check.
+ * Update a project's data and title with optimistic concurrency check.
  * Returns ['updated' => true, 'version' => int] on success,
  * or ['updated' => false, 'version' => int] on version conflict.
  *
@@ -122,20 +120,18 @@ function dbUpdateProjectVersioned(
     PDO $db,
     string $publicId,
     string $data,
-    string $visibility,
     ?string $title,
     int $clientVersion,
     int $userId,
 ): array {
     $stmt = $db->prepare(
         'UPDATE projects
-         SET data = :data, visibility = :visibility, title = :title,
+         SET data = :data, title = :title,
              version = version + 1, updated_at = NOW(), last_accessed_at = NOW()
          WHERE public_id = :public_id AND version = :version AND user_id = :user_id'
     );
     $stmt->execute([
         'data'       => $data,
-        'visibility' => $visibility,
         'title'      => $title,
         'public_id'  => $publicId,
         'version'    => $clientVersion,

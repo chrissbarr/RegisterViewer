@@ -99,11 +99,11 @@ final class ProjectApiTest extends TestCase
     }
 
     #[Test]
-    public function updateProjectChangesData(): void
+    public function updateProjectChangesDataAndPreservesVisibility(): void
     {
         $userId = $this->createTestUser();
         $id = generatePublicId();
-        dbCreateProject(self::$db, $id, 'private', self::validDataJson(), null, $userId);
+        dbCreateProject(self::$db, $id, 'unlisted', self::validDataJson(), null, $userId);
 
         $newData = json_encode([
             'version' => 1,
@@ -113,7 +113,7 @@ final class ProjectApiTest extends TestCase
             'registerValues' => new \stdClass(),
         ], JSON_UNESCAPED_SLASHES);
 
-        dbUpdateProject(self::$db, $id, $newData, 'unlisted', 'Updated Title');
+        dbUpdateProject(self::$db, $id, $newData, 'Updated Title');
 
         $project = dbGetProject(self::$db, $id);
         $this->assertSame('unlisted', $project['visibility']);
@@ -368,7 +368,7 @@ final class ProjectApiTest extends TestCase
     {
         $userId = $this->createTestUser('jwt-update@example.com');
         $id = generatePublicId();
-        dbCreateProject(self::$db, $id, 'private', self::validDataJson(), null, $userId);
+        dbCreateProject(self::$db, $id, 'unlisted', self::validDataJson(), null, $userId);
 
         $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => 'jwt-update@example.com'];
         $newData = $this->updateDataWithRegister('UPDATED');
@@ -385,6 +385,77 @@ final class ProjectApiTest extends TestCase
         $project = dbGetProject(self::$db, $id);
         $this->assertStringContainsString('UPDATED', $project['data']);
         $this->assertSame(2, (int) $project['version']);
+        $this->assertSame('unlisted', $project['visibility']);
+    }
+
+    #[Test]
+    public function handleUpdateProjectRejectsTopLevelVisibilityWithoutMutation(): void
+    {
+        $userId = $this->createTestUser('put-visibility@example.com');
+        $id = generatePublicId();
+        $originalData = self::validDataJson();
+        dbCreateProject(self::$db, $id, 'private', $originalData, null, $userId);
+
+        $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => 'put-visibility@example.com'];
+        $parsed = $this->makeParsedBody(
+            $this->updateDataWithRegister('SHOULD_NOT_SAVE'),
+            'unlisted',
+            1,
+        );
+
+        $response = handleUpdateProject(self::$db, $id, $auth, $parsed);
+
+        $this->assertSame(400, $response->status);
+        $this->assertSame('visibility cannot be updated via PUT; use PATCH /api/projects/{id}', $response->body['error']);
+        $this->assertProjectStorageUnchanged($id, $originalData);
+    }
+
+    #[Test]
+    public function handleUpdateProjectRejectsNullTopLevelVisibilityWithoutMutation(): void
+    {
+        $userId = $this->createTestUser('put-null-visibility@example.com');
+        $id = generatePublicId();
+        $originalData = self::validDataJson();
+        dbCreateProject(self::$db, $id, 'private', $originalData, null, $userId);
+
+        $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => 'put-null-visibility@example.com'];
+        $body = [
+            'data'       => $this->updateDataWithRegister('SHOULD_NOT_SAVE_NULL'),
+            'visibility' => null,
+            'version'    => 1,
+        ];
+        $json = json_encode($body, JSON_UNESCAPED_SLASHES);
+        $parsed = [
+            'assoc'  => json_decode($json, true),
+            'object' => json_decode($json),
+        ];
+
+        $response = handleUpdateProject(self::$db, $id, $auth, $parsed);
+
+        $this->assertSame(400, $response->status);
+        $this->assertSame('visibility cannot be updated via PUT; use PATCH /api/projects/{id}', $response->body['error']);
+        $this->assertProjectStorageUnchanged($id, $originalData);
+    }
+
+    #[Test]
+    public function handleUpdateProjectWithVisibilityRejects401ForNoAuth(): void
+    {
+        $userId = $this->createTestUser('visibility-no-auth-owner@example.com');
+        $id = generatePublicId();
+        $originalData = self::validDataJson();
+        dbCreateProject(self::$db, $id, 'private', $originalData, null, $userId);
+
+        $auth = ['kind' => 'none'];
+        $parsed = $this->makeParsedBody(
+            $this->updateDataWithRegister('NO_AUTH_SHOULD_NOT_SAVE'),
+            'unlisted',
+            1,
+        );
+
+        $response = handleUpdateProject(self::$db, $id, $auth, $parsed);
+
+        $this->assertSame(401, $response->status);
+        $this->assertProjectStorageUnchanged($id, $originalData);
     }
 
     #[Test]
@@ -398,7 +469,7 @@ final class ProjectApiTest extends TestCase
         $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => 'missing-version@example.com'];
         $parsed = $this->makeParsedBody(
             $this->updateDataWithRegister('MISSING_VERSION'),
-            'unlisted',
+            null,
             1,
             false,
         );
@@ -421,7 +492,7 @@ final class ProjectApiTest extends TestCase
         $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => 'null-version@example.com'];
         $parsed = $this->makeParsedBody(
             $this->updateDataWithRegister('NULL_VERSION'),
-            'unlisted',
+            null,
             null,
         );
 
@@ -454,7 +525,7 @@ final class ProjectApiTest extends TestCase
         $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => 'invalid-version@example.com'];
         $parsed = $this->makeParsedBody(
             $this->updateDataWithRegister('INVALID_VERSION'),
-            'unlisted',
+            null,
             $version,
         );
 
@@ -481,8 +552,13 @@ final class ProjectApiTest extends TestCase
         );
         $this->assertSame(200, $firstResponse->status);
 
-        $afterFirstUpdate = dbGetProject(self::$db, $id);
-        $this->assertNotNull($afterFirstUpdate);
+        $patchResponse = handlePatchProject(self::$db, $id, $auth, ['visibility' => 'unlisted']);
+        $this->assertSame(200, $patchResponse->status);
+
+        $afterVisibilityPatch = dbGetProject(self::$db, $id);
+        $this->assertNotNull($afterVisibilityPatch);
+        $this->assertSame('unlisted', $afterVisibilityPatch['visibility']);
+        $this->assertSame(2, (int) $afterVisibilityPatch['version']);
 
         $staleResponse = handleUpdateProject(
             self::$db,
@@ -494,28 +570,29 @@ final class ProjectApiTest extends TestCase
         $this->assertSame(409, $staleResponse->status);
         $this->assertSame('version_conflict', $staleResponse->body['error']);
         $this->assertSame(2, $staleResponse->body['currentVersion']);
-        $this->assertProjectStorageUnchanged($id, $afterFirstUpdate['data'], 2);
+        $this->assertProjectStorageUnchanged($id, $afterVisibilityPatch['data'], 2, 'unlisted');
     }
 
     #[Test]
-    public function handleUpdateProjectRejects404ForWrongJwtUser(): void
+    public function handleUpdateProjectWithVisibilityRejects404ForWrongJwtUser(): void
     {
         $ownerId = $this->createTestUser('real@example.com');
         $otherId = $this->createTestUser('imposter@example.com');
         $id = generatePublicId();
-        dbCreateProject(self::$db, $id, 'private', self::validDataJson(), null, $ownerId);
+        $originalData = self::validDataJson();
+        dbCreateProject(self::$db, $id, 'private', $originalData, null, $ownerId);
 
         $auth = ['kind' => 'jwt', 'userId' => $otherId, 'email' => 'imposter@example.com'];
         $parsed = $this->makeParsedBody(
-            ['version' => 1, 'registers' => [], 'registerValues' => new \stdClass()],
-            null,
+            $this->updateDataWithRegister('WRONG_OWNER'),
+            'unlisted',
             1,
-            false,
         );
 
         $response = handleUpdateProject(self::$db, $id, $auth, $parsed);
 
         $this->assertSame(404, $response->status);
+        $this->assertProjectStorageUnchanged($id, $originalData);
     }
 
     #[Test]
@@ -565,8 +642,42 @@ final class ProjectApiTest extends TestCase
         $this->assertSame($id, $response->body['id']);
 
         // Verify visibility was changed
-        $project = dbGetProjectForAuth(self::$db, $id);
+        $project = dbGetProject(self::$db, $id);
         $this->assertSame('unlisted', $project['visibility']);
+        $this->assertSame(1, (int) $project['version']);
+    }
+
+    #[Test]
+    public function handlePatchThenMatchingVersionUpdatePreservesPatchedVisibility(): void
+    {
+        $userId = $this->createTestUser('patch-then-put@example.com');
+        $id = generatePublicId();
+        dbCreateProject(self::$db, $id, 'private', self::validDataJson(), null, $userId);
+
+        $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => 'patch-then-put@example.com'];
+
+        $patchResponse = handlePatchProject(self::$db, $id, $auth, ['visibility' => 'unlisted']);
+        $this->assertSame(200, $patchResponse->status);
+
+        $afterPatch = dbGetProject(self::$db, $id);
+        $this->assertNotNull($afterPatch);
+        $this->assertSame('unlisted', $afterPatch['visibility']);
+        $this->assertSame(1, (int) $afterPatch['version']);
+
+        $putResponse = handleUpdateProject(
+            self::$db,
+            $id,
+            $auth,
+            $this->makeParsedBody($this->updateDataWithRegister('AFTER_PATCH'), null, 1),
+        );
+
+        $this->assertSame(200, $putResponse->status);
+        $this->assertSame(2, $putResponse->body['version']);
+
+        $project = dbGetProject(self::$db, $id);
+        $this->assertStringContainsString('AFTER_PATCH', $project['data']);
+        $this->assertSame('unlisted', $project['visibility']);
+        $this->assertSame(2, (int) $project['version']);
     }
 
     #[Test]

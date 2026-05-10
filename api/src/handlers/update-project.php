@@ -11,6 +11,10 @@ function handleUpdateProject(PDO $db, string $id, array $auth, array $parsed): A
 
     $body = $parsed['assoc'];
 
+    if (array_key_exists('visibility', $body)) {
+        return new ApiResponse(['error' => 'visibility cannot be updated via PUT; use PATCH /api/projects/{id}'], 400);
+    }
+
     // Validate the required top-level version field for optimistic concurrency.
     $clientVersion = $body['version'] ?? null;
     if (!is_int($clientVersion) || $clientVersion < 1) {
@@ -20,15 +24,6 @@ function handleUpdateProject(PDO $db, string $id, array $auth, array $parsed): A
     $validation = validateProjectData($body['data'] ?? null);
     if (!$validation['valid']) {
         return new ApiResponse(['error' => $validation['error']], 400);
-    }
-
-    // Visibility (optional, keeps existing if not provided)
-    $visibility = $existing['visibility'];
-    if (isset($body['visibility'])) {
-        if (!isValidVisibility($body['visibility'])) {
-            return new ApiResponse(['error' => 'visibility must be "private" or "unlisted"'], 400);
-        }
-        $visibility = $body['visibility'];
     }
 
     $title = $body['data']['project']['title'] ?? null;
@@ -45,7 +40,6 @@ function handleUpdateProject(PDO $db, string $id, array $auth, array $parsed): A
         $db,
         $id,
         $dataJson,
-        $visibility,
         $title,
         $clientVersion,
         $auth['userId'],

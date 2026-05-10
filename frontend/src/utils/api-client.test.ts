@@ -309,6 +309,27 @@ describe('updateProject', () => {
     expect(result).toEqual(responseData);
   });
 
+  it('sends only data and version in the PUT body', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => ({
+        id: 'TEST',
+        updatedAt: '2024-01-01T00:00:00Z',
+        version: 8,
+      }),
+    });
+
+    const data = { version: 1, registers: [] };
+    await updateProject('TEST', data, 'a'.repeat(64), 7);
+
+    const callArgs = mockFetch.mock.calls[0];
+    const body = JSON.parse(callArgs[1].body);
+    expect(Object.keys(body).sort()).toEqual(['data', 'version']);
+    expect(body).toEqual({ data, version: 7 });
+  });
+
   it('URL-encodes the project ID', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
@@ -503,31 +524,6 @@ describe('createProject with visibility', () => {
     const callArgs = mockFetch.mock.calls[0];
     const body = JSON.parse(callArgs[1].body);
     expect(body.visibility).toBeUndefined();
-  });
-});
-
-describe('updateProject with visibility', () => {
-  beforeEach(() => {
-    mockFetch.mockClear();
-    import.meta.env.VITE_API_URL = 'https://api.example.com';
-  });
-
-  it('includes visibility in request body when provided', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      headers: new Headers({ 'content-type': 'application/json' }),
-      json: async () => ({
-        id: 'TEST',
-        updatedAt: '2024-01-01T00:00:00Z',
-      }),
-    });
-
-    await updateProject('TEST', { version: 1 }, 'a'.repeat(64), 1, 'unlisted');
-
-    const callArgs = mockFetch.mock.calls[0];
-    const body = JSON.parse(callArgs[1].body);
-    expect(body.visibility).toBe('unlisted');
   });
 });
 

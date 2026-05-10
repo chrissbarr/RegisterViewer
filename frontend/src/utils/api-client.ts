@@ -123,18 +123,13 @@ export async function updateProject(
   data: unknown,
   jwt: string,
   version: number,
-  visibility?: Visibility,
 ): Promise<UpdateProjectResponse> {
-  const body: Record<string, unknown> = { data, version };
-  if (visibility !== undefined) {
-    body.visibility = visibility;
-  }
   return apiFetch<UpdateProjectResponse>(
     `/api/projects/${encodeURIComponent(id)}`,
     {
       method: 'PUT',
       headers: { Authorization: `Bearer ${jwt}` },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ data, version }),
     },
   );
 }
