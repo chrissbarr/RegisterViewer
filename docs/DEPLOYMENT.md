@@ -4,18 +4,18 @@ This document provides step-by-step instructions for deploying the Register View
 
 ## Architecture Overview
 
-- **Frontend**: React SPA built in CI and deployed to cPanel via FTPS
-- **Backend**: PHP API deployed to cPanel via FTPS
+- **Frontend**: React SPA built in CI, packaged into a deploy artifact, and deployed to cPanel via FTPS
+- **Backend**: PHP API packaged in CI with production Composer dependencies and deployed to cPanel via FTPS
 - **Data Store**: MySQL database
-- **CI/CD**: GitHub Actions builds frontend, then uploads all files via FTPS
+- **CI/CD**: CI is the only producer of files intentionally uploaded by the deploy workflow; deploy only downloads, verifies, uploads, and smoke-tests the CI artifact
 
 ### Key Components
 
 | Component | Technology | Deployment Target | Status Check |
 |-----------|-----------|-------------------|--------------|
-| Frontend | React + TypeScript | cPanel (www.registerviewer.com) | .github/workflows/deploy.yml |
-| API | PHP 8.3 | cPanel (www.registerviewer.com/api) | .github/workflows/deploy.yml |
-| Tests | Vitest + Playwright + PHPUnit | GitHub Actions | .github/workflows/ci.yml |
+| Frontend | React + TypeScript | cPanel (www.registerviewer.com) | `.github/workflows/ci.yml` job `frontend` |
+| API | PHP 8.3 | cPanel (www.registerviewer.com/api) | `.github/workflows/ci.yml` jobs `api` and `deploy-payload` |
+| Tests | Vitest + Playwright + PHPUnit | GitHub Actions | `.github/workflows/ci.yml` jobs `frontend`, `e2e`, and `api` |
 | Database | MySQL 8.0 | cPanel MySQL | N/A |
 
 ---
@@ -44,15 +44,15 @@ This document provides step-by-step instructions for deploying the Register View
      ```
 
 **Migrations create:**
-1. `projects` table — project storage with owner tracking
-2. `users` table — user accounts (email-based auth)
-3. `login_codes` table — OTP login codes with rate limiting indexes
-4. `revoked_tokens` table — revoked JWTs for server-side logout
-5. Foreign key linking `projects.user_id` → `users.id`
+1. `projects` table - project storage with owner tracking
+2. `users` table - user accounts (email-based auth)
+3. `login_codes` table - OTP login codes with rate limiting indexes
+4. `revoked_tokens` table - revoked JWTs for server-side logout
+5. Foreign key linking `projects.user_id` -> `users.id`
 
 ### Step 2: Create Production API Config
 
-1. Log in to cPanel → **File Manager**
+1. Log in to cPanel -> **File Manager**
 2. Navigate to the API deploy path (e.g., `/subdomains/registerviewer/api/`)
 3. Create `config.production.php` with your production database and auth credentials:
 
@@ -82,11 +82,11 @@ openssl rand -hex 32
 **From Email:** Must be a domain you control and have verified in Resend. Default if omitted: `noreply@registerviewer.com`.
 
 4. Ensure `.htaccess` is active (Apache `mod_rewrite` must be enabled)
-5. This file is never overwritten by deployment — it lives only on the server
+5. `config.production.php` is never overwritten by deployment - it lives only on the server
 
 ### Step 3: Configure GitHub Secrets and Variables
 
-1. Go to repository **Settings** → **Secrets and variables** → **Actions**
+1. Go to repository **Settings** -> **Secrets and variables** -> **Actions**
 
 #### Secrets (encrypted environment variables)
 
@@ -98,14 +98,23 @@ openssl rand -hex 32
 
 > **Note:** Auth credentials (`JWT_SECRET`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`) are **not** set as GitHub Secrets. They live in `config.production.php` on the server (see Step 2). This keeps secrets off GitHub and allows per-environment values.
 
+#### Variables (plain GitHub Actions variables)
+
+| Variable Name | Value | Source |
+|---------------|-------|--------|
+| `VITE_API_URL` | Production HTTPS origin, e.g. `https://www.registerviewer.com` | Public site URL |
+
+`VITE_API_URL` is required. CI validates it before assembling the deploy payload, and Deploy validates it again before checksum verification, FTPS upload, and smoke tests.
+
 ### Step 4: First Deployment
 
 1. Create a new branch and make a small change (e.g., update README)
 2. Open a pull request to `master`
-3. Verify CI workflow passes (both `frontend` and `api` jobs)
+3. Verify pull request CI passes (`frontend`, `e2e`, and `api` jobs)
 4. Merge to `master`
 5. Automatically triggers:
-   - **Deploy to cPanel**: CI passes → frontend builds in GitHub Actions → all files uploaded via FTPS
+   - **CI**: builds `frontend/dist`, installs PHP runtime dependencies, assembles `registerapptest-deploy-<sha>`, writes provenance metadata and `SHA256SUMS`
+   - **Deploy to cPanel**: downloads that CI artifact, verifies metadata and checksums, uploads via FTPS, then runs smoke tests
 
 ### Verification
 
@@ -124,21 +133,28 @@ After first deployment:
 
 Every push to `master` automatically:
 
-1. Runs CI checks (.github/workflows/ci.yml):
-   - Frontend: lint → unit tests → build → E2E tests
-   - API: PHPUnit tests (unit + integration) via Docker
+1. Runs `.github/workflows/ci.yml` validation jobs:
+   - `frontend`: dependency audit, lint, knip, unit coverage, production build, and `registerapptest-frontend-dist-<sha>` upload on `master` pushes
+   - `e2e`: Playwright Chromium E2E tests
+   - `api`: Composer audit and PHPUnit via Docker
+   - `deploy-payload`: downloads the frontend dist artifact, validates `VITE_API_URL`, installs PHP 8.3 runtime dependencies, assembles `deploy/`, writes public provenance metadata, writes `SHA256SUMS`, validates required and forbidden paths, and uploads `registerapptest-deploy-<sha>`
 
-2. On CI success:
-   - Frontend is built in GitHub Actions with `VITE_API_URL=https://www.registerviewer.com`
-   - Built files + API source files are assembled into a deploy payload
-   - Payload is uploaded to cPanel via FTPS (incremental sync)
+2. Runs `.github/workflows/deploy.yml` after successful CI:
+   - Downloads `registerapptest-deploy-<head_sha>` from the completed CI run
+   - Verifies required files, `SHA256SUMS`, provenance SHA, provenance run ID, artifact name, and `VITE_API_URL`
+   - Uploads the verified payload via FTPS and runs smoke tests against `VITE_API_URL`
 
 ### Manual Trigger
 
-To manually trigger a deployment without code changes:
+To manually deploy an existing CI artifact without rebuilding:
 
-1. Go to repository **Actions** tab
-2. Select **Deploy to cPanel** workflow → click **Run workflow** → **Run workflow**
+1. Go to repository **Actions** tab.
+2. Open a successful **CI** run from a `push` to `master`. Pull request CI, reusable `workflow_call` CI, and non-`master` runs do not produce deployable artifacts.
+3. Note:
+   - `ci_run_id`: the numeric run ID from the run URL
+   - `expected_sha`: the full 40-character commit SHA for that run
+4. Select **Deploy to cPanel** workflow on the `master` branch, click **Run workflow**, and enter both inputs.
+5. The deploy workflow downloads `registerapptest-deploy-<expected_sha>` from `ci_run_id` and verifies GitHub run metadata, artifact provenance, and checksums before FTPS upload.
 
 ### Monitoring Deployments
 
@@ -164,6 +180,33 @@ To manually trigger a deployment without code changes:
 - Fix the test failures or app bugs
 - Commit and push again
 
+### Deploy Payload Fails
+
+**Error: "GitHub Actions variable VITE_API_URL is required"**
+- Set `VITE_API_URL` under repository **Settings** -> **Secrets and variables** -> **Actions** -> **Variables**
+- Use the production HTTPS origin, for example `https://www.registerviewer.com`
+- Re-run CI after changing the variable so the frontend build and deploy provenance use the same value
+
+**Error: "Missing required deploy file" or "Forbidden deploy path present"**
+- Open the `deploy-payload` job in the CI run
+- Confirm the `frontend` job uploaded `registerapptest-frontend-dist-<sha>`
+- Confirm Composer install completed in the `api` directory with PHP 8.3
+- Fix the payload assembly inputs and push a new commit
+
+### Artifact Download or Verification Fails
+
+**Error: "Unable to find artifact"**
+- For automatic deploys, confirm the completed CI run has a `deploy-payload` job and an artifact named `registerapptest-deploy-<head_sha>`
+- For manual deploys, confirm `ci_run_id` is the CI run ID, not the Deploy run ID
+- Confirm `expected_sha` is the full 40-character commit SHA from that CI run
+- Confirm the selected CI run is a successful `push` to `master`, not a pull request or reusable workflow run
+- Check whether the artifact expired; current retention is 30 days
+
+**Error: "metadata sha does not match" or checksum verification fails**
+- Do not redeploy the downloaded files manually
+- Re-run Deploy with the `ci_run_id` and `expected_sha` from the same successful CI run
+- If verification still fails, re-run CI to produce a fresh `registerapptest-deploy-<sha>` artifact
+
 ### FTPS Deployment Fails
 
 **Error: "Connection refused" or "Connection timed out"**
@@ -185,7 +228,7 @@ To manually trigger a deployment without code changes:
 - Run tests locally: `cd api && docker compose run --rm test bash -c "composer install -q && vendor/bin/phpunit"`
 
 **Error: "500 Internal Server Error" on API endpoints**
-- Check PHP error logs in cPanel → **Error Log**
+- Check PHP error logs in cPanel -> **Error Log**
 - Verify `config.production.php` exists on the server with correct database credentials
 - Ensure PHP 8.3+ is enabled and `mod_rewrite` is active
 - Verify database tables exist (run migration SQL)
@@ -194,25 +237,32 @@ To manually trigger a deployment without code changes:
 
 ## Rollback Procedures
 
-### Rollback (Git Revert — Recommended)
+### Rollback to a Previous CI Artifact
 
-1. **Identify last good commit**:
-   - Go to **Actions** → **Deploy to cPanel**
-   - Find the last successful deployment
-   - Note the commit hash
+Use this when the last good deploy artifact is still retained by GitHub Actions.
 
-2. **Revert via Git**:
-   ```bash
-   git revert <bad-commit-hash>
-   git push
-   ```
-   - GitHub Actions automatically rebuilds and re-deploys via FTPS
-   - Creates a clean audit trail
+1. Go to **Actions** -> **CI** and find the successful run for the last good commit.
+2. Confirm it was a `push` to `master` and completed `frontend`, `e2e`, `api`, and `deploy-payload` successfully.
+3. Confirm the current `VITE_API_URL` variable matches the value used when the artifact was built. Deploy rejects artifacts whose `release.json` was built with a different value.
+4. Note the numeric CI run ID from the URL and the full 40-character commit SHA.
+5. Go to **Actions** -> **Deploy to cPanel** -> **Run workflow** on the `master` branch.
+6. Enter:
+   - `ci_run_id`: the CI run ID from step 4
+   - `expected_sha`: the full commit SHA from step 4
+7. Run the workflow. Deploy verifies GitHub run metadata, artifact provenance, and `SHA256SUMS` before uploading via FTPS.
 
-3. **Manual Re-run**:
-   - Go to Actions → Deploy to cPanel
-   - Click the last successful run
-   - Click **Re-run all jobs** button
+FTPS deploys are incremental because `dangerous-clean-slate` is disabled. Redeploying an older artifact does not delete remote files that were introduced by a later deploy. If a bad deploy added or renamed files, inspect the cPanel directory and remove stale files deliberately, or prefer a git revert that produces a new artifact from the current tree.
+
+### Rollback by Git Revert
+
+Use this when the previous artifact has expired or the fix should become the new state of `master`.
+
+```bash
+git revert <bad-commit-hash>
+git push
+```
+
+GitHub Actions will run CI, produce a new deploy artifact for the revert commit, and deploy it after CI succeeds.
 
 ### Rollback API via cPanel
 
@@ -223,9 +273,9 @@ To manually trigger a deployment without code changes:
 
 If automatic deployments are broken:
 
-1. Go to **Settings** → **Branch protection rules**
+1. Go to **Settings** -> **Branch protection rules**
 2. Temporarily adjust or remove the `master` branch protection
-3. Or disable workflows in **Settings** → **Actions** → **General** → **Disable all workflows**
+3. Or disable workflows in **Settings** -> **Actions** -> **General** -> **Disable all workflows**
 
 ---
 
@@ -294,16 +344,16 @@ FTP_USERNAME             # FTP username (usually same as cPanel username)
 FTP_PASSWORD             # FTP password
 ```
 
-### Environment Variables in Workflows
+### GitHub Actions Variables Required
 
-- **VITE_API_URL**: Set to `https://www.registerviewer.com` in deploy workflow, passed to frontend build
+- **VITE_API_URL**: Set to the production HTTPS origin, for example `https://www.registerviewer.com`. CI uses it for the frontend production build and deploy provenance. Deploy validates it before verification, FTPS, and smoke tests.
 
 ### Key Files
 
 | File | Purpose |
 |------|---------|
-| `.github/workflows/ci.yml` | Frontend + API CI checks |
-| `.github/workflows/deploy.yml` | Build frontend + deploy via FTPS |
+| `.github/workflows/ci.yml` | Frontend, E2E, API, and `deploy-payload` jobs; produces deploy artifacts for successful `master` push runs |
+| `.github/workflows/deploy.yml` | Downloads and verifies CI deploy artifacts, uploads via FTPS, and runs smoke tests |
 | `api/config.php` | API configuration (env var fallbacks) |
 | `api/docker-compose.yml` | Local dev: API + MySQL + test runner |
 | `vite.config.ts` | Frontend build configuration |
@@ -328,8 +378,8 @@ FTP_PASSWORD             # FTP password
 ### API Health
 
 - Test the API endpoint directly: `curl https://www.registerviewer.com/api/projects` (should return 401)
-- Check cPanel → **Error Log** for PHP errors
-- Monitor MySQL usage in cPanel → **MySQL Databases**
+- Check cPanel -> **Error Log** for PHP errors
+- Monitor MySQL usage in cPanel -> **MySQL Databases**
 
 ### Health Check Endpoints
 
@@ -346,16 +396,16 @@ Both return **200** when healthy and **503** when unhealthy. HEAD requests retur
 
 1. Create an account at https://uptimerobot.com/
 2. Add two HTTP(s) monitors:
-   - **Database health:** `https://www.registerviewer.com/api/health` — checks DB connectivity
-   - **Email health:** `https://www.registerviewer.com/api/health/email` — checks Resend API key validity and reachability
+   - **Database health:** `https://www.registerviewer.com/api/health` - checks DB connectivity
+   - **Email health:** `https://www.registerviewer.com/api/health/email` - checks Resend API key validity and reachability
 3. Set monitoring interval to 5 minutes
 4. Configure email alerts for downtime notifications
 
-The email health endpoint calls `GET https://api.resend.com/api-keys` with a 3-second timeout. It does not send any email — it only verifies the API key is valid and Resend is reachable.
+The email health endpoint calls `GET https://api.resend.com/api-keys` with a 3-second timeout. It does not send any email - it only verifies the API key is valid and Resend is reachable.
 
 ### Email Delivery Logs
 
-The `sendLoginCode()` function writes structured JSON to PHP's error log on every send attempt. Check cPanel → **Error Log** or grep the log file:
+The `sendLoginCode()` function writes structured JSON to PHP's error log on every send attempt. Check cPanel -> **Error Log** or grep the log file:
 
 ```bash
 # Successful sends
@@ -382,19 +432,19 @@ A: Yes! Run `cd api && docker compose up -d` to start a local server on `localho
 A: Check: (1) `VITE_API_URL` is correct in GitHub variables, (2) `config.production.php` exists on the server with valid DB credentials, (3) browser console for errors.
 
 **Q: How do I see API logs in production?**
-A: Check cPanel → **Error Log** for PHP errors. You can also enable custom logging in `config.production.php`.
+A: Check cPanel -> **Error Log** for PHP errors. You can also enable custom logging in `config.production.php`.
 
 **Q: Can I deploy manually without pushing code?**
-A: Yes! Go to **Actions** → select the Deploy workflow → **Run workflow** → **Run workflow** button.
+A: Yes. Use **Actions** -> **Deploy to cPanel** -> **Run workflow** on the `master` branch and provide `ci_run_id` plus `expected_sha` from the successful `master` push CI run that produced `registerapptest-deploy-<sha>`.
 
 **Q: How do I revert a broken deployment?**
-A: Use `git revert` to create a new commit that undoes changes. See "Rollback Procedures" section above.
+A: Prefer redeploying the last good CI artifact while it is retained. Use `git revert` when the rollback should become a new commit on `master` or the artifact has expired.
 
 **Q: How do I run database migrations?**
 A: Import `api/database/migrations/001_create_projects_table.sql` via phpMyAdmin or the MySQL command line. Migrations are not run automatically during deployment.
 
 **Q: How do I update FTP credentials?**
-A: Update the `FTP_HOST`, `FTP_USERNAME`, or `FTP_PASSWORD` secrets in GitHub → Settings → Secrets and variables → Actions.
+A: Update the `FTP_HOST`, `FTP_USERNAME`, or `FTP_PASSWORD` secrets in GitHub -> Settings -> Secrets and variables -> Actions.
 
 ---
 
@@ -405,7 +455,7 @@ A: Update the `FTP_HOST`, `FTP_USERNAME`, or `FTP_PASSWORD` secrets in GitHub �
 **Symptoms:** 500 errors from API, users unable to save/load projects.
 
 **Response:**
-1. Check cPanel → **Error Log** for PHP connection errors
+1. Check cPanel -> **Error Log** for PHP connection errors
 2. Verify MySQL service is running in cPanel
 3. Check `config.production.php` credentials match the database user
 4. Test connection: log into phpMyAdmin with the same credentials
@@ -416,7 +466,7 @@ A: Update the `FTP_HOST`, `FTP_USERNAME`, or `FTP_PASSWORD` secrets in GitHub �
 **Symptoms:** Slow queries, disk quota warnings from hosting provider.
 
 **Response:**
-1. Check database size in cPanel → **MySQL Databases**
+1. Check database size in cPanel -> **MySQL Databases**
 2. Identify large or suspicious projects via phpMyAdmin
 3. Delete offending rows from the `projects` table
 4. Consider adding rate limiting at the Apache/cPanel level
@@ -438,7 +488,7 @@ A: Update the `FTP_HOST`, `FTP_USERNAME`, or `FTP_PASSWORD` secrets in GitHub �
 **Symptoms:** Users report projects being modified or deleted without their action.
 
 **Response:**
-1. Owner tokens are hashed (SHA-256) before storage — raw tokens never stored server-side
+1. Owner tokens are hashed (SHA-256) before storage - raw tokens never stored server-side
 2. Check error logs for the affected project ID and the token hash used
 3. If a specific token hash is compromised, delete all projects for that owner hash
 4. The affected user will need to re-save their projects (generates new owner token)
@@ -451,14 +501,14 @@ A: Update the `FTP_HOST`, `FTP_USERNAME`, or `FTP_PASSWORD` secrets in GitHub �
 
 1. Generate a new secret: `openssl rand -hex 32`
 2. Update `jwt_secret` in `config.production.php` on the server
-3. All existing user sessions become invalid immediately — users must log in again
+3. All existing user sessions become invalid immediately - users must log in again
 4. Verify auth flow works: request an OTP, verify it, confirm JWT is returned
 
 **When to rotate:** Immediately if the secret is suspected to be compromised. No scheduled rotation needed otherwise (24-hour token lifetime limits exposure).
 
 ### Rotating Resend API Key (`resend_api_key`)
 
-1. Log in to [Resend dashboard](https://resend.com/) → API Keys
+1. Log in to [Resend dashboard](https://resend.com/) -> API Keys
 2. Create a new API key
 3. Update `resend_api_key` in `config.production.php` on the server
 4. Verify email delivery: request an OTP and confirm the email arrives
@@ -477,19 +527,23 @@ After updating any auth config value, check the PHP error log for config warning
 ### Common Issues Checklist
 
 - [ ] All GitHub secrets are set: `FTP_HOST`, `FTP_USERNAME`, `FTP_PASSWORD` (run `gh secret list` to verify)
+- [ ] GitHub Actions variable `VITE_API_URL` is set to the production HTTPS origin
 - [ ] FTP credentials work (test with FileZilla or similar FTP client)
+- [ ] The CI run has successful `frontend`, `e2e`, `api`, and `deploy-payload` jobs
+- [ ] The CI run was triggered by a `push` to `master`
+- [ ] The CI run uploaded `registerapptest-deploy-<sha>` and the Deploy run is using the same SHA
 - [ ] `config.production.php` exists on server with correct DB credentials, `jwt_secret`, and `resend_api_key`
 - [ ] Database tables exist (migration SQL has been run)
 - [ ] PHP 8.3+ is enabled on the server
 - [ ] Apache `mod_rewrite` is enabled
-- [ ] Node.js version matches workflow config (22) — locally
+- [ ] Node.js version matches workflow config (22) locally
 - [ ] All dependencies installed (`npm ci`)
 - [ ] TypeScript compiles without errors (`npm run build`)
 - [ ] Tests pass locally (`npm test`, `npm run test:e2e`)
 
 ### Getting Help
 
-1. Check workflow logs: **Actions** tab → click run → view step details
+1. Check workflow logs: **Actions** tab -> click run -> view step details
 2. Run tests locally to reproduce failures
 3. Check cPanel error logs for API issues
 4. Verify GitHub secrets and variables are correct

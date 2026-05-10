@@ -38,6 +38,15 @@ jobs:
         env:
           VITE_API_URL: ${{ vars.VITE_API_URL }}
         run: npm run build
+      - name: Upload frontend dist
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        uses: actions/upload-artifact@v6
+        with:
+          name: registerapptest-frontend-dist-${{ github.sha }}
+          path: frontend/dist
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 30
 
   e2e:
     runs-on: ubuntu-latest
@@ -70,3 +79,144 @@ jobs:
       - name: Stop containers
         if: always()
         run: docker compose down -v
+
+  deploy-payload:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    needs: [frontend, e2e, api]
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: composer:v2
+
+      - name: Download frontend dist
+        uses: actions/download-artifact@v6
+        with:
+          name: registerapptest-frontend-dist-${{ github.sha }}
+          path: frontend-dist
+
+      - name: Validate VITE_API_URL
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${VITE_API_URL}" ]; then
+            echo "::error::GitHub Actions variable VITE_API_URL is required"
+            exit 1
+          fi
+          case "${VITE_API_URL}" in
+            https://*) ;;
+            *)
+              echo "::error::VITE_API_URL must be an https:// URL"
+              exit 1
+              ;;
+          esac
+          if printf '%s' "${VITE_API_URL}" | grep -q '[[:space:]]'; then
+            echo "::error::VITE_API_URL must not contain whitespace"
+            exit 1
+          fi
+
+      - name: Install PHP runtime dependencies
+        run: composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
+        working-directory: api
+
+      - name: Assemble deploy payload
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+        run: |
+          set -euo pipefail
+          rm -rf deploy
+          mkdir -p deploy/api/src deploy/api/database
+
+          cp -R frontend-dist/. deploy/
+          cp -R api/src/* deploy/api/src/
+          cp -R api/database/* deploy/api/database/
+          cp -R api/vendor deploy/api/
+          cp api/index.php deploy/api/
+          cp api/config.php deploy/api/
+          cp api/.htaccess deploy/api/
+
+          python3 - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          metadata = {
+              "application": "RegisterAppTest",
+              "artifact": f"registerapptest-deploy-{os.environ['GITHUB_SHA']}",
+              "event_name": os.environ["GITHUB_EVENT_NAME"],
+              "ref": os.environ["GITHUB_REF"],
+              "ref_name": os.environ["GITHUB_REF_NAME"],
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "sha": os.environ["GITHUB_SHA"],
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "workflow": os.environ["GITHUB_WORKFLOW"],
+              "built_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+              "vite_api_url": os.environ["VITE_API_URL"],
+          }
+          Path("deploy/release.json").write_text(
+              json.dumps(metadata, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Validate deploy payload
+        run: |
+          set -euo pipefail
+          required_files=(
+            "deploy/index.html"
+            "deploy/api/index.php"
+            "deploy/api/config.php"
+            "deploy/api/.htaccess"
+            "deploy/api/vendor/autoload.php"
+            "deploy/release.json"
+          )
+          for file in "${required_files[@]}"; do
+            if [ ! -f "${file}" ]; then
+              echo "::error::Missing required deploy file: ${file}"
+              exit 1
+            fi
+          done
+
+          forbidden_paths=(
+            "deploy/.github"
+            "deploy/docs"
+            "deploy/frontend"
+            "deploy/api/tests"
+            "deploy/api/.phpunit.cache"
+            "deploy/api/Dockerfile"
+            "deploy/api/docker-compose.yml"
+            "deploy/api/phpunit.xml"
+            "deploy/api/composer.json"
+            "deploy/api/composer.lock"
+            "deploy/api/config.production.php"
+            "deploy/node_modules"
+          )
+          for path in "${forbidden_paths[@]}"; do
+            if [ -e "${path}" ]; then
+              echo "::error::Forbidden deploy path present: ${path}"
+              exit 1
+            fi
+          done
+
+          if find deploy \( -name .git -o -path '*/.git/*' -o -name '.env' -o -name '.env.*' \) -print -quit | grep -q .; then
+            echo "::error::Forbidden VCS or env file found in deploy payload"
+            exit 1
+          fi
+
+          (cd deploy && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
+          (cd deploy && sha256sum -c SHA256SUMS)
+
+      - name: Upload deploy payload
+        uses: actions/upload-artifact@v6
+        with:
+          name: registerapptest-deploy-${{ github.sha }}
+          path: deploy/
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 30
