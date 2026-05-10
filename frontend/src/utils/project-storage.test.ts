@@ -397,6 +397,39 @@ describe('updateProjectMetadata', () => {
     expect(entry!.serverVersion).toBe(9);
   });
 
+  it('does not rewrite storage for no-op metadata updates', () => {
+    const localId = createProject(makeSerializedState(), 'No-op Project');
+    const before = loadProject(localId);
+
+    const result = updateProjectMetadata(localId, { visibility: before!.visibility });
+
+    const after = loadProject(localId);
+    expect(result.ok).toBe(true);
+    expect(result.unchanged).toBe(true);
+    expect(after!.localSavedAt).toBe(before!.localSavedAt);
+  });
+
+  it('can preserve localSavedAt for background metadata updates', () => {
+    const localId = createProject(makeSerializedState(), 'Metadata Project');
+    const before = loadProject(localId);
+
+    const result = updateProjectMetadata(localId, {
+      visibility: 'unlisted',
+      cloudSavedAt: '2026-02-01T00:00:00.000Z',
+    }, { preserveLocalSavedAt: true });
+
+    const project = loadProject(localId);
+    const entry = loadManifest().projects.find(p => p.localId === localId);
+    expect(result.ok).toBe(true);
+    expect(result.unchanged).toBe(false);
+    expect(project!.visibility).toBe('unlisted');
+    expect(project!.cloudSavedAt).toBe('2026-02-01T00:00:00.000Z');
+    expect(project!.localSavedAt).toBe(before!.localSavedAt);
+    expect(entry!.visibility).toBe('unlisted');
+    expect(entry!.cloudSavedAt).toBe('2026-02-01T00:00:00.000Z');
+    expect(entry!.localSavedAt).toBe(before!.localSavedAt);
+  });
+
   it('updates visibility', () => {
     const localId = createProject(makeSerializedState());
     updateProjectMetadata(localId, { visibility: 'unlisted' });
@@ -966,7 +999,7 @@ describe('quota-aware project writes', () => {
     expect(loadManifest().projects.find(p => p.localId === cloudId)!.hasUnsyncedChanges).toBe(false);
   });
 
-  it('can evict legacy clean cloud records without an explicit unsynced marker', () => {
+  it('does not evict legacy cloud records without an explicit clean marker', () => {
     const targetId = createProject(makeSerializedState(), 'Target');
     const legacyId = createProject(makeSerializedState(), 'Legacy Clean Cloud', {
       cloudId: 'legacy-cloud',
@@ -991,9 +1024,10 @@ describe('quota-aware project writes', () => {
       project: { title: 'Changed Target' } as SerializedAppState['project'],
     }));
 
-    expect(result.ok).toBe(true);
-    expect(result.evictedLocalIds).toEqual([legacyId]);
-    expect(hasLocalData(legacyId)).toBe(false);
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe('quota-exceeded');
+    expect(result.evictedLocalIds).toEqual([]);
+    expect(hasLocalData(legacyId)).toBe(true);
   });
 
   it('uses the stored dirty marker when manifest metadata is stale after a partial failure', () => {

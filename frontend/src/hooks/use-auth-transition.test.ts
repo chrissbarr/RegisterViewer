@@ -1,4 +1,4 @@
-import { renderHook } from '@testing-library/react';
+import { renderHook, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAuthTransition } from './use-auth-transition';
 import { initialInternalState } from '../types/cloud-sync';
@@ -68,6 +68,24 @@ describe('useAuthTransition', () => {
     rerender({ authUser: { email: 'test@example.com' } });
 
     expect(deps.syncCloudProjectsRef.current).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes the project list after sign-in sync creates placeholders', async () => {
+    const deps = makeDeps({
+      syncCloudProjectsRef: {
+        current: vi.fn(() => Promise.resolve({ updatedCount: 0, staleCloudIds: [], placeholdersCreated: 2 })),
+      },
+    });
+    const { rerender } = renderHook(
+      ({ authUser }) => useAuthTransition({ ...deps, authUser }),
+      { initialProps: { authUser: null as { email: string } | null } },
+    );
+
+    rerender({ authUser: { email: 'test@example.com' } });
+
+    await waitFor(() => {
+      expect(deps.refreshProjectList).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('retries pending save on sign-in', () => {

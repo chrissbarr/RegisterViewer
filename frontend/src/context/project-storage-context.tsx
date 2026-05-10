@@ -38,6 +38,10 @@ interface CloudMetadataUpdates {
   hasUnsyncedChanges?: boolean;
 }
 
+interface CloudMetadataWriteOptions {
+  preserveLocalSavedAt?: boolean;
+}
+
 interface ProjectStorageActions {
   createNewProject: (name?: string, initialState?: SerializedAppState) => string | null;
   switchProject: (localId: string) => boolean;
@@ -45,7 +49,7 @@ interface ProjectStorageActions {
   renameProject: (localId: string, name: string) => void;
   refreshProjectList: () => void;
   getActiveProject: () => StoredLocalProject | null;
-  updateCloudMetadata: (localId: string, updates: CloudMetadataUpdates) => ProjectStorageWriteResult;
+  updateCloudMetadata: (localId: string, updates: CloudMetadataUpdates, options?: CloudMetadataWriteOptions) => ProjectStorageWriteResult;
   loadAsUnsaved: (result: ImportResult, name: string, source?: UnsavedProjectSource) => boolean;
   saveCurrentProject: (name?: string) => string | null;
   discardUnsavedProject: () => void;
@@ -267,12 +271,20 @@ export function ProjectStorageProvider({ children, initialLocalId, initialUnsave
     if (saved) refreshProjectList();
   }, [activeLocalId, dispatch, refreshProjectList]);
 
-  const updateCloudMetadata = useCallback((localId: string, updates: CloudMetadataUpdates): ProjectStorageWriteResult => {
+  const updateCloudMetadata = useCallback((
+    localId: string,
+    updates: CloudMetadataUpdates,
+    options?: CloudMetadataWriteOptions,
+  ): ProjectStorageWriteResult => {
     // updateProjectMetadata saves the project record and updates the manifest in one pass
-    const result = updateProjectMetadata(localId, updates, {
+    const storageOptions = {
       protectedLocalIds: [activeLocalIdRef.current],
+      ...(options?.preserveLocalSavedAt ? { preserveLocalSavedAt: true } : {}),
+    };
+    const result = updateProjectMetadata(localId, updates, {
+      ...storageOptions,
     });
-    if (result.ok) {
+    if (result.ok && !result.unchanged) {
       refreshProjectList();
     }
     return result;

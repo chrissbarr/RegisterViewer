@@ -42,6 +42,7 @@ vi.mock('../utils/api-client', () => {
 
 vi.mock('../utils/cloud-project-loader', () => ({
   fetchAndParseCloudProject: vi.fn(),
+  parseProjectData: vi.fn(() => null),
 }));
 
 
@@ -107,6 +108,7 @@ import {
 } from '../utils/api-client';
 import { fetchAndParseCloudProject } from '../utils/cloud-project-loader';
 import {
+  createProject as createProjectInStorage,
   loadManifest,
   loadProject,
   flushProjectState,
@@ -210,6 +212,7 @@ beforeEach(() => {
   (loadProject as Mock).mockReturnValue(null);
   (flushProjectState as Mock).mockReturnValue(writeOk(makeStoredProject()));
   (updateProjectMetadata as Mock).mockReturnValue(writeOk(makeStoredProject()));
+  (createProjectInStorage as Mock).mockReturnValue('created-local-id');
   (exportToObject as Mock).mockReturnValue({ version: 1, registers: [], values: {} });
   // getProject is called by the ownership re-evaluation effect; default to a resolved promise
   (apiGetProject as Mock).mockResolvedValue({ id: 'test', data: '{}', createdAt: '', updatedAt: '', isOwner: false, version: 1 });
@@ -999,6 +1002,7 @@ describe('CloudSyncProvider', () => {
             cloudSavedAt: '2024-01-01T00:00:00Z',
             visibility: 'private',
             storage: 'cloud',
+            serverVersion: 1,
           }),
         ],
       });
@@ -1029,9 +1033,8 @@ describe('CloudSyncProvider', () => {
         {
           cloudSavedAt: '2024-02-01T00:00:00Z',
           visibility: 'unlisted',
-          serverVersion: 1,
         },
-        { protectedLocalIds: [TEST_LOCAL_ID] },
+        { protectedLocalIds: [TEST_LOCAL_ID], preserveLocalSavedAt: true },
       );
     });
 
@@ -1055,6 +1058,45 @@ describe('CloudSyncProvider', () => {
 
       expect(syncResult!.updatedCount).toBe(0);
       expect(syncResult!.staleCloudIds).toEqual(['cloud-stale']);
+    });
+
+    it('creates manifest-only placeholders for cloud-only projects', async () => {
+      (loadManifest as Mock).mockReturnValue({ version: 1, projects: [] });
+      (createProjectInStorage as Mock).mockReturnValue('created-placeholder');
+      (apiListProjects as Mock).mockResolvedValue({
+        projects: [
+          {
+            id: 'cloud-new',
+            title: 'Remote Only',
+            visibility: 'unlisted',
+            createdAt: '2024-01-01T00:00:00Z',
+            updatedAt: '2024-02-01T00:00:00Z',
+            version: 4,
+          },
+        ],
+      });
+
+      const { result } = renderCloudSync();
+
+      let syncResult: { updatedCount: number; staleCloudIds: string[]; placeholdersCreated: number };
+      await act(async () => {
+        syncResult = await result.current.actions.syncCloudProjects();
+      });
+
+      expect(syncResult!.placeholdersCreated).toBe(1);
+      expect(createProjectInStorage).toHaveBeenCalledWith(
+        EMPTY_SERIALIZED_STATE,
+        'Remote Only',
+        expect.objectContaining({
+          cloudId: 'cloud-new',
+          visibility: 'unlisted',
+          cloudSavedAt: '2024-02-01T00:00:00Z',
+          serverVersion: 4,
+          storage: 'cloud',
+        }),
+        expect.objectContaining({ protectedLocalIds: [TEST_LOCAL_ID] }),
+      );
+      expect(evictProjectData).toHaveBeenCalledWith('created-placeholder');
     });
 
     it('does not sync metadata for shared projects with cloudId but storage=local', async () => {

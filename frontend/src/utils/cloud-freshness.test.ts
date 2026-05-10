@@ -326,6 +326,31 @@ describe('checkAndPullFreshVersion', () => {
     expect(ctx.updateCloudMetadata).not.toHaveBeenCalled();
   });
 
+  it('does not dispatch or mark internal state fresh when metadata persistence fails', async () => {
+    const ctx = makeCtx({
+      updateCloudMetadata: vi.fn((): ProjectStorageWriteResult => ({
+        ok: false,
+        status: 'quota-exceeded',
+        evictedLocalIds: [],
+      })),
+    });
+    const call = makeCall();
+    (getProject as Mock).mockResolvedValue({
+      data: { version: 1, registers: [], registerValues: {} },
+      updatedAt: '2024-06-01T00:00:00Z',
+      version: 3,
+    });
+    (parseProjectData as Mock).mockReturnValue(PARSED_DATA);
+
+    const result = await checkAndPullFreshVersion(ctx, call);
+
+    expect(result).toEqual({ applied: false, reason: 'local-persist-failed', serverVersion: 3 });
+    expect(patchProjectState).toHaveBeenCalled();
+    expect(ctx.dispatch).not.toHaveBeenCalled();
+    expect(ctx.needsVersionSyncRef.current).toBe(false);
+    expect(ctx.setInternal).not.toHaveBeenCalled();
+  });
+
   it('preserves existing UI fields (mapTableWidth, mapShowGaps, etc.) during pull', async () => {
     const ctx = makeCtx();
     const call = makeCall();

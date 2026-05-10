@@ -10,6 +10,19 @@ vi.mock('../utils/storage', () => ({
   importFromJson: vi.fn(() => null),
   deserializeState: vi.fn((data: unknown) => data),
   serializeState: vi.fn((state: unknown) => state),
+  serializeImportResult: vi.fn((result: { registers: Array<{ id: string }>; values: Record<string, bigint>; project?: unknown; addressUnitBits?: unknown }) => {
+    const registerValues: Record<string, string> = {};
+    for (const [id, value] of Object.entries(result.values)) {
+      registerValues[id] = '0x' + value.toString(16);
+    }
+    return {
+      registers: result.registers,
+      activeRegisterId: result.registers[0]?.id ?? null,
+      registerValues,
+      project: result.project,
+      addressUnitBits: result.addressUnitBits,
+    };
+  }),
 }));
 
 vi.mock('../utils/seed-data', () => ({
@@ -36,6 +49,7 @@ vi.mock('../utils/project-storage', () => ({
   runMigrationIfNeeded: vi.fn(),
   loadManifest: vi.fn(() => ({ version: 1, projects: [] })),
   loadProject: vi.fn(() => null),
+  saveProject: vi.fn(() => ({ ok: true, status: 'ok', evictedLocalIds: [] })),
   createProject: vi.fn(() => 'new-local-id'),
   getMostRecentProjectId: vi.fn(() => null),
   ACTIVE_PROJECT_SESSION_KEY: 'register-viewer-active-project',
@@ -79,6 +93,7 @@ import {
   runMigrationIfNeeded,
   loadManifest,
   loadProject,
+  saveProject,
   createProject,
   getMostRecentProjectId,
   saveUnsavedProjectState,
@@ -136,6 +151,7 @@ beforeEach(() => {
   (serializeState as Mock).mockReturnValue({});
   (deserializeState as Mock).mockReturnValue(TEST_APP_STATE);
   (loadProject as Mock).mockReturnValue(null);
+  (saveProject as Mock).mockReturnValue({ ok: true, status: 'ok', evictedLocalIds: [] });
   (getMostRecentProjectId as Mock).mockReturnValue(null);
   (decompressSnapshot as Mock).mockReturnValue(Promise.resolve('{}'));
   (importFromJson as Mock).mockReturnValue(null);
@@ -465,6 +481,55 @@ describe('AppLoader', () => {
       expect(createProject).not.toHaveBeenCalled();
       const shell = screen.getByTestId('app-shell');
       expect(shell.dataset.unsavedName).toBe('Example Project');
+    });
+
+    it('fetches and persists manifest-only cloud projects before opening them locally', async () => {
+      const importResult = makeImportResult({
+        updatedAt: '2024-06-01T00:00:00Z',
+        isOwner: true,
+        version: 8,
+      });
+      const manifestEntry = {
+        localId: 'placeholder-id',
+        cloudId: 'cloud-placeholder',
+        name: 'Placeholder',
+        visibility: 'unlisted',
+        createdAt: '2024-01-01T00:00:00Z',
+        localSavedAt: '2024-05-01T00:00:00Z',
+        cloudSavedAt: '2024-05-01T00:00:00Z',
+        serverVersion: 7,
+        storage: 'cloud',
+      };
+      (loadManifest as Mock).mockReturnValue({ version: 1, projects: [manifestEntry] });
+      (resolveInitialProject as Mock).mockReturnValue({ type: 'local', localId: 'placeholder-id' });
+      (loadProject as Mock).mockReturnValue(null);
+      (fetchAndParseCloudProject as Mock).mockResolvedValue(importResult);
+
+      render(<AppLoader />);
+
+      await waitFor(() => {
+        const shell = screen.getByTestId('app-shell');
+        expect(shell.dataset.localId).toBe('placeholder-id');
+        expect(shell.dataset.cloudId).toBe('cloud-placeholder');
+        expect(shell.dataset.isOwner).toBe('true');
+        expect(shell.dataset.storage).toBe('cloud');
+        expect(shell.dataset.serverVersion).toBe('8');
+      });
+
+      expect(fetchAndParseCloudProject).toHaveBeenCalledWith('cloud-placeholder', undefined);
+      expect(saveProject).toHaveBeenCalledWith(expect.objectContaining({
+        localId: 'placeholder-id',
+        cloudId: 'cloud-placeholder',
+        cloudSavedAt: '2024-06-01T00:00:00Z',
+        serverVersion: 8,
+        cloudConflictVersion: null,
+        hasUnsyncedChanges: false,
+        storage: 'cloud',
+        state: expect.objectContaining({
+          activeRegisterId: 'reg-1',
+          registerValues: { 'reg-1': '0xff' },
+        }),
+      }), { protectedLocalIds: ['placeholder-id'] });
     });
   });
 

@@ -61,6 +61,19 @@ vi.mock('../utils/cloud-project-loader', () => ({
 
 vi.mock('../utils/storage', () => ({
   sanitizeProjectMetadata: vi.fn((m: unknown) => m),
+  serializeImportResult: vi.fn((result: { registers: Array<{ id: string }>; values: Record<string, bigint>; project?: unknown; addressUnitBits?: unknown }) => {
+    const registerValues: Record<string, string> = {};
+    for (const [id, value] of Object.entries(result.values)) {
+      registerValues[id] = '0x' + value.toString(16);
+    }
+    return {
+      registers: result.registers,
+      activeRegisterId: result.registers[0]?.id ?? null,
+      registerValues,
+      project: result.project,
+      addressUnitBits: result.addressUnitBits,
+    };
+  }),
 }));
 
 import { isCloudEnabled } from '../utils/api-client';

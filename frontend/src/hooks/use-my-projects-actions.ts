@@ -8,7 +8,7 @@ import { isCloudEnabled } from '../utils/api-client';
 import { friendlyErrorMessage } from '../utils/friendly-error';
 import { loadProject, saveProject, hasLocalData } from '../utils/project-storage';
 import { fetchAndParseCloudProject } from '../utils/cloud-project-loader';
-import { sanitizeProjectMetadata } from '../utils/storage';
+import { sanitizeProjectMetadata, serializeImportResult } from '../utils/storage';
 import type { ProjectSettingsData } from '../components/common/project-settings-dialog';
 import type { Visibility } from '../types/project';
 import { projectDisplayName } from '../utils/project-helpers';
@@ -72,10 +72,6 @@ export function useMyProjectsActions(
         // JWT is optional — unauthenticated users can open shared projects
         const jwt = getJwt();
         const result = await fetchAndParseCloudProject(project.cloudId, jwt ?? undefined);
-        const serializedValues: Record<string, string> = {};
-        for (const [id, value] of Object.entries(result.values)) {
-          serializedValues[id] = '0x' + value.toString(16);
-        }
         const saveResult = saveProject({
           localId,
           cloudId: project.cloudId,
@@ -87,13 +83,7 @@ export function useMyProjectsActions(
           storage: project.storage,
           serverVersion: result.version,
           hasUnsyncedChanges: false,
-          state: {
-            registers: result.registers,
-            activeRegisterId: result.registers[0]?.id ?? null,
-            registerValues: serializedValues,
-            project: result.project,
-            addressUnitBits: result.addressUnitBits,
-          },
+          state: serializeImportResult(result),
         }, { protectedLocalIds: [activeLocalId] });
         if (!saveResult.ok) {
           throw new Error(`Failed to persist downloaded project: ${saveResult.status}`);

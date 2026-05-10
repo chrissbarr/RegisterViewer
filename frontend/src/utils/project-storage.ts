@@ -35,10 +35,12 @@ export interface ProjectStorageWriteResult {
   evictedLocalIds: string[];
   error?: unknown;
   project?: StoredLocalProject;
+  unchanged?: boolean;
 }
 
 interface ProjectStorageWriteOptions {
   protectedLocalIds?: readonly (string | null | undefined)[];
+  preserveLocalSavedAt?: boolean;
 }
 
 /**
@@ -60,8 +62,12 @@ export function projectStorageKey(localId: string): string {
   return `${PROJECT_PREFIX}${localId}`;
 }
 
-function writeOk(evictedLocalIds: string[] = [], project?: StoredLocalProject): ProjectStorageWriteResult {
-  return { ok: true, status: 'ok', evictedLocalIds, project };
+function writeOk(
+  evictedLocalIds: string[] = [],
+  project?: StoredLocalProject,
+  unchanged = false,
+): ProjectStorageWriteResult {
+  return { ok: true, status: 'ok', evictedLocalIds, project, unchanged };
 }
 
 function writeFailed(
@@ -133,15 +139,7 @@ function isSafeCloudEvictionCandidate(entry: ProjectManifestEntry): boolean {
 
   const project = readResult.project;
   if (project.storage !== 'cloud' || project.cloudConflictVersion) return false;
-  if (project.hasUnsyncedChanges === false) return true;
-
-  // Conservative legacy compatibility: older clean cloud records predate the
-  // explicit dirty marker. Treat them as clean only when the local record does
-  // not appear newer than the last known cloud save.
-  return project.hasUnsyncedChanges === undefined &&
-    entry.hasUnsyncedChanges === undefined &&
-    !!project.cloudSavedAt &&
-    project.localSavedAt <= project.cloudSavedAt;
+  return project.hasUnsyncedChanges === false;
 }
 
 function evictCloudProjectForQuota(excluded: Set<string>): string | null {
@@ -294,9 +292,11 @@ export function loadProject(localId: string): StoredLocalProject | null {
   return null;
 }
 
-function saveProjectRecord(project: StoredLocalProject): StoredLocalProject {
-  // Update timestamp without mutating input
-  const updated = { ...project, localSavedAt: new Date().toISOString() };
+function saveProjectRecord(project: StoredLocalProject, options?: ProjectStorageWriteOptions): StoredLocalProject {
+  // Update timestamp without mutating input unless this is metadata-only background sync.
+  const updated = options?.preserveLocalSavedAt
+    ? { ...project }
+    : { ...project, localSavedAt: new Date().toISOString() };
 
   // Step 1: Write project data first (safety: data is always reachable)
   localStorage.setItem(projectStorageKey(updated.localId), JSON.stringify(updated));
@@ -349,7 +349,7 @@ function logWriteFailure(scope: string, result: ProjectStorageWriteResult, local
 
 /** Save a project record. Writes project key first, then updates manifest. */
 export function saveProject(project: StoredLocalProject, options?: ProjectStorageWriteOptions): ProjectStorageWriteResult {
-  const result = writeWithQuotaRecovery(project.localId, () => saveProjectRecord(project), options);
+  const result = writeWithQuotaRecovery(project.localId, () => saveProjectRecord(project, options), options);
   logWriteFailure('Save project', result, project.localId);
   return result;
 }
@@ -491,6 +491,10 @@ export function updateProjectMetadata(
     logWriteFailure('Update project metadata', result, localId);
     return result;
   }
+  const hasChanges = Object.entries(updates).some(([key, value]) =>
+    readResult.project[key as keyof StoredLocalProject] !== value
+  );
+  if (!hasChanges) return writeOk([], readResult.project, true);
   return saveProject({ ...readResult.project, ...updates }, options);
 }
 

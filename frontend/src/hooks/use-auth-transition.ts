@@ -66,7 +66,11 @@ export function useAuthTransition(deps: UseAuthTransitionDeps): void {
         }
       }
       // Sync cloud projects (pull metadata from server)
-      syncCloudProjectsRef.current?.().catch(() => { /* best-effort on mount/sign-in */ });
+      syncCloudProjectsRef.current?.()
+        .then((result) => {
+          if (result.placeholdersCreated > 0) refreshProjectList();
+        })
+        .catch(() => { /* best-effort on mount/sign-in */ });
     }
 
     if (wasLoggedIn && !authUser) {

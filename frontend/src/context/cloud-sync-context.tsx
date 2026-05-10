@@ -33,7 +33,7 @@ import {
   getProject,
 } from '../utils/api-client';
 import { useAuth, useAuthActions } from './auth-context';
-import { buildProjectUrl, createProject } from '../utils/project-storage';
+import { buildProjectUrl, createProject, evictProjectData } from '../utils/project-storage';
 import { EMPTY_SERIALIZED_STATE } from '../utils/storage';
 import { clearCloudUrl } from '../utils/cloud-utils';
 import { useActiveProjectCloudOps } from '../hooks/use-active-project-cloud-ops';
@@ -293,7 +293,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       // that are undesirable for background placeholder creation.
       createPlaceholder: (data) => {
         try {
-          createProject(EMPTY_SERIALIZED_STATE, data.title, {
+          const localId = createProject(EMPTY_SERIALIZED_STATE, data.title, {
             cloudId: data.cloudId,
             visibility: data.visibility,
             cloudSavedAt: data.cloudSavedAt,
@@ -303,6 +303,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
           }, {
             protectedLocalIds: [activeLocalIdRef.current],
           });
+          evictProjectData(localId);
         } catch (err) {
           console.warn('[cloud-sync] Failed to create placeholder for cloud project', data.cloudId, err);
         }

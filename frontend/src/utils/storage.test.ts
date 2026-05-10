@@ -1,6 +1,7 @@
 import {
   serializeState,
   deserializeState,
+  serializeImportResult,
   exportToJson,
   importFromJson,
 } from './storage';
@@ -197,6 +198,26 @@ describe('exportToJson', () => {
     const json = exportToJson(state);
     const data = JSON.parse(json);
     expect(data.registerValues['STATUS']).toBe('0xdead');
+  });
+});
+
+describe('serializeImportResult', () => {
+  it('serializes imported bigint values by register id', () => {
+    const reg = makeRegister({ id: 'reg-1', name: 'STATUS' });
+    const serialized = serializeImportResult({
+      registers: [reg],
+      values: { 'reg-1': 0xFFn },
+      project: { title: 'Imported' },
+      addressUnitBits: 16,
+    });
+
+    expect(serialized).toEqual({
+      registers: [reg],
+      activeRegisterId: 'reg-1',
+      registerValues: { 'reg-1': '0xff' },
+      project: { title: 'Imported' },
+      addressUnitBits: 16,
+    });
   });
 });
 

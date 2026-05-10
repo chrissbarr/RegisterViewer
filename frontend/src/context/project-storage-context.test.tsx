@@ -636,6 +636,44 @@ describe('ProjectStorageProvider', () => {
       expect(toProjectListEntry).toHaveBeenCalled();
     });
 
+    it('passes preserveLocalSavedAt to metadata storage when requested', () => {
+      const { result } = renderProjectStorage();
+
+      act(() => {
+        result.current.actions.updateCloudMetadata(
+          TEST_LOCAL_ID,
+          { cloudSavedAt: '2024-06-01T00:00:00Z' },
+          { preserveLocalSavedAt: true },
+        );
+      });
+
+      expect(updateProjectMetadata).toHaveBeenCalledWith(
+        TEST_LOCAL_ID,
+        { cloudSavedAt: '2024-06-01T00:00:00Z' },
+        expect.objectContaining({
+          protectedLocalIds: [TEST_LOCAL_ID],
+          preserveLocalSavedAt: true,
+        }),
+      );
+    });
+
+    it('skips refresh for unchanged metadata writes', () => {
+      (updateProjectMetadata as Mock).mockReturnValue({
+        ok: true,
+        status: 'ok',
+        evictedLocalIds: [],
+        unchanged: true,
+      });
+      const { result } = renderProjectStorage();
+      (toProjectListEntry as Mock).mockClear();
+
+      act(() => {
+        result.current.actions.updateCloudMetadata(TEST_LOCAL_ID, { visibility: 'private' });
+      });
+
+      expect(toProjectListEntry).not.toHaveBeenCalled();
+    });
+
     it('returns a failed write result and skips refresh when metadata persistence fails', () => {
       (updateProjectMetadata as Mock).mockReturnValue({
         ok: false,

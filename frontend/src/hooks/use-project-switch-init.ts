@@ -26,6 +26,10 @@ interface UseProjectSwitchInitDeps {
   lastDeparture: ProjectDepartureSnapshot | null;
 }
 
+// Stored `hasUnsyncedChanges` means this tab loaded a payload that already
+// needs saving, even before any in-memory edit increments the generation.
+const STORED_UNSYNCED_LAST_SAVED_VERSION = Number.MAX_SAFE_INTEGER;
+
 /**
  * Handles project switch lifecycle: cloud state init and best-effort save.
  *
@@ -166,6 +170,10 @@ export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
     } else {
       const conflictVersion = entry?.cloudConflictVersion ?? storedProject?.cloudConflictVersion ?? null;
       const serverVersion = entry?.serverVersion ?? storedProject?.serverVersion ?? 0;
+      const hasStoredUnsyncedChanges = (entry?.hasUnsyncedChanges ?? storedProject?.hasUnsyncedChanges) === true;
+      const lastSavedVersion = hasStoredUnsyncedChanges
+        ? STORED_UNSYNCED_LAST_SAVED_VERSION
+        : dataVersionRef.current;
       needsVersionSyncRef.current = true;
       setCloudUrl(cloudId);
       const next = {
@@ -174,7 +182,7 @@ export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
         isOwner,
         storage,
         shareUrl: buildProjectUrl(cloudId),
-        lastSavedVersion: dataVersionRef.current,
+        lastSavedVersion,
         lastCloudSavedAt: null,
         error: null,
         visibility: entry?.visibility ?? storedProject?.visibility ?? 'private',
@@ -186,14 +194,14 @@ export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
 
       // Freshness check for incoming project
       const jwt = getJwt();
-      if (jwt && serverVersion && !conflictVersion) {
+      if (jwt && isOwner && !conflictVersion && !hasStoredUnsyncedChanges) {
         const freshnessCtx: FreshnessCheckContext = {
           internalRef, dataVersionRef, dispatch, needsVersionSyncRef,
           lastFreshnessCheckRef, updateCloudMetadata, setInternal,
         };
         checkAndPullFreshVersion(freshnessCtx, {
           cloudId,
-          knownVersion: serverVersion,
+          knownVersion: serverVersion > 0 ? serverVersion : 0,
           localId: activeLocalId,
           jwt,
         }).catch((err) => {

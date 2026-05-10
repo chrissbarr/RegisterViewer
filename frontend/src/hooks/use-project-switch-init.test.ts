@@ -522,14 +522,16 @@ describe('useProjectSwitchInit', () => {
       });
       deps.projects = [localProject, incomingProject];
       deps.projectsRef.current = deps.projects;
-      (loadProject as Mock).mockReturnValue({
-        localId: PROJECT_B_LOCAL_ID,
-        cloudId: PROJECT_A_CLOUD_ID,
-        storage: 'cloud',
-        serverVersion: 9,
-        visibility: 'private',
-        state: { registers: [], activeRegisterId: null, registerValues: {} },
-      });
+      (loadProject as Mock).mockImplementation((id: string) => id === PROJECT_B_LOCAL_ID
+        ? {
+            localId: PROJECT_B_LOCAL_ID,
+            cloudId: PROJECT_A_CLOUD_ID,
+            storage: 'cloud',
+            serverVersion: 9,
+            visibility: 'private',
+            state: { registers: [], activeRegisterId: null, registerValues: {} },
+          }
+        : null);
 
       const { rerender } = renderHook(
         (props: { activeLocalId: string | null }) =>
@@ -540,7 +542,91 @@ describe('useProjectSwitchInit', () => {
       rerender({ activeLocalId: PROJECT_B_LOCAL_ID });
 
       expect(deps.internalRef.current.lastSavedVersion).toBe(4);
-      expect(checkAndPullFreshVersion).toHaveBeenCalled();
+      expect(checkAndPullFreshVersion).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ knownVersion: 9 }),
+      );
+    });
+
+    it('runs freshness with knownVersion 0 when incoming cloud project has no serverVersion', () => {
+      const deps = buildDeps();
+      const localProject = makeProjectEntry({
+        localId: PROJECT_A_LOCAL_ID,
+        cloudId: null,
+        storage: 'local',
+      });
+      const incomingProject = makeProjectEntry({
+        localId: PROJECT_B_LOCAL_ID,
+        cloudId: PROJECT_A_CLOUD_ID,
+        storage: 'cloud',
+        serverVersion: null,
+      });
+      deps.projects = [localProject, incomingProject];
+      deps.projectsRef.current = deps.projects;
+      (loadProject as Mock).mockImplementation((id: string) => id === PROJECT_B_LOCAL_ID
+        ? {
+            localId: PROJECT_B_LOCAL_ID,
+            cloudId: PROJECT_A_CLOUD_ID,
+            storage: 'cloud',
+            serverVersion: null,
+            visibility: 'private',
+            state: { registers: [], activeRegisterId: null, registerValues: {} },
+          }
+        : null);
+
+      const { rerender } = renderHook(
+        (props: { activeLocalId: string | null }) =>
+          useProjectSwitchInit({ ...deps, activeLocalId: props.activeLocalId }),
+        { initialProps: { activeLocalId: PROJECT_A_LOCAL_ID } },
+      );
+
+      rerender({ activeLocalId: PROJECT_B_LOCAL_ID });
+
+      expect(checkAndPullFreshVersion).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ knownVersion: 0 }),
+      );
+    });
+
+    it('treats stored unsynced cloud data as dirty and skips freshness pull', () => {
+      const deps = buildDeps();
+      deps.dataVersionRef.current = 4;
+      const localProject = makeProjectEntry({
+        localId: PROJECT_A_LOCAL_ID,
+        cloudId: null,
+        storage: 'local',
+      });
+      const incomingProject = makeProjectEntry({
+        localId: PROJECT_B_LOCAL_ID,
+        cloudId: PROJECT_A_CLOUD_ID,
+        storage: 'cloud',
+        serverVersion: 9,
+        hasUnsyncedChanges: true,
+      });
+      deps.projects = [localProject, incomingProject];
+      deps.projectsRef.current = deps.projects;
+      (loadProject as Mock).mockImplementation((id: string) => id === PROJECT_B_LOCAL_ID
+        ? {
+            localId: PROJECT_B_LOCAL_ID,
+            cloudId: PROJECT_A_CLOUD_ID,
+            storage: 'cloud',
+            serverVersion: 9,
+            hasUnsyncedChanges: true,
+            visibility: 'private',
+            state: { registers: [], activeRegisterId: null, registerValues: {} },
+          }
+        : null);
+
+      const { rerender } = renderHook(
+        (props: { activeLocalId: string | null }) =>
+          useProjectSwitchInit({ ...deps, activeLocalId: props.activeLocalId }),
+        { initialProps: { activeLocalId: PROJECT_A_LOCAL_ID } },
+      );
+
+      rerender({ activeLocalId: PROJECT_B_LOCAL_ID });
+
+      expect(deps.internalRef.current.lastSavedVersion).not.toBe(deps.dataVersionRef.current);
+      expect(checkAndPullFreshVersion).not.toHaveBeenCalled();
     });
 
     it('restores stored conflict state and skips freshness pull', () => {

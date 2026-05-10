@@ -71,6 +71,10 @@ export interface CloudMetadataUpdate {
   hasUnsyncedChanges?: boolean;
 }
 
+export interface CloudMetadataWriteOptions {
+  preserveLocalSavedAt?: boolean;
+}
+
 export interface SyncResult {
   updatedCount: number;
   staleCloudIds: string[];

@@ -3,7 +3,7 @@ import { motion } from 'motion/react';
 import { Loader2, TriangleAlert } from 'lucide-react';
 import { AppProvider } from '../context/app-context';
 import { AppShell } from './layout/app-shell';
-import { importFromJson, deserializeState, serializeState } from '../utils/storage';
+import { importFromJson, deserializeState, serializeState, serializeImportResult } from '../utils/storage';
 import { createSeedRegisters } from '../utils/seed-data';
 import { ADDRESS_UNIT_BITS_DEFAULT, type AppState } from '../types/register';
 import { decompressSnapshot } from '../utils/snapshot-url';
@@ -12,11 +12,12 @@ import { friendlyErrorMessage } from '../utils/friendly-error';
 import { fetchAndParseCloudProject } from '../utils/cloud-project-loader';
 import { JWT_STORAGE_KEY } from '../context/auth-context';
 import { resolveInitialProject } from '../utils/project-resolution';
-import type { UnsavedProjectSource } from '../types/project';
+import type { ProjectManifestEntry, UnsavedProjectSource } from '../types/project';
 import {
   runMigrationIfNeeded,
   loadManifest,
   loadProject,
+  saveProject,
   getMostRecentProjectId,
   ACTIVE_PROJECT_SESSION_KEY,
   UNSAVED_SESSION_SENTINEL,
@@ -24,6 +25,8 @@ import {
   saveUnsavedProjectState,
 } from '../utils/project-storage';
 import type { CloudInit } from '../types/cloud-sync';
+
+type CloudProjectLoadResult = Awaited<ReturnType<typeof fetchAndParseCloudProject>>;
 
 type LoaderState =
   | { phase: 'loading' }
@@ -96,6 +99,44 @@ async function parseSnapshotHash(hash: string): Promise<AppState | null> {
   }
 }
 
+function buildCloudAppState(importResult: Pick<CloudProjectLoadResult, 'registers' | 'values' | 'project' | 'addressUnitBits'>): AppState {
+  const values: Record<string, bigint> = {};
+  for (const reg of importResult.registers) {
+    values[reg.id] = importResult.values[reg.id] ?? 0n;
+  }
+
+  return buildAppState({
+    registers: importResult.registers,
+    values,
+    project: importResult.project,
+    addressUnitBits: importResult.addressUnitBits,
+  });
+}
+
+function persistDownloadedCloudProject(
+  localId: string,
+  entry: ProjectManifestEntry & { cloudId: string },
+  importResult: CloudProjectLoadResult,
+): 'local' | 'cloud' {
+  const storage = entry.storage === 'cloud' && importResult.isOwner ? 'cloud' : 'local';
+  const result = saveProject({
+    localId,
+    cloudId: entry.cloudId,
+    name: entry.name,
+    visibility: entry.visibility,
+    createdAt: entry.createdAt,
+    localSavedAt: new Date().toISOString(),
+    cloudSavedAt: importResult.updatedAt,
+    serverVersion: importResult.version,
+    cloudConflictVersion: null,
+    hasUnsyncedChanges: false,
+    storage,
+    state: serializeImportResult(importResult),
+  }, { protectedLocalIds: [localId] });
+  if (!result.ok) throw new Error(`Failed to persist downloaded project: ${result.status}`);
+  return storage;
+}
+
 /** Read JWT from localStorage before auth context is available. */
 function readStartupJwt(): string | null {
   try {
@@ -149,17 +190,7 @@ export function AppLoader() {
 
         fetchAndParseCloudProject(resolution.cloudId, jwt ?? undefined)
           .then((importResult) => {
-            const values: Record<string, bigint> = {};
-            for (const reg of importResult.registers) {
-              values[reg.id] = importResult.values[reg.id] ?? 0n;
-            }
-
-            const loadedState = buildAppState({
-              registers: importResult.registers,
-              values,
-              project: importResult.project,
-              addressUnitBits: importResult.addressUnitBits,
-            });
+            const loadedState = buildCloudAppState(importResult);
 
             setState({
               phase: 'ready',
@@ -193,11 +224,42 @@ export function AppLoader() {
                 visibility: project.visibility,
               }
             : undefined;
-          setState({ phase: 'ready', initialState: appState, localId: resolution.localId, cloudInit });
+          void Promise.resolve().then(() => {
+            setState({ phase: 'ready', initialState: appState, localId: resolution.localId, cloudInit });
+          });
         } else {
-          // Project record missing — fall back to creating default (unsaved)
-          const { state: seedState, unsaved } = createDefaultUnsavedProject();
-          setState({ phase: 'ready', initialState: seedState, unsaved });
+          const entry = manifest.projects.find(p => p.localId === resolution.localId);
+          if (entry?.cloudId) {
+            const cloudId = entry.cloudId;
+            const jwt = readStartupJwt();
+            fetchAndParseCloudProject(cloudId, jwt ?? undefined)
+              .then((importResult) => {
+                const storage = persistDownloadedCloudProject(resolution.localId, { ...entry, cloudId }, importResult);
+                const appState = buildCloudAppState(importResult);
+                setState({
+                  phase: 'ready',
+                  initialState: appState,
+                  localId: resolution.localId,
+                  cloudInit: {
+                    projectId: cloudId,
+                    isOwner: storage === 'cloud',
+                    storage,
+                    serverVersion: importResult.version,
+                    cloudSavedAt: importResult.updatedAt,
+                    visibility: entry.visibility,
+                  },
+                });
+              })
+              .catch((err) => {
+                setState({ phase: 'error', message: friendlyErrorMessage(err, 'Failed to load project.') });
+              });
+          } else {
+            // Project record missing — fall back to creating default (unsaved)
+            const { state: seedState, unsaved } = createDefaultUnsavedProject();
+            void Promise.resolve().then(() => {
+              setState({ phase: 'ready', initialState: seedState, unsaved });
+            });
+          }
         }
         break;
       }
@@ -206,10 +268,12 @@ export function AppLoader() {
         const unsavedData = loadUnsavedProject();
         if (unsavedData) {
           const appState = deserializeState(unsavedData.state);
-          setState({
-            phase: 'ready',
-            initialState: appState,
-            unsaved: { name: unsavedData.name, source: unsavedData.source ?? 'new' },
+          void Promise.resolve().then(() => {
+            setState({
+              phase: 'ready',
+              initialState: appState,
+              unsaved: { name: unsavedData.name, source: unsavedData.source ?? 'new' },
+            });
           });
         } else {
           // Unsaved data was cleared externally — fall through to most recent or seed
@@ -218,19 +282,25 @@ export function AppLoader() {
             const project = loadProject(mostRecentId);
             if (project) {
               const appState = deserializeState(project.state);
-              setState({ phase: 'ready', initialState: appState, localId: mostRecentId });
+              void Promise.resolve().then(() => {
+                setState({ phase: 'ready', initialState: appState, localId: mostRecentId });
+              });
               break;
             }
           }
           const { state: seedState, unsaved } = createDefaultUnsavedProject();
-          setState({ phase: 'ready', initialState: seedState, unsaved });
+          void Promise.resolve().then(() => {
+            setState({ phase: 'ready', initialState: seedState, unsaved });
+          });
         }
         break;
       }
 
       case 'create-default': {
         const { state: seedState, unsaved } = createDefaultUnsavedProject();
-        setState({ phase: 'ready', initialState: seedState, unsaved });
+        void Promise.resolve().then(() => {
+          setState({ phase: 'ready', initialState: seedState, unsaved });
+        });
         break;
       }
     }
