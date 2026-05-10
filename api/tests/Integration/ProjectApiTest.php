@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use PHPUnit\Framework\TestCase;
 use PHPUnit\Framework\Attributes\Test;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 final class ProjectApiTest extends TestCase
 {
@@ -317,17 +318,49 @@ final class ProjectApiTest extends TestCase
 
     // ---- JWT-authenticated handler operations ----
 
-    private function makeParsedBody(array $data, ?string $visibility = null): array
+    private function makeParsedBody(
+        array $data,
+        ?string $visibility = null,
+        mixed $version = 1,
+        bool $includeVersion = true,
+    ): array
     {
         $body = ['data' => $data];
         if ($visibility !== null) {
             $body['visibility'] = $visibility;
+        }
+        if ($includeVersion) {
+            $body['version'] = $version;
         }
         $json = json_encode($body, JSON_UNESCAPED_SLASHES);
         return [
             'assoc'  => json_decode($json, true),
             'object' => json_decode($json),
         ];
+    }
+
+    private function updateDataWithRegister(string $name): array
+    {
+        return [
+            'version' => 1,
+            'registers' => [['name' => $name, 'width' => 8, 'fields' => []]],
+            'registerValues' => new \stdClass(),
+        ];
+    }
+
+    private function assertProjectStorageUnchanged(
+        string $id,
+        string $expectedData,
+        int $expectedVersion = 1,
+        string $expectedVisibility = 'private',
+    ): void
+    {
+        $project = dbGetProject(self::$db, $id);
+
+        $this->assertNotNull($project);
+        $this->assertSame($expectedData, $project['data']);
+        $this->assertSame($expectedVersion, (int) $project['version']);
+        $this->assertSame($expectedVisibility, $project['visibility']);
     }
 
     #[Test]
@@ -338,7 +371,7 @@ final class ProjectApiTest extends TestCase
         dbCreateProject(self::$db, $id, 'private', self::validDataJson(), null, $userId);
 
         $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => 'jwt-update@example.com'];
-        $newData = ['version' => 1, 'registers' => [['name' => 'UPDATED', 'width' => 8, 'fields' => []]], 'registerValues' => new \stdClass()];
+        $newData = $this->updateDataWithRegister('UPDATED');
         $parsed = $this->makeParsedBody($newData);
 
         $response = handleUpdateProject(self::$db, $id, $auth, $parsed);
@@ -346,10 +379,122 @@ final class ProjectApiTest extends TestCase
         $this->assertSame(200, $response->status);
         $this->assertSame($id, $response->body['id']);
         $this->assertArrayHasKey('updatedAt', $response->body);
+        $this->assertSame(2, $response->body['version']);
 
         // Verify data was actually updated
         $project = dbGetProject(self::$db, $id);
         $this->assertStringContainsString('UPDATED', $project['data']);
+        $this->assertSame(2, (int) $project['version']);
+    }
+
+    #[Test]
+    public function handleUpdateProjectRejectsMissingTopLevelVersion(): void
+    {
+        $userId = $this->createTestUser('missing-version@example.com');
+        $id = generatePublicId();
+        $originalData = self::validDataJson();
+        dbCreateProject(self::$db, $id, 'private', $originalData, null, $userId);
+
+        $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => 'missing-version@example.com'];
+        $parsed = $this->makeParsedBody(
+            $this->updateDataWithRegister('MISSING_VERSION'),
+            'unlisted',
+            1,
+            false,
+        );
+
+        $response = handleUpdateProject(self::$db, $id, $auth, $parsed);
+
+        $this->assertSame(400, $response->status);
+        $this->assertSame('version must be a positive integer', $response->body['error']);
+        $this->assertProjectStorageUnchanged($id, $originalData);
+    }
+
+    #[Test]
+    public function handleUpdateProjectRejectsNullTopLevelVersion(): void
+    {
+        $userId = $this->createTestUser('null-version@example.com');
+        $id = generatePublicId();
+        $originalData = self::validDataJson();
+        dbCreateProject(self::$db, $id, 'private', $originalData, null, $userId);
+
+        $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => 'null-version@example.com'];
+        $parsed = $this->makeParsedBody(
+            $this->updateDataWithRegister('NULL_VERSION'),
+            'unlisted',
+            null,
+        );
+
+        $response = handleUpdateProject(self::$db, $id, $auth, $parsed);
+
+        $this->assertSame(400, $response->status);
+        $this->assertSame('version must be a positive integer', $response->body['error']);
+        $this->assertProjectStorageUnchanged($id, $originalData);
+    }
+
+    public static function invalidTopLevelVersionProvider(): array
+    {
+        return [
+            'zero' => [0],
+            'negative' => [-1],
+            'string' => ['1'],
+            'float' => [1.5],
+        ];
+    }
+
+    #[Test]
+    #[DataProvider('invalidTopLevelVersionProvider')]
+    public function handleUpdateProjectRejectsInvalidTopLevelVersion(mixed $version): void
+    {
+        $userId = $this->createTestUser('invalid-version@example.com');
+        $id = generatePublicId();
+        $originalData = self::validDataJson();
+        dbCreateProject(self::$db, $id, 'private', $originalData, null, $userId);
+
+        $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => 'invalid-version@example.com'];
+        $parsed = $this->makeParsedBody(
+            $this->updateDataWithRegister('INVALID_VERSION'),
+            'unlisted',
+            $version,
+        );
+
+        $response = handleUpdateProject(self::$db, $id, $auth, $parsed);
+
+        $this->assertSame(400, $response->status);
+        $this->assertSame('version must be a positive integer', $response->body['error']);
+        $this->assertProjectStorageUnchanged($id, $originalData);
+    }
+
+    #[Test]
+    public function handleUpdateProjectReturns409ForStaleExplicitVersion(): void
+    {
+        $userId = $this->createTestUser('stale-version@example.com');
+        $id = generatePublicId();
+        dbCreateProject(self::$db, $id, 'private', self::validDataJson(), null, $userId);
+
+        $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => 'stale-version@example.com'];
+        $firstResponse = handleUpdateProject(
+            self::$db,
+            $id,
+            $auth,
+            $this->makeParsedBody($this->updateDataWithRegister('VERSION_TWO'), null, 1),
+        );
+        $this->assertSame(200, $firstResponse->status);
+
+        $afterFirstUpdate = dbGetProject(self::$db, $id);
+        $this->assertNotNull($afterFirstUpdate);
+
+        $staleResponse = handleUpdateProject(
+            self::$db,
+            $id,
+            $auth,
+            $this->makeParsedBody($this->updateDataWithRegister('STALE_WRITE'), null, 1),
+        );
+
+        $this->assertSame(409, $staleResponse->status);
+        $this->assertSame('version_conflict', $staleResponse->body['error']);
+        $this->assertSame(2, $staleResponse->body['currentVersion']);
+        $this->assertProjectStorageUnchanged($id, $afterFirstUpdate['data'], 2);
     }
 
     #[Test]
@@ -361,7 +506,12 @@ final class ProjectApiTest extends TestCase
         dbCreateProject(self::$db, $id, 'private', self::validDataJson(), null, $ownerId);
 
         $auth = ['kind' => 'jwt', 'userId' => $otherId, 'email' => 'imposter@example.com'];
-        $parsed = $this->makeParsedBody(['version' => 1, 'registers' => [], 'registerValues' => new \stdClass()]);
+        $parsed = $this->makeParsedBody(
+            ['version' => 1, 'registers' => [], 'registerValues' => new \stdClass()],
+            null,
+            1,
+            false,
+        );
 
         $response = handleUpdateProject(self::$db, $id, $auth, $parsed);
 
