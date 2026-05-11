@@ -198,7 +198,7 @@ final class AuthHandlerTest extends TestCase
     }
 
     #[Test]
-    public function verifyCodeIgnoresOwnerTokenInBody(): void
+    public function verifyCodeAcceptsUnsupportedExtraOwnerTokenField(): void
     {
         $email = 'ignore@example.com';
         $this->createLoginCode($email, '123456');
@@ -209,9 +209,10 @@ final class AuthHandlerTest extends TestCase
             'ownerToken' => 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2',
         ]);
 
-        // Should succeed — ownerToken is simply ignored now
+        // Extra fields are tolerated, but ownerToken is unsupported and has no documented effect.
         $this->assertSame(200, $response->status);
         $this->assertArrayHasKey('token', $response->body);
+        $this->assertArrayNotHasKey('ownerToken', $response->body);
     }
 
     #[Test]

@@ -85,12 +85,12 @@ npm run test:e2e        # Playwright E2E tests
 
 Key test areas:
 
-- **Utilities** — bitwise, float, fixed-point, decode/encode, validation, storage, format, snapshot-url, owner-token, api-client, project-storage, cloud-project-loader, cloud-operations
+- **Utilities** — bitwise, float, fixed-point, decode/encode, validation, storage, format, snapshot-url, api-client, project-storage, cloud-project-loader, cloud-operations
 - **Context providers** — app-context (reducer), cloud-sync-context, project-storage-context, preferences-context, auth-context
 - **Components** — app-loader, share-dialog, my-projects-dialog, login-dialog
 - **Hooks** — use-dirty-tracking, use-my-projects-actions, use-project-cloud-ops
 - **E2E (Playwright)** — project CRUD, cloud save/share/fork/delete, multi-tab, migration
-- **API Tests (PHPUnit)** — validation, ID generation, CORS, auth (extractAuth, isOwnerOrUser), JWT creation/verification, OTP send/verify flow, rate limiting, email sending
+- **API Tests (PHPUnit)** — validation, ID generation, CORS, auth (extractAuth, isProjectOwner), JWT creation/verification, OTP send/verify flow, rate limiting, email sending
 
 ### Dead Code Detection
 
@@ -125,7 +125,6 @@ frontend/                           # React SPA
       project-storage-context.tsx # Multi-project localStorage manifest
     utils/
       api-client.ts               # Fetch wrapper for cloud API
-      owner-token.ts              # Anonymous owner token generation + hashing
       cloud-operations.ts         # Cloud save/delete/visibility operations
       snapshot-url.ts             # Compressed snapshot URL encode/decode
       bitwise.ts  decode.ts  encode.ts  float.ts  fixed-point.ts
@@ -142,7 +141,7 @@ api/                              # PHP API backend (cPanel)
     database.php                  # PDO singleton factory
     data-access.php               # All DB queries
     validation.php                # Payload structural validation
-    auth.php                      # Dual auth (JWT + token hash), ownership checks
+    auth.php                      # JWT extraction and user_id ownership checks
     jwt.php                       # JWT creation/verification (firebase/php-jwt)
     email.php                     # OTP email sending via Resend API
     cors.php                      # CORS header computation

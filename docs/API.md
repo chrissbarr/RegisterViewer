@@ -57,11 +57,7 @@ Checks that the Resend API key is configured and the provider API is reachable. 
 
 ## Authentication
 
-The API supports two authentication methods. The server auto-detects which is in use by inspecting the token format.
-
-### JWT Authentication (Recommended)
-
-Obtained by completing the email OTP flow via `POST /api/auth/verify-code`.
+The API uses JWT authentication for cloud project ownership. Obtain a JWT by completing the email OTP flow via `POST /api/auth/verify-code`, then send it on authenticated requests:
 
 ```
 Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
@@ -72,25 +68,12 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 - **Claims:** `sub` (user ID), `email`, `iat`, `exp`, `jti` (token ID for revocation)
 - **Scope:** Grants access to all projects owned by the authenticated user
 
-### Legacy Token Hash Authentication
-
-Generated client-side via `hashOwnerToken()`. A 64-character lowercase hex string (SHA-256 hash of the raw owner token). For legacy token-hash auth, only the hash is sent in the `Authorization` header. For JWT-authenticated create and verify-code requests, the raw token is sent in the body and the server hashes it server-side to verify possession.
-
-```
-Authorization: Bearer abc123def456...  (64-char hex)
-```
-
-- **Expiry:** None — valid indefinitely
-- **Scope:** Grants access to projects created with the same token hash
-- **Note:** Being phased out in favor of JWT for multi-device and recovery scenarios
-
 ### Ownership Model
 
-- **Token hash projects:** Owned by the token hash. Any request with the matching hash can modify/delete.
-- **JWT user projects:** Owned by the user ID. Any valid JWT for that user can modify/delete all their projects.
-- **Migration:** Pass `ownerToken` (raw 64-char hex token) when calling `POST /api/auth/verify-code` to link existing anonymous projects to a user account. The server hashes it server-side to verify possession. The token hash continues to work for backward compatibility.
-
-**Constant-time comparison** (`hash_equals`) is used for all ownership checks to prevent timing side-channel attacks.
+- Cloud projects are owned by the user ID in the JWT `sub` claim.
+- Create, list, update, delete, and visibility changes require a JWT for the owning user.
+- Private project reads require the owning user's JWT.
+- Unlisted project reads are public to anyone with the link. Supplying the owning user's JWT sets `isOwner: true` in the response.
 
 ---
 
@@ -145,7 +128,7 @@ Always returns 200 regardless of whether the email was delivered, to prevent ema
 POST /api/auth/verify-code
 ```
 
-Verifies a 6-digit OTP code and returns a JWT token. Optionally links anonymous projects to the new user account.
+Verifies a 6-digit OTP code and returns a JWT token.
 
 **Auth:** Not required
 
@@ -154,8 +137,7 @@ Verifies a 6-digit OTP code and returns a JWT token. Optionally links anonymous 
 ```json
 {
   "email": "user@example.com",
-  "code": "123456",
-  "ownerToken": "abc123..."
+  "code": "123456"
 }
 ```
 
@@ -163,7 +145,6 @@ Verifies a 6-digit OTP code and returns a JWT token. Optionally links anonymous 
 |-------|----------|-------------|
 | `email` | Yes | Email address the code was sent to |
 | `code` | Yes | 6-digit OTP code |
-| `ownerToken` | No | 64-char hex raw owner token — server hashes it to link anonymous projects to this user |
 
 **Rate Limiting:**
 - Max 10 verification attempts per email per 10-minute window
@@ -250,9 +231,9 @@ Revokes the current JWT token. The token's `jti` is added to the `revoked_tokens
 POST /api/projects
 ```
 
-Creates a new project and returns a share URL.
+Creates a new project and returns a cloud project URL. New projects default to private unless `visibility` is set to `unlisted`.
 
-**Auth:** Required
+**Auth:** Required (JWT)
 
 **Request Body:**
 
@@ -322,7 +303,7 @@ GET /api/projects/{id}
 
 Retrieves a project by its 12-character base62 ID.
 
-**Auth:** Required for `private` projects. Not required for `unlisted` projects.
+**Auth:** Required for `private` projects. Not required for `unlisted` projects. Supplying the owning user's JWT marks the response with `isOwner: true`.
 
 **Response `200 OK`:**
 
@@ -354,7 +335,7 @@ Retrieves a project by its 12-character base62 ID.
 
 | Status | Reason |
 |--------|--------|
-| 404 | Project not found, or private project without valid auth |
+| 404 | Project not found, or private project without the owning user's JWT |
 
 Private projects return 404 (not 401/403) to prevent information leakage.
 
@@ -368,7 +349,7 @@ PUT /api/projects/{id}
 
 Replaces all project data and preserves the current visibility. Uses optimistic concurrency via a `version` field. Visibility changes must use `PATCH /api/projects/{id}`.
 
-**Auth:** Required (must be owner)
+**Auth:** Required (JWT, must be owner)
 
 **Request Body:** Project data plus a required `version` field:
 
@@ -424,7 +405,7 @@ PATCH /api/projects/{id}
 
 Updates only the project visibility without touching data or incrementing the project data version.
 
-**Auth:** Required (must be owner)
+**Auth:** Required (JWT, must be owner)
 
 **Request Body:**
 
@@ -461,9 +442,9 @@ The `visibility` field is required and must be `"private"` or `"unlisted"`.
 DELETE /api/projects/{id}
 ```
 
-Permanently deletes a project and its owner index entry.
+Permanently deletes a project.
 
-**Auth:** Required (must be owner)
+**Auth:** Required (JWT, must be owner)
 
 **Response:** `204 No Content` (empty body)
 
@@ -484,7 +465,7 @@ GET /api/projects
 
 Lists all projects owned by the authenticated user.
 
-**Auth:** Required
+**Auth:** Required (JWT)
 
 **Response `200 OK`:**
 
@@ -577,4 +558,4 @@ Strict-Transport-Security: max-age=31536000; includeSubDomains
 | `RESEND_API_KEY` | Yes* | API key from [Resend](https://resend.com/) for sending OTP emails. Without it, login codes won't be delivered (errors logged server-side). |
 | `RESEND_FROM_EMAIL` | No | Sender email address for OTP emails. Default: `noreply@registerviewer.com`. Must be a verified domain in Resend. |
 
-\* Required for email authentication. Optional if deploying without the auth feature.
+\* Required for deployed cloud save/share and authentication endpoints. Only a local-only/static frontend deployment with no API can omit them.

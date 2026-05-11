@@ -120,10 +120,11 @@ After first deployment:
 
 1. Visit `https://www.registerviewer.com/` and verify the SPA loads
 2. Open browser DevTools and check Network tab for calls to the API URL
-3. Test save functionality: create a project and share the link
-4. Verify project data persists by opening the shared link in a new tab
-5. Confirm deploy smoke tests passed API health. `/api/health` must report `migrations: "ready"`, no pending migrations, and `schema["projects.version"] === true`.
-6. Confirm deploy smoke tests passed the API internal-path checks. `/api/config.php`, `/api/src`, `/api/vendor`, `/api/database`, and `/api/tests` must return `403`, never `200`.
+3. Test email sign-in: request an OTP, verify the code, and confirm the app receives a JWT
+4. Test cloud save/share: save a project while signed in, make it unlisted, and verify the shared link opens in a new tab without signing in
+5. Verify private project access requires the owning signed-in account
+6. Confirm deploy smoke tests passed API health. `/api/health` must report `migrations: "ready"`, no pending migrations, and `schema["projects.version"] === true`.
+7. Confirm deploy smoke tests passed the API internal-path checks. `/api/config.php`, `/api/src`, `/api/vendor`, `/api/database`, and `/api/tests` must return `403`, never `200`.
 
 ---
 
@@ -497,15 +498,16 @@ A: Update the `FTP_HOST`, `FTP_USERNAME`, or `FTP_PASSWORD` secrets in GitHub ->
 4. If unrecoverable, delete the row
 5. Check for root cause: deployment bug, concurrent writes, or malicious input
 
-### Owner Token Abuse (Unauthorized Project Access)
+### Account Session Compromise (Unauthorized Project Access)
 
 **Symptoms:** Users report projects being modified or deleted without their action.
 
 **Response:**
-1. Owner tokens are hashed (SHA-256) before storage - raw tokens never stored server-side
-2. Check error logs for the affected project ID and the token hash used
-3. If a specific token hash is compromised, delete all projects for that owner hash
-4. The affected user will need to re-save their projects (generates new owner token)
+1. Identify the affected project by `public_id` and confirm its owning `user_id`/email in the database
+2. Check access logs, PHP error logs, and recent updates for the affected account and project IDs
+3. If an active session may be compromised, rotate `jwt_secret` to invalidate all outstanding JWTs
+4. Restore or remove modified project rows as appropriate, then have the user sign in again with email OTP
+5. If the email account itself is compromised, ask the user to secure that email account before relying on cloud project ownership
 
 ---
 
