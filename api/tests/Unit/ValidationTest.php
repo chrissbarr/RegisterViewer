@@ -23,6 +23,14 @@ final class ValidationTest extends TestCase
         ];
     }
 
+    private static function dataWithFields(array $fields, int $registerWidth = 8): array
+    {
+        $data = self::validData();
+        $data['registers'][0]['width'] = $registerWidth;
+        $data['registers'][0]['fields'] = $fields;
+        return $data;
+    }
+
     #[Test]
     public function validMinimalProjectData(): void
     {
@@ -135,6 +143,26 @@ final class ValidationTest extends TestCase
     }
 
     #[Test]
+    public function rejectsWhitespaceOnlyRegisterName(): void
+    {
+        $data = self::validData();
+        $data['registers'][0]['name'] = '   ';
+        $result = validateProjectData($data);
+        $this->assertFalse($result['valid']);
+        $this->assertStringContainsString('registers[0].name', $result['error']);
+    }
+
+    #[Test]
+    public function rejectsUnicodeWhitespaceOnlyRegisterName(): void
+    {
+        $data = self::validData();
+        $data['registers'][0]['name'] = "\u{00A0}";
+        $result = validateProjectData($data);
+        $this->assertFalse($result['valid']);
+        $this->assertStringContainsString('registers[0].name', $result['error']);
+    }
+
+    #[Test]
     public function rejectsRegisterBadWidth(): void
     {
         $data = self::validData();
@@ -145,10 +173,19 @@ final class ValidationTest extends TestCase
     }
 
     #[Test]
+    public function acceptsMaximumRegisterWidth(): void
+    {
+        $data = self::validData();
+        $data['registers'][0]['width'] = 128;
+        $result = validateProjectData($data);
+        $this->assertTrue($result['valid']);
+    }
+
+    #[Test]
     public function rejectsRegisterWidthTooLarge(): void
     {
         $data = self::validData();
-        $data['registers'][0]['width'] = 1025;
+        $data['registers'][0]['width'] = 129;
         $result = validateProjectData($data);
         $this->assertFalse($result['valid']);
         $this->assertStringContainsString('registers[0].width', $result['error']);
@@ -179,6 +216,173 @@ final class ValidationTest extends TestCase
     }
 
     #[Test]
+    public function rejectsWhitespaceOnlyFieldName(): void
+    {
+        $data = self::dataWithFields([
+            ['name' => '   ', 'msb' => 0, 'lsb' => 0, 'type' => 'flag'],
+        ]);
+        $result = validateProjectData($data);
+        $this->assertFalse($result['valid']);
+        $this->assertStringContainsString('fields[0].name', $result['error']);
+    }
+
+    #[Test]
+    public function rejectsUnicodeWhitespaceOnlyFieldName(): void
+    {
+        $data = self::dataWithFields([
+            ['name' => "\u{00A0}", 'msb' => 0, 'lsb' => 0, 'type' => 'flag'],
+        ]);
+        $result = validateProjectData($data);
+        $this->assertFalse($result['valid']);
+        $this->assertStringContainsString('fields[0].name', $result['error']);
+    }
+
+    #[Test]
+    public function rejectsFieldMsbBelowLsb(): void
+    {
+        $data = self::dataWithFields([
+            ['name' => 'BAD', 'msb' => 0, 'lsb' => 1, 'type' => 'integer'],
+        ]);
+        $result = validateProjectData($data);
+        $this->assertFalse($result['valid']);
+        $this->assertStringContainsString('must be greater than or equal to lsb', $result['error']);
+    }
+
+    #[Test]
+    public function rejectsFieldBitIndexBeyondSupportedRange(): void
+    {
+        $data = self::dataWithFields([
+            ['name' => 'TOO_WIDE', 'msb' => 128, 'lsb' => 0, 'type' => 'integer'],
+        ], 128);
+        $result = validateProjectData($data);
+        $this->assertFalse($result['valid']);
+        $this->assertStringContainsString('between 0 and 127', $result['error']);
+    }
+
+    #[Test]
+    public function rejectsMultiBitFlag(): void
+    {
+        $data = self::dataWithFields([
+            ['name' => 'BAD_FLAG', 'msb' => 1, 'lsb' => 0, 'type' => 'flag'],
+        ]);
+        $result = validateProjectData($data);
+        $this->assertFalse($result['valid']);
+        $this->assertStringContainsString('1 bit wide', $result['error']);
+    }
+
+    #[Test]
+    public function validatesFlagLabelsWhenPresent(): void
+    {
+        $data = self::dataWithFields([
+            [
+                'name' => 'LOCKED',
+                'msb' => 0,
+                'lsb' => 0,
+                'type' => 'flag',
+                'flagLabels' => ['clear' => 'Unlocked', 'set' => 'Locked'],
+            ],
+        ]);
+        $this->assertTrue(validateProjectData($data)['valid']);
+
+        $data['registers'][0]['fields'][0]['flagLabels'] = ['clear' => 'Unlocked'];
+        $result = validateProjectData($data);
+        $this->assertFalse($result['valid']);
+        $this->assertStringContainsString('flagLabels.set', $result['error']);
+    }
+
+    #[Test]
+    public function rejectsInvalidIntegerSignedness(): void
+    {
+        $data = self::dataWithFields([
+            ['name' => 'SIGNED', 'msb' => 3, 'lsb' => 0, 'type' => 'integer', 'signedness' => 'signed'],
+        ]);
+        $result = validateProjectData($data);
+        $this->assertFalse($result['valid']);
+        $this->assertStringContainsString('signedness must be one of', $result['error']);
+    }
+
+    #[Test]
+    public function rejectsFloatWithoutValidType(): void
+    {
+        $data = self::dataWithFields([
+            ['name' => 'GAIN', 'msb' => 31, 'lsb' => 0, 'type' => 'float'],
+        ], 32);
+        $result = validateProjectData($data);
+        $this->assertFalse($result['valid']);
+        $this->assertStringContainsString('floatType must be one of', $result['error']);
+    }
+
+    #[Test]
+    public function rejectsFloatWidthMismatch(): void
+    {
+        $data = self::dataWithFields([
+            ['name' => 'GAIN', 'msb' => 15, 'lsb' => 0, 'type' => 'float', 'floatType' => 'single'],
+        ], 16);
+        $result = validateProjectData($data);
+        $this->assertFalse($result['valid']);
+        $this->assertStringContainsString('single float requires 32 bits', $result['error']);
+    }
+
+    #[Test]
+    public function rejectsFixedPointWithoutValidQFormat(): void
+    {
+        $data = self::dataWithFields([
+            ['name' => 'GAIN', 'msb' => 7, 'lsb' => 0, 'type' => 'fixed-point'],
+        ]);
+        $result = validateProjectData($data);
+        $this->assertFalse($result['valid']);
+        $this->assertStringContainsString('qFormat must be an object', $result['error']);
+    }
+
+    #[Test]
+    public function rejectsFixedPointWidthMismatch(): void
+    {
+        $data = self::dataWithFields([
+            [
+                'name' => 'GAIN',
+                'msb' => 7,
+                'lsb' => 0,
+                'type' => 'fixed-point',
+                'qFormat' => ['m' => 4, 'n' => 2],
+            ],
+        ]);
+        $result = validateProjectData($data);
+        $this->assertFalse($result['valid']);
+        $this->assertStringContainsString('qFormat requires 6 bits', $result['error']);
+    }
+
+    #[Test]
+    public function acceptsWarningOnlyFieldRangeOutsideRegisterWidth(): void
+    {
+        $data = self::dataWithFields([
+            ['name' => 'RAW16', 'msb' => 15, 'lsb' => 0, 'type' => 'integer'],
+        ]);
+        $this->assertTrue(validateProjectData($data)['valid']);
+    }
+
+    #[Test]
+    public function acceptsWarningOnlyOverlappingFields(): void
+    {
+        $data = self::dataWithFields([
+            ['name' => 'RAW', 'msb' => 7, 'lsb' => 0, 'type' => 'integer'],
+            ['name' => 'EN', 'msb' => 0, 'lsb' => 0, 'type' => 'flag'],
+        ]);
+        $this->assertTrue(validateProjectData($data)['valid']);
+    }
+
+    #[Test]
+    public function acceptsWarningOnlyOverlappingRegisterOffsets(): void
+    {
+        $data = self::validData();
+        $data['registers'] = [
+            ['name' => 'CTRL', 'width' => 16, 'offset' => 0, 'fields' => []],
+            ['name' => 'STATUS', 'width' => 16, 'offset' => 0, 'fields' => []],
+        ];
+
+        $this->assertTrue(validateProjectData($data)['valid']);
+    }
+
+    #[Test]
     public function rejectsEnumWithoutEntries(): void
     {
         $data = self::validData();
@@ -188,6 +392,16 @@ final class ValidationTest extends TestCase
         $result = validateProjectData($data);
         $this->assertFalse($result['valid']);
         $this->assertStringContainsString('enumEntries must be an array', $result['error']);
+    }
+
+    #[Test]
+    public function acceptsEmptyEnumEntries(): void
+    {
+        $data = self::dataWithFields([
+            ['name' => 'MODE', 'msb' => 1, 'lsb' => 0, 'type' => 'enum', 'enumEntries' => []],
+        ]);
+        $result = validateProjectData($data);
+        $this->assertTrue($result['valid']);
     }
 
     #[Test]
@@ -250,6 +464,38 @@ final class ValidationTest extends TestCase
     }
 
     #[Test]
+    public function rejectsNullProjectMetadata(): void
+    {
+        $data = self::validData();
+        $data['project'] = null;
+        $result = validateProjectData($data);
+        $this->assertFalse($result['valid']);
+        $this->assertSame('project metadata must be an object', $result['error']);
+    }
+
+    #[Test]
+    public function rejectsNullOptionalFieldMetadata(): void
+    {
+        $data = self::dataWithFields([
+            ['name' => 'F', 'msb' => 0, 'lsb' => 0, 'type' => 'flag', 'description' => null],
+        ]);
+        $result = validateProjectData($data);
+        $this->assertFalse($result['valid']);
+        $this->assertStringContainsString('description must be a string', $result['error']);
+    }
+
+    #[Test]
+    public function rejectsNullFlagLabels(): void
+    {
+        $data = self::dataWithFields([
+            ['name' => 'F', 'msb' => 0, 'lsb' => 0, 'type' => 'flag', 'flagLabels' => null],
+        ]);
+        $result = validateProjectData($data);
+        $this->assertFalse($result['valid']);
+        $this->assertStringContainsString('flagLabels must be an object', $result['error']);
+    }
+
+    #[Test]
     public function rejectsInvalidAddressUnitBits(): void
     {
         $data = self::validData();
@@ -288,12 +534,28 @@ final class ValidationTest extends TestCase
     #[Test]
     public function allFiveFieldTypesAccepted(): void
     {
-        foreach (['flag', 'enum', 'integer', 'float', 'fixed-point'] as $type) {
+        $fieldsByType = [
+            'flag' => ['name' => 'F', 'msb' => 0, 'lsb' => 0, 'type' => 'flag'],
+            'enum' => [
+                'name' => 'F',
+                'msb' => 1,
+                'lsb' => 0,
+                'type' => 'enum',
+                'enumEntries' => [['value' => 0, 'name' => 'A']],
+            ],
+            'integer' => ['name' => 'F', 'msb' => 2, 'lsb' => 0, 'type' => 'integer', 'signedness' => 'unsigned'],
+            'float' => ['name' => 'F', 'msb' => 15, 'lsb' => 0, 'type' => 'float', 'floatType' => 'half'],
+            'fixed-point' => [
+                'name' => 'F',
+                'msb' => 7,
+                'lsb' => 0,
+                'type' => 'fixed-point',
+                'qFormat' => ['m' => 4, 'n' => 4],
+            ],
+        ];
+
+        foreach ($fieldsByType as $type => $field) {
             $data = self::validData();
-            $field = ['name' => 'F', 'msb' => 0, 'lsb' => 0, 'type' => $type];
-            if ($type === 'enum') {
-                $field['enumEntries'] = [['value' => 0, 'name' => 'A']];
-            }
             $data['registers'][0]['fields'] = [$field];
             $result = validateProjectData($data);
             $this->assertTrue($result['valid'], "Field type '$type' should be valid");

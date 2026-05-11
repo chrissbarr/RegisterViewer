@@ -246,13 +246,19 @@ Creates a new project and returns a cloud project URL. New projects default to p
     "registers": [                             // Required, 1–256 registers
       {
         "name": "CTRL",                        // Required, 1–200 chars
-        "width": 8,                            // Required, 1–1024 bits
+        "width": 8,                            // Required, 1-128 bits
         "fields": [                            // Required, 0–64 fields
           {
             "name": "EN",                      // Required, 1–200 chars
             "type": "flag",                    // "flag"|"enum"|"integer"|"float"|"fixed-point"
-            "msb": 0,                          // Required, non-negative integer
-            "lsb": 0                           // Required, non-negative integer
+            "msb": 0,                          // Required, integer from 0 to 127
+            "lsb": 0,                          // Required, integer from 0 to 127
+            "description": "Enable bit",        // Optional, max 500 chars
+            "id": "field-1",                    // Optional
+            "flagLabels": {                    // Optional for flag fields
+              "clear": "Disabled",
+              "set": "Enabled"
+            }
           }
         ],
         "description": "Control register",     // Optional
@@ -260,7 +266,7 @@ Creates a new project and returns a cloud project URL. New projects default to p
         "id": "reg-1"                          // Optional
       }
     ],
-    "registerValues": { "reg-1": "0xFF" },     // Required, hex string values
+    "registerValues": { "CTRL": "0xFF" },      // Required object, hex string values
     "project": {                               // Optional metadata
       "title": "My Project",                   // Optional, max 500 chars
       "description": "...",                    // Optional, max 500 chars
@@ -275,6 +281,18 @@ Creates a new project and returns a cloud project URL. New projects default to p
 ```
 
 **Size limit:** 512 KB
+
+**Project data validation:**
+
+- Register and field names must be non-empty after trimming.
+- Register widths must be `1` through `128`.
+- Field `msb` and `lsb` must be integers from `0` through `127`, and `msb` must be greater than or equal to `lsb`.
+- `flag` fields must be exactly 1 bit wide. Optional `flagLabels` must contain string `clear` and `set` labels.
+- `enum` fields must include an `enumEntries` array with at most 256 entries. Each entry must include integer `value` and non-empty string `name`.
+- `integer` fields may include `signedness`, which must be `unsigned`, `twos-complement`, or `sign-magnitude`.
+- `float` fields must include `floatType`: `half` requires 16 bits, `single` requires 32 bits, and `double` requires 64 bits.
+- `fixed-point` fields must include `qFormat` with non-negative integer `m` and `n`; `m + n` must equal the field width.
+- Field ranges that extend beyond the owning register width are accepted when their bit indices remain within `0` through `127`. Overlapping fields and overlapping register address ranges are also accepted by the API and may be surfaced as non-blocking client warnings.
 
 **Response `201 Created`:**
 
@@ -538,7 +556,7 @@ Strict-Transport-Security: max-age=31536000; includeSubDomains
 |---|---|
 | Max payload size | 512 KB |
 | Max registers per project | 256 |
-| Max register width | 1,024 bits |
+| Max register width | 128 bits |
 | Max fields per register | 64 |
 | Max enum entries per field | 256 |
 | Max name length | 200 chars |

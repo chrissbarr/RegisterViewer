@@ -22,6 +22,11 @@ function handleCreateProject(PDO $db, array $config, array $auth, array|\Closure
     }
     $body = $parsed['assoc'];
 
+    $shapeValidation = validateProjectDataJsonShape($parsed['object']->data ?? null);
+    if (!$shapeValidation['valid']) {
+        return new ApiResponse(['error' => $shapeValidation['error']], 400);
+    }
+
     $validation = validateProjectData($body['data'] ?? null);
     if (!$validation['valid']) {
         return new ApiResponse(['error' => $validation['error']], 400);

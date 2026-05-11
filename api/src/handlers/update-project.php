@@ -25,6 +25,11 @@ function handleUpdateProject(PDO $db, string $id, array $auth, array|\Closure $b
         return new ApiResponse(['error' => 'version must be a positive integer'], 400);
     }
 
+    $shapeValidation = validateProjectDataJsonShape($parsed['object']->data ?? null);
+    if (!$shapeValidation['valid']) {
+        return new ApiResponse(['error' => $shapeValidation['error']], 400);
+    }
+
     $validation = validateProjectData($body['data'] ?? null);
     if (!$validation['valid']) {
         return new ApiResponse(['error' => $validation['error']], 400);

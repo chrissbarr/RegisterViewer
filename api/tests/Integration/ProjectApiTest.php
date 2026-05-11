@@ -404,6 +404,68 @@ final class ProjectApiTest extends TestCase
     }
 
     #[Test]
+    public function handleUpdateProjectRejectsInvalidFieldDataWithoutMutation(): void
+    {
+        $userId = $this->createTestUser('invalid-field-update@example.com');
+        $id = generatePublicId();
+        $originalData = self::validDataJson();
+        dbCreateProject(self::$db, $id, 'private', $originalData, null, $userId);
+
+        $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => 'invalid-field-update@example.com'];
+        $newData = $this->updateDataWithRegister('INVALID_FIELD');
+        $newData['registers'][0]['fields'] = [
+            ['name' => 'BAD_FLAG', 'msb' => 1, 'lsb' => 0, 'type' => 'flag'],
+        ];
+        $parsed = $this->makeParsedBody($newData);
+
+        $response = handleUpdateProject(self::$db, $id, $auth, $parsed);
+
+        $this->assertSame(400, $response->status);
+        $this->assertStringContainsString('1 bit wide', $response->body['error']);
+        $this->assertProjectStorageUnchanged($id, $originalData);
+    }
+
+    #[Test]
+    public function handleUpdateProjectRejectsRegisterValuesArrayWithoutMutation(): void
+    {
+        $userId = $this->createTestUser('bad-register-values-shape@example.com');
+        $id = generatePublicId();
+        $originalData = self::validDataJson();
+        dbCreateProject(self::$db, $id, 'private', $originalData, null, $userId);
+
+        $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => 'bad-register-values-shape@example.com'];
+        $newData = $this->updateDataWithRegister('BAD_REGISTER_VALUES_SHAPE');
+        $newData['registerValues'] = [];
+        $parsed = $this->makeParsedBody($newData);
+
+        $response = handleUpdateProject(self::$db, $id, $auth, $parsed);
+
+        $this->assertSame(400, $response->status);
+        $this->assertSame('registerValues must be an object', $response->body['error']);
+        $this->assertProjectStorageUnchanged($id, $originalData);
+    }
+
+    #[Test]
+    public function handleUpdateProjectRejectsProjectArrayWithoutMutation(): void
+    {
+        $userId = $this->createTestUser('bad-project-shape@example.com');
+        $id = generatePublicId();
+        $originalData = self::validDataJson();
+        dbCreateProject(self::$db, $id, 'private', $originalData, null, $userId);
+
+        $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => 'bad-project-shape@example.com'];
+        $newData = $this->updateDataWithRegister('BAD_PROJECT_SHAPE');
+        $newData['project'] = [];
+        $parsed = $this->makeParsedBody($newData);
+
+        $response = handleUpdateProject(self::$db, $id, $auth, $parsed);
+
+        $this->assertSame(400, $response->status);
+        $this->assertSame('project metadata must be an object', $response->body['error']);
+        $this->assertProjectStorageUnchanged($id, $originalData);
+    }
+
+    #[Test]
     public function handleUpdateProjectRejectsTopLevelVisibilityWithoutMutation(): void
     {
         $userId = $this->createTestUser('put-visibility@example.com');
