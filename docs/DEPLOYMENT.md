@@ -29,26 +29,24 @@ This document provides step-by-step instructions for deploying the Register View
 - Node.js 22 or later installed locally
 - Docker installed locally (for running API tests)
 
-### Step 1: Create MySQL Database and Run Migrations
+### Step 1: Create MySQL Database
 
 1. Log in to cPanel
 2. Navigate to **MySQL Databases**
 3. Create a new database (e.g., `register_viewer`)
 4. Create a database user with a strong password
 5. Add the user to the database with **All Privileges**
-6. Run migration script to create tables:
-   - Upload `api/database/migrations/001_create_projects_table.sql` and import via phpMyAdmin
-   - Or via command line:
-     ```bash
-     mysql -u <user> -p <database> < api/database/migrations/001_create_projects_table.sql
-     ```
+6. Do not import individual migration files during normal setup. The deployed PHP API runs all numbered migrations from `api/database/migrations/` as a hard pre-routing readiness step.
 
 **Migrations create:**
 1. `projects` table - project storage with owner tracking
 2. `users` table - user accounts (email-based auth)
 3. `login_codes` table - OTP login codes with rate limiting indexes
 4. `revoked_tokens` table - revoked JWTs for server-side logout
-5. Foreign key linking `projects.user_id` -> `users.id`
+5. `_migrations` table - applied migration tracking
+6. Foreign key linking `projects.user_id` -> `users.id`
+
+The API returns `503 schema_not_ready` instead of routing requests if it cannot apply every numbered migration or prove the required schema shape, including `projects.version`.
 
 ### Step 2: Create Production API Config
 
@@ -124,7 +122,8 @@ After first deployment:
 2. Open browser DevTools and check Network tab for calls to the API URL
 3. Test save functionality: create a project and share the link
 4. Verify project data persists by opening the shared link in a new tab
-5. Confirm deploy smoke tests passed the API internal-path checks. `/api/src`, `/api/vendor`, `/api/database`, and `/api/tests` must return `403`, never `200`.
+5. Confirm deploy smoke tests passed API health. `/api/health` must report `migrations: "ready"`, no pending migrations, and `schema["projects.version"] === true`.
+6. Confirm deploy smoke tests passed the API internal-path checks. `/api/config.php`, `/api/src`, `/api/vendor`, `/api/database`, and `/api/tests` must return `403`, never `200`.
 
 ---
 
@@ -141,9 +140,10 @@ Every push to `master` automatically:
    - `deploy-payload`: downloads the frontend dist artifact, validates `VITE_API_URL`, installs PHP 8.3 runtime dependencies, assembles `deploy/`, writes public provenance metadata, writes `SHA256SUMS`, validates required and forbidden paths, and uploads `registerapptest-deploy-<sha>`
 
 2. Runs `.github/workflows/deploy.yml` after successful CI:
-   - Downloads `registerapptest-deploy-<head_sha>` from the completed CI run
-   - Verifies required files, `SHA256SUMS`, provenance SHA, provenance run ID, artifact name, and `VITE_API_URL`
-   - Uploads the verified payload via FTPS and runs smoke tests against `VITE_API_URL`
+    - Downloads `registerapptest-deploy-<head_sha>` from the completed CI run
+    - Verifies required files, `SHA256SUMS`, provenance SHA, provenance run ID, artifact name, and `VITE_API_URL`
+    - Uploads the verified payload via FTPS and runs smoke tests against `VITE_API_URL`
+    - Proves API readiness through `/api/health`, which checks DB connectivity, applied migrations, and required schema shape before normal routing is allowed
 
 ### Manual Trigger
 
@@ -226,18 +226,25 @@ To manually deploy an existing CI artifact without rebuilding:
 **Error: "Database connection failed" (in API tests)**
 - Ensure Docker is available in the CI environment
 - Check `api/docker-compose.yml` for correct MySQL configuration
-- Run tests locally: `cd api && docker compose run --rm test bash -c "composer install -q && vendor/bin/phpunit"`
+- Run tests locally: `cd api && docker compose run --rm test bash -c "composer install -q && php database/migrate.php && vendor/bin/phpunit"`
+
+**Error: "503 schema_not_ready" on API endpoints or health**
+- Check PHP error logs in cPanel -> **Error Log**
+- Verify `config.production.php` exists on the server with correct database credentials
+- Verify the deployed `api/database/migrate.php` and all numbered files under `api/database/migrations/` are present
+- Verify `_migrations` contains every numbered migration version in the deployed artifact
+- Verify the required schema exists, especially `projects.version`
+- If logs show the migration lock is held, wait briefly and retry `/api/health`
 
 **Error: "500 Internal Server Error" on API endpoints**
 - Check PHP error logs in cPanel -> **Error Log**
 - Verify `config.production.php` exists on the server with correct database credentials
 - Ensure PHP 8.3+ is enabled and `mod_rewrite` is active
-- Verify database tables exist (run migration SQL)
 
 **Error: "Expected /api/... to be blocked with 403"**
 - Confirm the deployed `api/.htaccess` file exists on the server
 - Confirm Apache `.htaccess` overrides and `mod_rewrite` are enabled for the API directory
-- Treat any `200` response from `/api/src`, `/api/vendor`, `/api/database`, or `/api/tests` as a failed deployment
+- Treat any `200` response from `/api/config.php`, `/api/src`, `/api/vendor`, `/api/database`, or `/api/tests` as a failed deployment
 
 ---
 
@@ -314,13 +321,13 @@ cd api
 docker compose up -d
 
 # Run all tests
-docker compose run --rm test bash -c "composer install -q && vendor/bin/phpunit"
+docker compose run --rm test bash -c "composer install -q && php database/migrate.php && vendor/bin/phpunit"
 
 # Run unit tests only
-docker compose run --rm test bash -c "composer install -q && vendor/bin/phpunit --testsuite Unit"
+docker compose run --rm test bash -c "composer install -q && php database/migrate.php && vendor/bin/phpunit --testsuite Unit"
 
 # Run integration tests only
-docker compose run --rm test bash -c "composer install -q && vendor/bin/phpunit --testsuite Integration"
+docker compose run --rm test bash -c "composer install -q && php database/migrate.php && vendor/bin/phpunit --testsuite Integration"
 
 # Stop containers
 docker compose down
@@ -393,16 +400,17 @@ Two unauthenticated health endpoints are available for uptime monitoring:
 
 | Endpoint | Checks | Methods |
 |----------|--------|---------|
-| `GET /api/health` | Database connectivity (`SELECT 1`) | GET, HEAD |
+| `GET /api/health` | Database connectivity, all numbered migrations applied, and required schema shape including `projects.version` | GET, HEAD |
 | `GET /api/health/email` | Resend API key configured + API reachable | GET, HEAD |
 
 Both return **200** when healthy and **503** when unhealthy. HEAD requests return only status codes (no body), making them compatible with UptimeRobot free tier.
+Normal API routes use the same migration/schema readiness gate. If readiness cannot be established, they return `503` before route handling.
 
 ### Setting Up UptimeRobot (Free Tier)
 
 1. Create an account at https://uptimerobot.com/
 2. Add two HTTP(s) monitors:
-   - **Database health:** `https://www.registerviewer.com/api/health` - checks DB connectivity
+   - **API readiness:** `https://www.registerviewer.com/api/health` - checks DB connectivity plus migration/schema readiness
    - **Email health:** `https://www.registerviewer.com/api/health/email` - checks Resend API key validity and reachability
 3. Set monitoring interval to 5 minutes
 4. Configure email alerts for downtime notifications
@@ -447,7 +455,7 @@ A: Yes. Use **Actions** -> **Deploy to cPanel** -> **Run workflow** on the `mast
 A: Prefer redeploying the last good CI artifact while it is retained. Use `git revert` when the rollback should become a new commit on `master` or the artifact has expired.
 
 **Q: How do I run database migrations?**
-A: Import `api/database/migrations/001_create_projects_table.sql` via phpMyAdmin or the MySQL command line. Migrations are not run automatically during deployment.
+A: Normal deployments do not require manual SQL imports. The PHP API runs pending numbered migrations as a hard pre-routing readiness step, and deploy smoke proves readiness through `/api/health`. For local tests, run `php database/migrate.php` before PHPUnit if you are not using the documented Docker command.
 
 **Q: How do I update FTP credentials?**
 A: Update the `FTP_HOST`, `FTP_USERNAME`, or `FTP_PASSWORD` secrets in GitHub -> Settings -> Secrets and variables -> Actions.
@@ -539,7 +547,7 @@ After updating any auth config value, check the PHP error log for config warning
 - [ ] The CI run was triggered by a `push` to `master`
 - [ ] The CI run uploaded `registerapptest-deploy-<sha>` and the Deploy run is using the same SHA
 - [ ] `config.production.php` exists on server with correct DB credentials, `jwt_secret`, and `resend_api_key`
-- [ ] Database tables exist (migration SQL has been run)
+- [ ] `/api/health` returns ready and confirms all numbered migrations plus `projects.version`
 - [ ] PHP 8.3+ is enabled on the server
 - [ ] Apache `mod_rewrite` is enabled
 - [ ] Node.js version matches workflow config (22) locally

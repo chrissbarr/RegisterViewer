@@ -152,14 +152,13 @@ function dbUpdateProjectVersioned(
 /**
  * Get the current version of a project.
  * Used in the 409 conflict response to tell the client the server's version.
- * Falls back to 1 during the deploy window before migration runs.
  */
 function dbGetProjectVersion(PDO $db, string $publicId): int
 {
     $stmt = $db->prepare('SELECT version FROM projects WHERE public_id = :id');
     $stmt->execute(['id' => $publicId]);
     $row = $stmt->fetch();
-    return $row ? (int)($row['version'] ?? 1) : 1;
+    return $row ? (int) $row['version'] : 1;
 }
 
 /**

@@ -6,6 +6,55 @@ Base URL: `https://<your-domain>/api`
 
 Only documented routes under `/api/health`, `/api/health/email`, `/api/auth/*`, and `/api/projects*` are public API contract. PHP source files, Composer/vendor files, migrations, database files, config files, tests, and deployment internals under paths such as `/api/src`, `/api/vendor`, `/api/database`, and `/api/tests` are implementation details. Production deployments must deny those paths with `403`.
 
+## Health Endpoints
+
+### API Health
+
+```
+GET /api/health
+HEAD /api/health
+```
+
+Checks database connectivity, verifies every numbered migration in `api/database/migrations/` has been applied, and verifies the schema required by the current API code exists. The readiness check includes `projects.version`, which is required for optimistic concurrency on project updates.
+
+**Response `200 OK`:**
+
+```json
+{
+  "status": "ok",
+  "database": "ok",
+  "migrations": "ready",
+  "schema": {
+    "projects.version": true
+  },
+  "appliedMigrations": [1, 2],
+  "pendingMigrations": [],
+  "timestamp": "2026-05-10T00:00:00Z"
+}
+```
+
+**Response `503 Service Unavailable`:**
+
+Returned when the database is unavailable, another request holds the migration lock, a migration fails, a numbered migration is not recorded as applied, or required schema shape cannot be established.
+
+```json
+{
+  "error": "Service temporarily unavailable",
+  "code": "schema_not_ready"
+}
+```
+
+Normal API routes use the same pre-routing readiness gate and may return this `503` before route-specific validation or authentication.
+
+### Email Health
+
+```
+GET /api/health/email
+HEAD /api/health/email
+```
+
+Checks that the Resend API key is configured and the provider API is reachable. This endpoint is also behind the API schema readiness gate.
+
 ## Authentication
 
 The API supports two authentication methods. The server auto-detects which is in use by inspecting the token format.
@@ -299,7 +348,7 @@ Retrieves a project by its 12-character base62 ID.
 - Private projects: `private, no-store`
 - Unlisted projects: `private, max-age=60`
 
-**Side effect:** Updates `lastAccessedAt` if stale >24 hours (async, non-blocking).
+**Side effect:** Updates `lastAccessedAt` if stale >24 hours.
 
 **Errors:**
 

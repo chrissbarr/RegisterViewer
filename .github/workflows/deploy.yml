@@ -157,6 +157,7 @@ jobs:
             "deploy/api/config.php"
             "deploy/api/.htaccess"
             "deploy/api/vendor/autoload.php"
+            "deploy/api/database/migrate.php"
             "deploy/release.json"
             "deploy/SHA256SUMS"
           )
@@ -166,6 +167,11 @@ jobs:
               exit 1
             fi
           done
+
+          if ! find deploy/api/database/migrations -maxdepth 1 -type f -name '[0-9]*_*.sql' -print -quit | grep -q .; then
+            echo "::error::Deploy payload must include numbered database migrations"
+            exit 1
+          fi
 
           (cd deploy && sha256sum -c SHA256SUMS)
 
@@ -315,8 +321,53 @@ jobs:
           PY
           echo "Release metadata OK"
           echo "Checking API health..."
-          curl -sf --retry 3 --retry-delay 5 "${VITE_API_URL}/api/health"
-          echo ""
+          HEALTH_JSON=$(curl -sf --retry 3 --retry-delay 5 "${VITE_API_URL}/api/health")
+          HEALTH_JSON="${HEALTH_JSON}" python3 - <<'PY'
+          import json
+          import os
+          import re
+          import sys
+          from pathlib import Path
+
+          health = json.loads(os.environ["HEALTH_JSON"])
+          errors = []
+          if health.get("status") != "ok":
+              errors.append("health status is not ok")
+          if health.get("database") != "ok":
+              errors.append("database readiness is not ok")
+          if health.get("migrations") != "ready":
+              errors.append("migrations are not ready")
+          if health.get("schema", {}).get("projects.version") is not True:
+              errors.append("projects.version schema readiness is not confirmed")
+          if health.get("pendingMigrations") != []:
+              errors.append("health reports pending migrations")
+
+          expected_versions = set()
+          migrations_dir = Path("deploy/api/database/migrations")
+          for path in migrations_dir.glob("*.sql"):
+              match = re.match(r"^(\d+)_", path.name)
+              if match:
+                  expected_versions.add(int(match.group(1)))
+
+          applied = set()
+          for version in health.get("appliedMigrations", []):
+              try:
+                  applied.add(int(version))
+              except (TypeError, ValueError):
+                  errors.append(f"invalid applied migration version: {version!r}")
+
+          missing = sorted(expected_versions - applied)
+          if missing:
+              errors.append(f"health is missing applied migration versions: {missing}")
+          extra = sorted(applied - expected_versions)
+          if extra:
+              errors.append(f"health reports applied migration versions not present in artifact: {extra}")
+
+          if errors:
+              for error in errors:
+                  print(f"::error::{error}")
+              sys.exit(1)
+          PY
           echo "API OK"
           echo "Checking auth endpoint..."
           AUTH_STATUS=$(curl -s -o /dev/null -w '%{http_code}' \
@@ -329,10 +380,13 @@ jobs:
             echo "::error::Auth endpoint unreachable"
             exit 1
           else
-            echo "::warning::Auth endpoint returned unexpected status ${AUTH_STATUS} (expected 400)"
+            echo "::error::Auth endpoint returned unexpected status ${AUTH_STATUS} (expected 400)"
+            exit 1
           fi
           echo "Checking API internal paths are blocked..."
           blocked_paths=(
+            "/api/config.php"
+            "/api/config.production.php"
             "/api/vendor/composer/installed.json"
             "/api/src/auth.php"
             "/api/database/migrations/001_create_projects_table.sql"

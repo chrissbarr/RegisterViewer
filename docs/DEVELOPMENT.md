@@ -42,16 +42,15 @@ All frontend commands run from the `frontend/` directory:
 | Command | Description |
 |---------|-------------|
 | `cd api && docker compose up -d` | Start local API + MySQL (port 8080) |
-| `cd api && docker compose run --rm test bash -c "composer install -q && vendor/bin/phpunit"` | Run all API tests |
-| `cd api && docker compose run --rm test bash -c "composer install -q && vendor/bin/phpunit --testsuite Unit"` | Unit tests only |
-| `cd api && docker compose run --rm test bash -c "composer install -q && vendor/bin/phpunit --testsuite Integration"` | Integration tests only |
+| `cd api && docker compose run --rm test bash -c "composer install -q && php database/migrate.php && vendor/bin/phpunit"` | Run all API tests |
+| `cd api && docker compose run --rm test bash -c "composer install -q && php database/migrate.php && vendor/bin/phpunit --testsuite Unit"` | Unit tests only |
+| `cd api && docker compose run --rm test bash -c "composer install -q && php database/migrate.php && vendor/bin/phpunit --testsuite Integration"` | Integration tests only |
 | `cd api && docker compose down` | Stop containers |
 | `cd api && docker compose down -v` | Stop containers and reset database |
 
-The local Docker environment automatically runs migrations on startup via `docker-entrypoint-initdb.d/`:
-1. `001_create_projects_table.sql` — Full schema (users, projects, login_codes, revoked_tokens)
+The PHP migration runner owns local schema creation. The API runs pending numbered migrations before routing, and test commands run `php database/migrate.php` before PHPUnit.
 
-To reset and re-run migrations: `cd api && docker compose down -v && docker compose up -d`
+To reset and re-run migrations: `cd api && docker compose down -v && docker compose up -d`, then request the API or run `php database/migrate.php` in the test container.
 
 ### Local Frontend + API
 

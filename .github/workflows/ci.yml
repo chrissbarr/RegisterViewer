@@ -75,7 +75,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Build and run tests
-        run: docker compose run --rm test bash -c "composer install -q && composer audit --no-dev && vendor/bin/phpunit"
+        run: docker compose run --rm test bash -c "composer install -q && composer audit --no-dev && php database/migrate.php && vendor/bin/phpunit"
       - name: Stop containers
         if: always()
         run: docker compose down -v
@@ -174,6 +174,7 @@ jobs:
             "deploy/api/config.php"
             "deploy/api/.htaccess"
             "deploy/api/vendor/autoload.php"
+            "deploy/api/database/migrate.php"
             "deploy/release.json"
           )
           for file in "${required_files[@]}"; do
@@ -206,6 +207,11 @@ jobs:
 
           if find deploy \( -name .git -o -path '*/.git/*' -o -name '.env' -o -name '.env.*' \) -print -quit | grep -q .; then
             echo "::error::Forbidden VCS or env file found in deploy payload"
+            exit 1
+          fi
+
+          if ! find deploy/api/database/migrations -maxdepth 1 -type f -name '[0-9]*_*.sql' -print -quit | grep -q .; then
+            echo "::error::Deploy payload must include numbered database migrations"
             exit 1
           fi
 

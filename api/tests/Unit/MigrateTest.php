@@ -33,6 +33,66 @@ final class MigrateTest extends TestCase
         rmdir($this->migrationsDir);
     }
 
+    private function writeMigration(string $filename, string $sql): void
+    {
+        file_put_contents($this->migrationsDir . '/' . $filename, $sql);
+    }
+
+    private function requiredSchemaSql(bool $includeProjectVersion = true): string
+    {
+        $projectVersionColumn = $includeProjectVersion ? ', version INTEGER NOT NULL DEFAULT 1' : '';
+
+        return "
+            CREATE TABLE users (
+                id INTEGER PRIMARY KEY,
+                email TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE projects (
+                id INTEGER PRIMARY KEY,
+                public_id TEXT NOT NULL,
+                user_id INTEGER,
+                visibility TEXT NOT NULL,
+                title TEXT,
+                data TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                last_accessed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                schema_version INTEGER NOT NULL DEFAULT 1
+                $projectVersionColumn
+            );
+            CREATE TABLE login_codes (
+                id INTEGER PRIMARY KEY,
+                email TEXT NOT NULL,
+                code TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                attempts INTEGER NOT NULL DEFAULT 0,
+                used INTEGER NOT NULL DEFAULT 0,
+                ip_address TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE revoked_tokens (
+                jti TEXT PRIMARY KEY,
+                expires_at TEXT NOT NULL,
+                revoked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+        ";
+    }
+
+    private function idempotentRequiredSchemaSql(): string
+    {
+        return str_replace('CREATE TABLE ', 'CREATE TABLE IF NOT EXISTS ', $this->requiredSchemaSql());
+    }
+
+    private function recordAppliedMigration(int $version, string $filename, string $sql, ?string $checksum = null): void
+    {
+        ensureMigrationTrackingTable($this->db);
+        $stmt = $this->db->prepare(
+            'INSERT INTO _migrations (version, filename, checksum) VALUES (?, ?, ?)'
+        );
+        $stmt->execute([$version, $filename, $checksum ?? hash('sha256', $sql)]);
+    }
+
     #[Test]
     public function returnsEmptyWhenNoMigrationFiles(): void
     {
@@ -180,7 +240,8 @@ final class MigrateTest extends TestCase
 
         $this->assertSame([], $result['applied']);
         $this->assertSame([], $result['skipped']);
-        $this->assertSame([], $result['errors']);
+        $this->assertCount(1, $result['errors']);
+        $this->assertStringContainsString('Migrations directory does not exist', $result['errors'][0]);
     }
 
     #[Test]
@@ -211,5 +272,210 @@ final class MigrateTest extends TestCase
         $tables = $this->db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='_migrations'")
             ->fetchAll(PDO::FETCH_COLUMN);
         $this->assertContains('_migrations', $tables);
+    }
+
+    #[Test]
+    public function scanMigrationFilesReportsNumberedSortedSkippedAndDuplicateVersions(): void
+    {
+        $this->writeMigration('010_tenth.sql', 'SELECT 10');
+        $this->writeMigration('002_a_second.sql', 'SELECT 2');
+        $this->writeMigration('readme.sql', 'SELECT 0');
+        $this->writeMigration('002_z_duplicate.sql', 'SELECT 22');
+
+        $scan = scanMigrationFiles($this->migrationsDir);
+
+        $this->assertSame(['002_a_second.sql', '010_tenth.sql'], array_column($scan['numbered'], 'filename'));
+        $this->assertSame(['readme.sql'], $scan['skipped']);
+        $this->assertCount(1, $scan['errors']);
+        $this->assertStringContainsString('Duplicate migration version 2', $scan['errors'][0]);
+    }
+
+    #[Test]
+    public function ensureSchemaReadyAppliesPendingMigrationAndReportsReady(): void
+    {
+        $sql = $this->requiredSchemaSql();
+        $this->writeMigration('001_create_required_schema.sql', $sql);
+
+        $result = ensureSchemaReady(
+            $this->db,
+            $this->migrationsDir,
+            $this->migrationsDir . '/schema.lock'
+        );
+
+        $this->assertTrue($result['ready']);
+        $this->assertSame('ready', $result['status']);
+        $this->assertSame(['001_create_required_schema.sql'], $result['migrationResult']['applied']);
+        $this->assertSame([1], $result['readiness']['appliedMigrations']);
+        $this->assertSame([], $result['readiness']['pendingMigrations']);
+        $this->assertTrue($result['readiness']['schema']['projects.version']);
+    }
+
+    #[Test]
+    public function schemaReadinessFailsWhenProjectsVersionColumnIsMissing(): void
+    {
+        $sql = $this->requiredSchemaSql(includeProjectVersion: false);
+        $filename = '001_create_required_schema.sql';
+        $this->writeMigration($filename, $sql);
+        $this->db->exec($sql);
+        $this->recordAppliedMigration(1, $filename, $sql);
+
+        $readiness = getSchemaReadiness($this->db, $this->migrationsDir);
+
+        $this->assertFalse($readiness['ready']);
+        $this->assertSame('schema_invalid', $readiness['status']);
+        $this->assertFalse($readiness['schema']['projects.version']);
+        $this->assertContains('Required schema column missing: projects.version', $readiness['errors']);
+    }
+
+    #[Test]
+    public function schemaReadinessFailsOnMigrationChecksumMismatch(): void
+    {
+        $sql = $this->requiredSchemaSql();
+        $filename = '001_create_required_schema.sql';
+        $this->writeMigration($filename, $sql);
+        $this->db->exec($sql);
+        $this->recordAppliedMigration(1, $filename, $sql, str_repeat('0', 64));
+
+        $readiness = getSchemaReadiness($this->db, $this->migrationsDir);
+
+        $this->assertFalse($readiness['ready']);
+        $this->assertSame('migration_history_invalid', $readiness['status']);
+        $this->assertContains('Migration 1 checksum mismatch for 001_create_required_schema.sql', $readiness['errors']);
+    }
+
+    #[Test]
+    public function schemaReadinessFailsWhenNoNumberedMigrationFilesExist(): void
+    {
+        $readiness = getSchemaReadiness($this->db, $this->migrationsDir);
+
+        $this->assertFalse($readiness['ready']);
+        $this->assertSame('migration_history_invalid', $readiness['status']);
+        $this->assertContains('No numbered migration files found', $readiness['migrationHistoryErrors']);
+    }
+
+    #[Test]
+    public function schemaReadinessFailsOnAppliedMigrationWithoutDeployedFile(): void
+    {
+        $this->recordAppliedMigration(99, '099_future.sql', 'SELECT 99');
+        $this->writeMigration('001_create_required_schema.sql', $this->requiredSchemaSql());
+
+        $readiness = getSchemaReadiness($this->db, $this->migrationsDir);
+
+        $this->assertFalse($readiness['ready']);
+        $this->assertSame('migration_history_invalid', $readiness['status']);
+        $this->assertContains(
+            'Applied migration 99 has no deployed migration file: 099_future.sql',
+            $readiness['migrationHistoryErrors']
+        );
+    }
+
+    #[Test]
+    public function ensureSchemaReadyDoesNotApplyPendingMigrationsAfterChecksumMismatch(): void
+    {
+        $sql = $this->requiredSchemaSql();
+        $filename = '001_create_required_schema.sql';
+        $this->writeMigration($filename, $sql);
+        $this->writeMigration('002_should_not_run.sql', 'CREATE TABLE should_not_run (id INTEGER PRIMARY KEY)');
+        $this->db->exec($sql);
+        $this->recordAppliedMigration(1, $filename, $sql, str_repeat('0', 64));
+
+        $result = ensureSchemaReady(
+            $this->db,
+            $this->migrationsDir,
+            $this->migrationsDir . '/schema.lock'
+        );
+
+        $this->assertFalse($result['ready']);
+        $this->assertSame('migration_history_invalid', $result['status']);
+        $this->assertSame([], $result['migrationResult']['applied']);
+        $tables = $this->db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='should_not_run'")
+            ->fetchAll(PDO::FETCH_COLUMN);
+        $this->assertSame([], $tables);
+    }
+
+    #[Test]
+    public function ensureSchemaReadyCanRecordAlreadyInitializedSchemaWithIdempotentMigrations(): void
+    {
+        $schemaSql = $this->requiredSchemaSql();
+        $this->db->exec($schemaSql);
+        $this->writeMigration('001_create_required_schema.sql', $this->idempotentRequiredSchemaSql());
+        $this->writeMigration('002_schema_already_has_version.sql', 'SELECT 1');
+
+        $result = ensureSchemaReady(
+            $this->db,
+            $this->migrationsDir,
+            $this->migrationsDir . '/schema.lock'
+        );
+
+        $this->assertTrue($result['ready']);
+        $this->assertSame(
+            ['001_create_required_schema.sql', '002_schema_already_has_version.sql'],
+            $result['migrationResult']['applied']
+        );
+    }
+
+    #[Test]
+    public function schemaReadinessFailsWhenProjectsVersionShapeIsWrong(): void
+    {
+        $sql = str_replace(
+            'version INTEGER NOT NULL DEFAULT 1',
+            'version TEXT DEFAULT NULL',
+            $this->requiredSchemaSql()
+        );
+        $filename = '001_create_required_schema.sql';
+        $this->writeMigration($filename, $sql);
+        $this->db->exec($sql);
+        $this->recordAppliedMigration(1, $filename, $sql);
+
+        $readiness = getSchemaReadiness($this->db, $this->migrationsDir);
+
+        $this->assertFalse($readiness['ready']);
+        $this->assertSame('schema_invalid', $readiness['status']);
+        $this->assertContains('Required schema column has invalid type: projects.version', $readiness['errors']);
+        $this->assertContains('Required schema column must be NOT NULL: projects.version', $readiness['errors']);
+        $this->assertContains('Required schema column must default to 1: projects.version', $readiness['errors']);
+    }
+
+    #[Test]
+    public function ensureSchemaReadyReturnsLockUnavailableWhenMigrationLockIsHeld(): void
+    {
+        $this->writeMigration('001_create_required_schema.sql', $this->requiredSchemaSql());
+        $lockFile = $this->migrationsDir . '/schema.lock';
+        $lock = fopen($lockFile, 'c');
+        $this->assertNotFalse($lock);
+        $this->assertTrue(flock($lock, LOCK_EX | LOCK_NB));
+
+        try {
+            $result = ensureSchemaReady($this->db, $this->migrationsDir, $lockFile);
+        } finally {
+            flock($lock, LOCK_UN);
+            fclose($lock);
+        }
+
+        $this->assertFalse($result['ready']);
+        $this->assertSame('lock_unavailable', $result['status']);
+    }
+
+    #[Test]
+    public function ensureSchemaReadyReturnsMigrationFailedWhenPendingMigrationFails(): void
+    {
+        $this->writeMigration('001_bad.sql', 'INVALID SQL STATEMENT');
+
+        $result = ensureSchemaReady(
+            $this->db,
+            $this->migrationsDir,
+            $this->migrationsDir . '/schema.lock'
+        );
+
+        $this->assertFalse($result['ready']);
+        $this->assertSame('migration_failed', $result['status']);
+        $this->assertCount(1, $result['errors']);
+        $this->assertStringContainsString('001_bad.sql', $result['errors'][0]);
+
+        $lock = fopen($this->migrationsDir . '/schema.lock', 'c');
+        $this->assertNotFalse($lock);
+        $this->assertTrue(flock($lock, LOCK_EX | LOCK_NB));
+        flock($lock, LOCK_UN);
+        fclose($lock);
     }
 }

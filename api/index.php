@@ -73,7 +73,9 @@ function emitResponse(ApiResponse $response): never
     $output = $response->rawJson
         ?? json_encode($response->body, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     header('Content-Length: ' . strlen($output));
-    echo $output;
+    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'HEAD') {
+        echo $output;
+    }
 
     // Flush response to client before shutdown functions run (PERF-05).
     // On PHP-FPM this is required; on mod_php/CLI it is a harmless no-op.
@@ -107,7 +109,7 @@ function readBody(): string|ApiResponse
         $rawBody = '';
     }
     if (strlen($rawBody) > LIMITS['MAX_PAYLOAD_SIZE']) {
-        $rawBody = null; // Don't cache the oversized body
+        $rawBody = null; // Do not cache the oversized body
         return new ApiResponse(
             ['error' => 'Request body must be at most ' . LIMITS['MAX_PAYLOAD_SIZE'] . ' bytes'],
             400
@@ -173,19 +175,19 @@ function extractDataJson(object $parsedObject): string|ApiResponse
 // ---- Auth config validation (production only) ----
 // Log prominent warnings if auth-related config is missing so operators
 // notice immediately in error logs rather than after user-reported failures.
-// Intentionally logs on every request (no sentinel) — a misconfigured
-// production environment should be noisy until fixed.
+// Intentionally logs on every request (no sentinel) so a misconfigured
+// production environment stays noisy until fixed.
 
 if ($config['environment'] === 'production') {
     if (empty($config['jwt_secret']) || strlen($config['jwt_secret']) < 32) {
         error_log('CONFIG WARNING: jwt_secret is missing or too short (must be >= 32 chars). '
             . 'Auth endpoints will reject all requests. '
-            . 'Set jwt_secret in config.production.php — see docs/DEPLOYMENT.md Step 2.');
+            . 'Set jwt_secret in config.production.php; see docs/DEPLOYMENT.md Step 2.');
     }
     if (empty($config['resend_api_key'])) {
         error_log('CONFIG WARNING: resend_api_key is not set. '
             . 'OTP email delivery will fail silently. '
-            . 'Set resend_api_key in config.production.php — see docs/DEPLOYMENT.md Step 2.');
+            . 'Set resend_api_key in config.production.php; see docs/DEPLOYMENT.md Step 2.');
     }
 }
 
@@ -195,43 +197,6 @@ if ($config['environment'] === 'production') {
     header('Strict-Transport-Security: max-age=31536000; includeSubDomains');
 }
 
-// ---- Auto-migrate ----
-// Runs pending migrations on first request after deploy. A sentinel file
-// skips the check on subsequent requests until it expires (1 hour).
-
-try {
-    $sentinelFile = __DIR__ . '/database/.migrate.done';
-    $skipMigration = file_exists($sentinelFile) && (time() - filemtime($sentinelFile) < 3600);
-
-    if (!$skipMigration) {
-        $migrationsDir = __DIR__ . '/database/migrations';
-        $lockFile = __DIR__ . '/database/.migrate.lock';
-        $fp = fopen($lockFile, 'c');
-        if ($fp !== false && flock($fp, LOCK_EX | LOCK_NB)) {
-            try {
-                $db = getDatabase($config);
-                $result = runPendingMigrations($db, $migrationsDir);
-                foreach ($result['applied'] as $file) {
-                    error_log("Auto-migration applied: $file");
-                }
-                foreach ($result['errors'] as $error) {
-                    error_log("Auto-migration error: $error");
-                }
-                if ($result['errors'] === []) {
-                    touch($sentinelFile);
-                }
-            } finally {
-                flock($fp, LOCK_UN);
-                fclose($fp);
-            }
-        } elseif ($fp !== false) {
-            fclose($fp);
-        }
-    }
-} catch (\Throwable $e) {
-    error_log('Auto-migration failed: ' . substr($e->getMessage(), 0, 500));
-}
-
 // ---- CORS ----
 
 $corsHeaders = computeCorsHeaders($config);
@@ -239,13 +204,13 @@ foreach ($corsHeaders as $k => $v) {
     header("$k: $v");
 }
 
-// Preflight — only respond with 204 if CORS headers were set (origin matched)
+// Preflight only responds with 204 if CORS headers were set (origin matched).
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code($corsHeaders !== [] ? 204 : 403);
     exit;
 }
 
-// ---- Routing ----
+// ---- Routing context ----
 
 $method = $_SERVER['REQUEST_METHOD'];
 $path   = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
@@ -253,19 +218,78 @@ $path   = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 // Normalize: strip trailing slash, ensure leading slash
 $path = '/' . trim($path, '/');
 
-// Health check — lightweight, unauthenticated, before main routing
+// ---- Schema readiness gate ----
+// Normal API routes only run after all numbered migrations are applied and
+// the schema shape required by the current code has been verified.
+
+$db = null;
+$schemaReadyResult = null;
+$migrationsDir = __DIR__ . '/database/migrations';
+$migrationLockFile = __DIR__ . '/database/.migrate.lock';
+
+try {
+    $db = getDatabase($config);
+    $schemaReadyResult = ensureSchemaReady($db, $migrationsDir, $migrationLockFile);
+
+    foreach ($schemaReadyResult['migrationResult']['applied'] as $file) {
+        error_log("Migration applied: $file");
+    }
+
+    if (!$schemaReadyResult['ready']) {
+        $status = $schemaReadyResult['status'];
+        $errors = $schemaReadyResult['errors'];
+        if ($errors === []) {
+            $errors = $schemaReadyResult['readiness']['errors'] ?? [];
+        }
+
+        foreach (array_slice($errors, 0, 10) as $error) {
+            error_log("Schema readiness failure [$status]: " . substr($error, 0, 500));
+        }
+        if ($errors === []) {
+            error_log("Schema readiness failure [$status]: no detail available");
+        }
+
+        emitResponse(new ApiResponse([
+            'error' => 'Service temporarily unavailable',
+            'code' => 'schema_not_ready',
+        ], 503, ['Retry-After' => '5']));
+    }
+} catch (\Throwable $e) {
+    error_log('Schema readiness check failed: ' . substr($e->getMessage(), 0, 500));
+    emitResponse(new ApiResponse([
+        'error' => 'Service temporarily unavailable',
+        'code' => 'schema_not_ready',
+    ], 503, ['Retry-After' => '5']));
+}
+
+// ---- Routing ----
+
+// Health check: unauthenticated, but still behind the schema readiness gate.
 if ($path === '/api/health' && ($method === 'GET' || $method === 'HEAD')) {
     try {
-        $db = getDatabase($config);
+        if ($db === null) {
+            $db = getDatabase($config);
+        }
         $db->query('SELECT 1');
-        emitResponse(new ApiResponse(['status' => 'ok', 'timestamp' => gmdate('c')]));
+        $readiness = $schemaReadyResult['readiness'] ?? getSchemaReadiness($db, $migrationsDir);
+        emitResponse(new ApiResponse([
+            'status' => 'ok',
+            'database' => 'ok',
+            'migrations' => 'ready',
+            'schema' => [
+                'projects.version' => (bool) ($readiness['schema']['projects.version'] ?? false),
+            ],
+            'appliedMigrations' => $readiness['appliedMigrations'] ?? [],
+            'pendingMigrations' => $readiness['pendingMigrations'] ?? [],
+            'timestamp' => gmdate('c'),
+        ]));
     } catch (\Throwable $e) {
         error_log('Health check failed: ' . substr($e->getMessage(), 0, 200));
         emitResponse(new ApiResponse(['error' => 'Database connection failed'], 503));
     }
 }
 
-// Email health check — verifies email provider is configured and reachable (DEV-04)
+// Email health check: verifies email provider is configured and reachable (DEV-04)
 if ($path === '/api/health/email' && ($method === 'GET' || $method === 'HEAD')) {
     $result = checkEmailHealth($config);
     if ($result['ok']) {
@@ -281,7 +305,9 @@ if ($path === '/api/health/email' && ($method === 'GET' || $method === 'HEAD')) 
 }
 
 try {
-    $db = getDatabase($config);
+    if ($db === null) {
+        $db = getDatabase($config);
+    }
 
     // Parse body once for methods that need it
     $parsed = null;

@@ -43,7 +43,7 @@ function handleGetProject(PDO $db, string $id, array $auth): ApiResponse
         . ',"updatedAt":' . json_encode($project['updated_at_iso'])
         . ',"isOwner":' . ($isOwner ? 'true' : 'false')
         . ',"visibility":' . json_encode($project['visibility'])
-        . ',"version":' . ((int)($project['version'] ?? 1))
+        . ',"version":' . ((int) $project['version'])
         . '}';
 
     return new ApiResponse(null, 200, [
