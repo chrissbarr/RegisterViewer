@@ -98,6 +98,16 @@ describe('LoginDialog', () => {
       expect(await screen.findByRole('alert')).toHaveTextContent('Too many attempts. Please wait a few minutes.');
     });
 
+    it('shows service unavailable error on 503', async () => {
+      mockSendCode.mockRejectedValue(new ApiError(503, { error: 'Service temporarily unavailable' }));
+      renderDialog();
+
+      fireEvent.change(screen.getByLabelText('Email address'), { target: { value: 'user@example.com' } });
+      fireEvent.submit(screen.getByText('Send code').closest('form')!);
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('Service temporarily unavailable. Please try again later.');
+    });
+
     it('shows generic error on other API failures', async () => {
       mockSendCode.mockRejectedValue(new Error('Network error'));
       renderDialog();
@@ -164,6 +174,26 @@ describe('LoginDialog', () => {
       expect(await screen.findByRole('alert')).toHaveTextContent('Invalid or expired code. Please try again.');
     });
 
+    it('shows rate limit error on verify 429', async () => {
+      mockVerifyCode.mockRejectedValue(new ApiError(429, { error: 'Too many verification attempts' }));
+      await goToCodeStep();
+
+      fireEvent.change(screen.getByLabelText('Verification code'), { target: { value: '123456' } });
+      fireEvent.submit(screen.getByText('Verify').closest('form')!);
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('Too many attempts. Please wait a few minutes.');
+    });
+
+    it('shows service unavailable error on verify 503', async () => {
+      mockVerifyCode.mockRejectedValue(new ApiError(503, { error: 'Service temporarily unavailable' }));
+      await goToCodeStep();
+
+      fireEvent.change(screen.getByLabelText('Verification code'), { target: { value: '123456' } });
+      fireEvent.submit(screen.getByText('Verify').closest('form')!);
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('Service temporarily unavailable. Please try again later.');
+    });
+
     it('shows generic error on other verification failures', async () => {
       mockVerifyCode.mockRejectedValue(new Error('Server error'));
       await goToCodeStep();
@@ -193,6 +223,26 @@ describe('LoginDialog', () => {
       await waitFor(() => {
         expect(mockSendCode).toHaveBeenCalledWith('user@example.com');
       });
+    });
+
+    it('"Resend code" shows rate limit error on 429', async () => {
+      await goToCodeStep();
+      mockSendCode.mockClear();
+      mockSendCode.mockRejectedValue(new ApiError(429, { error: 'Too many requests' }));
+
+      fireEvent.click(screen.getByText('Resend code'));
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('Too many attempts. Please wait a few minutes.');
+    });
+
+    it('"Resend code" shows service unavailable error on 503', async () => {
+      await goToCodeStep();
+      mockSendCode.mockClear();
+      mockSendCode.mockRejectedValue(new ApiError(503, { error: 'Service temporarily unavailable' }));
+
+      fireEvent.click(screen.getByText('Resend code'));
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('Service temporarily unavailable. Please try again later.');
     });
   });
 

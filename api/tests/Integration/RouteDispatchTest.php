@@ -32,6 +32,7 @@ final class RouteDispatchTest extends TestCase
     protected function setUp(): void
     {
         self::$db->exec('DELETE FROM projects');
+        self::$db->exec('DELETE FROM auth_rate_limits');
         self::$db->exec('DELETE FROM login_codes');
         self::$db->exec('DELETE FROM users');
         self::$db->exec('DELETE FROM revoked_tokens');
@@ -42,6 +43,7 @@ final class RouteDispatchTest extends TestCase
     {
         if (self::$db !== null) {
             self::$db->exec('DELETE FROM projects');
+            self::$db->exec('DELETE FROM auth_rate_limits');
             self::$db->exec('DELETE FROM login_codes');
             self::$db->exec('DELETE FROM users');
             self::$db->exec('DELETE FROM revoked_tokens');

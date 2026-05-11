@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
-function handleAuthSendCode(PDO $db, array $config, array $body): ApiResponse
+function handleAuthSendCode(PDO $db, array $config, array $body, ?array $server = null): ApiResponse
 {
+    $server ??= $_SERVER;
+
     $email = validateAndNormalizeEmail($body);
     if ($email instanceof ApiResponse) {
         return $email;
@@ -18,7 +20,7 @@ function handleAuthSendCode(PDO $db, array $config, array $body): ApiResponse
     // IP rate limit: max 5 OTP sends per IP per 15 minutes (PERF-15)
     // Note: on cPanel (no reverse proxy) REMOTE_ADDR is the real client IP.
     // Behind a reverse proxy, consider using X-Forwarded-For instead.
-    $clientIp = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+    $clientIp = authRateLimitClientIp($server);
     $ipCount = dbCountRecentLoginCodesByIp($db, $clientIp, 900);
     if ($ipCount >= 5) {
         return new ApiResponse(['error' => 'Too many requests. Please try again later.'], 429);
@@ -36,7 +38,15 @@ function handleAuthSendCode(PDO $db, array $config, array $body): ApiResponse
     // Store hashed code with 10-minute expiry (SEC-04: never store plaintext OTP)
     $codeHash = hash('sha256', $code);
     $expiresAt = date('Y-m-d H:i:s', time() + OTP_EXPIRY_SECONDS);
-    dbCreateLoginCode($db, $email, $codeHash, $expiresAt, $clientIp);
+    $db->beginTransaction();
+    try {
+        dbMarkActiveLoginCodesUsed($db, $email);
+        dbCreateLoginCode($db, $email, $codeHash, $expiresAt, $clientIp);
+        $db->commit();
+    } catch (\Throwable $e) {
+        $db->rollBack();
+        throw $e;
+    }
 
     // In development, log the OTP code so developers can complete the login
     // flow without a real Resend API key.

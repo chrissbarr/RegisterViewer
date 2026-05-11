@@ -255,6 +255,7 @@ function requiredSchemaColumns(): array
             'version',
         ],
         'login_codes' => ['id', 'email', 'code', 'expires_at', 'attempts', 'used', 'ip_address', 'created_at'],
+        'auth_rate_limits' => ['scope', 'identity_hash', 'bucket_start', 'attempt_count', 'expires_at', 'updated_at'],
         'revoked_tokens' => ['jti', 'expires_at', 'revoked_at'],
     ];
 }
@@ -380,6 +381,52 @@ function validateCriticalColumnShape(PDO $db, string $table, string $column): ar
 }
 
 /**
+ * @return string[]
+ */
+function validateRequiredIndexShape(PDO $db): array
+{
+    $errors = [];
+    if (!schemaHasPrimaryKeyColumns($db, 'auth_rate_limits', ['scope', 'identity_hash', 'bucket_start'])) {
+        $errors[] = 'Required schema primary key missing or invalid: auth_rate_limits(scope, identity_hash, bucket_start)';
+    }
+    return $errors;
+}
+
+function schemaHasPrimaryKeyColumns(PDO $db, string $table, array $columns): bool
+{
+    $driver = $db->getAttribute(PDO::ATTR_DRIVER_NAME);
+
+    if ($driver === 'sqlite') {
+        $quotedTable = '"' . str_replace('"', '""', $table) . '"';
+        $stmt = $db->query("PRAGMA table_info($quotedTable)");
+        $primaryKeyColumns = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $position = (int) ($row['pk'] ?? 0);
+            if ($position > 0) {
+                $primaryKeyColumns[$position] = (string) ($row['name'] ?? '');
+            }
+        }
+        ksort($primaryKeyColumns, SORT_NUMERIC);
+        return array_values($primaryKeyColumns) === $columns;
+    }
+
+    if ($driver === 'mysql') {
+        $stmt = $db->prepare(
+            'SELECT COLUMN_NAME
+             FROM INFORMATION_SCHEMA.STATISTICS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = ?
+               AND INDEX_NAME = ?
+             ORDER BY SEQ_IN_INDEX'
+        );
+        $stmt->execute([$table, 'PRIMARY']);
+        return array_map('strval', $stmt->fetchAll(PDO::FETCH_COLUMN)) === $columns;
+    }
+
+    return true;
+}
+
+/**
  * Check migration history and the schema shape required by the API.
  *
  * @return array{
@@ -455,6 +502,7 @@ function getSchemaReadiness(PDO $db, string $migrationsDir): array
             }
         }
     }
+    $readiness['errors'] = array_merge($readiness['errors'], validateRequiredIndexShape($db));
 
     if ($readiness['migrationHistoryErrors'] !== []) {
         $readiness['status'] = 'migration_history_invalid';

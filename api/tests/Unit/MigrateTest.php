@@ -71,6 +71,15 @@ final class MigrateTest extends TestCase
                 ip_address TEXT,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE TABLE auth_rate_limits (
+                scope TEXT NOT NULL,
+                identity_hash TEXT NOT NULL,
+                bucket_start TEXT NOT NULL,
+                attempt_count INTEGER NOT NULL DEFAULT 0,
+                expires_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (scope, identity_hash, bucket_start)
+            );
             CREATE TABLE revoked_tokens (
                 jti TEXT PRIMARY KEY,
                 expires_at TEXT NOT NULL,
@@ -325,6 +334,59 @@ final class MigrateTest extends TestCase
         $this->assertSame('schema_invalid', $readiness['status']);
         $this->assertFalse($readiness['schema']['projects.version']);
         $this->assertContains('Required schema column missing: projects.version', $readiness['errors']);
+    }
+
+    #[Test]
+    public function schemaReadinessFailsWhenAuthRateLimitTableIsMissing(): void
+    {
+        $sql = str_replace(
+            "CREATE TABLE auth_rate_limits (
+                scope TEXT NOT NULL,
+                identity_hash TEXT NOT NULL,
+                bucket_start TEXT NOT NULL,
+                attempt_count INTEGER NOT NULL DEFAULT 0,
+                expires_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (scope, identity_hash, bucket_start)
+            );",
+            '',
+            $this->requiredSchemaSql()
+        );
+        $filename = '001_create_required_schema.sql';
+        $this->writeMigration($filename, $sql);
+        $this->db->exec($sql);
+        $this->recordAppliedMigration(1, $filename, $sql);
+
+        $readiness = getSchemaReadiness($this->db, $this->migrationsDir);
+
+        $this->assertFalse($readiness['ready']);
+        $this->assertSame('schema_invalid', $readiness['status']);
+        $this->assertFalse($readiness['schema']['auth_rate_limits.scope']);
+        $this->assertContains('Required schema column missing: auth_rate_limits.scope', $readiness['errors']);
+    }
+
+    #[Test]
+    public function schemaReadinessFailsWhenAuthRateLimitPrimaryKeyIsMissing(): void
+    {
+        $sql = str_replace(
+            ',
+                PRIMARY KEY (scope, identity_hash, bucket_start)',
+            '',
+            $this->requiredSchemaSql()
+        );
+        $filename = '001_create_required_schema.sql';
+        $this->writeMigration($filename, $sql);
+        $this->db->exec($sql);
+        $this->recordAppliedMigration(1, $filename, $sql);
+
+        $readiness = getSchemaReadiness($this->db, $this->migrationsDir);
+
+        $this->assertFalse($readiness['ready']);
+        $this->assertSame('schema_invalid', $readiness['status']);
+        $this->assertContains(
+            'Required schema primary key missing or invalid: auth_rate_limits(scope, identity_hash, bucket_start)',
+            $readiness['errors']
+        );
     }
 
     #[Test]

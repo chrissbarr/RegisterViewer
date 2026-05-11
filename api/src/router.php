@@ -117,10 +117,10 @@ function dispatchApiRoute(
 
     return match ($route['name']) {
         'auth.send-code' => dispatchJsonBody($getParsedBody, fn (array $parsed): ApiResponse =>
-            handleAuthSendCode($db, $config, $parsed['assoc'])
+            handleAuthSendCode($db, $config, $parsed['assoc'], $server)
         ),
         'auth.verify-code' => dispatchJsonBody($getParsedBody, fn (array $parsed): ApiResponse =>
-            handleAuthVerifyCode($db, $config, $parsed['assoc'])
+            handleAuthVerifyCode($db, $config, $parsed['assoc'], $server)
         ),
         'auth.me' => handleAuthMe($db, $config, $auth),
         'auth.logout' => handleAuthLogout($db, $auth),

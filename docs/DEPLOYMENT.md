@@ -41,12 +41,13 @@ This document provides step-by-step instructions for deploying the Register View
 **Migrations create:**
 1. `projects` table - project storage with owner tracking
 2. `users` table - user accounts (email-based auth)
-3. `login_codes` table - OTP login codes with rate limiting indexes
-4. `revoked_tokens` table - revoked JWTs for server-side logout
-5. `_migrations` table - applied migration tracking
-6. Foreign key linking `projects.user_id` -> `users.id`
+3. `login_codes` table - OTP login challenges and per-code lockout state
+4. `auth_rate_limits` table - fixed-window auth rate-limit buckets
+5. `revoked_tokens` table - revoked JWTs for server-side logout
+6. `_migrations` table - applied migration tracking
+7. Foreign key linking `projects.user_id` -> `users.id`
 
-The API returns `503 schema_not_ready` instead of routing requests if it cannot apply every numbered migration or prove the required schema shape, including `projects.version`.
+The API returns `503 schema_not_ready` instead of routing requests if it cannot apply every numbered migration or prove the required schema shape, including `projects.version` and `auth_rate_limits`.
 
 ### Step 2: Create Production API Config
 
@@ -123,7 +124,7 @@ After first deployment:
 3. Test email sign-in: request an OTP, verify the code, and confirm the app receives a JWT
 4. Test cloud save/share: save a project while signed in, make it unlisted, and verify the shared link opens in a new tab without signing in
 5. Verify private project access requires the owning signed-in account
-6. Confirm deploy smoke tests passed API health. `/api/health` must report `migrations: "ready"`, no pending migrations, and `schema["projects.version"] === true`.
+6. Confirm deploy smoke tests passed API health. `/api/health` must report `migrations: "ready"`, no pending migrations, applied migrations `[1, 2, 3]`, `schema["projects.version"] === true`, and `schema["auth_rate_limits.scope"] === true`.
 7. Confirm deploy smoke tests passed the API internal-path checks. `/api/config.php`, `/api/src`, `/api/vendor`, `/api/database`, and `/api/tests` must return `403`, never `200`.
 
 ---
@@ -234,7 +235,7 @@ To manually deploy an existing CI artifact without rebuilding:
 - Verify `config.production.php` exists on the server with correct database credentials
 - Verify the deployed `api/database/migrate.php` and all numbered files under `api/database/migrations/` are present
 - Verify `_migrations` contains every numbered migration version in the deployed artifact
-- Verify the required schema exists, especially `projects.version`
+- Verify the required schema exists, especially `projects.version` and `auth_rate_limits`
 - If logs show the migration lock is held, wait briefly and retry `/api/health`
 
 **Error: "500 Internal Server Error" on API endpoints**
@@ -401,7 +402,7 @@ Two unauthenticated health endpoints are available for uptime monitoring:
 
 | Endpoint | Checks | Methods |
 |----------|--------|---------|
-| `GET /api/health` | Database connectivity, all numbered migrations applied, and required schema shape including `projects.version` | GET, HEAD |
+| `GET /api/health` | Database connectivity, all numbered migrations applied, and required schema shape including `projects.version` and auth rate-limit schema | GET, HEAD |
 | `GET /api/health/email` | Resend API key configured + API reachable | GET, HEAD |
 
 Both return **200** when healthy and **503** when unhealthy. HEAD requests return only status codes (no body), making them compatible with UptimeRobot free tier.
@@ -549,7 +550,7 @@ After updating any auth config value, check the PHP error log for config warning
 - [ ] The CI run was triggered by a `push` to `master`
 - [ ] The CI run uploaded `registerapptest-deploy-<sha>` and the Deploy run is using the same SHA
 - [ ] `config.production.php` exists on server with correct DB credentials, `jwt_secret`, and `resend_api_key`
-- [ ] `/api/health` returns ready and confirms all numbered migrations plus `projects.version`
+- [ ] `/api/health` returns ready and confirms all numbered migrations plus `projects.version` and `auth_rate_limits`
 - [ ] PHP 8.3+ is enabled on the server
 - [ ] Apache `mod_rewrite` is enabled
 - [ ] Node.js version matches workflow config (22) locally

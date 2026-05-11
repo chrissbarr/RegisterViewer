@@ -69,6 +69,8 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
     } catch (err) {
       if (err instanceof ApiError && err.status === 429) {
         setError('Too many attempts. Please wait a few minutes.');
+      } else if (err instanceof ApiError && err.status === 503) {
+        setError('Service temporarily unavailable. Please try again later.');
       } else {
         setError('Failed to send code. Please try again.');
       }
@@ -93,6 +95,10 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         setError('Invalid or expired code. Please try again.');
+      } else if (err instanceof ApiError && err.status === 429) {
+        setError('Too many attempts. Please wait a few minutes.');
+      } else if (err instanceof ApiError && err.status === 503) {
+        setError('Service temporarily unavailable. Please try again later.');
       } else {
         setError('Verification failed. Please try again.');
       }
@@ -107,8 +113,14 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
     try {
       await sendCode(email);
       setCode('');
-    } catch {
-      setError('Failed to resend code.');
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 429) {
+        setError('Too many attempts. Please wait a few minutes.');
+      } else if (err instanceof ApiError && err.status === 503) {
+        setError('Service temporarily unavailable. Please try again later.');
+      } else {
+        setError('Failed to resend code.');
+      }
     } finally {
       setIsSubmitting(false);
     }

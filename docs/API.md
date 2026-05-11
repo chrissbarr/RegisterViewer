@@ -15,7 +15,7 @@ GET /api/health
 HEAD /api/health
 ```
 
-Checks database connectivity, verifies every numbered migration in `api/database/migrations/` has been applied, and verifies the schema required by the current API code exists. The readiness check includes `projects.version`, which is required for optimistic concurrency on project updates.
+Checks database connectivity, verifies every numbered migration in `api/database/migrations/` has been applied, and verifies the schema required by the current API code exists. The readiness check includes concurrency and auth rate-limit schema such as `projects.version` and `auth_rate_limits.*`.
 
 **Response `200 OK`:**
 
@@ -25,9 +25,10 @@ Checks database connectivity, verifies every numbered migration in `api/database
   "database": "ok",
   "migrations": "ready",
   "schema": {
-    "projects.version": true
+    "projects.version": true,
+    "auth_rate_limits.scope": true
   },
-  "appliedMigrations": [1, 2],
+  "appliedMigrations": [1, 2, 3],
   "pendingMigrations": [],
   "timestamp": "2026-05-10T00:00:00Z"
 }
@@ -147,10 +148,12 @@ Verifies a 6-digit OTP code and returns a JWT token.
 | `code` | Yes | 6-digit OTP code |
 
 **Rate Limiting:**
-- Max 10 verification attempts per email per 10-minute window
-- Max 5 attempts per individual code
+- Global: max 100 valid-format verification attempts per minute across all users (returns `503`)
+- Per IP: max 30 valid-format verification attempts per 10-minute window (returns `429`)
+- Per email: max 10 valid-format verification attempts per 10-minute window (returns `429`)
+- Per active code: max 5 attempts before the code is locked out (returns the same `401` as an invalid or expired code)
 
-**Code Expiry:** 10 minutes after generation. Single-use (marked used on success).
+**Code Expiry:** 10 minutes after generation. Single-use (marked used on success). Requesting a new code invalidates any previous unused code for that email.
 
 **Response `200 OK`:**
 
@@ -171,6 +174,7 @@ Verifies a 6-digit OTP code and returns a JWT token.
 | 400 | Invalid email or code format |
 | 401 | Invalid or expired code |
 | 429 | Too many verification attempts |
+| 503 | Global rate limit exceeded — try again later |
 
 ---
 

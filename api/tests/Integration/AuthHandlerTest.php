@@ -39,15 +39,18 @@ final class AuthHandlerTest extends TestCase
     protected function setUp(): void
     {
         self::$db->exec('DELETE FROM projects');
+        self::$db->exec('DELETE FROM auth_rate_limits');
         self::$db->exec('DELETE FROM login_codes');
         self::$db->exec('DELETE FROM users');
         self::$db->exec('DELETE FROM revoked_tokens');
+        unset($_SERVER['REMOTE_ADDR']);
     }
 
     public static function tearDownAfterClass(): void
     {
         if (self::$db !== null) {
             self::$db->exec('DELETE FROM projects');
+            self::$db->exec('DELETE FROM auth_rate_limits');
             self::$db->exec('DELETE FROM login_codes');
             self::$db->exec('DELETE FROM users');
             self::$db->exec('DELETE FROM revoked_tokens');
@@ -270,39 +273,96 @@ final class AuthHandlerTest extends TestCase
     }
 
     #[Test]
-    public function verifyCodeEnforcesGlobalRateLimit(): void
+    public function verifyCodeEnforcesPerEmailRateLimitForUnknownEmail(): void
     {
-        $email = 'global@example.com';
+        $email = 'unknown-rate-limit@example.com';
 
-        // Create two codes and exhaust attempts across both (5 + 5 = 10)
-        $this->createLoginCode($email, '111111');
-        $this->createLoginCode($email, '222222');
-
-        // 5 wrong guesses on first code
-        for ($i = 0; $i < 5; $i++) {
-            handleAuthVerifyCode(self::$db, self::JWT_CONFIG, [
+        for ($i = 0; $i < AUTH_VERIFY_EMAIL_LIMIT; $i++) {
+            $response = handleAuthVerifyCode(self::$db, self::JWT_CONFIG, [
                 'email' => $email,
-                'code'  => '000000',
+                'code'  => '999999',
             ]);
+            $this->assertSame(401, $response->status);
         }
 
-        // 5 wrong guesses on second code (total: 10)
-        for ($i = 0; $i < 5; $i++) {
-            handleAuthVerifyCode(self::$db, self::JWT_CONFIG, [
-                'email' => $email,
-                'code'  => '000001',
-            ]);
-        }
-
-        // 11th attempt should hit global rate limit
-        $this->createLoginCode($email, '333333');
         $response = handleAuthVerifyCode(self::$db, self::JWT_CONFIG, [
             'email' => $email,
-            'code'  => '333333',
+            'code'  => '999999',
         ]);
 
         $this->assertSame(429, $response->status);
         $this->assertStringContainsString('Too many verification attempts', $response->body['error']);
+    }
+
+    #[Test]
+    public function verifyCodeCountsExpiredCodesTowardEmailRateLimit(): void
+    {
+        $email = 'expired-rate-limit@example.com';
+        $this->createLoginCode($email, '123456', -1);
+
+        for ($i = 0; $i < AUTH_VERIFY_EMAIL_LIMIT; $i++) {
+            $response = handleAuthVerifyCode(self::$db, self::JWT_CONFIG, [
+                'email' => $email,
+                'code'  => '123456',
+            ]);
+            $this->assertSame(401, $response->status);
+        }
+
+        $response = handleAuthVerifyCode(self::$db, self::JWT_CONFIG, [
+            'email' => $email,
+            'code'  => '123456',
+        ]);
+
+        $this->assertSame(429, $response->status);
+    }
+
+    #[Test]
+    public function verifyCodeCountsUsedCodesTowardEmailRateLimit(): void
+    {
+        $email = 'used-rate-limit@example.com';
+        $this->createLoginCode($email, '123456');
+
+        $success = handleAuthVerifyCode(self::$db, self::JWT_CONFIG, [
+            'email' => $email,
+            'code'  => '123456',
+        ]);
+        $this->assertSame(200, $success->status);
+
+        for ($i = 1; $i < AUTH_VERIFY_EMAIL_LIMIT; $i++) {
+            $response = handleAuthVerifyCode(self::$db, self::JWT_CONFIG, [
+                'email' => $email,
+                'code'  => '123456',
+            ]);
+            $this->assertSame(401, $response->status);
+        }
+
+        $response = handleAuthVerifyCode(self::$db, self::JWT_CONFIG, [
+            'email' => $email,
+            'code'  => '123456',
+        ]);
+
+        $this->assertSame(429, $response->status);
+    }
+
+    #[Test]
+    public function latestCodeRemainsAuthoritativeAfterItIsUsed(): void
+    {
+        $email = 'latest-used@example.com';
+        $this->createLoginCode($email, '111111');
+        $this->createLoginCode($email, '222222');
+
+        $success = handleAuthVerifyCode(self::$db, self::JWT_CONFIG, [
+            'email' => $email,
+            'code'  => '222222',
+        ]);
+        $this->assertSame(200, $success->status);
+
+        $olderCodeResponse = handleAuthVerifyCode(self::$db, self::JWT_CONFIG, [
+            'email' => $email,
+            'code'  => '111111',
+        ]);
+
+        $this->assertSame(401, $olderCodeResponse->status);
     }
 
     #[Test]
@@ -312,10 +372,8 @@ final class AuthHandlerTest extends TestCase
         $this->createLoginCode($email, '111111');
         $this->createLoginCode($email, '222222');
 
-        // Wrong guess should increment exactly one active code via
-        // dbIncrementMostRecentLoginCodeAttempts (ORDER BY created_at DESC LIMIT 1).
-        // When both codes share the same second-precision timestamp, which one
-        // gets incremented is non-deterministic, so we assert on the total.
+        // Wrong guesses lock the latest active code row and consume one
+        // per-code attempt without depending on the submitted code hash.
         handleAuthVerifyCode(self::$db, self::JWT_CONFIG, [
             'email' => $email,
             'code'  => '999999',
@@ -682,30 +740,52 @@ final class AuthHandlerTest extends TestCase
     #[Test]
     public function verifyCodeEnforcesGlobalVerifyRateLimit(): void
     {
-        // Insert codes with high attempt counts to exceed the global 100/minute limit.
-        // Each row with attempts=25 contributes 25 to the SUM; 4 rows = 100.
-        $stmt = self::$db->prepare(
-            "INSERT INTO login_codes (email, code, expires_at, attempts)
-             VALUES (:email, :code, :expires, :attempts)"
-        );
-        for ($i = 0; $i < 4; $i++) {
-            $stmt->execute([
-                'email'    => "global-verify-{$i}@example.com",
-                'code'     => hash('sha256', str_pad((string) $i, 6, '0', STR_PAD_LEFT)),
-                'expires'  => gmdate('Y-m-d H:i:s', time() + 600),
-                'attempts' => 25,
-            ]);
-        }
+        try {
+            for ($i = 0; $i < AUTH_VERIFY_GLOBAL_LIMIT; $i++) {
+                $_SERVER['REMOTE_ADDR'] = "198.51.100.$i";
+                $response = handleAuthVerifyCode(self::$db, self::JWT_CONFIG, [
+                    'email' => "global-verify-{$i}@example.com",
+                    'code'  => '999999',
+                ]);
+                $this->assertSame(401, $response->status);
+            }
 
-        // Next verify attempt for any email should hit global limit (503)
-        $this->createLoginCode('victim@example.com', '123456');
-        $response = handleAuthVerifyCode(self::$db, self::JWT_CONFIG, [
-            'email' => 'victim@example.com',
-            'code'  => '123456',
-        ]);
+            $_SERVER['REMOTE_ADDR'] = '198.51.100.250';
+            $response = handleAuthVerifyCode(self::$db, self::JWT_CONFIG, [
+                'email' => 'victim@example.com',
+                'code'  => '999999',
+            ]);
+        } finally {
+            unset($_SERVER['REMOTE_ADDR']);
+        }
 
         $this->assertSame(503, $response->status);
         $this->assertStringContainsString('Service temporarily unavailable', $response->body['error']);
+    }
+
+    #[Test]
+    public function verifyCodeEnforcesIpVerifyRateLimit(): void
+    {
+        $_SERVER['REMOTE_ADDR'] = '203.0.113.88';
+        try {
+            for ($i = 0; $i < AUTH_VERIFY_IP_LIMIT; $i++) {
+                $response = handleAuthVerifyCode(self::$db, self::JWT_CONFIG, [
+                    'email' => "ip-verify-{$i}@example.com",
+                    'code'  => '999999',
+                ]);
+                $this->assertSame(401, $response->status);
+            }
+
+            $response = handleAuthVerifyCode(self::$db, self::JWT_CONFIG, [
+                'email' => 'ip-verify-over@example.com',
+                'code'  => '999999',
+            ]);
+        } finally {
+            unset($_SERVER['REMOTE_ADDR']);
+        }
+
+        $this->assertSame(429, $response->status);
+        $this->assertStringContainsString('Too many verification attempts', $response->body['error']);
     }
 
     #[Test]
@@ -774,28 +854,21 @@ final class AuthHandlerTest extends TestCase
     }
 
     #[Test]
-    public function dbCountAllRecentVerifyAttemptsCountsCorrectly(): void
+    public function dbConsumeAuthRateLimitCountsFixedWindowAttempts(): void
     {
-        // Insert codes with known attempt counts
-        $stmt = self::$db->prepare(
-            "INSERT INTO login_codes (email, code, expires_at, attempts)
-             VALUES (:email, :code, :expires, :attempts)"
-        );
-        $stmt->execute([
-            'email'    => 'vattempt-1@example.com',
-            'code'     => hash('sha256', '111111'),
-            'expires'  => gmdate('Y-m-d H:i:s', time() + 600),
-            'attempts' => 3,
-        ]);
-        $stmt->execute([
-            'email'    => 'vattempt-2@example.com',
-            'code'     => hash('sha256', '222222'),
-            'expires'  => gmdate('Y-m-d H:i:s', time() + 600),
-            'attempts' => 7,
-        ]);
+        $first = dbConsumeAuthRateLimit(self::$db, 'test.scope', 'subject', 2, 60, 1_700_000_000);
+        $second = dbConsumeAuthRateLimit(self::$db, 'test.scope', 'subject', 2, 60, 1_700_000_001);
+        $third = dbConsumeAuthRateLimit(self::$db, 'test.scope', 'subject', 2, 60, 1_700_000_002);
+        $nextWindow = dbConsumeAuthRateLimit(self::$db, 'test.scope', 'subject', 2, 60, 1_700_000_060);
 
-        $total = dbCountAllRecentVerifyAttempts(self::$db, 60);
-        $this->assertSame(10, $total);
+        $this->assertTrue($first['allowed']);
+        $this->assertSame(1, $first['count']);
+        $this->assertTrue($second['allowed']);
+        $this->assertSame(2, $second['count']);
+        $this->assertFalse($third['allowed']);
+        $this->assertSame(3, $third['count']);
+        $this->assertTrue($nextWindow['allowed']);
+        $this->assertSame(1, $nextWindow['count']);
     }
 
     // ---- SEC-N01: Race condition prevention ----
