@@ -21,6 +21,7 @@ frontend/blob-report/
 
 # Python test/cache artifacts
 __pycache__/
+/tmp*/
 .github/scripts/tmp*/
 
 # Claude Code

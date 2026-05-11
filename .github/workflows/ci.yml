@@ -18,6 +18,8 @@ jobs:
       - uses: actions/checkout@v6
       - name: Test workflow validators
         run: python3 -m unittest discover -s .github/scripts -p 'test_*.py'
+      - name: Validate PHP runtime contract
+        run: python3 .github/scripts/validate_php_runtime_contract.py
 
   frontend:
     runs-on: ubuntu-latest
@@ -87,8 +89,18 @@ jobs:
         working-directory: api
     steps:
       - uses: actions/checkout@v6
-      - name: Build and run tests
-        run: docker compose run --rm test bash -c "composer install -q && composer audit --no-dev && php database/migrate.php && vendor/bin/phpunit"
+      - name: Verify PHP target
+        run: docker compose run --rm test php -r 'if (PHP_MAJOR_VERSION !== 8 || PHP_MINOR_VERSION !== 3) { fwrite(STDERR, "Expected PHP 8.3, got " . PHP_VERSION . PHP_EOL); exit(1); }'
+      - name: Validate Composer manifest
+        run: docker compose run --rm test composer validate --strict --no-check-publish
+      - name: Install PHP dependencies
+        run: docker compose run --rm test composer install --no-interaction --prefer-dist
+      - name: Check PHP platform requirements
+        run: docker compose run --rm test composer check-platform-reqs --lock
+      - name: Audit runtime dependencies
+        run: docker compose run --rm test composer audit --no-dev
+      - name: Run migrations and tests
+        run: docker compose run --rm test bash -c "php database/migrate.php && vendor/bin/phpunit"
       - name: Stop containers
         if: always()
         run: docker compose down -v
@@ -104,6 +116,8 @@ jobs:
         with:
           php-version: '8.3'
           tools: composer:v2
+      - name: Verify PHP target
+        run: php -r 'if (PHP_MAJOR_VERSION !== 8 || PHP_MINOR_VERSION !== 3) { fwrite(STDERR, "Expected PHP 8.3, got " . PHP_VERSION . PHP_EOL); exit(1); }'
 
       - name: Download frontend dist
         uses: actions/download-artifact@v6
@@ -118,7 +132,10 @@ jobs:
         run: python3 .github/scripts/validate_vite_api_url.py
 
       - name: Install PHP runtime dependencies
-        run: composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
+        run: |
+          composer validate --strict --no-check-publish
+          composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
+          composer check-platform-reqs --lock --no-dev
         working-directory: api
 
       - name: Assemble deploy payload

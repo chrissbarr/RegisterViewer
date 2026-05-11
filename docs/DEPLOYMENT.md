@@ -14,7 +14,7 @@ This document provides step-by-step instructions for deploying the Register View
 | Component | Technology | Deployment Target | Status Check |
 |-----------|-----------|-------------------|--------------|
 | Frontend | React + TypeScript | cPanel (www.registerviewer.com) | `.github/workflows/ci.yml` job `frontend` |
-| API | PHP 8.3 | cPanel (www.registerviewer.com/api) | `.github/workflows/ci.yml` jobs `api` and `deploy-payload` |
+| API | PHP 8.3 compatibility floor | cPanel (www.registerviewer.com/api) | `.github/workflows/ci.yml` jobs `api` and `deploy-payload` |
 | Tests | Vitest + Playwright + PHPUnit | GitHub Actions | `.github/workflows/ci.yml` jobs `frontend`, `e2e`, and `api` |
 | Database | MySQL 8.0 | cPanel MySQL | N/A |
 
@@ -25,9 +25,11 @@ This document provides step-by-step instructions for deploying the Register View
 ### Prerequisites
 
 - GitHub account with admin access to the repository
-- cPanel hosting account with PHP 8.3+, MySQL 8.0+, and FTP/FTPS access
+- cPanel hosting account with PHP 8.3+, MySQL 8.0+, FTP/FTPS access, and PHP extensions `curl`, `json`, `mbstring`, `pdo`, and `pdo_mysql`
 - Node.js 22 or later installed locally
 - Docker installed locally (for running API tests)
+
+Production requires PHP 8.3 or newer. CI validates API compatibility on PHP 8.3, the minimum supported production runtime.
 
 ### Step 1: Create MySQL Database
 
@@ -150,8 +152,8 @@ Every push to `master` automatically:
 1. Runs `.github/workflows/ci.yml` validation jobs:
    - `frontend`: dependency audit, lint, knip, unit coverage, production build, and `registerapptest-frontend-dist-<sha>` upload on `master` pushes
    - `e2e`: Playwright Chromium E2E tests
-   - `api`: Composer audit and PHPUnit via Docker
-   - `deploy-payload`: downloads the frontend dist artifact, validates `VITE_API_URL`, installs PHP 8.3 runtime dependencies, assembles `deploy/`, writes public provenance metadata, writes `SHA256SUMS`, validates required and forbidden paths, and uploads `registerapptest-deploy-<sha>`
+   - `api`: PHP 8.3 Docker test run with Composer validation, platform checks, Composer audit, migrations, and PHPUnit
+   - `deploy-payload`: downloads the frontend dist artifact, validates `VITE_API_URL`, installs PHP 8.3 runtime dependencies, checks production platform requirements, assembles `deploy/`, writes public provenance metadata, writes `SHA256SUMS`, validates required and forbidden paths, and uploads `registerapptest-deploy-<sha>`
 
 2. Runs `.github/workflows/deploy.yml` after successful CI:
     - Downloads `registerapptest-deploy-<head_sha>` from the completed CI run
@@ -205,7 +207,7 @@ To manually deploy an existing CI artifact without rebuilding:
 **Error: "Missing required deploy file" or "Forbidden deploy path present"**
 - Open the `deploy-payload` job in the CI run
 - Confirm the `frontend` job uploaded `registerapptest-frontend-dist-<sha>`
-- Confirm Composer install completed in the `api` directory with PHP 8.3
+- Confirm Composer install completed in the `api` directory with PHP 8.3 and `composer check-platform-reqs --lock --no-dev` passed
 - Fix the payload assembly inputs and push a new commit
 
 ### Artifact Download or Verification Fails
@@ -254,6 +256,8 @@ To manually deploy an existing CI artifact without rebuilding:
 - Check PHP error logs in cPanel -> **Error Log**
 - Verify `config.production.php` exists on the server with correct database credentials
 - Ensure PHP 8.3+ is enabled and `mod_rewrite` is active
+- Ensure PHP extensions `curl`, `json`, `mbstring`, `pdo`, and `pdo_mysql` are enabled
+- CI validates API compatibility on PHP 8.3, the minimum supported production runtime. Do not raise Docker, Composer, or dependency versions to require PHP 8.4+ unless the cPanel runtime and this deployment contract are updated together.
 
 **Error: "Expected /api/... to be blocked with 403"**
 - Confirm the deployed `api/.htaccess` file exists on the server
@@ -576,6 +580,7 @@ After updating any auth config value, check the PHP error log for config warning
 - [ ] `config.production.php` exists on server with correct DB credentials, `app_url`, `allowed_origins`, `jwt_secret`, `otp_hash_secret`, and `resend_api_key`
 - [ ] `/api/health` returns ready and confirms all numbered migrations plus `projects.version`, `login_codes.code_verifier`, and `auth_rate_limits`
 - [ ] PHP 8.3+ is enabled on the server
+- [ ] PHP extensions `curl`, `json`, `mbstring`, `pdo`, and `pdo_mysql` are enabled on the server
 - [ ] Apache `mod_rewrite` is enabled
 - [ ] Node.js version matches workflow config (22) locally
 - [ ] All dependencies installed (`npm ci`)

@@ -9,7 +9,7 @@ This document covers local development setup, build commands, testing, and proje
 - **Tailwind CSS v4** for styling
 - **@dnd-kit** for drag-and-drop register reordering
 - **Vitest** for unit tests, **Playwright** for E2E tests
-- **PHP 8.3 + MySQL 8.0** for the cloud save/share backend (deployed on cPanel)
+- **PHP 8.3 + MySQL 8.0** for the cloud save/share backend (deployed on cPanel). Production requires PHP 8.3 or newer. CI validates API compatibility on PHP 8.3, the minimum supported production runtime.
 
 ## Getting Started
 
@@ -49,6 +49,8 @@ All frontend commands run from the `frontend/` directory:
 | `cd api && docker compose down -v` | Stop containers and reset database |
 
 The PHP migration runner owns local schema creation. The API runs pending numbered migrations before routing, and test commands run `php database/migrate.php` before PHPUnit. API code and tests run PHP/MySQL sessions in UTC; UTC regression tests intentionally switch PHP and MySQL sessions to non-UTC values before asserting API timestamps are emitted as `YYYY-MM-DDTHH:mm:ssZ`.
+
+Composer uses `config.platform.php=8.3.0` so dependency updates continue to resolve against the production compatibility floor even when Composer is run from a newer PHP version. Do not introduce PHP 8.4+ language features or dependencies unless the production runtime, Docker image, Composer platform, CI checks, and deployment docs are raised together.
 
 To reset and re-run migrations: `cd api && docker compose down -v && docker compose up -d`, then request the API or run `php database/migrate.php` in the test container.
 
