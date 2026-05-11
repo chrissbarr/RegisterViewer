@@ -41,6 +41,8 @@ final class AuthHandlerTest extends TestCase
 
     protected function setUp(): void
     {
+        date_default_timezone_set('UTC');
+        self::$db->exec("SET SESSION time_zone = '+00:00'");
         self::$db->exec('DELETE FROM projects');
         self::$db->exec('DELETE FROM auth_rate_limits');
         self::$db->exec('DELETE FROM login_codes');
@@ -441,6 +443,35 @@ final class AuthHandlerTest extends TestCase
         $this->assertTrue(verifyOtpCode(self::JWT_CONFIG, $email, $code, $storedVerifier));
     }
 
+    #[Test]
+    public function sendCodeStoresUtcExpiryUnderNonUtcPhpAndDbSession(): void
+    {
+        $previousTimezone = date_default_timezone_get();
+
+        try {
+            date_default_timezone_set('Australia/Adelaide');
+            self::$db->exec("SET SESSION time_zone = '+09:30'");
+
+            $email = 'utc-expiry@example.com';
+            $before = time();
+            handleAuthSendCode(self::$db, self::JWT_CONFIG, ['email' => $email], null, fn (): string => '123456');
+            $after = time();
+
+            $stmt = self::$db->prepare(
+                'SELECT expires_at FROM login_codes WHERE email = :email ORDER BY created_at DESC LIMIT 1'
+            );
+            $stmt->execute(['email' => $email]);
+            $expiresAt = parseUtcDbDateTime((string) $stmt->fetchColumn());
+
+            $this->assertNotNull($expiresAt);
+            $this->assertGreaterThanOrEqual($before + OTP_EXPIRY_SECONDS, $expiresAt);
+            $this->assertLessThanOrEqual($after + OTP_EXPIRY_SECONDS, $expiresAt);
+        } finally {
+            date_default_timezone_set($previousTimezone);
+            self::$db->exec("SET SESSION time_zone = '+00:00'");
+        }
+    }
+
     // ---- handleAuthMe ----
 
     #[Test]
@@ -566,6 +597,33 @@ final class AuthHandlerTest extends TestCase
     }
 
     #[Test]
+    public function logoutStoresRevocationExpiryAsUtcUnderNonUtcPhpAndDbSession(): void
+    {
+        $previousTimezone = date_default_timezone_get();
+
+        try {
+            date_default_timezone_set('Australia/Adelaide');
+            self::$db->exec("SET SESSION time_zone = '+09:30'");
+
+            $jti = 'utc-revocation-jti';
+            $expiresAt = time() + 3600;
+            $response = handleAuthLogout(self::$db, [
+                'kind' => 'jwt',
+                'jti' => $jti,
+                'exp' => $expiresAt,
+            ]);
+
+            $this->assertSame(204, $response->status);
+            $stmt = self::$db->prepare('SELECT expires_at FROM revoked_tokens WHERE jti = :jti');
+            $stmt->execute(['jti' => $jti]);
+            $this->assertSame(utcDbDateTime($expiresAt), $stmt->fetchColumn());
+        } finally {
+            date_default_timezone_set($previousTimezone);
+            self::$db->exec("SET SESSION time_zone = '+00:00'");
+        }
+    }
+
+    #[Test]
     public function logoutRejectsNonJwtAuth(): void
     {
         $auth = ['kind' => 'none'];
@@ -629,26 +687,30 @@ final class AuthHandlerTest extends TestCase
     #[Test]
     public function purgeDeletesExpiredAndUsedCodesOlderThan24Hours(): void
     {
+        $oldTimestamp = utcDbDateTime(time() - 48 * 60 * 60);
+
         // Insert an old, used code (created 48 hours ago)
         $stmt = self::$db->prepare(
             "INSERT INTO login_codes (email, code_verifier, expires_at, used, created_at)
-             VALUES (:email, :code_verifier, :expires, 1, DATE_SUB(NOW(), INTERVAL 48 HOUR))"
+             VALUES (:email, :code_verifier, :expires, 1, :created_at)"
         );
         $stmt->execute([
             'email'         => 'old-used@example.com',
             'code_verifier' => $this->codeVerifier('old-used@example.com', '111111'),
-            'expires'       => gmdate('Y-m-d H:i:s', time() - 172800),
+            'expires'       => $oldTimestamp,
+            'created_at'    => $oldTimestamp,
         ]);
 
         // Insert an old, expired (but not used) code (created 48 hours ago)
         $stmt = self::$db->prepare(
             "INSERT INTO login_codes (email, code_verifier, expires_at, used, created_at)
-             VALUES (:email, :code_verifier, :expires, 0, DATE_SUB(NOW(), INTERVAL 48 HOUR))"
+             VALUES (:email, :code_verifier, :expires, 0, :created_at)"
         );
         $stmt->execute([
             'email'         => 'old-expired@example.com',
             'code_verifier' => $this->codeVerifier('old-expired@example.com', '222222'),
-            'expires'       => gmdate('Y-m-d H:i:s', time() - 172800),
+            'expires'       => $oldTimestamp,
+            'created_at'    => $oldTimestamp,
         ]);
 
         // Insert a fresh, active code (should NOT be purged)
@@ -891,13 +953,24 @@ final class AuthHandlerTest extends TestCase
     #[Test]
     public function dbConsumeAuthRateLimitCountsFixedWindowAttempts(): void
     {
-        $first = dbConsumeAuthRateLimit(self::$db, 'test.scope', 'subject', 2, 60, 1_700_000_000);
-        $second = dbConsumeAuthRateLimit(self::$db, 'test.scope', 'subject', 2, 60, 1_700_000_001);
-        $third = dbConsumeAuthRateLimit(self::$db, 'test.scope', 'subject', 2, 60, 1_700_000_002);
-        $nextWindow = dbConsumeAuthRateLimit(self::$db, 'test.scope', 'subject', 2, 60, 1_700_000_060);
+        $previousTimezone = date_default_timezone_get();
+
+        try {
+            date_default_timezone_set('Australia/Adelaide');
+            self::$db->exec("SET SESSION time_zone = '+09:30'");
+
+            $first = dbConsumeAuthRateLimit(self::$db, 'test.scope', 'subject', 2, 60, 1_700_000_000);
+            $second = dbConsumeAuthRateLimit(self::$db, 'test.scope', 'subject', 2, 60, 1_700_000_001);
+            $third = dbConsumeAuthRateLimit(self::$db, 'test.scope', 'subject', 2, 60, 1_700_000_002);
+            $nextWindow = dbConsumeAuthRateLimit(self::$db, 'test.scope', 'subject', 2, 60, 1_700_000_060);
+        } finally {
+            date_default_timezone_set($previousTimezone);
+            self::$db->exec("SET SESSION time_zone = '+00:00'");
+        }
 
         $this->assertTrue($first['allowed']);
         $this->assertSame(1, $first['count']);
+        $this->assertSame(utcDbDateTime(1_699_999_980), $first['bucketStart']);
         $this->assertTrue($second['allowed']);
         $this->assertSame(2, $second['count']);
         $this->assertFalse($third['allowed']);

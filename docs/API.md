@@ -6,6 +6,10 @@ Base URL: `https://<your-domain>/api`
 
 Only documented routes under `/api/health`, `/api/health/email`, `/api/auth/*`, and `/api/projects*` are public API contract. PHP source files, Composer/vendor files, migrations, database files, config files, tests, and deployment internals under paths such as `/api/src`, `/api/vendor`, `/api/database`, and `/api/tests` are implementation details. Production deployments must deny those paths with `403`.
 
+## Timestamp Contract
+
+All API timestamps are UTC and use ISO 8601 second precision: `YYYY-MM-DDTHH:mm:ssZ`. Responses do not include fractional seconds.
+
 ## Health Endpoints
 
 ### API Health
@@ -33,7 +37,7 @@ Checks database connectivity, verifies required auth configuration, verifies eve
     "login_codes.code_verifier": true,
     "auth_rate_limits.scope": true
   },
-  "appliedMigrations": [1, 2, 3, 4],
+  "appliedMigrations": [1, 2, 3, 4, 5],
   "pendingMigrations": [],
   "timestamp": "2026-05-10T00:00:00Z"
 }
@@ -313,7 +317,7 @@ Creates a new project and returns a cloud project URL. New projects default to p
 {
   "id": "AbCdEfGhIjKl",
   "shareUrl": "https://www.registerviewer.com/#/p/AbCdEfGhIjKl",
-  "createdAt": "2026-02-23T09:00:00.000Z",
+  "createdAt": "2026-02-23T09:00:00Z",
   "version": 1
 }
 ```
@@ -344,8 +348,8 @@ Retrieves a project by its 12-character base62 ID.
 {
   "id": "AbCdEfGhIjKl",
   "data": { "version": 1, "registers": [...], "registerValues": {...} },
-  "createdAt": "2026-02-23T09:00:00.000Z",
-  "updatedAt": "2026-02-23T09:00:00.000Z",
+  "createdAt": "2026-02-23T09:00:00Z",
+  "updatedAt": "2026-02-23T09:00:00Z",
   "visibility": "unlisted",
   "version": 3,
   "isOwner": true
@@ -402,7 +406,7 @@ The `version` must match the server's current version. On success, the server in
 ```json
 {
   "id": "AbCdEfGhIjKl",
-  "updatedAt": "2026-02-23T10:00:00.000Z",
+  "updatedAt": "2026-02-23T10:00:00Z",
   "version": 4
 }
 ```
@@ -455,7 +459,7 @@ The `visibility` field is required and must be `"private"` or `"unlisted"`.
 ```json
 {
   "id": "AbCdEfGhIjKl",
-  "updatedAt": "2026-02-23T10:00:00.000Z"
+  "updatedAt": "2026-02-23T10:00:00Z"
 }
 ```
 
@@ -509,8 +513,8 @@ Lists all projects owned by the authenticated user.
       "id": "AbCdEfGhIjKl",
       "title": "My Project",
       "visibility": "private",
-      "createdAt": "2026-02-23T09:00:00.000Z",
-      "updatedAt": "2026-02-23T09:00:00.000Z",
+      "createdAt": "2026-02-23T09:00:00Z",
+      "updatedAt": "2026-02-23T09:00:00Z",
       "version": 3
     }
   ]

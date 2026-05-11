@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+date_default_timezone_set('UTC');
+
 // Constants normally defined in index.php
 define('SECURITY_HEADERS', [
     'X-Content-Type-Options'  => 'nosniff',
@@ -17,6 +19,7 @@ $_SERVER['REQUEST_URI'] = '/';
 require __DIR__ . '/../vendor/autoload.php';
 
 require __DIR__ . '/../src/api-response.php';
+require __DIR__ . '/../src/time.php';
 // Require source files (order matters: validation.php defines LIMITS constant)
 require __DIR__ . '/../src/validation.php';
 require __DIR__ . '/../src/request-body.php';

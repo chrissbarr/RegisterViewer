@@ -70,16 +70,20 @@ function dbCreateProject(
     ?string $title,
     int $userId,
 ): void {
+    $now = utcDbDateTime();
     $stmt = $db->prepare(
-        'INSERT INTO projects (public_id, visibility, data, title, user_id)
-         VALUES (:public_id, :visibility, :data, :title, :user_id)'
+        'INSERT INTO projects (public_id, visibility, data, title, user_id, created_at, updated_at, last_accessed_at)
+         VALUES (:public_id, :visibility, :data, :title, :user_id, :created_at, :updated_at, :last_accessed_at)'
     );
     $stmt->execute([
-        'public_id'  => $publicId,
-        'visibility' => $visibility,
-        'data'       => $data,
-        'title'      => $title,
-        'user_id'    => $userId,
+        'public_id'        => $publicId,
+        'visibility'       => $visibility,
+        'data'             => $data,
+        'title'            => $title,
+        'user_id'          => $userId,
+        'created_at'       => $now,
+        'updated_at'       => $now,
+        'last_accessed_at' => $now,
     ]);
 }
 
@@ -93,16 +97,19 @@ function dbUpdateProject(
     string $data,
     ?string $title,
 ): void {
+    $now = utcDbDateTime();
     $stmt = $db->prepare(
         'UPDATE projects
          SET data = :data, title = :title,
-             updated_at = NOW(), last_accessed_at = NOW()
+             updated_at = :updated_at, last_accessed_at = :last_accessed_at
          WHERE public_id = :public_id'
     );
     $stmt->execute([
-        'data'       => $data,
-        'title'      => $title,
-        'public_id'  => $publicId,
+        'data'             => $data,
+        'title'            => $title,
+        'public_id'        => $publicId,
+        'updated_at'       => $now,
+        'last_accessed_at' => $now,
     ]);
 }
 
@@ -124,18 +131,21 @@ function dbUpdateProjectVersioned(
     int $clientVersion,
     int $userId,
 ): array {
+    $now = utcDbDateTime();
     $stmt = $db->prepare(
         'UPDATE projects
          SET data = :data, title = :title,
-             version = version + 1, updated_at = NOW(), last_accessed_at = NOW()
+             version = version + 1, updated_at = :updated_at, last_accessed_at = :last_accessed_at
          WHERE public_id = :public_id AND version = :version AND user_id = :user_id'
     );
     $stmt->execute([
-        'data'       => $data,
-        'title'      => $title,
-        'public_id'  => $publicId,
-        'version'    => $clientVersion,
-        'user_id'    => $userId,
+        'data'             => $data,
+        'title'            => $title,
+        'public_id'        => $publicId,
+        'version'          => $clientVersion,
+        'user_id'          => $userId,
+        'updated_at'       => $now,
+        'last_accessed_at' => $now,
     ]);
 
     if ($stmt->rowCount() === 0) {
@@ -167,13 +177,15 @@ function dbGetProjectVersion(PDO $db, string $publicId): int
  */
 function dbPatchVisibility(PDO $db, string $publicId, string $visibility): void
 {
+    $now = utcDbDateTime();
     $stmt = $db->prepare(
-        'UPDATE projects SET visibility = :visibility, updated_at = NOW()
+        'UPDATE projects SET visibility = :visibility, updated_at = :updated_at
          WHERE public_id = :public_id'
     );
     $stmt->execute([
         'visibility' => $visibility,
         'public_id'  => $publicId,
+        'updated_at' => $now,
     ]);
 }
 
@@ -204,13 +216,20 @@ function dbCountProjectsByUserId(PDO $db, int $userId): int
  */
 function dbTouchLastAccessed(PDO $db, string $publicId): void
 {
+    $now = utcDbDateTime();
+    $cutoff = utcDbDateTime(time() - 24 * 60 * 60);
     $stmt = $db->prepare(
         'UPDATE projects
-         SET last_accessed_at = NOW()
+         SET last_accessed_at = :last_accessed_at,
+             updated_at = updated_at
          WHERE public_id = :public_id
-           AND last_accessed_at < DATE_SUB(NOW(), INTERVAL 24 HOUR)'
+           AND last_accessed_at < :cutoff'
     );
-    $stmt->execute(['public_id' => $publicId]);
+    $stmt->execute([
+        'public_id' => $publicId,
+        'last_accessed_at' => $now,
+        'cutoff' => $cutoff,
+    ]);
 }
 
 /**

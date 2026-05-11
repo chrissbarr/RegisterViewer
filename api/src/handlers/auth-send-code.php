@@ -52,7 +52,7 @@ function handleAuthSendCode(
 
     // Store a keyed verifier with 10-minute expiry (SEC-04: never store plaintext OTP)
     $codeVerifier = createOtpVerifier($config, $email, $code);
-    $expiresAt = date('Y-m-d H:i:s', time() + OTP_EXPIRY_SECONDS);
+    $expiresAt = utcDbDateTime(time() + OTP_EXPIRY_SECONDS);
     $db->beginTransaction();
     try {
         dbMarkActiveLoginCodesUsed($db, $email);

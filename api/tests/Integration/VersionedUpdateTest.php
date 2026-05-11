@@ -28,6 +28,7 @@ final class VersionedUpdateTest extends TestCase
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             PDO::ATTR_EMULATE_PREPARES => false,
         ]);
+        self::$db->exec("SET SESSION time_zone = '+00:00'");
         // Create test user
         self::$db->exec("INSERT IGNORE INTO users (email) VALUES ('version-test@example.com')");
         $stmt = self::$db->prepare("SELECT id FROM users WHERE email = 'version-test@example.com'");
@@ -37,6 +38,8 @@ final class VersionedUpdateTest extends TestCase
 
     protected function setUp(): void
     {
+        date_default_timezone_set('UTC');
+        self::$db->exec("SET SESSION time_zone = '+00:00'");
         // Clean up test projects
         self::$db->exec("DELETE FROM projects WHERE user_id = " . self::$testUserId);
     }

@@ -78,7 +78,8 @@ function handleAuthVerifyCode(PDO $db, array $config, array $body, ?array $serve
             $db->commit();
             return new ApiResponse(['error' => 'Invalid or expired code'], 401);
         }
-        if ((int) $codeRow['used'] === 1 || strtotime((string) $codeRow['expires_at']) <= time()) {
+        $expiresAt = parseUtcDbDateTime((string) $codeRow['expires_at']);
+        if ((int) $codeRow['used'] === 1 || $expiresAt === null || $expiresAt <= time()) {
             $db->commit();
             return new ApiResponse(['error' => 'Invalid or expired code'], 401);
         }

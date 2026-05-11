@@ -17,6 +17,7 @@ declare(strict_types=1);
  *   data-access/tokens.php      — revoked_tokens table (3 functions)
  */
 
+require_once __DIR__ . '/time.php';
 require __DIR__ . '/data-access/projects.php';
 require __DIR__ . '/data-access/users.php';
 require __DIR__ . '/data-access/login-codes.php';

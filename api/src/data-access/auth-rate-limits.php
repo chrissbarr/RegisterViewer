@@ -27,19 +27,20 @@ function dbConsumeAuthRateLimit(
 ): array {
     $now ??= time();
     $bucketEpoch = intdiv($now, $windowSeconds) * $windowSeconds;
-    $bucketStart = date('Y-m-d H:i:s', $bucketEpoch);
-    $expiresAt = date('Y-m-d H:i:s', $bucketEpoch + $windowSeconds + AUTH_RATE_LIMIT_RETENTION_SECONDS);
+    $currentTime = utcDbDateTime($now);
+    $bucketStart = utcDbDateTime($bucketEpoch);
+    $expiresAt = utcDbDateTime($bucketEpoch + $windowSeconds + AUTH_RATE_LIMIT_RETENTION_SECONDS);
     $identityHash = hash('sha256', "$scope:$identity");
 
     $stmt = $db->prepare(
-        'INSERT INTO auth_rate_limits (scope, identity_hash, bucket_start, attempt_count, expires_at)
-         VALUES (?, ?, ?, LAST_INSERT_ID(1), ?)
+        'INSERT INTO auth_rate_limits (scope, identity_hash, bucket_start, attempt_count, expires_at, updated_at)
+         VALUES (?, ?, ?, LAST_INSERT_ID(1), ?, ?)
          ON DUPLICATE KEY UPDATE
            attempt_count = LAST_INSERT_ID(attempt_count + 1),
            expires_at = ?,
-           updated_at = CURRENT_TIMESTAMP'
+           updated_at = ?'
     );
-    $stmt->execute([$scope, $identityHash, $bucketStart, $expiresAt, $expiresAt]);
+    $stmt->execute([$scope, $identityHash, $bucketStart, $expiresAt, $currentTime, $expiresAt, $currentTime]);
 
     $count = (int) $db->query('SELECT LAST_INSERT_ID()')->fetchColumn();
 
@@ -55,12 +56,13 @@ function dbConsumeAuthRateLimit(
 
 function dbPurgeExpiredAuthRateLimitBuckets(PDO $db, int $limit = 10000): int
 {
+    $limit = max(1, $limit);
     $stmt = $db->prepare(
         "DELETE FROM auth_rate_limits
-         WHERE expires_at < NOW()
+         WHERE expires_at < :now
          LIMIT $limit"
     );
-    $stmt->execute();
+    $stmt->execute(['now' => utcDbDateTime()]);
     return $stmt->rowCount();
 }
 

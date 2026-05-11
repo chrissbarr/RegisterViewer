@@ -21,10 +21,12 @@ function dbIsTokenRevoked(PDO $db, string $jti): bool
  */
 function dbRevokeToken(PDO $db, string $jti, string $expiresAt): void
 {
+    $revokedAt = utcDbDateTime();
     $stmt = $db->prepare(
-        'INSERT IGNORE INTO revoked_tokens (jti, expires_at) VALUES (:jti, :expires_at)'
+        'INSERT IGNORE INTO revoked_tokens (jti, expires_at, revoked_at)
+         VALUES (:jti, :expires_at, :revoked_at)'
     );
-    $stmt->execute(['jti' => $jti, 'expires_at' => $expiresAt]);
+    $stmt->execute(['jti' => $jti, 'expires_at' => $expiresAt, 'revoked_at' => $revokedAt]);
 }
 
 /**
@@ -33,5 +35,6 @@ function dbRevokeToken(PDO $db, string $jti, string $expiresAt): void
  */
 function dbCleanupRevokedTokens(PDO $db): void
 {
-    $db->exec('DELETE FROM revoked_tokens WHERE expires_at < NOW()');
+    $stmt = $db->prepare('DELETE FROM revoked_tokens WHERE expires_at < :now');
+    $stmt->execute(['now' => utcDbDateTime()]);
 }

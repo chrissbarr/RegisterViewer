@@ -27,15 +27,17 @@ const OTP_MAX_ATTEMPTS = 5;
  */
 function dbCreateLoginCode(PDO $db, string $email, string $codeVerifier, string $expiresAt, ?string $ipAddress = null): void
 {
+    $now = utcDbDateTime();
     $stmt = $db->prepare(
-        'INSERT INTO login_codes (email, code_verifier, expires_at, ip_address)
-         VALUES (:email, :code_verifier, :expires_at, :ip_address)'
+        'INSERT INTO login_codes (email, code_verifier, expires_at, ip_address, created_at)
+         VALUES (:email, :code_verifier, :expires_at, :ip_address, :created_at)'
     );
     $stmt->execute([
         'email'         => $email,
         'code_verifier' => $codeVerifier,
         'expires_at'    => $expiresAt,
         'ip_address'    => $ipAddress,
+        'created_at'    => $now,
     ]);
 }
 
@@ -78,11 +80,12 @@ function dbMarkLoginCodeUsed(PDO $db, int $id): void
 
 function dbMarkActiveLoginCodesUsed(PDO $db, string $email): void
 {
+    $now = utcDbDateTime();
     $stmt = $db->prepare(
         'UPDATE login_codes SET used = 1
-         WHERE email = :email AND used = 0 AND expires_at > NOW()'
+         WHERE email = :email AND used = 0 AND expires_at > :now'
     );
-    $stmt->execute(['email' => $email]);
+    $stmt->execute(['email' => $email, 'now' => $now]);
 }
 
 /**
@@ -90,11 +93,12 @@ function dbMarkActiveLoginCodesUsed(PDO $db, string $email): void
  */
 function dbCountRecentLoginCodes(PDO $db, string $email): int
 {
+    $cutoff = utcDbDateTime(time() - 3600);
     $stmt = $db->prepare(
         'SELECT COUNT(*) FROM login_codes
-         WHERE email = :email AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)'
+         WHERE email = :email AND created_at > :cutoff'
     );
-    $stmt->execute(['email' => $email]);
+    $stmt->execute(['email' => $email, 'cutoff' => $cutoff]);
     return (int) $stmt->fetchColumn();
 }
 
@@ -104,7 +108,7 @@ function dbCountRecentLoginCodes(PDO $db, string $email): int
  */
 function dbCountAllRecentLoginCodes(PDO $db, int $intervalSeconds = 60): int
 {
-    $cutoff = date('Y-m-d H:i:s', time() - $intervalSeconds);
+    $cutoff = utcDbDateTime(time() - $intervalSeconds);
     $stmt = $db->prepare(
         'SELECT COUNT(*) FROM login_codes WHERE created_at > :cutoff'
     );
@@ -118,7 +122,7 @@ function dbCountAllRecentLoginCodes(PDO $db, int $intervalSeconds = 60): int
  */
 function dbCountRecentLoginCodesByIp(PDO $db, string $ipAddress, int $intervalSeconds = 900): int
 {
-    $cutoff = date('Y-m-d H:i:s', time() - $intervalSeconds);
+    $cutoff = utcDbDateTime(time() - $intervalSeconds);
     $stmt = $db->prepare(
         'SELECT COUNT(*) FROM login_codes
          WHERE ip_address = :ip AND created_at > :cutoff'
@@ -137,12 +141,14 @@ function dbCountRecentLoginCodesByIp(PDO $db, string $ipAddress, int $intervalSe
  */
 function dbPurgeExpiredLoginCodes(PDO $db): int
 {
+    $now = utcDbDateTime();
+    $createdBefore = utcDbDateTime(time() - 24 * 60 * 60);
     $stmt = $db->prepare(
         'DELETE FROM login_codes
-         WHERE (used = 1 OR expires_at < NOW())
-           AND created_at < DATE_SUB(NOW(), INTERVAL 24 HOUR)
+         WHERE (used = 1 OR expires_at < :now)
+           AND created_at < :created_before
          LIMIT 10000'
     );
-    $stmt->execute();
+    $stmt->execute(['now' => $now, 'created_before' => $createdBefore]);
     return $stmt->rowCount();
 }

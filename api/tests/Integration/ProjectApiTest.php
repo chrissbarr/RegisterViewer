@@ -41,6 +41,8 @@ final class ProjectApiTest extends TestCase
 
     protected function setUp(): void
     {
+        date_default_timezone_set('UTC');
+        self::$db->exec("SET SESSION time_zone = '+00:00'");
         self::$db->exec('DELETE FROM projects');
         self::$db->exec('DELETE FROM users');
     }
@@ -157,6 +159,93 @@ final class ProjectApiTest extends TestCase
         $this->assertNotNull($timestamps);
         $this->assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/', $timestamps['created_at_iso']);
         $this->assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/', $timestamps['updated_at_iso']);
+    }
+
+    #[Test]
+    public function projectTimestampsRemainUtcUnderNonUtcPhpAndDbSession(): void
+    {
+        $previousTimezone = date_default_timezone_get();
+
+        try {
+            date_default_timezone_set('Australia/Adelaide');
+            self::$db->exec("SET SESSION time_zone = '+09:30'");
+
+            $userId = $this->createTestUser('utc-project@example.com');
+            $id = generatePublicId();
+            $beforeCreate = time();
+            dbCreateProject(self::$db, $id, 'private', self::validDataJson(), null, $userId);
+            $afterCreate = time();
+
+            $project = dbGetProject(self::$db, $id);
+            $createdAt = new DateTimeImmutable($project['created_at_iso']);
+            $updatedAt = new DateTimeImmutable($project['updated_at_iso']);
+
+            $this->assertGreaterThanOrEqual($beforeCreate, $createdAt->getTimestamp());
+            $this->assertLessThanOrEqual($afterCreate, $createdAt->getTimestamp());
+            $this->assertSame($createdAt->getTimestamp(), $updatedAt->getTimestamp());
+
+            dbUpdateProject(self::$db, $id, self::validDataJson(), 'UTC title');
+            $afterUpdate = time();
+            $updated = dbGetProjectTimestamps(self::$db, $id);
+            $updatedAt = new DateTimeImmutable($updated['updated_at_iso']);
+
+            $this->assertLessThanOrEqual($afterUpdate, $updatedAt->getTimestamp());
+            $this->assertGreaterThanOrEqual($beforeCreate, $updatedAt->getTimestamp());
+
+            $versionedData = json_encode([
+                'version' => 1,
+                'registers' => [
+                    ['name' => 'VERSIONED', 'width' => 8, 'fields' => []],
+                ],
+                'registerValues' => new \stdClass(),
+            ], JSON_UNESCAPED_SLASHES);
+            $beforeVersionedUpdate = time();
+            $versionedResult = dbUpdateProjectVersioned(self::$db, $id, $versionedData, 'UTC versioned', 1, $userId);
+            $afterVersionedUpdate = time();
+            $this->assertTrue($versionedResult['updated']);
+            $versionedTimestamps = dbGetProjectTimestamps(self::$db, $id);
+            $versionedUpdatedAt = new DateTimeImmutable($versionedTimestamps['updated_at_iso']);
+            $this->assertGreaterThanOrEqual($beforeVersionedUpdate, $versionedUpdatedAt->getTimestamp());
+            $this->assertLessThanOrEqual($afterVersionedUpdate, $versionedUpdatedAt->getTimestamp());
+
+            $beforePatch = time();
+            dbPatchVisibility(self::$db, $id, 'unlisted');
+            $afterPatch = time();
+            $patchedTimestamps = dbGetProjectTimestamps(self::$db, $id);
+            $patchedUpdatedAt = new DateTimeImmutable($patchedTimestamps['updated_at_iso']);
+            $this->assertGreaterThanOrEqual($beforePatch, $patchedUpdatedAt->getTimestamp());
+            $this->assertLessThanOrEqual($afterPatch, $patchedUpdatedAt->getTimestamp());
+
+            $stableUpdatedAt = utcDbDateTime(time() - 3600);
+            $oldLastAccessedAt = utcDbDateTime(time() - 2 * 24 * 60 * 60);
+            $stmt = self::$db->prepare(
+                'UPDATE projects
+                 SET last_accessed_at = :last_accessed_at, updated_at = :updated_at
+                 WHERE public_id = :public_id'
+            );
+            $stmt->execute([
+                'public_id' => $id,
+                'last_accessed_at' => $oldLastAccessedAt,
+                'updated_at' => $stableUpdatedAt,
+            ]);
+
+            $beforeTouch = time();
+            dbTouchLastAccessed(self::$db, $id);
+            $afterTouch = time();
+            $stmt = self::$db->prepare(
+                'SELECT last_accessed_at, updated_at FROM projects WHERE public_id = :public_id'
+            );
+            $stmt->execute(['public_id' => $id]);
+            $touched = $stmt->fetch();
+            $lastAccessedAt = parseUtcDbDateTime((string) $touched['last_accessed_at']);
+            $this->assertNotNull($lastAccessedAt);
+            $this->assertGreaterThanOrEqual($beforeTouch, $lastAccessedAt);
+            $this->assertLessThanOrEqual($afterTouch, $lastAccessedAt);
+            $this->assertSame($stableUpdatedAt, $touched['updated_at']);
+        } finally {
+            date_default_timezone_set($previousTimezone);
+            self::$db->exec("SET SESSION time_zone = '+00:00'");
+        }
     }
 
     #[Test]

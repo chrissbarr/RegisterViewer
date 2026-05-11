@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+date_default_timezone_set('UTC');
+
 // ---- Bootstrap ----
 
 $config = require __DIR__ . '/config.php';
@@ -13,6 +15,7 @@ if (file_exists($prodConfigPath)) {
 require __DIR__ . '/vendor/autoload.php';
 
 require __DIR__ . '/src/api-response.php';
+require __DIR__ . '/src/time.php';
 require __DIR__ . '/src/database.php';
 require __DIR__ . '/src/cors.php';
 require __DIR__ . '/src/auth.php';
@@ -212,7 +215,7 @@ if ($path === '/api/health' && ($method === 'GET' || $method === 'HEAD')) {
                 'error' => 'Service temporarily unavailable',
                 'code' => 'config_not_ready',
                 'authConfig' => $authConfigReadiness['checks'],
-                'timestamp' => gmdate('c'),
+                'timestamp' => utcIsoTimestamp(),
             ], 503));
         }
         emitResponse(new ApiResponse([
@@ -227,7 +230,7 @@ if ($path === '/api/health' && ($method === 'GET' || $method === 'HEAD')) {
             ],
             'appliedMigrations' => $readiness['appliedMigrations'] ?? [],
             'pendingMigrations' => $readiness['pendingMigrations'] ?? [],
-            'timestamp' => gmdate('c'),
+            'timestamp' => utcIsoTimestamp(),
         ]));
     } catch (\Throwable $e) {
         error_log('Health check failed: ' . substr($e->getMessage(), 0, 200));
@@ -239,13 +242,13 @@ if ($path === '/api/health' && ($method === 'GET' || $method === 'HEAD')) {
 if ($path === '/api/health/email' && ($method === 'GET' || $method === 'HEAD')) {
     $result = checkEmailHealth($config);
     if ($result['ok']) {
-        emitResponse(new ApiResponse(['status' => 'ok', 'timestamp' => gmdate('c')]));
+        emitResponse(new ApiResponse(['status' => 'ok', 'timestamp' => utcIsoTimestamp()]));
     } else {
         error_log('Email health check failed: ' . ($result['error'] ?? 'unknown'));
         emitResponse(new ApiResponse([
             'status' => 'error',
             'error' => $result['error'] ?? 'Email service unhealthy',
-            'timestamp' => gmdate('c'),
+            'timestamp' => utcIsoTimestamp(),
         ], 503));
     }
 }

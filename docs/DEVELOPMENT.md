@@ -48,7 +48,7 @@ All frontend commands run from the `frontend/` directory:
 | `cd api && docker compose down` | Stop containers |
 | `cd api && docker compose down -v` | Stop containers and reset database |
 
-The PHP migration runner owns local schema creation. The API runs pending numbered migrations before routing, and test commands run `php database/migrate.php` before PHPUnit.
+The PHP migration runner owns local schema creation. The API runs pending numbered migrations before routing, and test commands run `php database/migrate.php` before PHPUnit. API code and tests run PHP/MySQL sessions in UTC; UTC regression tests intentionally switch PHP and MySQL sessions to non-UTC values before asserting API timestamps are emitted as `YYYY-MM-DDTHH:mm:ssZ`.
 
 To reset and re-run migrations: `cd api && docker compose down -v && docker compose up -d`, then request the API or run `php database/migrate.php` in the test container.
 

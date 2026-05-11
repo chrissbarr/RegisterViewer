@@ -49,6 +49,8 @@ This document provides step-by-step instructions for deploying the Register View
 
 The API returns `503 schema_not_ready` instead of routing requests if it cannot apply every numbered migration or prove the required schema shape, including `projects.version`, `login_codes.code_verifier`, and `auth_rate_limits`. `/api/health` also returns `503 config_not_ready` if required auth secrets such as `jwt_secret` or `otp_hash_secret` are missing or too short.
 
+The API sets PHP and MySQL sessions to UTC. App-written `DATETIME` values and API timestamp responses are UTC; API responses use `YYYY-MM-DDTHH:mm:ssZ`. The UTC cutover migration clears transient auth tables (`login_codes`, `auth_rate_limits`, and `revoked_tokens`) while preserving durable users and projects.
+
 ### Step 2: Create Production API Config
 
 1. Log in to cPanel -> **File Manager**
@@ -130,7 +132,7 @@ After first deployment:
 3. Test email sign-in: request an OTP, verify the code, and confirm the app receives a JWT
 4. Test cloud save/share: save a project while signed in, make it unlisted, and verify the shared link opens in a new tab without signing in
 5. Verify private project access requires the owning signed-in account
-6. Confirm deploy smoke tests passed API health. `/api/health` must report `migrations: "ready"`, no pending migrations, applied migrations `[1, 2, 3, 4]`, `authConfig["jwt_secret"] === true`, `authConfig["otp_hash_secret"] === true`, `schema["projects.version"] === true`, `schema["login_codes.code_verifier"] === true`, and `schema["auth_rate_limits.scope"] === true`.
+6. Confirm deploy smoke tests passed API health. `/api/health` must report `migrations: "ready"`, no pending migrations, applied migrations `[1, 2, 3, 4, 5]`, `authConfig["jwt_secret"] === true`, `authConfig["otp_hash_secret"] === true`, `schema["projects.version"] === true`, `schema["login_codes.code_verifier"] === true`, and `schema["auth_rate_limits.scope"] === true`.
 7. Confirm deploy smoke tests passed the API internal-path checks. `/api/config.php`, `/api/src`, `/api/vendor`, `/api/database`, and `/api/tests` must return `403`, never `200`.
 
 ---

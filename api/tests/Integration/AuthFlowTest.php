@@ -61,6 +61,8 @@ final class AuthFlowTest extends TestCase
 
     protected function setUp(): void
     {
+        date_default_timezone_set('UTC');
+        self::$db->exec("SET SESSION time_zone = '+00:00'");
         // Clean tables before each test (order matters due to FK)
         self::$db->exec('DELETE FROM projects');
         self::$db->exec('DELETE FROM auth_rate_limits');
@@ -159,7 +161,9 @@ final class AuthFlowTest extends TestCase
 
         $row = $this->latestLoginCodeRow($email);
         $this->assertNotNull($row);
-        $this->assertLessThanOrEqual(time(), strtotime((string) $row['expires_at']));
+        $expiresAt = parseUtcDbDateTime((string) $row['expires_at']);
+        $this->assertNotNull($expiresAt);
+        $this->assertLessThanOrEqual(time(), $expiresAt);
     }
 
     #[Test]

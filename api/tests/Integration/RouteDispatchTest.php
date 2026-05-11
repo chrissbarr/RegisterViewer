@@ -32,6 +32,8 @@ final class RouteDispatchTest extends TestCase
 
     protected function setUp(): void
     {
+        date_default_timezone_set('UTC');
+        self::$db->exec("SET SESSION time_zone = '+00:00'");
         self::$db->exec('DELETE FROM projects');
         self::$db->exec('DELETE FROM auth_rate_limits');
         self::$db->exec('DELETE FROM login_codes');
