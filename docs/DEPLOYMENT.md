@@ -7,7 +7,7 @@ This document provides step-by-step instructions for deploying the Register View
 - **Frontend**: React SPA built in CI, packaged into a deploy artifact, and deployed to cPanel via FTPS
 - **Backend**: PHP API packaged in CI with production Composer dependencies and deployed to cPanel via FTPS
 - **Data Store**: MySQL database
-- **CI/CD**: CI is the only producer of files intentionally uploaded by the deploy workflow; deploy only downloads, verifies, uploads, and smoke-tests the CI artifact
+- **CI/CD**: CI is the only producer of files intentionally uploaded by the deploy workflow; deploy only downloads, verifies, uploads, and smoke-tests the CI artifact. Deploy may check out workflow helper scripts, but never rebuilds or uploads repository source files.
 
 ### Key Components
 
@@ -55,12 +55,16 @@ The API sets PHP and MySQL sessions to UTC. App-written `DATETIME` values and AP
 
 1. Log in to cPanel -> **File Manager**
 2. Navigate to the API deploy path (e.g., `/subdomains/registerviewer/api/`)
-3. Create `config.production.php` with your production database and auth credentials:
+3. Create `config.production.php` with your production database, public URL/CORS settings, and auth credentials:
 
 ```php
 <?php
 return [
     'environment' => 'production',
+    'app_url' => 'https://www.registerviewer.com',
+    'allowed_origins' => [
+        'https://www.registerviewer.com',
+    ],
     'db' => [
         'host'     => '127.0.0.1',
         'database' => 'your_database_name',
@@ -103,7 +107,7 @@ openssl rand -hex 32
 | `FTP_USERNAME` | FTP username (usually same as cPanel username) | cPanel account |
 | `FTP_PASSWORD` | FTP password | cPanel account |
 
-> **Note:** Auth credentials (`JWT_SECRET`, `OTP_HASH_SECRET`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`) are **not** set as GitHub Secrets. They live in `config.production.php` on the server (see Step 2). This keeps secrets off GitHub and allows per-environment values.
+> **Note:** Server API config values (`app_url`, `allowed_origins`, `jwt_secret`, `otp_hash_secret`, `resend_api_key`, `resend_from_email`, and database credentials) are **not** GitHub Actions variables or secrets. They live in `config.production.php` on the server (see Step 2). GitHub only stores FTPS credentials and the public `VITE_API_URL` build/deploy variable.
 
 #### Variables (plain GitHub Actions variables)
 
@@ -111,7 +115,7 @@ openssl rand -hex 32
 |---------------|-------|--------|
 | `VITE_API_URL` | Production HTTPS origin, e.g. `https://www.registerviewer.com` | Public site URL |
 
-`VITE_API_URL` is required. CI validates it before assembling the deploy payload, and Deploy validates it again before checksum verification, FTPS upload, and smoke tests.
+`VITE_API_URL` is required. It must be a canonical lowercase HTTPS origin on a public DNS host: no default `:443` port, IP address, path, query string, fragment, credentials, whitespace, local/test host, or trailing slash. CI validates it before building the production frontend artifact and again before assembling the deploy payload; Deploy validates it before checksum verification, FTPS upload, and smoke tests. The PHP API does not read `VITE_API_URL`; CORS is controlled by `allowed_origins` in `config.production.php`.
 
 ### Step 4: First Deployment
 
@@ -195,7 +199,7 @@ To manually deploy an existing CI artifact without rebuilding:
 
 **Error: "GitHub Actions variable VITE_API_URL is required"**
 - Set `VITE_API_URL` under repository **Settings** -> **Secrets and variables** -> **Actions** -> **Variables**
-- Use the production HTTPS origin, for example `https://www.registerviewer.com`
+- Use the canonical lowercase production HTTPS origin on a public DNS host, for example `https://www.registerviewer.com`; do not use an IP address, default `:443` port, or include `/api`, a trailing slash, query string, fragment, credentials, whitespace, or a local/test host
 - Re-run CI after changing the variable so the frontend build and deploy provenance use the same value
 
 **Error: "Missing required deploy file" or "Forbidden deploy path present"**
@@ -355,6 +359,8 @@ To test with a local frontend + API:
 3. Start frontend: `npm run dev`
 4. Frontend will use local API for all cloud operations
 
+The strict HTTPS-origin `VITE_API_URL` rule applies to GitHub Actions production CI/deploy. Local development may use `http://localhost:8080`.
+
 ---
 
 ## Configuration Reference
@@ -369,7 +375,7 @@ FTP_PASSWORD             # FTP password
 
 ### GitHub Actions Variables Required
 
-- **VITE_API_URL**: Set to the production HTTPS origin, for example `https://www.registerviewer.com`. CI uses it for the frontend production build and deploy provenance. Deploy validates it before verification, FTPS, and smoke tests.
+- **VITE_API_URL**: Canonical lowercase public production HTTPS origin on a DNS host, for example `https://www.registerviewer.com`. Do not use an IP address, default `:443` port, or include `/api`, a trailing slash, query string, fragment, credentials, whitespace, or a local/test host. CI uses it for the frontend production build and deploy provenance. Deploy validates it before verification, FTPS upload, and smoke tests. It does not configure the PHP API server.
 
 ### Key Files
 
@@ -453,7 +459,7 @@ Each log entry includes:
 A: Yes! Run `cd api && docker compose up -d` to start a local server on `localhost:8080`. The `.env.development` file already points `VITE_API_URL` to `http://localhost:8080`.
 
 **Q: What if deployment succeeds but the app doesn't work?**
-A: Check: (1) `VITE_API_URL` is correct in GitHub variables, (2) `config.production.php` exists on the server with valid DB credentials, (3) browser console for errors.
+A: Check: (1) `VITE_API_URL` is correct in GitHub variables, (2) `config.production.php` exists on the server with valid DB credentials, `app_url`, and `allowed_origins`, (3) browser console for errors.
 
 **Q: How do I see API logs in production?**
 A: Check cPanel -> **Error Log** for PHP errors. You can also enable custom logging in `config.production.php`.
@@ -561,12 +567,13 @@ After updating any auth config value, check the PHP error log for config warning
 ### Common Issues Checklist
 
 - [ ] All GitHub secrets are set: `FTP_HOST`, `FTP_USERNAME`, `FTP_PASSWORD` (run `gh secret list` to verify)
-- [ ] GitHub Actions variable `VITE_API_URL` is set to the production HTTPS origin
+- [ ] GitHub Actions variable `VITE_API_URL` is set to the canonical lowercase production HTTPS origin on a public DNS host with no `/api` path or trailing slash
+- [ ] No GitHub Actions `ALLOWED_ORIGINS` variable is expected; CORS origins live in `config.production.php`
 - [ ] FTP credentials work (test with FileZilla or similar FTP client)
 - [ ] The CI run has successful `frontend`, `e2e`, `api`, and `deploy-payload` jobs
 - [ ] The CI run was triggered by a `push` to `master`
 - [ ] The CI run uploaded `registerapptest-deploy-<sha>` and the Deploy run is using the same SHA
-- [ ] `config.production.php` exists on server with correct DB credentials, `jwt_secret`, `otp_hash_secret`, and `resend_api_key`
+- [ ] `config.production.php` exists on server with correct DB credentials, `app_url`, `allowed_origins`, `jwt_secret`, `otp_hash_secret`, and `resend_api_key`
 - [ ] `/api/health` returns ready and confirms all numbered migrations plus `projects.version`, `login_codes.code_verifier`, and `auth_rate_limits`
 - [ ] PHP 8.3+ is enabled on the server
 - [ ] Apache `mod_rewrite` is enabled

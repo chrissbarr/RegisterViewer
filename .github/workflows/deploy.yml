@@ -61,6 +61,13 @@ jobs:
             echo "sha=${INPUT_EXPECTED_SHA,,}" >> "${GITHUB_OUTPUT}"
           fi
 
+      - name: Checkout workflow helpers
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            .github/scripts/validate_vite_api_url.py
+          sparse-checkout-cone-mode: false
+
       - name: Verify CI run provenance
         env:
           EXPECTED_RUN_ID: ${{ steps.payload.outputs.run_id }}
@@ -124,31 +131,16 @@ jobs:
           path: deploy
 
       - name: Validate VITE_API_URL
+        id: vite_api_url
         env:
           VITE_API_URL: ${{ vars.VITE_API_URL }}
-        run: |
-          set -euo pipefail
-          if [ -z "${VITE_API_URL}" ]; then
-            echo "::error::GitHub Actions variable VITE_API_URL is required"
-            exit 1
-          fi
-          case "${VITE_API_URL}" in
-            https://*) ;;
-            *)
-              echo "::error::VITE_API_URL must be an https:// URL"
-              exit 1
-              ;;
-          esac
-          if printf '%s' "${VITE_API_URL}" | grep -q '[[:space:]]'; then
-            echo "::error::VITE_API_URL must not contain whitespace"
-            exit 1
-          fi
+        run: python3 .github/scripts/validate_vite_api_url.py
 
       - name: Verify deploy payload
         env:
           EXPECTED_SHA: ${{ steps.payload.outputs.sha }}
           EXPECTED_RUN_ID: ${{ steps.payload.outputs.run_id }}
-          EXPECTED_VITE_API_URL: ${{ vars.VITE_API_URL }}
+          EXPECTED_VITE_API_URL: ${{ steps.vite_api_url.outputs.origin }}
         run: |
           set -euo pipefail
           required_files=(
@@ -255,6 +247,9 @@ jobs:
           import sys
           from pathlib import Path
 
+          sys.path.insert(0, ".github/scripts")
+          from validate_vite_api_url import validation_errors
+
           metadata_path = Path("deploy/release.json")
           metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
           errors = []
@@ -278,6 +273,8 @@ jobs:
               errors.append("metadata artifact name does not match requested artifact")
           if metadata.get("vite_api_url") != os.environ["EXPECTED_VITE_API_URL"]:
               errors.append("metadata VITE_API_URL does not match current GitHub Actions variable")
+          for error in validation_errors(str(metadata.get("vite_api_url") or "")):
+              errors.append(f"metadata {error}")
 
           if errors:
               for error in errors:
@@ -300,7 +297,7 @@ jobs:
       - name: Post-deploy smoke test
         env:
           EXPECTED_SHA: ${{ steps.payload.outputs.sha }}
-          VITE_API_URL: ${{ vars.VITE_API_URL }}
+          VITE_API_URL: ${{ steps.vite_api_url.outputs.origin }}
         run: |
           set -euo pipefail
           sleep 15
@@ -317,6 +314,9 @@ jobs:
           metadata = json.loads(os.environ["RELEASE_JSON"])
           if metadata.get("sha") != os.environ["EXPECTED_SHA"]:
               print("::error::Deployed release metadata SHA does not match requested artifact SHA")
+              sys.exit(1)
+          if metadata.get("vite_api_url") != os.environ["VITE_API_URL"]:
+              print("::error::Deployed release metadata VITE_API_URL does not match current GitHub Actions variable")
               sys.exit(1)
           PY
           echo "Release metadata OK"

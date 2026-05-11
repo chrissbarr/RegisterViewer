@@ -533,12 +533,21 @@ Lists all projects owned by the authenticated user.
 
 ## CORS
 
-**Production origins:**
+**Production origins:** The API sends CORS headers only when the request `Origin` exactly matches an entry in the PHP config `allowed_origins` array. The default `api/config.php` value is:
+
 - `https://www.registerviewer.com`
 
-**Development:** Any `localhost` or `127.0.0.1` origin is allowed when `ENVIRONMENT !== 'production'`.
+Production deployments may override this in the server-only `api/config.production.php` file:
 
-**Override:** Set the `ALLOWED_ORIGINS` environment variable to a comma-separated list.
+```php
+'allowed_origins' => [
+    'https://www.registerviewer.com',
+],
+```
+
+`VITE_API_URL` does not configure CORS. It is a GitHub Actions/frontend build variable. Keep `VITE_API_URL`, `app_url`, and `allowed_origins` aligned to the same public HTTPS origin unless the deployment intentionally separates frontend and API origins.
+
+**Development:** Any `localhost` or `127.0.0.1` origin is allowed when the API config `environment` is not `production`.
 
 **Preflight:** `OPTIONS` requests from an allowed origin return `204` with CORS headers. Disallowed origins return `403`.
 
@@ -580,7 +589,9 @@ Strict-Transport-Security: max-age=31536000; includeSubDomains
 | Max metadata string length | 500 chars |
 | Valid `addressUnitBits` | 8, 16, 32, 64, 128 |
 
-## Environment Variables
+## API Server Configuration
+
+In production, set these values in server-only `config.production.php`. The API also supports the environment-variable names below as fallbacks for containerized/local environments.
 
 | Variable | Required | Description |
 |---|---|---|
@@ -590,10 +601,11 @@ Strict-Transport-Security: max-age=31536000; includeSubDomains
 | `DB_USERNAME` | Yes | MySQL database user |
 | `DB_PASSWORD` | Yes | MySQL database password |
 | `APP_ENV` | No | Set to `production` to restrict CORS. Default: `production`. |
-| `ALLOWED_ORIGINS` | No | Configured in `config.php` `allowed_origins` array |
 | `JWT_SECRET` | Yes* | HMAC-SHA256 secret for signing JWT tokens. **Must be ≥32 characters.** Generate with: `openssl rand -hex 32` |
 | `OTP_HASH_SECRET` | Yes* | Separate HMAC-SHA256 secret for pending email OTP verifiers. **Must be ≥32 characters.** Generate with: `openssl rand -hex 32` |
 | `RESEND_API_KEY` | Yes* | API key from [Resend](https://resend.com/) for sending OTP emails. Without it, login codes won't be delivered (errors logged server-side). |
 | `RESEND_FROM_EMAIL` | No | Sender email address for OTP emails. Default: `noreply@registerviewer.com`. Must be a verified domain in Resend. |
 
 \* Required for deployed cloud save/share and authentication endpoints. Only a local-only/static frontend deployment with no API can omit them.
+
+CORS is not read from an `ALLOWED_ORIGINS` environment variable; set the PHP `allowed_origins` array in `config.production.php`.

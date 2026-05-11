@@ -60,6 +60,8 @@ To test cloud features locally:
 2. The `frontend/.env.development` file already sets `VITE_API_URL=http://localhost:8080`
 3. Start the frontend: `cd frontend && npm run dev`
 
+Production GitHub Actions validate `VITE_API_URL` as a canonical lowercase HTTPS origin on a public DNS host with no trailing slash or path. Local development intentionally uses the localhost HTTP origin above.
+
 ## Architecture
 
 Register Viewer is a React SPA with a PHP API backend for cloud save/share. The frontend handles all register decoding/encoding client-side; the API provides REST endpoints for persistent cloud storage.
