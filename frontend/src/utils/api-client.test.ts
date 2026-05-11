@@ -913,11 +913,7 @@ describe('postAuthLogout', () => {
       {
         method: 'POST',
         signal: expect.any(AbortSignal),
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer my-jwt-token',
-        },
-        body: JSON.stringify({}),
+        headers: { Authorization: 'Bearer my-jwt-token' },
       },
     );
   });

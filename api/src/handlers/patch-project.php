@@ -2,11 +2,16 @@
 
 declare(strict_types=1);
 
-function handlePatchProject(PDO $db, string $id, array $auth, array $body): ApiResponse
+function handlePatchProject(PDO $db, string $id, array $auth, array|\Closure $bodySource): ApiResponse
 {
     $existing = requireOwnership($db, $id, $auth);
     if ($existing instanceof ApiResponse) {
         return $existing;
+    }
+
+    $body = resolveAssocBody($bodySource);
+    if ($body instanceof ApiResponse) {
+        return $body;
     }
 
     if (!isset($body['visibility'])) {

@@ -213,6 +213,8 @@ Revokes the current JWT token. The token's `jti` is added to the `revoked_tokens
 
 **Auth:** Required (JWT only)
 
+**Request Body:** None
+
 **Response:** `204 No Content` (empty body)
 
 **Errors:**
@@ -503,7 +505,7 @@ Lists all projects owned by the authenticated user.
 
 **Override:** Set the `ALLOWED_ORIGINS` environment variable to a comma-separated list.
 
-**Preflight:** All `OPTIONS` requests return `204` with CORS headers.
+**Preflight:** `OPTIONS` requests from an allowed origin return `204` with CORS headers. Disallowed origins return `403`.
 
 ## Security Headers
 

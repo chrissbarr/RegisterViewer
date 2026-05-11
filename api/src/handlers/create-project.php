@@ -2,10 +2,8 @@
 
 declare(strict_types=1);
 
-function handleCreateProject(PDO $db, array $config, array $auth, array $parsed): ApiResponse
+function handleCreateProject(PDO $db, array $config, array $auth, array|\Closure $bodySource): ApiResponse
 {
-    $body = $parsed['assoc'];
-
     if ($auth['kind'] !== 'jwt') {
         return new ApiResponse(['error' => 'Authentication required'], 401);
     }
@@ -17,6 +15,12 @@ function handleCreateProject(PDO $db, array $config, array $auth, array $parsed)
     if ($userProjectCount >= LIMITS['MAX_PROJECTS_PER_USER']) {
         return new ApiResponse(['error' => 'Project limit reached. Delete existing projects before creating new ones.'], 429);
     }
+
+    $parsed = resolveParsedBody($bodySource);
+    if ($parsed instanceof ApiResponse) {
+        return $parsed;
+    }
+    $body = $parsed['assoc'];
 
     $validation = validateProjectData($body['data'] ?? null);
     if (!$validation['valid']) {

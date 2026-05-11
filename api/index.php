@@ -19,7 +19,9 @@ require __DIR__ . '/src/auth.php';
 require __DIR__ . '/src/jwt.php';
 require __DIR__ . '/src/email.php';
 require __DIR__ . '/src/validation.php';
+require __DIR__ . '/src/request-body.php';
 require __DIR__ . '/src/data-access.php';
+require __DIR__ . '/src/router.php';
 require __DIR__ . '/src/id.php';
 require __DIR__ . '/src/handlers/create-project.php';
 require __DIR__ . '/src/handlers/get-project.php';
@@ -86,92 +88,6 @@ function emitResponse(ApiResponse $response): never
     exit;
 }
 
-// ---- Body reading ----
-
-function readBody(): string|ApiResponse
-{
-    static $rawBody = null;
-    if ($rawBody !== null) {
-        return $rawBody;
-    }
-
-    // Check Content-Length header first (fast path)
-    $contentLength = $_SERVER['HTTP_CONTENT_LENGTH'] ?? $_SERVER['CONTENT_LENGTH'] ?? null;
-    if ($contentLength !== null && (int) $contentLength > LIMITS['MAX_PAYLOAD_SIZE']) {
-        return new ApiResponse(
-            ['error' => 'Request body must be at most ' . LIMITS['MAX_PAYLOAD_SIZE'] . ' bytes'],
-            400
-        );
-    }
-
-    $rawBody = file_get_contents('php://input', false, null, 0, LIMITS['MAX_PAYLOAD_SIZE'] + 1);
-    if ($rawBody === false) {
-        $rawBody = '';
-    }
-    if (strlen($rawBody) > LIMITS['MAX_PAYLOAD_SIZE']) {
-        $rawBody = null; // Do not cache the oversized body
-        return new ApiResponse(
-            ['error' => 'Request body must be at most ' . LIMITS['MAX_PAYLOAD_SIZE'] . ' bytes'],
-            400
-        );
-    }
-
-    return $rawBody;
-}
-
-/**
- * Parse a raw JSON string into both associative-array and stdClass views.
- * Returns ApiResponse on error, or the parsed array on success.
- *
- * @return array{assoc: array, object: object}|ApiResponse
- */
-function parseBody(string $text): array|ApiResponse
-{
-    if ($text === '') {
-        return new ApiResponse(['error' => 'Invalid JSON body'], 400);
-    }
-
-    $object = json_decode($text);
-    if (json_last_error() !== JSON_ERROR_NONE || !is_object($object)) {
-        return new ApiResponse(['error' => 'Invalid JSON body'], 400);
-    }
-
-    return ['assoc' => objectToAssoc($object), 'object' => $object];
-}
-
-/**
- * Recursively convert a stdClass tree to associative arrays.
- * Arrays are preserved as arrays; stdClass objects become associative arrays.
- */
-function objectToAssoc(mixed $value): mixed
-{
-    if ($value instanceof \stdClass) {
-        $result = [];
-        foreach ($value as $k => $v) {
-            $result[$k] = objectToAssoc($v);
-        }
-        return $result;
-    }
-    if (is_array($value)) {
-        return array_map('objectToAssoc', $value);
-    }
-    return $value;
-}
-
-/**
- * Extract the "data" field from the parsed request body as a JSON string,
- * using the stdClass view to preserve {} vs [] distinction.
- *
- * @return string|ApiResponse
- */
-function extractDataJson(object $parsedObject): string|ApiResponse
-{
-    if (!property_exists($parsedObject, 'data')) {
-        return new ApiResponse(['error' => 'Invalid JSON body'], 400);
-    }
-    return json_encode($parsedObject->data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-}
-
 // ---- Auth config validation (production only) ----
 // Log prominent warnings if auth-related config is missing so operators
 // notice immediately in error logs rather than after user-reported failures.
@@ -213,10 +129,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 // ---- Routing context ----
 
 $method = $_SERVER['REQUEST_METHOD'];
-$path   = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
-
-// Normalize: strip trailing slash, ensure leading slash
-$path = '/' . trim($path, '/');
+$path   = normalizeApiPath($_SERVER['REQUEST_URI']);
 
 // ---- Schema readiness gate ----
 // Normal API routes only run after all numbered migrations are applied and
@@ -309,63 +222,7 @@ try {
         $db = getDatabase($config);
     }
 
-    // Parse body once for methods that need it
-    $parsed = null;
-    $body = null;
-    if (in_array($method, ['POST', 'PUT', 'PATCH'], true)) {
-        $raw = readBody();
-        if ($raw instanceof ApiResponse) {
-            emitResponse($raw);
-        }
-        $parsed = parseBody($raw);
-        if ($parsed instanceof ApiResponse) {
-            emitResponse($parsed);
-        }
-        $body = $parsed['assoc'];
-    }
-
-    // Extract auth once (pass $db for JWT revocation check)
-    $auth = extractAuth($config, $db);
-
-    // Match project ID for resource routes
-    $projectId = null;
-    if (preg_match('#^/api/projects/([A-Za-z0-9]{12})$#', $path, $matches)) {
-        $projectId = $matches[1];
-    }
-
-    $response = match (true) {
-        // Auth routes
-        $path === '/api/auth/send-code' && $method === 'POST'
-            => handleAuthSendCode($db, $config, $body),
-        $path === '/api/auth/verify-code' && $method === 'POST'
-            => handleAuthVerifyCode($db, $config, $body),
-        $path === '/api/auth/me' && $method === 'GET'
-            => handleAuthMe($db, $config, $auth),
-        $path === '/api/auth/logout' && $method === 'POST'
-            => handleAuthLogout($db, $auth),
-
-        // Collection routes: /api/projects
-        preg_match('#^/api/projects/?$#', $path) === 1 && $method === 'POST'
-            => handleCreateProject($db, $config, $auth, $parsed),
-        preg_match('#^/api/projects/?$#', $path) === 1 && $method === 'GET'
-            => handleListProjects($db, $auth),
-        preg_match('#^/api/projects/?$#', $path) === 1
-            => new ApiResponse(['error' => 'Method not allowed'], 405, ['Allow' => 'GET, POST, OPTIONS']),
-
-        // Resource routes: /api/projects/:id
-        $projectId !== null && $method === 'GET'
-            => handleGetProject($db, $projectId, $auth),
-        $projectId !== null && $method === 'PUT'
-            => handleUpdateProject($db, $projectId, $auth, $parsed),
-        $projectId !== null && $method === 'PATCH'
-            => handlePatchProject($db, $projectId, $auth, $body),
-        $projectId !== null && $method === 'DELETE'
-            => handleDeleteProject($db, $projectId, $auth),
-        $projectId !== null
-            => new ApiResponse(['error' => 'Method not allowed'], 405, ['Allow' => 'GET, PUT, PATCH, DELETE, OPTIONS']),
-
-        default => new ApiResponse(['error' => 'Not found'], 404),
-    };
+    $response = dispatchApiRoute($db, $config, $method, $path, $_SERVER);
 
     emitResponse($response);
 } catch (\Throwable $e) {

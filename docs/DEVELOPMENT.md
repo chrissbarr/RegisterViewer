@@ -141,6 +141,8 @@ api/                              # PHP API backend (cPanel)
     database.php                  # PDO singleton factory
     data-access.php               # All DB queries
     validation.php                # Payload structural validation
+    request-body.php              # Request body size limits and JSON parsing
+    router.php                    # Route resolution, body policy, and dispatch
     auth.php                      # JWT extraction and user_id ownership checks
     jwt.php                       # JWT creation/verification (firebase/php-jwt)
     email.php                     # OTP email sending via Resend API
