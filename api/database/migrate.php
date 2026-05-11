@@ -254,7 +254,16 @@ function requiredSchemaColumns(): array
             'schema_version',
             'version',
         ],
-        'login_codes' => ['id', 'email', 'code', 'expires_at', 'attempts', 'used', 'ip_address', 'created_at'],
+        'login_codes' => [
+            'id',
+            'email',
+            'code_verifier',
+            'expires_at',
+            'attempts',
+            'used',
+            'ip_address',
+            'created_at',
+        ],
         'auth_rate_limits' => ['scope', 'identity_hash', 'bucket_start', 'attempt_count', 'expires_at', 'updated_at'],
         'revoked_tokens' => ['jti', 'expires_at', 'revoked_at'],
     ];
@@ -271,6 +280,7 @@ function getColumnInfo(PDO $db, string $table, string $column): ?array
             if (($row['name'] ?? null) === $column) {
                 return [
                     'type' => (string) ($row['type'] ?? ''),
+                    'length' => null,
                     'nullable' => (int) ($row['notnull'] ?? 0) === 0,
                     'default' => $row['dflt_value'] ?? null,
                 ];
@@ -281,7 +291,7 @@ function getColumnInfo(PDO $db, string $table, string $column): ?array
 
     if ($driver === 'mysql') {
         $stmt = $db->prepare(
-            'SELECT DATA_TYPE, IS_NULLABLE, COLUMN_DEFAULT
+            'SELECT DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, IS_NULLABLE, COLUMN_DEFAULT
              FROM INFORMATION_SCHEMA.COLUMNS
              WHERE TABLE_SCHEMA = DATABASE()
                AND TABLE_NAME = ?
@@ -295,13 +305,16 @@ function getColumnInfo(PDO $db, string $table, string $column): ?array
         }
         return [
             'type' => (string) ($row['DATA_TYPE'] ?? ''),
+            'length' => isset($row['CHARACTER_MAXIMUM_LENGTH'])
+                ? (int) $row['CHARACTER_MAXIMUM_LENGTH']
+                : null,
             'nullable' => strtoupper((string) ($row['IS_NULLABLE'] ?? 'YES')) !== 'NO',
             'default' => $row['COLUMN_DEFAULT'] ?? null,
         ];
     }
 
     return schemaHasColumn($db, $table, $column)
-        ? ['type' => '', 'nullable' => false, 'default' => null]
+        ? ['type' => '', 'length' => null, 'nullable' => false, 'default' => null]
         : null;
 }
 
@@ -352,16 +365,33 @@ function schemaHasColumn(PDO $db, string $table, string $column): bool
  */
 function validateCriticalColumnShape(PDO $db, string $table, string $column): array
 {
-    if ($table !== 'projects' || $column !== 'version') {
-        return [];
-    }
-
     $info = getColumnInfo($db, $table, $column);
     if ($info === null) {
         return [];
     }
 
     $errors = [];
+    if ($table === 'login_codes' && $column === 'code_verifier') {
+        $type = strtolower($info['type']);
+        $length = $info['length'];
+        if ($db->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite'
+            && preg_match('/char\s*\(\s*(\d+)\s*\)/i', $type, $m) === 1) {
+            $length = (int) $m[1];
+            $type = 'char';
+        }
+        if ($type !== 'char' || $length !== 64) {
+            $errors[] = 'Required schema column has invalid type: login_codes.code_verifier';
+        }
+        if ($info['nullable']) {
+            $errors[] = 'Required schema column must be NOT NULL: login_codes.code_verifier';
+        }
+        return $errors;
+    }
+
+    if ($table !== 'projects' || $column !== 'version') {
+        return [];
+    }
+
     $type = strtolower($info['type']);
     if (!str_contains($type, 'int')) {
         $errors[] = 'Required schema column has invalid type: projects.version';
@@ -388,6 +418,12 @@ function validateRequiredIndexShape(PDO $db): array
     $errors = [];
     if (!schemaHasPrimaryKeyColumns($db, 'auth_rate_limits', ['scope', 'identity_hash', 'bucket_start'])) {
         $errors[] = 'Required schema primary key missing or invalid: auth_rate_limits(scope, identity_hash, bucket_start)';
+    }
+    if (!schemaHasIndexColumns($db, 'login_codes', 'ix_login_codes_email_latest', ['email', 'created_at', 'id'])) {
+        $errors[] = 'Required schema index missing or invalid: login_codes.ix_login_codes_email_latest(email, created_at, id)';
+    }
+    if (!schemaHasIndexColumns($db, 'login_codes', 'ix_login_codes_email_active', ['email', 'used', 'expires_at'])) {
+        $errors[] = 'Required schema index missing or invalid: login_codes.ix_login_codes_email_active(email, used, expires_at)';
     }
     return $errors;
 }
@@ -420,6 +456,37 @@ function schemaHasPrimaryKeyColumns(PDO $db, string $table, array $columns): boo
              ORDER BY SEQ_IN_INDEX'
         );
         $stmt->execute([$table, 'PRIMARY']);
+        return array_map('strval', $stmt->fetchAll(PDO::FETCH_COLUMN)) === $columns;
+    }
+
+    return true;
+}
+
+function schemaHasIndexColumns(PDO $db, string $table, string $index, array $columns): bool
+{
+    $driver = $db->getAttribute(PDO::ATTR_DRIVER_NAME);
+
+    if ($driver === 'sqlite') {
+        $quotedIndex = '"' . str_replace('"', '""', $index) . '"';
+        $stmt = $db->query("PRAGMA index_info($quotedIndex)");
+        $indexColumns = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $indexColumns[(int) ($row['seqno'] ?? 0)] = (string) ($row['name'] ?? '');
+        }
+        ksort($indexColumns, SORT_NUMERIC);
+        return array_values($indexColumns) === $columns;
+    }
+
+    if ($driver === 'mysql') {
+        $stmt = $db->prepare(
+            'SELECT COLUMN_NAME
+             FROM INFORMATION_SCHEMA.STATISTICS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = ?
+               AND INDEX_NAME = ?
+             ORDER BY SEQ_IN_INDEX'
+        );
+        $stmt->execute([$table, $index]);
         return array_map('strval', $stmt->fetchAll(PDO::FETCH_COLUMN)) === $columns;
     }
 

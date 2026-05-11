@@ -12,6 +12,7 @@ services:
       DB_USERNAME: regapi
       DB_PASSWORD: regapi_dev
       JWT_SECRET: dev-jwt-secret-not-for-production
+      OTP_HASH_SECRET: dev-otp-hash-secret-not-for-production
     depends_on:
       db:
         condition: service_healthy
@@ -46,6 +47,7 @@ services:
       DB_USERNAME: regapi
       DB_PASSWORD: regapi_dev
       JWT_SECRET: test-jwt-secret-not-for-production
+      OTP_HASH_SECRET: test-otp-hash-secret-not-for-production
     depends_on:
       db:
         condition: service_healthy

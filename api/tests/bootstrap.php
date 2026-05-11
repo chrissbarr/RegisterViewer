@@ -23,6 +23,7 @@ require __DIR__ . '/../src/request-body.php';
 require __DIR__ . '/../src/id.php';
 require __DIR__ . '/../src/cors.php';
 require __DIR__ . '/../src/jwt.php';
+require __DIR__ . '/../src/otp.php';
 require __DIR__ . '/../src/email.php';
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/database.php';

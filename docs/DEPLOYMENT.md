@@ -47,7 +47,7 @@ This document provides step-by-step instructions for deploying the Register View
 6. `_migrations` table - applied migration tracking
 7. Foreign key linking `projects.user_id` -> `users.id`
 
-The API returns `503 schema_not_ready` instead of routing requests if it cannot apply every numbered migration or prove the required schema shape, including `projects.version` and `auth_rate_limits`.
+The API returns `503 schema_not_ready` instead of routing requests if it cannot apply every numbered migration or prove the required schema shape, including `projects.version`, `login_codes.code_verifier`, and `auth_rate_limits`. `/api/health` also returns `503 config_not_ready` if required auth secrets such as `jwt_secret` or `otp_hash_secret` are missing or too short.
 
 ### Step 2: Create Production API Config
 
@@ -65,13 +65,19 @@ return [
         'username' => 'your_database_user',
         'password' => 'your_database_password',
     ],
-    'jwt_secret'        => 'your-secret-key-min-32-chars',
+    'jwt_secret'        => 'your-jwt-secret-min-32-chars',
+    'otp_hash_secret'   => 'your-otp-hash-secret-min-32-chars',
     'resend_api_key'    => 're_your_api_key_here',
     'resend_from_email' => 'noreply@your-domain.com',
 ];
 ```
 
 **JWT Secret:** Must be at least 32 characters. Generate a 64-character random string:
+```bash
+openssl rand -hex 32
+```
+
+**OTP Hash Secret:** Must be a separate random value of at least 32 characters. Generate a second 64-character random string:
 ```bash
 openssl rand -hex 32
 ```
@@ -95,7 +101,7 @@ openssl rand -hex 32
 | `FTP_USERNAME` | FTP username (usually same as cPanel username) | cPanel account |
 | `FTP_PASSWORD` | FTP password | cPanel account |
 
-> **Note:** Auth credentials (`JWT_SECRET`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`) are **not** set as GitHub Secrets. They live in `config.production.php` on the server (see Step 2). This keeps secrets off GitHub and allows per-environment values.
+> **Note:** Auth credentials (`JWT_SECRET`, `OTP_HASH_SECRET`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`) are **not** set as GitHub Secrets. They live in `config.production.php` on the server (see Step 2). This keeps secrets off GitHub and allows per-environment values.
 
 #### Variables (plain GitHub Actions variables)
 
@@ -124,7 +130,7 @@ After first deployment:
 3. Test email sign-in: request an OTP, verify the code, and confirm the app receives a JWT
 4. Test cloud save/share: save a project while signed in, make it unlisted, and verify the shared link opens in a new tab without signing in
 5. Verify private project access requires the owning signed-in account
-6. Confirm deploy smoke tests passed API health. `/api/health` must report `migrations: "ready"`, no pending migrations, applied migrations `[1, 2, 3]`, `schema["projects.version"] === true`, and `schema["auth_rate_limits.scope"] === true`.
+6. Confirm deploy smoke tests passed API health. `/api/health` must report `migrations: "ready"`, no pending migrations, applied migrations `[1, 2, 3, 4]`, `authConfig["jwt_secret"] === true`, `authConfig["otp_hash_secret"] === true`, `schema["projects.version"] === true`, `schema["login_codes.code_verifier"] === true`, and `schema["auth_rate_limits.scope"] === true`.
 7. Confirm deploy smoke tests passed the API internal-path checks. `/api/config.php`, `/api/src`, `/api/vendor`, `/api/database`, and `/api/tests` must return `403`, never `200`.
 
 ---
@@ -235,7 +241,7 @@ To manually deploy an existing CI artifact without rebuilding:
 - Verify `config.production.php` exists on the server with correct database credentials
 - Verify the deployed `api/database/migrate.php` and all numbered files under `api/database/migrations/` are present
 - Verify `_migrations` contains every numbered migration version in the deployed artifact
-- Verify the required schema exists, especially `projects.version` and `auth_rate_limits`
+- Verify the required schema exists, especially `projects.version`, `login_codes.code_verifier`, and `auth_rate_limits`
 - If logs show the migration lock is held, wait briefly and retry `/api/health`
 
 **Error: "500 Internal Server Error" on API endpoints**
@@ -402,7 +408,7 @@ Two unauthenticated health endpoints are available for uptime monitoring:
 
 | Endpoint | Checks | Methods |
 |----------|--------|---------|
-| `GET /api/health` | Database connectivity, all numbered migrations applied, and required schema shape including `projects.version` and auth rate-limit schema | GET, HEAD |
+| `GET /api/health` | Database connectivity, required auth secrets, all numbered migrations applied, and required schema shape including `projects.version`, `login_codes.code_verifier`, and auth rate-limit schema | GET, HEAD |
 | `GET /api/health/email` | Resend API key configured + API reachable | GET, HEAD |
 
 Both return **200** when healthy and **503** when unhealthy. HEAD requests return only status codes (no body), making them compatible with UptimeRobot free tier.
@@ -523,6 +529,15 @@ A: Update the `FTP_HOST`, `FTP_USERNAME`, or `FTP_PASSWORD` secrets in GitHub ->
 
 **When to rotate:** Immediately if the secret is suspected to be compromised. No scheduled rotation needed otherwise (24-hour token lifetime limits exposure).
 
+### Rotating OTP Hash Secret (`otp_hash_secret`)
+
+1. Generate a new secret: `openssl rand -hex 32`
+2. Update `otp_hash_secret` in `config.production.php` on the server
+3. Outstanding email OTPs become invalid immediately; users can request a new code
+4. Verify auth flow works: request an OTP, verify it, confirm JWT is returned
+
+**When to rotate:** Immediately if the secret is suspected to be compromised. No scheduled rotation needed otherwise because OTPs expire after 10 minutes.
+
 ### Rotating Resend API Key (`resend_api_key`)
 
 1. Log in to [Resend dashboard](https://resend.com/) -> API Keys
@@ -535,7 +550,7 @@ A: Update the `FTP_HOST`, `FTP_USERNAME`, or `FTP_PASSWORD` secrets in GitHub ->
 
 ### Verifying Config After Changes
 
-After updating any auth config value, check the PHP error log for config warnings. The API logs a prominent `CONFIG WARNING` at startup if `jwt_secret` is missing/too short or `resend_api_key` is empty.
+After updating any auth config value, check the PHP error log for config warnings. The API logs a prominent `CONFIG WARNING` at startup if `jwt_secret` or `otp_hash_secret` is missing/too short, or if `resend_api_key` is empty.
 
 ---
 
@@ -549,8 +564,8 @@ After updating any auth config value, check the PHP error log for config warning
 - [ ] The CI run has successful `frontend`, `e2e`, `api`, and `deploy-payload` jobs
 - [ ] The CI run was triggered by a `push` to `master`
 - [ ] The CI run uploaded `registerapptest-deploy-<sha>` and the Deploy run is using the same SHA
-- [ ] `config.production.php` exists on server with correct DB credentials, `jwt_secret`, and `resend_api_key`
-- [ ] `/api/health` returns ready and confirms all numbered migrations plus `projects.version` and `auth_rate_limits`
+- [ ] `config.production.php` exists on server with correct DB credentials, `jwt_secret`, `otp_hash_secret`, and `resend_api_key`
+- [ ] `/api/health` returns ready and confirms all numbered migrations plus `projects.version`, `login_codes.code_verifier`, and `auth_rate_limits`
 - [ ] PHP 8.3+ is enabled on the server
 - [ ] Apache `mod_rewrite` is enabled
 - [ ] Node.js version matches workflow config (22) locally

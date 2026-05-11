@@ -8,7 +8,10 @@ use PHPUnit\Framework\Attributes\Test;
 final class AuthHandlerTest extends TestCase
 {
     private static ?PDO $db = null;
-    private const JWT_CONFIG = ['jwt_secret' => 'test-jwt-secret-not-for-production'];
+    private const JWT_CONFIG = [
+        'jwt_secret' => 'test-jwt-secret-not-for-production',
+        'otp_hash_secret' => 'test-otp-hash-secret-not-for-production',
+    ];
     private static function validDataJson(): string
     {
         return json_encode([
@@ -59,14 +62,18 @@ final class AuthHandlerTest extends TestCase
     }
 
     /**
-     * Create a login code in the DB (hashed, matching production behavior) and return the raw code string.
+     * Create a login code in the DB (verifier matching production behavior) and return the raw code string.
      */
     private function createLoginCode(string $email, string $code = '123456', int $ttlSeconds = 600): string
     {
         $expiresAt = gmdate('Y-m-d H:i:s', time() + $ttlSeconds);
-        $codeHash = hash('sha256', $code);
-        dbCreateLoginCode(self::$db, $email, $codeHash, $expiresAt);
+        dbCreateLoginCode(self::$db, $email, $this->codeVerifier($email, $code), $expiresAt);
         return $code;
+    }
+
+    private function codeVerifier(string $email, string $code): string
+    {
+        return createOtpVerifier(self::JWT_CONFIG, $email, $code);
     }
 
     // ---- handleAuthSendCode ----
@@ -104,6 +111,17 @@ final class AuthHandlerTest extends TestCase
 
         $this->assertSame(400, $response->status);
         $this->assertSame('Invalid email address', $response->body['error']);
+    }
+
+    #[Test]
+    public function sendCodeReturnsServiceUnavailableWhenOtpSecretIsMissing(): void
+    {
+        $response = handleAuthSendCode(self::$db, ['jwt_secret' => self::JWT_CONFIG['jwt_secret']], [
+            'email' => 'missing-secret@example.com',
+        ]);
+
+        $this->assertSame(503, $response->status);
+        $this->assertSame(0, dbCountRecentLoginCodes(self::$db, 'missing-secret@example.com'));
     }
 
     #[Test]
@@ -198,6 +216,20 @@ final class AuthHandlerTest extends TestCase
 
         $this->assertSame(200, $response->status);
         $this->assertSame($existingUserId, $response->body['user']['id']);
+    }
+
+    #[Test]
+    public function verifyCodeReturnsServiceUnavailableWhenOtpSecretIsMissing(): void
+    {
+        $email = 'verify-missing-secret@example.com';
+        $this->createLoginCode($email, '123456');
+
+        $response = handleAuthVerifyCode(self::$db, ['jwt_secret' => self::JWT_CONFIG['jwt_secret']], [
+            'email' => $email,
+            'code'  => '123456',
+        ]);
+
+        $this->assertSame(503, $response->status);
     }
 
     #[Test]
@@ -379,35 +411,34 @@ final class AuthHandlerTest extends TestCase
             'code'  => '999999',
         ]);
 
-        $row1 = dbGetActiveLoginCode(self::$db, $email, hash('sha256', '111111'));
-        $row2 = dbGetActiveLoginCode(self::$db, $email, hash('sha256', '222222'));
-        $attempts1 = (int) $row1['attempts'];
-        $attempts2 = (int) $row2['attempts'];
-
-        // Exactly one code should have been incremented
-        $this->assertSame(1, $attempts1 + $attempts2, 'Total attempts across both codes should be 1');
-        // One should be 0 and the other 1
-        $this->assertTrue(
-            ($attempts1 === 0 && $attempts2 === 1) || ($attempts1 === 1 && $attempts2 === 0),
-            'Exactly one code should have 1 attempt, the other 0'
+        $stmt = self::$db->prepare(
+            'SELECT attempts FROM login_codes WHERE email = :email ORDER BY created_at, id'
         );
+        $stmt->execute(['email' => $email]);
+        $attempts = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+
+        $this->assertSame([0, 1], $attempts, 'Wrong guesses should increment the newest code only');
     }
 
     #[Test]
-    public function sendCodeStoresHashedCodeNotPlaintext(): void
+    public function sendCodeStoresHmacVerifierNotPlaintextOrSha256(): void
     {
         $email = 'hash-check@example.com';
-        handleAuthSendCode(self::$db, self::JWT_CONFIG, ['email' => $email]);
+        $code = '123456';
+        handleAuthSendCode(self::$db, self::JWT_CONFIG, ['email' => $email], null, fn (): string => $code);
 
-        // Query the DB directly — the stored code should be a 64-char SHA-256 hex digest
+        // Query the DB directly; the stored verifier should not expose the OTP.
         $stmt = self::$db->prepare(
-            'SELECT code FROM login_codes WHERE email = :email ORDER BY created_at DESC LIMIT 1'
+            'SELECT code_verifier FROM login_codes WHERE email = :email ORDER BY created_at DESC LIMIT 1'
         );
         $stmt->execute(['email' => $email]);
-        $storedCode = $stmt->fetchColumn();
+        $storedVerifier = $stmt->fetchColumn();
 
-        $this->assertSame(64, strlen($storedCode), 'Stored code should be a 64-char SHA-256 hash');
-        $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $storedCode);
+        $this->assertSame(64, strlen($storedVerifier), 'Stored code verifier should be a 64-char HMAC digest');
+        $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $storedVerifier);
+        $this->assertNotSame($code, $storedVerifier);
+        $this->assertNotSame(hash('sha256', $code), $storedVerifier);
+        $this->assertTrue(verifyOtpCode(self::JWT_CONFIG, $email, $code, $storedVerifier));
     }
 
     // ---- handleAuthMe ----
@@ -600,24 +631,24 @@ final class AuthHandlerTest extends TestCase
     {
         // Insert an old, used code (created 48 hours ago)
         $stmt = self::$db->prepare(
-            "INSERT INTO login_codes (email, code, expires_at, used, created_at)
-             VALUES (:email, :code, :expires, 1, DATE_SUB(NOW(), INTERVAL 48 HOUR))"
+            "INSERT INTO login_codes (email, code_verifier, expires_at, used, created_at)
+             VALUES (:email, :code_verifier, :expires, 1, DATE_SUB(NOW(), INTERVAL 48 HOUR))"
         );
         $stmt->execute([
-            'email'   => 'old-used@example.com',
-            'code'    => hash('sha256', '111111'),
-            'expires' => gmdate('Y-m-d H:i:s', time() - 172800),
+            'email'         => 'old-used@example.com',
+            'code_verifier' => $this->codeVerifier('old-used@example.com', '111111'),
+            'expires'       => gmdate('Y-m-d H:i:s', time() - 172800),
         ]);
 
         // Insert an old, expired (but not used) code (created 48 hours ago)
         $stmt = self::$db->prepare(
-            "INSERT INTO login_codes (email, code, expires_at, used, created_at)
-             VALUES (:email, :code, :expires, 0, DATE_SUB(NOW(), INTERVAL 48 HOUR))"
+            "INSERT INTO login_codes (email, code_verifier, expires_at, used, created_at)
+             VALUES (:email, :code_verifier, :expires, 0, DATE_SUB(NOW(), INTERVAL 48 HOUR))"
         );
         $stmt->execute([
-            'email'   => 'old-expired@example.com',
-            'code'    => hash('sha256', '222222'),
-            'expires' => gmdate('Y-m-d H:i:s', time() - 172800),
+            'email'         => 'old-expired@example.com',
+            'code_verifier' => $this->codeVerifier('old-expired@example.com', '222222'),
+            'expires'       => gmdate('Y-m-d H:i:s', time() - 172800),
         ]);
 
         // Insert a fresh, active code (should NOT be purged)
@@ -625,13 +656,13 @@ final class AuthHandlerTest extends TestCase
 
         // Insert a recently used code (created now, used = 1 — should NOT be purged because <24h old)
         $stmt = self::$db->prepare(
-            "INSERT INTO login_codes (email, code, expires_at, used)
-             VALUES (:email, :code, :expires, 1)"
+            "INSERT INTO login_codes (email, code_verifier, expires_at, used)
+             VALUES (:email, :code_verifier, :expires, 1)"
         );
         $stmt->execute([
-            'email'   => 'recent-used@example.com',
-            'code'    => hash('sha256', '444444'),
-            'expires' => gmdate('Y-m-d H:i:s', time() + 600),
+            'email'         => 'recent-used@example.com',
+            'code_verifier' => $this->codeVerifier('recent-used@example.com', '444444'),
+            'expires'       => gmdate('Y-m-d H:i:s', time() + 600),
         ]);
 
         $deleted = dbPurgeExpiredLoginCodes(self::$db);
@@ -661,14 +692,16 @@ final class AuthHandlerTest extends TestCase
     {
         // Insert 30 login codes (the global limit) directly to avoid per-email limits
         $stmt = self::$db->prepare(
-            "INSERT INTO login_codes (email, code, expires_at)
-             VALUES (:email, :code, :expires)"
+            "INSERT INTO login_codes (email, code_verifier, expires_at)
+             VALUES (:email, :code_verifier, :expires)"
         );
         for ($i = 0; $i < 30; $i++) {
+            $email = "global-{$i}@example.com";
+            $code = str_pad((string) $i, 6, '0', STR_PAD_LEFT);
             $stmt->execute([
-                'email'   => "global-{$i}@example.com",
-                'code'    => hash('sha256', str_pad((string) $i, 6, '0', STR_PAD_LEFT)),
-                'expires' => gmdate('Y-m-d H:i:s', time() + 600),
+                'email'         => $email,
+                'code_verifier' => $this->codeVerifier($email, $code),
+                'expires'       => gmdate('Y-m-d H:i:s', time() + 600),
             ]);
         }
 
@@ -687,15 +720,17 @@ final class AuthHandlerTest extends TestCase
         // Simulate 5 codes from the same IP
         $ip = '192.0.2.1';
         $stmt = self::$db->prepare(
-            "INSERT INTO login_codes (email, code, expires_at, ip_address)
-             VALUES (:email, :code, :expires, :ip)"
+            "INSERT INTO login_codes (email, code_verifier, expires_at, ip_address)
+             VALUES (:email, :code_verifier, :expires, :ip)"
         );
         for ($i = 0; $i < 5; $i++) {
+            $email = "ip-test-{$i}@example.com";
+            $code = str_pad((string) $i, 6, '0', STR_PAD_LEFT);
             $stmt->execute([
-                'email'   => "ip-test-{$i}@example.com",
-                'code'    => hash('sha256', str_pad((string) $i, 6, '0', STR_PAD_LEFT)),
-                'expires' => gmdate('Y-m-d H:i:s', time() + 600),
-                'ip'      => $ip,
+                'email'         => $email,
+                'code_verifier' => $this->codeVerifier($email, $code),
+                'expires'       => gmdate('Y-m-d H:i:s', time() + 600),
+                'ip'            => $ip,
             ]);
         }
 
@@ -903,36 +938,40 @@ final class AuthHandlerTest extends TestCase
     }
 
     #[Test]
-    public function dbGetActiveLoginCodeForUpdateWorksInTransaction(): void
+    public function dbGetLatestLoginCodeForUpdateWorksInTransaction(): void
     {
         $email = 'forupdate@example.com';
         $this->createLoginCode($email, '123456');
-        $codeHash = hash('sha256', '123456');
+        $codeVerifier = $this->codeVerifier($email, '123456');
 
         self::$db->beginTransaction();
         try {
-            $row = dbGetActiveLoginCodeForUpdate(self::$db, $email, $codeHash);
+            $row = dbGetLatestLoginCodeForUpdate(self::$db, $email);
             $this->assertNotNull($row);
             $this->assertSame($email, $row['email']);
-            $this->assertSame($codeHash, $row['code']);
+            $this->assertSame($codeVerifier, $row['code_verifier']);
         } finally {
             self::$db->rollBack();
         }
     }
 
     #[Test]
-    public function dbGetActiveLoginCodeForUpdateReturnsNullForInvalidCode(): void
+    public function verifyCodeRejectsLegacySha256Verifier(): void
     {
-        $email = 'forupdate-invalid@example.com';
-        $this->createLoginCode($email, '123456');
+        $email = 'legacy-sha@example.com';
+        dbCreateLoginCode(self::$db, $email, hash('sha256', '123456'), gmdate('Y-m-d H:i:s', time() + 600));
 
-        self::$db->beginTransaction();
-        try {
-            $row = dbGetActiveLoginCodeForUpdate(self::$db, $email, hash('sha256', '999999'));
-            $this->assertNull($row);
-        } finally {
-            self::$db->rollBack();
-        }
+        $response = handleAuthVerifyCode(self::$db, self::JWT_CONFIG, [
+            'email' => $email,
+            'code'  => '123456',
+        ]);
+
+        $this->assertSame(401, $response->status);
+        $this->assertNull(dbGetUserByEmail(self::$db, $email));
+
+        $row = dbGetLatestLoginCodeForUpdate(self::$db, $email);
+        $this->assertSame(1, (int) $row['attempts']);
+        $this->assertSame(0, (int) $row['used']);
     }
 
     #[Test]
@@ -963,26 +1002,28 @@ final class AuthHandlerTest extends TestCase
     {
         $ip = '198.51.100.1';
         $stmt = self::$db->prepare(
-            "INSERT INTO login_codes (email, code, expires_at, ip_address)
-             VALUES (:email, :code, :expires, :ip)"
+            "INSERT INTO login_codes (email, code_verifier, expires_at, ip_address)
+             VALUES (:email, :code_verifier, :expires, :ip)"
         );
 
         // 2 codes from target IP
         for ($i = 0; $i < 2; $i++) {
+            $email = "ipcount-{$i}@example.com";
+            $code = str_pad((string) $i, 6, '0', STR_PAD_LEFT);
             $stmt->execute([
-                'email'   => "ipcount-{$i}@example.com",
-                'code'    => hash('sha256', str_pad((string) $i, 6, '0', STR_PAD_LEFT)),
-                'expires' => gmdate('Y-m-d H:i:s', time() + 600),
-                'ip'      => $ip,
+                'email'         => $email,
+                'code_verifier' => $this->codeVerifier($email, $code),
+                'expires'       => gmdate('Y-m-d H:i:s', time() + 600),
+                'ip'            => $ip,
             ]);
         }
 
         // 1 code from different IP
         $stmt->execute([
-            'email'   => 'other-ip@example.com',
-            'code'    => hash('sha256', '999999'),
-            'expires' => gmdate('Y-m-d H:i:s', time() + 600),
-            'ip'      => '198.51.100.99',
+            'email'         => 'other-ip@example.com',
+            'code_verifier' => $this->codeVerifier('other-ip@example.com', '999999'),
+            'expires'       => gmdate('Y-m-d H:i:s', time() + 600),
+            'ip'            => '198.51.100.99',
         ]);
 
         $count = dbCountRecentLoginCodesByIp(self::$db, $ip, 900);

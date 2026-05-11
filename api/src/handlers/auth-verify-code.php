@@ -18,6 +18,10 @@ function handleAuthVerifyCode(PDO $db, array $config, array $body, ?array $serve
         return new ApiResponse(['error' => 'code must be a 6-digit string'], 400);
     }
 
+    if (!isOtpHashSecretConfigured($config)) {
+        return new ApiResponse(['error' => 'Service temporarily unavailable. Please try again later.'], 503);
+    }
+
     $clientIp = authRateLimitClientIp($server);
 
     if (random_int(1, 50) === 1) {
@@ -61,9 +65,6 @@ function handleAuthVerifyCode(PDO $db, array $config, array $body, ?array $serve
         return new ApiResponse(['error' => 'Too many verification attempts. Please try again later.'], 429);
     }
 
-    // Hash the submitted code to match stored hash (SEC-04)
-    $codeHash = hash('sha256', $code);
-
     // Begin transaction to prevent race conditions (SEC-N01):
     // Without isolation, two concurrent requests with the same OTP can both
     // read the code as "active" before either marks it "used", resulting in
@@ -88,7 +89,7 @@ function handleAuthVerifyCode(PDO $db, array $config, array $body, ?array $serve
 
         dbIncrementLoginCodeAttempts($db, (int) $codeRow['id']);
 
-        if (!hash_equals((string) $codeRow['code'], $codeHash)) {
+        if (!verifyOtpCode($config, $email, $code, (string) $codeRow['code_verifier'])) {
             $db->commit();
             return new ApiResponse(['error' => 'Invalid or expired code'], 401);
         }

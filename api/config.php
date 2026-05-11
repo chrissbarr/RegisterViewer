@@ -12,6 +12,7 @@ return [
     ],
 
     'jwt_secret'        => getenv('JWT_SECRET') ?: '',
+    'otp_hash_secret'   => getenv('OTP_HASH_SECRET') ?: '',
     'resend_api_key'    => getenv('RESEND_API_KEY') ?: '',
     'resend_from_email' => getenv('RESEND_FROM_EMAIL') ?: 'noreply@registerviewer.com',
 

@@ -15,7 +15,7 @@ GET /api/health
 HEAD /api/health
 ```
 
-Checks database connectivity, verifies every numbered migration in `api/database/migrations/` has been applied, and verifies the schema required by the current API code exists. The readiness check includes concurrency and auth rate-limit schema such as `projects.version` and `auth_rate_limits.*`.
+Checks database connectivity, verifies required auth configuration, verifies every numbered migration in `api/database/migrations/` has been applied, and verifies the schema required by the current API code exists. The readiness check includes `JWT_SECRET`, `OTP_HASH_SECRET`, concurrency schema, and auth schema such as `projects.version`, `login_codes.code_verifier`, and `auth_rate_limits.*`.
 
 **Response `200 OK`:**
 
@@ -24,11 +24,16 @@ Checks database connectivity, verifies every numbered migration in `api/database
   "status": "ok",
   "database": "ok",
   "migrations": "ready",
+  "authConfig": {
+    "jwt_secret": true,
+    "otp_hash_secret": true
+  },
   "schema": {
     "projects.version": true,
+    "login_codes.code_verifier": true,
     "auth_rate_limits.scope": true
   },
-  "appliedMigrations": [1, 2, 3],
+  "appliedMigrations": [1, 2, 3, 4],
   "pendingMigrations": [],
   "timestamp": "2026-05-10T00:00:00Z"
 }
@@ -36,7 +41,7 @@ Checks database connectivity, verifies every numbered migration in `api/database
 
 **Response `503 Service Unavailable`:**
 
-Returned when the database is unavailable, another request holds the migration lock, a migration fails, a numbered migration is not recorded as applied, or required schema shape cannot be established.
+Returned when the database is unavailable, required auth configuration is missing, another request holds the migration lock, a migration fails, a numbered migration is not recorded as applied, or required schema shape cannot be established.
 
 ```json
 {
@@ -121,6 +126,8 @@ Always returns 200 regardless of whether the email was delivered, to prevent ema
 | 429 | Too many requests (per-IP or per-email rate limit exceeded) |
 | 503 | Global rate limit exceeded — try again later |
 
+`503` also indicates the API auth configuration is unavailable, such as a missing or too-short `OTP_HASH_SECRET`.
+
 ---
 
 ### Verify Login Code
@@ -175,6 +182,8 @@ Verifies a 6-digit OTP code and returns a JWT token.
 | 401 | Invalid or expired code |
 | 429 | Too many verification attempts |
 | 503 | Global rate limit exceeded — try again later |
+
+`503` also indicates the API auth configuration is unavailable, such as a missing or too-short `OTP_HASH_SECRET`.
 
 ---
 
@@ -579,6 +588,7 @@ Strict-Transport-Security: max-age=31536000; includeSubDomains
 | `APP_ENV` | No | Set to `production` to restrict CORS. Default: `production`. |
 | `ALLOWED_ORIGINS` | No | Configured in `config.php` `allowed_origins` array |
 | `JWT_SECRET` | Yes* | HMAC-SHA256 secret for signing JWT tokens. **Must be ≥32 characters.** Generate with: `openssl rand -hex 32` |
+| `OTP_HASH_SECRET` | Yes* | Separate HMAC-SHA256 secret for pending email OTP verifiers. **Must be ≥32 characters.** Generate with: `openssl rand -hex 32` |
 | `RESEND_API_KEY` | Yes* | API key from [Resend](https://resend.com/) for sending OTP emails. Without it, login codes won't be delivered (errors logged server-side). |
 | `RESEND_FROM_EMAIL` | No | Sender email address for OTP emails. Default: `noreply@registerviewer.com`. Must be a verified domain in Resend. |
 

@@ -64,13 +64,15 @@ final class MigrateTest extends TestCase
             CREATE TABLE login_codes (
                 id INTEGER PRIMARY KEY,
                 email TEXT NOT NULL,
-                code TEXT NOT NULL,
+                code_verifier CHAR(64) NOT NULL,
                 expires_at TEXT NOT NULL,
                 attempts INTEGER NOT NULL DEFAULT 0,
                 used INTEGER NOT NULL DEFAULT 0,
                 ip_address TEXT,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE INDEX ix_login_codes_email_latest ON login_codes (email, created_at DESC, id DESC);
+            CREATE INDEX ix_login_codes_email_active ON login_codes (email, used, expires_at);
             CREATE TABLE auth_rate_limits (
                 scope TEXT NOT NULL,
                 identity_hash TEXT NOT NULL,
@@ -90,7 +92,11 @@ final class MigrateTest extends TestCase
 
     private function idempotentRequiredSchemaSql(): string
     {
-        return str_replace('CREATE TABLE ', 'CREATE TABLE IF NOT EXISTS ', $this->requiredSchemaSql());
+        return str_replace(
+            ['CREATE TABLE ', 'CREATE INDEX '],
+            ['CREATE TABLE IF NOT EXISTS ', 'CREATE INDEX IF NOT EXISTS '],
+            $this->requiredSchemaSql()
+        );
     }
 
     private function recordAppliedMigration(int $version, string $filename, string $sql, ?string $checksum = null): void
@@ -363,6 +369,71 @@ final class MigrateTest extends TestCase
         $this->assertSame('schema_invalid', $readiness['status']);
         $this->assertFalse($readiness['schema']['auth_rate_limits.scope']);
         $this->assertContains('Required schema column missing: auth_rate_limits.scope', $readiness['errors']);
+    }
+
+    #[Test]
+    public function schemaReadinessFailsWhenLoginCodeVerifierColumnIsMissing(): void
+    {
+        $sql = str_replace(
+            'code_verifier CHAR(64) NOT NULL,',
+            '',
+            $this->requiredSchemaSql()
+        );
+        $filename = '001_create_required_schema.sql';
+        $this->writeMigration($filename, $sql);
+        $this->db->exec($sql);
+        $this->recordAppliedMigration(1, $filename, $sql);
+
+        $readiness = getSchemaReadiness($this->db, $this->migrationsDir);
+
+        $this->assertFalse($readiness['ready']);
+        $this->assertSame('schema_invalid', $readiness['status']);
+        $this->assertFalse($readiness['schema']['login_codes.code_verifier']);
+        $this->assertContains('Required schema column missing: login_codes.code_verifier', $readiness['errors']);
+    }
+
+    #[Test]
+    public function schemaReadinessFailsWhenLoginCodeVerifierShapeIsInvalid(): void
+    {
+        $sql = str_replace(
+            'code_verifier CHAR(64) NOT NULL',
+            'code_verifier TEXT',
+            $this->requiredSchemaSql()
+        );
+        $filename = '001_create_required_schema.sql';
+        $this->writeMigration($filename, $sql);
+        $this->db->exec($sql);
+        $this->recordAppliedMigration(1, $filename, $sql);
+
+        $readiness = getSchemaReadiness($this->db, $this->migrationsDir);
+
+        $this->assertFalse($readiness['ready']);
+        $this->assertSame('schema_invalid', $readiness['status']);
+        $this->assertContains('Required schema column has invalid type: login_codes.code_verifier', $readiness['errors']);
+        $this->assertContains('Required schema column must be NOT NULL: login_codes.code_verifier', $readiness['errors']);
+    }
+
+    #[Test]
+    public function schemaReadinessFailsWhenLoginCodeLatestIndexIsMissing(): void
+    {
+        $sql = str_replace(
+            'CREATE INDEX ix_login_codes_email_latest ON login_codes (email, created_at DESC, id DESC);',
+            '',
+            $this->requiredSchemaSql()
+        );
+        $filename = '001_create_required_schema.sql';
+        $this->writeMigration($filename, $sql);
+        $this->db->exec($sql);
+        $this->recordAppliedMigration(1, $filename, $sql);
+
+        $readiness = getSchemaReadiness($this->db, $this->migrationsDir);
+
+        $this->assertFalse($readiness['ready']);
+        $this->assertSame('schema_invalid', $readiness['status']);
+        $this->assertContains(
+            'Required schema index missing or invalid: login_codes.ix_login_codes_email_latest(email, created_at, id)',
+            $readiness['errors']
+        );
     }
 
     #[Test]

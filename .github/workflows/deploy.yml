@@ -337,8 +337,16 @@ jobs:
               errors.append("database readiness is not ok")
           if health.get("migrations") != "ready":
               errors.append("migrations are not ready")
+          if health.get("authConfig", {}).get("jwt_secret") is not True:
+              errors.append("jwt_secret auth config readiness is not confirmed")
+          if health.get("authConfig", {}).get("otp_hash_secret") is not True:
+              errors.append("otp_hash_secret auth config readiness is not confirmed")
           if health.get("schema", {}).get("projects.version") is not True:
               errors.append("projects.version schema readiness is not confirmed")
+          if health.get("schema", {}).get("login_codes.code_verifier") is not True:
+              errors.append("login_codes.code_verifier schema readiness is not confirmed")
+          if health.get("schema", {}).get("auth_rate_limits.scope") is not True:
+              errors.append("auth_rate_limits.scope schema readiness is not confirmed")
           if health.get("pendingMigrations") != []:
               errors.append("health reports pending migrations")
 

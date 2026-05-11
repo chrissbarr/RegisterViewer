@@ -10,6 +10,7 @@ final class RouteDispatchTest extends TestCase
     private static ?PDO $db = null;
     private const CONFIG = [
         'jwt_secret' => 'test-jwt-secret-not-for-production',
+        'otp_hash_secret' => 'test-otp-hash-secret-not-for-production',
         'app_url' => 'http://localhost',
     ];
 
@@ -103,6 +104,14 @@ final class RouteDispatchTest extends TestCase
         return createJwt(self::CONFIG, $userId, $email);
     }
 
+    private function seedLoginCode(string $email, string $code = '123456', bool $legacySha256 = false): void
+    {
+        $verifier = $legacySha256
+            ? hash('sha256', $code)
+            : createOtpVerifier(self::CONFIG, $email, $code);
+        dbCreateLoginCode(self::$db, $email, $verifier, gmdate('Y-m-d H:i:s', time() + 600));
+    }
+
     #[Test]
     public function logoutWithEmptyBodyRevokesJwtWithoutReadingBody(): void
     {
@@ -169,6 +178,47 @@ final class RouteDispatchTest extends TestCase
         $this->assertSame(400, $response->status);
         $this->assertSame(1, $bodyReads);
         $this->assertSame('Invalid JSON body', $response->body['error']);
+    }
+
+    #[Test]
+    public function verifyCodeRouteAcceptsHmacVerifier(): void
+    {
+        $email = 'verify-route@example.com';
+        $this->seedLoginCode($email, '123456');
+
+        $response = $this->dispatch(
+            'POST',
+            '/api/auth/verify-code',
+            json_encode(['email' => $email, 'code' => '123456'], JSON_THROW_ON_ERROR),
+            null,
+            $bodyReads
+        );
+
+        $this->assertSame(200, $response->status);
+        $this->assertSame(1, $bodyReads);
+        $this->assertArrayHasKey('token', $response->body);
+        $payload = verifyJwt(self::CONFIG, $response->body['token']);
+        $this->assertNotNull($payload);
+        $this->assertSame($email, $payload['email']);
+    }
+
+    #[Test]
+    public function verifyCodeRouteRejectsLegacySha256Verifier(): void
+    {
+        $email = 'verify-route-legacy@example.com';
+        $this->seedLoginCode($email, '123456', legacySha256: true);
+
+        $response = $this->dispatch(
+            'POST',
+            '/api/auth/verify-code',
+            json_encode(['email' => $email, 'code' => '123456'], JSON_THROW_ON_ERROR),
+            null,
+            $bodyReads
+        );
+
+        $this->assertSame(401, $response->status);
+        $this->assertSame(1, $bodyReads);
+        $this->assertNull(dbGetUserByEmail(self::$db, $email));
     }
 
     #[Test]

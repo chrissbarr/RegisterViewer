@@ -17,6 +17,7 @@ require __DIR__ . '/src/database.php';
 require __DIR__ . '/src/cors.php';
 require __DIR__ . '/src/auth.php';
 require __DIR__ . '/src/jwt.php';
+require __DIR__ . '/src/otp.php';
 require __DIR__ . '/src/email.php';
 require __DIR__ . '/src/validation.php';
 require __DIR__ . '/src/request-body.php';
@@ -43,6 +44,21 @@ const SECURITY_HEADERS = [
     'X-Frame-Options'           => 'DENY',
     'Content-Security-Policy'   => "default-src 'none'",
 ];
+
+function getAuthConfigReadiness(array $config): array
+{
+    $checks = [
+        'jwt_secret' => isset($config['jwt_secret'])
+            && is_string($config['jwt_secret'])
+            && strlen($config['jwt_secret']) >= 32,
+        'otp_hash_secret' => isOtpHashSecretConfigured($config),
+    ];
+
+    return [
+        'ready' => !in_array(false, $checks, true),
+        'checks' => $checks,
+    ];
+}
 
 // ---- Response helpers ----
 
@@ -99,6 +115,11 @@ if ($config['environment'] === 'production') {
         error_log('CONFIG WARNING: jwt_secret is missing or too short (must be >= 32 chars). '
             . 'Auth endpoints will reject all requests. '
             . 'Set jwt_secret in config.production.php; see docs/DEPLOYMENT.md Step 2.');
+    }
+    if (!isOtpHashSecretConfigured($config)) {
+        error_log('CONFIG WARNING: otp_hash_secret is missing or too short (must be >= 32 chars). '
+            . 'OTP send/verify endpoints will reject all requests. '
+            . 'Set otp_hash_secret in config.production.php; see docs/DEPLOYMENT.md Step 2.');
     }
     if (empty($config['resend_api_key'])) {
         error_log('CONFIG WARNING: resend_api_key is not set. '
@@ -185,12 +206,24 @@ if ($path === '/api/health' && ($method === 'GET' || $method === 'HEAD')) {
         }
         $db->query('SELECT 1');
         $readiness = $schemaReadyResult['readiness'] ?? getSchemaReadiness($db, $migrationsDir);
+        $authConfigReadiness = getAuthConfigReadiness($config);
+        if (!$authConfigReadiness['ready']) {
+            emitResponse(new ApiResponse([
+                'error' => 'Service temporarily unavailable',
+                'code' => 'config_not_ready',
+                'authConfig' => $authConfigReadiness['checks'],
+                'timestamp' => gmdate('c'),
+            ], 503));
+        }
         emitResponse(new ApiResponse([
             'status' => 'ok',
             'database' => 'ok',
             'migrations' => 'ready',
+            'authConfig' => $authConfigReadiness['checks'],
             'schema' => [
                 'projects.version' => (bool) ($readiness['schema']['projects.version'] ?? false),
+                'login_codes.code_verifier' => (bool) ($readiness['schema']['login_codes.code_verifier'] ?? false),
+                'auth_rate_limits.scope' => (bool) ($readiness['schema']['auth_rate_limits.scope'] ?? false),
             ],
             'appliedMigrations' => $readiness['appliedMigrations'] ?? [],
             'pendingMigrations' => $readiness['pendingMigrations'] ?? [],

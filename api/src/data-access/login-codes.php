@@ -22,64 +22,21 @@ const OTP_MAX_ATTEMPTS = 5;
 /**
  * Store a login OTP code.
  *
- * @param string $code SHA-256 hex digest of the OTP code (64 chars)
+ * @param string $codeVerifier HMAC-SHA256 hex verifier of the OTP code (64 chars)
  * @param string|null $ipAddress Client IP address for rate limiting (PERF-15)
  */
-function dbCreateLoginCode(PDO $db, string $email, string $code, string $expiresAt, ?string $ipAddress = null): void
+function dbCreateLoginCode(PDO $db, string $email, string $codeVerifier, string $expiresAt, ?string $ipAddress = null): void
 {
     $stmt = $db->prepare(
-        'INSERT INTO login_codes (email, code, expires_at, ip_address)
-         VALUES (:email, :code, :expires_at, :ip_address)'
+        'INSERT INTO login_codes (email, code_verifier, expires_at, ip_address)
+         VALUES (:email, :code_verifier, :expires_at, :ip_address)'
     );
     $stmt->execute([
-        'email'      => $email,
-        'code'       => $code,
-        'expires_at' => $expiresAt,
-        'ip_address' => $ipAddress,
+        'email'         => $email,
+        'code_verifier' => $codeVerifier,
+        'expires_at'    => $expiresAt,
+        'ip_address'    => $ipAddress,
     ]);
-}
-
-/**
- * Get an active (unused, unexpired, under attempt limit) login code.
- *
- * @param string $code SHA-256 hex digest of the OTP code to match (64 chars)
- */
-function dbGetActiveLoginCode(PDO $db, string $email, string $code, int $maxAttempts = OTP_MAX_ATTEMPTS): ?array
-{
-    $stmt = $db->prepare(
-        'SELECT id, email, code, expires_at, attempts
-         FROM login_codes
-         WHERE email = :email AND code = :code AND used = 0
-           AND expires_at > NOW() AND attempts < :max_attempts
-         ORDER BY created_at DESC
-         LIMIT 1'
-    );
-    $stmt->execute(['email' => $email, 'code' => $code, 'max_attempts' => $maxAttempts]);
-    $row = $stmt->fetch();
-    return $row ?: null;
-}
-
-/**
- * Get an active login code with an exclusive row lock (FOR UPDATE).
- * Must be called within a transaction. Prevents concurrent verify-code
- * requests from both reading the same code as "active" (SEC-N01).
- *
- * @param string $code SHA-256 hex digest of the OTP code to match (64 chars)
- */
-function dbGetActiveLoginCodeForUpdate(PDO $db, string $email, string $code, int $maxAttempts = OTP_MAX_ATTEMPTS): ?array
-{
-    $stmt = $db->prepare(
-        'SELECT id, email, code, expires_at, attempts
-         FROM login_codes
-         WHERE email = :email AND code = :code AND used = 0
-           AND expires_at > NOW() AND attempts < :max_attempts
-         ORDER BY created_at DESC
-         LIMIT 1
-         FOR UPDATE'
-    );
-    $stmt->execute(['email' => $email, 'code' => $code, 'max_attempts' => $maxAttempts]);
-    $row = $stmt->fetch();
-    return $row ?: null;
 }
 
 /**
@@ -89,7 +46,7 @@ function dbGetActiveLoginCodeForUpdate(PDO $db, string $email, string $code, int
 function dbGetLatestLoginCodeForUpdate(PDO $db, string $email): ?array
 {
     $stmt = $db->prepare(
-        'SELECT id, email, code, expires_at, attempts, used
+        'SELECT id, email, code_verifier, expires_at, attempts, used
          FROM login_codes
          WHERE email = :email
          ORDER BY created_at DESC, id DESC
