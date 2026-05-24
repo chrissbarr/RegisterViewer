@@ -27,13 +27,14 @@ export function FieldTable({ register, hoveredFieldIndices, onFieldHover, fieldH
       <table className="w-full text-left table-fixed min-w-[600px]">
         <thead>
           <tr className="border-b-2 border-gray-300 dark:border-gray-600">
-            <th className="w-[15%] px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Name</th>
+             <th className="w-[12%] px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Name</th>
             <th className="w-[7%] px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Bits</th>
-            <th className="w-[11%] px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Mask</th>
-            <th className="w-[13%] px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Binary</th>
-            <th className="w-[18%] px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Value</th>
-            <th className="w-[36%] px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase hidden lg:table-cell">Description</th>
-          </tr>
+            <th className="w-[10%] px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Mask</th>
+            <th className="w-[10%] px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Binary</th>
+            <th className="w-[12%] px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Raw (Hex)</th>
+            <th className="w-[15%] px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Value</th>
+            <th className="w-[34%] px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase hidden lg:table-cell">Description</th>
+            </tr>
         </thead>
         <tbody>
           {register.fields
