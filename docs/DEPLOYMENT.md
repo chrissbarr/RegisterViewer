@@ -49,7 +49,9 @@ Production requires PHP 8.3 or newer. CI validates API compatibility on PHP 8.3,
 6. `_migrations` table - applied migration tracking
 7. Foreign key linking `projects.user_id` -> `users.id`
 
-The API returns `503 schema_not_ready` instead of routing requests if it cannot apply every numbered migration or prove the required schema shape, including `projects.version`, `login_codes.code_verifier`, and `auth_rate_limits`. `/api/health` also returns `503 config_not_ready` if required auth secrets such as `jwt_secret` or `otp_hash_secret` are missing or too short.
+The API returns `503 schema_not_ready` with `Retry-After: 5` instead of routing requests if it cannot apply every numbered migration or prove the required schema shape, including `projects.version`, `login_codes.code_verifier`, and `auth_rate_limits`. `/api/health` also returns `503 config_not_ready` if required auth secrets such as `jwt_secret` or `otp_hash_secret` are missing or too short.
+
+The PHP runtime user must be able to create and write `api/database/.migrate.lock`. This lock file is used only to serialize migration checks and pending migration application; it is not a schema-completion sentinel. If PHP cannot open this lock file, the API returns `503 schema_not_ready` until permissions are fixed.
 
 The API sets PHP and MySQL sessions to UTC. App-written `DATETIME` values and API timestamp responses are UTC; API responses use `YYYY-MM-DDTHH:mm:ssZ`. The UTC cutover migration clears transient auth tables (`login_codes`, `auth_rate_limits`, and `revoked_tokens`) while preserving durable users and projects.
 
@@ -138,8 +140,8 @@ After first deployment:
 3. Test email sign-in: request an OTP, verify the code, and confirm the app receives a JWT
 4. Test cloud save/share: save a project while signed in, make it unlisted, and verify the shared link opens in a new tab without signing in
 5. Verify private project access requires the owning signed-in account
-6. Confirm deploy smoke tests passed API health. `/api/health` must report `migrations: "ready"`, no pending migrations, applied migrations `[1, 2, 3, 4, 5]`, `authConfig["jwt_secret"] === true`, `authConfig["otp_hash_secret"] === true`, `schema["projects.version"] === true`, `schema["login_codes.code_verifier"] === true`, and `schema["auth_rate_limits.scope"] === true`.
-7. Confirm deploy smoke tests passed the API internal-path checks. `/api/config.php`, `/api/src`, `/api/vendor`, `/api/database`, and `/api/tests` must return `403`, never `200`.
+6. Confirm deploy smoke tests passed API health. `/api/health` must report `migrations: "ready"`, no pending migrations, every numbered migration version shipped in the deploy artifact, `authConfig["jwt_secret"] === true`, `authConfig["otp_hash_secret"] === true`, `schema["projects.version"] === true`, `schema["login_codes.code_verifier"] === true`, and `schema["auth_rate_limits.scope"] === true`.
+7. Confirm deploy smoke tests passed the API internal-path checks. `/api/config.php`, `/api/config.production.php`, `/api/src`, `/api/vendor`, `/api/database`, and `/api/tests` must return `403`, never `200`.
 
 ---
 
@@ -248,7 +250,10 @@ To manually deploy an existing CI artifact without rebuilding:
 - Check PHP error logs in cPanel -> **Error Log**
 - Verify `config.production.php` exists on the server with correct database credentials
 - Verify the deployed `api/database/migrate.php` and all numbered files under `api/database/migrations/` are present
-- Verify `_migrations` contains every numbered migration version in the deployed artifact
+- Verify the PHP runtime user can create and write `api/database/.migrate.lock`
+- Verify `_migrations` contains every numbered migration version in the deployed artifact, with matching filename and checksum values for the deployed files
+- Check for duplicate migration version numbers, an applied `_migrations` version with no deployed SQL file, checksum or filename drift, or stale remote migration files left behind by incremental FTPS deployment
+- Do not edit an already-applied migration file to fix drift. Restore the deployed migration history to match the artifact, or add a new numbered migration for schema changes.
 - Verify the required schema exists, especially `projects.version`, `login_codes.code_verifier`, and `auth_rate_limits`
 - If logs show the migration lock is held, wait briefly and retry `/api/health`
 
@@ -475,7 +480,7 @@ A: Yes. Use **Actions** -> **Deploy to cPanel** -> **Run workflow** on the `mast
 A: Prefer redeploying the last good CI artifact while it is retained. Use `git revert` when the rollback should become a new commit on `master` or the artifact has expired.
 
 **Q: How do I run database migrations?**
-A: Normal deployments do not require manual SQL imports. The PHP API runs pending numbered migrations as a hard pre-routing readiness step, and deploy smoke proves readiness through `/api/health`. For local tests, run `php database/migrate.php` before PHPUnit if you are not using the documented Docker command.
+A: Normal deployments do not require manual SQL imports. The PHP API runs pending numbered migrations as a hard pre-routing readiness step, using `api/database/.migrate.lock` to serialize migration work. Deploy smoke proves readiness through `/api/health`. For local tests, run `php database/migrate.php` before PHPUnit if you are not using the documented Docker command.
 
 **Q: How do I update FTP credentials?**
 A: Update the `FTP_HOST`, `FTP_USERNAME`, or `FTP_PASSWORD` secrets in GitHub -> Settings -> Secrets and variables -> Actions.

@@ -43,9 +43,9 @@ Checks database connectivity, verifies required auth configuration, verifies eve
 }
 ```
 
-**Response `503 Service Unavailable`:**
+**Response `503 Service Unavailable` - `schema_not_ready`:**
 
-Returned when the database is unavailable, required auth configuration is missing, another request holds the migration lock, a migration fails, a numbered migration is not recorded as applied, or required schema shape cannot be established.
+Returned when the database is unavailable, another request holds the migration lock, the migration lock file cannot be opened, a migration fails, migration history does not match the deployed numbered SQL files, or required schema shape cannot be established. This response includes `Retry-After: 5`.
 
 ```json
 {
@@ -55,6 +55,22 @@ Returned when the database is unavailable, required auth configuration is missin
 ```
 
 Normal API routes use the same pre-routing readiness gate and may return this `503` before route-specific validation or authentication.
+
+**Response `503 Service Unavailable` - `config_not_ready`:**
+
+Returned by `/api/health` when the database and schema are ready but required auth configuration is missing or too short.
+
+```json
+{
+  "error": "Service temporarily unavailable",
+  "code": "config_not_ready",
+  "authConfig": {
+    "jwt_secret": false,
+    "otp_hash_secret": true
+  },
+  "timestamp": "2026-05-10T00:00:00Z"
+}
+```
 
 ### Email Health
 

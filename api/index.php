@@ -186,17 +186,11 @@ try {
             error_log("Schema readiness failure [$status]: no detail available");
         }
 
-        emitResponse(new ApiResponse([
-            'error' => 'Service temporarily unavailable',
-            'code' => 'schema_not_ready',
-        ], 503, ['Retry-After' => '5']));
+        emitResponse(schemaNotReadyResponse());
     }
 } catch (\Throwable $e) {
     error_log('Schema readiness check failed: ' . substr($e->getMessage(), 0, 500));
-    emitResponse(new ApiResponse([
-        'error' => 'Service temporarily unavailable',
-        'code' => 'schema_not_ready',
-    ], 503, ['Retry-After' => '5']));
+    emitResponse(schemaNotReadyResponse());
 }
 
 // ---- Routing ----
@@ -234,7 +228,7 @@ if ($path === '/api/health' && ($method === 'GET' || $method === 'HEAD')) {
         ]));
     } catch (\Throwable $e) {
         error_log('Health check failed: ' . substr($e->getMessage(), 0, 200));
-        emitResponse(new ApiResponse(['error' => 'Database connection failed'], 503));
+        emitResponse(schemaNotReadyResponse());
     }
 }
 
