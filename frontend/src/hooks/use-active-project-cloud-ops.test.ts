@@ -262,6 +262,7 @@ describe('useActiveProjectCloudOps', () => {
         ...INITIAL_INTERNAL_STATE,
         cloudId: TEST_CLOUD_ID,
         isOwner: true,
+        storage: 'cloud',
       };
       (saveProjectToCloudImpl as Mock).mockResolvedValue({ kind: 'not-found' });
 
@@ -275,6 +276,7 @@ describe('useActiveProjectCloudOps', () => {
         cloudId: null,
         visibility: 'private',
         cloudSavedAt: null,
+        serverVersion: null,
         cloudConflictVersion: null,
         hasUnsyncedChanges: undefined,
         storage: 'local',
@@ -313,6 +315,7 @@ describe('useActiveProjectCloudOps', () => {
         ...INITIAL_INTERNAL_STATE,
         cloudId: TEST_CLOUD_ID,
         isOwner: true,
+        storage: 'cloud',
       };
       // Simulate project switch during the async save
       (saveProjectToCloudImpl as Mock).mockImplementation(async () => {
@@ -819,6 +822,7 @@ describe('useActiveProjectCloudOps', () => {
         ...INITIAL_INTERNAL_STATE,
         cloudId: TEST_CLOUD_ID,
         isOwner: true,
+        storage: 'cloud',
       };
       (deleteProjectFromCloudImpl as Mock).mockResolvedValue(undefined);
 
@@ -833,6 +837,7 @@ describe('useActiveProjectCloudOps', () => {
         cloudId: null,
         visibility: 'private',
         cloudSavedAt: null,
+        serverVersion: null,
         cloudConflictVersion: null,
         hasUnsyncedChanges: undefined,
         storage: 'local',
@@ -856,6 +861,25 @@ describe('useActiveProjectCloudOps', () => {
       });
 
       expect(deleteProjectFromCloudImpl).not.toHaveBeenCalled();
+    });
+
+    it('does not delete transient local cloud-source state', async () => {
+      const deps = makeDefaultDeps();
+      deps.internalRef.current = {
+        ...INITIAL_INTERNAL_STATE,
+        cloudId: TEST_CLOUD_ID,
+        isOwner: true,
+        storage: 'local',
+      };
+
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+
+      await act(async () => {
+        await result.current.deleteFromCloud();
+      });
+
+      expect(deleteProjectFromCloudImpl).not.toHaveBeenCalled();
+      expect(deps.updateCloudMetadata).not.toHaveBeenCalled();
     });
   });
 

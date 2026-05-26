@@ -421,8 +421,8 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
   }, [applyCreatedResult, mutationLockRef, dataVersionRef, getJwt, appStateRef, setInternal]);
 
   const deleteFromCloud = useCallback(async () => {
-    const { cloudId } = internalRef.current;
-    if (!cloudId) return;
+    const { cloudId, isOwner, storage } = internalRef.current;
+    if (!cloudId || !isOwner || storage !== 'cloud') return;
     await withMutationLock(mutationLockRef, async () => {
       setInternal((prev) => ({ ...prev, status: 'deleting', error: null }));
       try {

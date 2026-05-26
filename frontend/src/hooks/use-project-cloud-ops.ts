@@ -6,6 +6,7 @@ import { clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock, requireJwt } f
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
 import type { Visibility, ProjectListEntry } from '../types/project';
 import { type CloudSyncCore, type CloudMetadataUpdate, initialInternalState } from '../types/cloud-sync';
+import { isOwnedCloudEntry } from '../utils/project-identity';
 
 interface ProjectCloudOpsDeps {
   core: CloudSyncCore;
@@ -19,7 +20,7 @@ interface ProjectCloudOpsDeps {
 
 interface ProjectCloudOps {
   saveProjectToCloud: (localId: string) => Promise<void>;
-  deleteProjectFromCloud: (cloudId: string) => Promise<void>;
+  deleteProjectFromCloud: (localId: string) => Promise<void>;
   setProjectVisibility: (localId: string, v: Visibility) => Promise<void>;
   unlinkCloudProject: (localId: string) => void;
 }
@@ -52,8 +53,10 @@ export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
       const jsonPayload = exportToObject(projectState);
 
       const entry = projectsRef.current.find(p => p.localId === localId);
-      const existingCloudId = entry?.cloudId ?? project.cloudId;
-      const knownServerVersion = entry?.serverVersion ?? project.serverVersion ?? undefined;
+      const ownedEntry = entry && isOwnedCloudEntry(entry) ? entry : null;
+      const ownedProject = isOwnedCloudEntry(project) ? project : null;
+      const existingCloudId = ownedEntry?.cloudId ?? ownedProject?.cloudId ?? null;
+      const knownServerVersion = ownedEntry?.serverVersion ?? ownedProject?.serverVersion ?? undefined;
       const serverVersion = typeof knownServerVersion === 'number' && knownServerVersion > 0
         ? knownServerVersion
         : undefined;
@@ -95,16 +98,17 @@ export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
     }
   }, [updateCloudMetadata, projectsRef, mutationLockRef, activeLocalIdRef, getJwt, activeProjectSave]);
 
-  const deleteProjectFromCloud = useCallback(async (cloudId: string) => {
+  const deleteProjectFromCloud = useCallback(async (localId: string) => {
     await withMutationLock(mutationLockRef, async () => {
+      const entry = projectsRef.current.find(p => p.localId === localId);
+      if (!entry || !isOwnedCloudEntry(entry)) return;
+
+      const cloudId = entry.cloudId;
       const jwt = requireJwt(getJwt);
       await deleteProjectFromCloudImpl(cloudId, jwt);
 
-      const entry = projectsRef.current.find(p => p.cloudId === cloudId);
-      if (entry) {
-        const metadataResult = updateCloudMetadata(entry.localId, CLEARED_CLOUD_METADATA);
-        if (!metadataResult.ok) throw new Error('Deleted cloud project, but failed to persist local metadata.');
-      }
+      const metadataResult = updateCloudMetadata(localId, CLEARED_CLOUD_METADATA);
+      if (!metadataResult.ok) throw new Error('Deleted cloud project, but failed to persist local metadata.');
 
       // If the currently active cloud project is this one, clear cloud state
       if (internalRef.current.cloudId === cloudId) {
@@ -116,7 +120,7 @@ export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
 
   const setProjectVisibility = useCallback(async (localId: string, v: Visibility) => {
     const entry = projectsRef.current.find(p => p.localId === localId);
-    if (!entry?.cloudId) return;
+    if (!entry || !isOwnedCloudEntry(entry)) return;
 
     const jwt = requireJwt(getJwt);
     await patchVisibilityImpl(entry.cloudId, v, jwt);
@@ -132,7 +136,7 @@ export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
 
   const unlinkCloudProject = useCallback((localId: string) => {
     const entry = projectsRef.current.find(p => p.localId === localId);
-    if (!entry || !entry.cloudId) return;
+    if (!entry || !isOwnedCloudEntry(entry)) return;
 
     const cloudId = entry.cloudId;
     const metadataResult = updateCloudMetadata(localId, CLEARED_CLOUD_METADATA);

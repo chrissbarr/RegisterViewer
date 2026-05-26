@@ -43,6 +43,7 @@ import { useAuthTransition } from '../hooks/use-auth-transition';
 import { useProjectSwitchInit } from '../hooks/use-project-switch-init';
 import { syncCloudProjectsFromServer } from '../utils/cloud-sync';
 import { checkAndPullFreshVersion, type FreshnessCheckContext } from '../utils/cloud-freshness';
+import { isOwnedCloudEntry } from '../utils/project-identity';
 import type { Visibility } from '../types/project';
 import { initialInternalState, type CloudInit, type CloudSyncCore, type InternalCloudSyncState, type SyncResult } from '../types/cloud-sync';
 
@@ -76,7 +77,7 @@ interface CloudSyncActions {
   saveToCloud: () => Promise<boolean>;
   saveProjectToCloud: (localId: string) => Promise<void>;
   deleteFromCloud: () => Promise<void>;
-  deleteProjectFromCloud: (cloudId: string) => Promise<void>;
+  deleteProjectFromCloud: (localId: string) => Promise<void>;
   setVisibility: (v: Visibility) => Promise<void>;
   setProjectVisibility: (localId: string, v: Visibility) => Promise<void>;
   loadCloudProject: (cloudId: string) => Promise<void>;
@@ -309,9 +310,9 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
         const latestManifest = loadManifest();
         if (
           internalRef.current.cloudId === data.cloudId ||
-          latestManifest.projects.some(p => p.cloudId === data.cloudId)
+          latestManifest.projects.filter(isOwnedCloudEntry).some(p => p.cloudId === data.cloudId)
         ) {
-          return;
+          return false;
         }
         try {
           const localId = createProject(EMPTY_SERIALIZED_STATE, data.title, {
@@ -325,8 +326,10 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
             protectedLocalIds: [activeLocalIdRef.current],
           });
           evictProjectData(localId);
+          return true;
         } catch (err) {
           console.warn('[cloud-sync] Failed to create placeholder for cloud project', data.cloudId, err);
+          return false;
         }
       },
     });

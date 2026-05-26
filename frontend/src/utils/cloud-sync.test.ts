@@ -186,20 +186,18 @@ describe('computeSyncPatches', () => {
     expect(result.cloudOnlyProjects).toEqual(server);
   });
 
-  it('skips entries with storage !== cloud', () => {
+  it('treats saved local cloud-linked entries as local forks, not owned cloud identities', () => {
     const local = [makeEntry({
       localId: 'l1',
       cloudId: 'c1',
-      storage: 'local', // shared project loaded via link
+      storage: 'local',
     })];
     const server = [makeServer({ id: 'c1', updatedAt: '2024-06-01T00:00:00Z', visibility: 'unlisted' })];
 
     const result = computeSyncPatches(local, server);
-    // No patches because local entry has storage=local
     expect(result.patches).toEqual([]);
     expect(result.staleCloudIds).toEqual([]);
-    // c1 IS in localCloudIds set (because entry has cloudId), so not cloud-only
-    expect(result.cloudOnlyProjects).toEqual([]);
+    expect(result.cloudOnlyProjects).toEqual(server);
   });
 
   it('skips entries without cloudId', () => {
@@ -373,6 +371,48 @@ describe('syncCloudProjectsFromServer', () => {
       serverVersion: 1,
     });
     expect(result.placeholdersCreated).toBe(1);
+  });
+
+  it('creates an owned placeholder instead of reusing a saved local cloud-linked entry', async () => {
+    const projects = [makeEntry({
+      localId: 'local-fork',
+      cloudId: 'cloud-owned',
+      storage: 'local',
+    })];
+    (listProjects as ReturnType<typeof vi.fn>).mockResolvedValue({
+      projects: [makeServer({ id: 'cloud-owned', title: 'Owned Remote', visibility: 'unlisted', updatedAt: '2024-05-01T00:00:00Z', version: 6 })],
+    });
+    const updateCloudMetadata = vi.fn();
+    const createPlaceholder = vi.fn();
+
+    const result = await syncCloudProjectsFromServer('jwt-token', projects, {
+      updateCloudMetadata,
+      createPlaceholder,
+    });
+
+    expect(updateCloudMetadata).not.toHaveBeenCalled();
+    expect(createPlaceholder).toHaveBeenCalledWith({
+      title: 'Owned Remote',
+      cloudId: 'cloud-owned',
+      visibility: 'unlisted',
+      cloudSavedAt: '2024-05-01T00:00:00Z',
+      serverVersion: 6,
+    });
+    expect(result.placeholdersCreated).toBe(1);
+  });
+
+  it('counts only placeholders actually created by the callback', async () => {
+    (listProjects as ReturnType<typeof vi.fn>).mockResolvedValue({
+      projects: [makeServer({ id: 'cloud-new', title: 'Remote Only', visibility: 'private' })],
+    });
+    const createPlaceholder = vi.fn(() => false);
+
+    const result = await syncCloudProjectsFromServer('jwt-token', [], {
+      updateCloudMetadata: vi.fn(),
+      createPlaceholder,
+    });
+
+    expect(result.placeholdersCreated).toBe(0);
   });
 
   it('returns stale cloud IDs', async () => {

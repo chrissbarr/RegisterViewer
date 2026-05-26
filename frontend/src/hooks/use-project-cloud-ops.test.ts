@@ -42,7 +42,7 @@ function makeInitialState() {
   return { ...initialInternalState };
 }
 
-function makeProjectList(entries: Array<{ localId: string; cloudId?: string | null; serverVersion?: number | null }>): ProjectListEntry[] {
+function makeProjectList(entries: Array<{ localId: string; cloudId?: string | null; serverVersion?: number | null; storage?: 'local' | 'cloud' }>): ProjectListEntry[] {
   return entries.map(p => ({
     localId: p.localId,
     cloudId: p.cloudId ?? null,
@@ -52,7 +52,7 @@ function makeProjectList(entries: Array<{ localId: string; cloudId?: string | nu
     localSavedAt: '2026-01-01T00:00:00Z',
     cloudSavedAt: null,
     serverVersion: p.serverVersion ?? null,
-    storage: (p.cloudId ?? null) !== null ? 'cloud' as const : 'local' as const,
+    storage: p.storage ?? ((p.cloudId ?? null) !== null ? 'cloud' as const : 'local' as const),
   }));
 }
 
@@ -189,12 +189,58 @@ describe('useProjectCloudOps', () => {
       expect(setCloudUrl).not.toHaveBeenCalled();
     });
 
+    it('creates a new cloud project instead of updating a saved local cloud-linked fork', async () => {
+      const localForkEntry: ProjectListEntry = {
+        ...makeProjectList([{ localId: 'local-1', cloudId: null }])[0],
+        cloudId: 'shared-cloud',
+        storage: 'local',
+        serverVersion: 8,
+      };
+      const deps = makeDeps({
+        activeLocalId: 'other-local',
+        projects: [localForkEntry],
+      });
+      (loadProject as Mock).mockReturnValue({
+        state: '{}',
+        cloudId: 'shared-cloud',
+        storage: 'local',
+        serverVersion: 8,
+      });
+      (saveProjectToCloudImpl as Mock).mockResolvedValue({
+        kind: 'created',
+        cloudId: 'new-owned-cloud',
+        timestamp: '2026-01-03T00:00:00Z',
+        version: 1,
+      });
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      await act(async () => {
+        await result.current.saveProjectToCloud('local-1');
+      });
+
+      expect(saveProjectToCloudImpl).toHaveBeenCalledWith(
+        { version: 1, registers: [] },
+        null,
+        'mock-jwt',
+        undefined,
+      );
+      expect(deps.updateCloudMetadata).toHaveBeenCalledWith('local-1', {
+        cloudId: 'new-owned-cloud',
+        cloudSavedAt: '2026-01-03T00:00:00Z',
+        storage: 'cloud',
+        serverVersion: 1,
+        cloudConflictVersion: null,
+        hasUnsyncedChanges: false,
+      });
+    });
+
     it('uses stored serverVersion when manifest version is missing for non-active save', async () => {
       const deps = makeDeps({
         activeLocalId: 'other-local',
         projects: makeProjectList([{ localId: 'local-1', cloudId: 'cloud-1', serverVersion: null }]),
       });
-      (loadProject as Mock).mockReturnValue({ state: '{}', cloudId: 'cloud-1', serverVersion: 6 });
+      (loadProject as Mock).mockReturnValue({ state: '{}', cloudId: 'cloud-1', storage: 'cloud', serverVersion: 6 });
       (saveProjectToCloudImpl as Mock).mockResolvedValue({
         kind: 'updated',
         timestamp: '2026-01-02T00:00:00Z',
@@ -290,7 +336,7 @@ describe('useProjectCloudOps', () => {
       const { result } = renderHook(() => useProjectCloudOps(deps));
 
       await act(async () => {
-        await result.current.deleteProjectFromCloud('cloud-1');
+        await result.current.deleteProjectFromCloud('local-1');
       });
 
       expect(deleteProjectFromCloudImpl).toHaveBeenCalledWith('cloud-1', 'mock-jwt');
@@ -298,6 +344,7 @@ describe('useProjectCloudOps', () => {
         cloudId: null,
         visibility: 'private',
         cloudSavedAt: null,
+        serverVersion: null,
         cloudConflictVersion: null,
         hasUnsyncedChanges: undefined,
         storage: 'local',
@@ -312,7 +359,7 @@ describe('useProjectCloudOps', () => {
       const { result } = renderHook(() => useProjectCloudOps(deps));
 
       await act(async () => {
-        await result.current.deleteProjectFromCloud('cloud-1');
+        await result.current.deleteProjectFromCloud('local-1');
       });
 
       expect(clearCloudUrl).toHaveBeenCalled();
@@ -332,10 +379,30 @@ describe('useProjectCloudOps', () => {
       const { result } = renderHook(() => useProjectCloudOps(deps));
 
       await act(async () => {
-        await result.current.deleteProjectFromCloud('cloud-1');
+        await result.current.deleteProjectFromCloud('local-1');
       });
 
       expect(clearCloudUrl).not.toHaveBeenCalled();
+    });
+
+    it('does not delete a saved local cloud-linked fork even when an owned placeholder has the same cloudId', async () => {
+      const deps = makeDeps({
+        activeLocalId: 'other-local',
+        projects: makeProjectList([
+          { localId: 'local-fork', cloudId: 'cloud-1', storage: 'local' },
+          { localId: 'owned-placeholder', cloudId: 'cloud-1', storage: 'cloud' },
+        ]),
+      });
+      (deleteProjectFromCloudImpl as Mock).mockResolvedValue(undefined);
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      await act(async () => {
+        await result.current.deleteProjectFromCloud('local-fork');
+      });
+
+      expect(deleteProjectFromCloudImpl).not.toHaveBeenCalled();
+      expect(deps.updateCloudMetadata).not.toHaveBeenCalled();
     });
   });
 
@@ -381,6 +448,24 @@ describe('useProjectCloudOps', () => {
 
       expect(patchVisibilityImpl).not.toHaveBeenCalled();
     });
+
+    it('returns early for saved local cloud-linked forks', async () => {
+      const localForkEntry: ProjectListEntry = {
+        ...makeProjectList([{ localId: 'local-1', cloudId: null }])[0],
+        cloudId: 'shared-cloud',
+        storage: 'local',
+      };
+      const deps = makeDeps({ projects: [localForkEntry] });
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      await act(async () => {
+        await result.current.setProjectVisibility('local-1', 'unlisted');
+      });
+
+      expect(patchVisibilityImpl).not.toHaveBeenCalled();
+      expect(deps.updateCloudMetadata).not.toHaveBeenCalled();
+    });
   });
 
   describe('unlinkCloudProject', () => {
@@ -397,6 +482,7 @@ describe('useProjectCloudOps', () => {
         cloudId: null,
         visibility: 'private',
         cloudSavedAt: null,
+        serverVersion: null,
         cloudConflictVersion: null,
         hasUnsyncedChanges: undefined,
         storage: 'local',
@@ -433,6 +519,24 @@ describe('useProjectCloudOps', () => {
       });
 
       expect(deps.updateCloudMetadata).not.toHaveBeenCalled();
+    });
+
+    it('does nothing for saved local cloud-linked forks', () => {
+      const localForkEntry: ProjectListEntry = {
+        ...makeProjectList([{ localId: 'local-1', cloudId: null }])[0],
+        cloudId: 'shared-cloud',
+        storage: 'local',
+      };
+      const deps = makeDeps({ projects: [localForkEntry] });
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      act(() => {
+        result.current.unlinkCloudProject('local-1');
+      });
+
+      expect(deps.updateCloudMetadata).not.toHaveBeenCalled();
+      expect(clearCloudUrl).not.toHaveBeenCalled();
     });
 
     it('does nothing when project not found in manifest', () => {

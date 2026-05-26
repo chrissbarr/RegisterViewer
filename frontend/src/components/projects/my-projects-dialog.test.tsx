@@ -355,7 +355,7 @@ describe('MyProjectsDialog interactions', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Delete project Cloud Project' }));
 
       await waitFor(() => {
-        expect(mockDeleteProjectFromCloud).toHaveBeenCalledWith('cloud-abc');
+        expect(mockDeleteProjectFromCloud).toHaveBeenCalledWith('p1');
       });
       expect(mockDeleteLocalProject).toHaveBeenCalledWith('p1');
     });

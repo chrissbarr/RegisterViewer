@@ -4,6 +4,7 @@ import { setCloudUrl, clearCloudUrl, withMutationLock } from '../utils/cloud-uti
 import { exportToObject, deserializeState } from '../utils/storage';
 import { saveProjectToCloudImpl } from '../utils/cloud-operations';
 import { checkAndPullFreshVersion, type FreshnessCheckContext } from '../utils/cloud-freshness';
+import { isOwnedCloudEntry } from '../utils/project-identity';
 import { type CloudSyncCore, initialInternalState } from '../types/cloud-sync';
 import type { CloudMetadataUpdate } from '../types/cloud-sync';
 import type { ProjectListEntry } from '../types/project';
@@ -159,18 +160,20 @@ export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
 
     const entry = projectsRef.current.find(p => p.localId === activeLocalId);
     const storedProject = loadProject(activeLocalId);
-    const cloudId = entry?.cloudId ?? storedProject?.cloudId ?? null;
+    const ownedEntry = entry && isOwnedCloudEntry(entry) ? entry : null;
+    const ownedProject = storedProject && isOwnedCloudEntry(storedProject) ? storedProject : null;
+    const cloudId = ownedEntry?.cloudId ?? ownedProject?.cloudId ?? null;
     if (cloudId === internalRef.current.cloudId) return;
 
-    const storage = entry?.storage ?? storedProject?.storage ?? 'local';
+    const storage: 'cloud' | 'local' = cloudId ? 'cloud' : 'local';
     const isOwner = storage === 'cloud';
     if (cloudId === null) {
       setInternal(initialInternalState);
       clearCloudUrl();
     } else {
-      const conflictVersion = entry?.cloudConflictVersion ?? storedProject?.cloudConflictVersion ?? null;
-      const serverVersion = entry?.serverVersion ?? storedProject?.serverVersion ?? 0;
-      const hasStoredUnsyncedChanges = (entry?.hasUnsyncedChanges ?? storedProject?.hasUnsyncedChanges) === true;
+      const conflictVersion = ownedEntry?.cloudConflictVersion ?? ownedProject?.cloudConflictVersion ?? null;
+      const serverVersion = ownedEntry?.serverVersion ?? ownedProject?.serverVersion ?? 0;
+      const hasStoredUnsyncedChanges = (ownedEntry?.hasUnsyncedChanges ?? ownedProject?.hasUnsyncedChanges) === true;
       const lastSavedVersion = hasStoredUnsyncedChanges
         ? STORED_UNSYNCED_LAST_SAVED_VERSION
         : dataVersionRef.current;
@@ -185,7 +188,7 @@ export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
         lastSavedVersion,
         lastCloudSavedAt: null,
         error: null,
-        visibility: entry?.visibility ?? storedProject?.visibility ?? 'private',
+        visibility: ownedEntry?.visibility ?? ownedProject?.visibility ?? 'private',
         serverVersion,
         conflict: conflictVersion ? { serverVersion: conflictVersion } : null,
       };

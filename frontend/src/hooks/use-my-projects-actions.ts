@@ -7,6 +7,7 @@ import { useAnnounce } from '../components/common/announcer';
 import { isCloudEnabled } from '../utils/api-client';
 import { friendlyErrorMessage } from '../utils/friendly-error';
 import { loadProject, saveProject, hasLocalData } from '../utils/project-storage';
+import { isOwnedCloudEntry } from '../utils/project-identity';
 import { fetchAndParseCloudProject } from '../utils/cloud-project-loader';
 import { sanitizeProjectMetadata, serializeImportResult } from '../utils/storage';
 import type { ProjectSettingsData } from '../components/common/project-settings-dialog';
@@ -111,9 +112,9 @@ export function useMyProjectsActions(
   const handleDelete = useCallback(async (localId: string) => {
     const project = projects.find(p => p.localId === localId);
     // Delete from cloud first if cloud-backed
-    if (project?.cloudId) {
+    if (project && isOwnedCloudEntry(project)) {
       try {
-        await deleteProjectFromCloud(project.cloudId);
+        await deleteProjectFromCloud(localId);
       } catch {
         // Best-effort — delete locally regardless
       }
@@ -209,9 +210,9 @@ export function useMyProjectsActions(
 
   const handleRemoveFromCloud = useCallback(async (localId: string) => {
     const project = projects.find(p => p.localId === localId);
-    if (!project?.cloudId) return;
+    if (!project || !isOwnedCloudEntry(project)) return;
     try {
-      await deleteProjectFromCloud(project.cloudId);
+      await deleteProjectFromCloud(localId);
       refreshProjectList();
       announce('Project removed from cloud');
     } catch (err) {

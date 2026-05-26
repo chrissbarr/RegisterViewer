@@ -25,6 +25,7 @@ import {
   loadUnsavedProject,
   saveUnsavedProjectState,
 } from '../utils/project-storage';
+import { isOwnedCloudEntry } from '../utils/project-identity';
 import type { CloudInit } from '../types/cloud-sync';
 
 type CloudProjectLoadResult = Awaited<ReturnType<typeof fetchAndParseCloudProject>>;
@@ -181,14 +182,14 @@ function isCloudCacheDirtyOrConflicted(entry: ProjectManifestEntry, project: Sto
 }
 
 function findReusableOwnedCloudEntry(manifest: ProjectManifest, cloudId: string): ProjectManifestEntry | null {
-  return manifest.projects.find(p => p.cloudId === cloudId) ?? null;
+  return manifest.projects.filter(isOwnedCloudEntry).find(p => p.cloudId === cloudId) ?? null;
 }
 
 function cloudInitFromStoredProject(project: StoredLocalProject): CloudInit | undefined {
-  if (!project.cloudId) return undefined;
+  if (!isOwnedCloudEntry(project)) return undefined;
   return {
     projectId: project.cloudId,
-    isOwner: project.storage === 'cloud',
+    isOwner: true,
     storage: project.storage,
     serverVersion: project.serverVersion ?? null,
     cloudSavedAt: project.cloudSavedAt ?? null,
@@ -208,10 +209,10 @@ function readyFromStoredProject(localId: string, project: StoredLocalProject): E
 }
 
 function findCachedCloudProject(manifest: ProjectManifest, cloudId: string): { entry: ProjectManifestEntry; project: StoredLocalProject } | null {
-  for (const entry of manifest.projects) {
+  for (const entry of manifest.projects.filter(isOwnedCloudEntry)) {
     if (entry.cloudId !== cloudId) continue;
     const project = loadProject(entry.localId);
-    if (project) return { entry, project };
+    if (project && isOwnedCloudEntry(project)) return { entry, project };
   }
   return null;
 }
@@ -393,7 +394,7 @@ export function AppLoader() {
           });
         } else {
           const entry = manifest.projects.find(p => p.localId === resolution.localId);
-          if (entry?.cloudId) {
+          if (entry && isOwnedCloudEntry(entry)) {
             const cloudId = entry.cloudId;
             const jwt = readStartupJwt();
             fetchAndParseCloudProject(cloudId, jwt ?? undefined)

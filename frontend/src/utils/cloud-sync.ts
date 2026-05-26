@@ -1,6 +1,7 @@
 import { DEFAULT_PROJECT_NAME, type ProjectListEntry, type Visibility } from '../types/project';
 import { listProjects } from './api-client';
 import type { CloudMetadataWriteOptions, SyncResult } from '../types/cloud-sync';
+import { isOwnedCloudEntry } from './project-identity';
 
 interface SyncPatch {
   localId: string;
@@ -43,13 +44,13 @@ export function computeSyncPatches(
   const serverMap = new Map(serverProjects.map(p => [p.id, p]));
   const patches: SyncPatch[] = [];
   const staleCloudIds: string[] = [];
-  const localCloudIds = new Set(projects.filter(p => p.cloudId).map(p => p.cloudId!));
+  const localCloudIds = new Set(projects.filter(isOwnedCloudEntry).map(p => p.cloudId));
 
   for (const entry of projects) {
     // Only sync metadata for owned cloud projects (storage === 'cloud').
     // Shared/non-owned projects loaded via link have storage === 'local'
     // and should not have their metadata overwritten by sync.
-    if (!entry.cloudId || entry.storage !== 'cloud') continue;
+    if (!isOwnedCloudEntry(entry)) continue;
 
     const serverProject = serverMap.get(entry.cloudId);
     if (serverProject) {
@@ -111,7 +112,7 @@ interface SyncCallbacks {
     updates: Partial<{ cloudSavedAt: string; visibility: Visibility; serverVersion: number }>,
     options?: CloudMetadataWriteOptions,
   ) => void;
-  createPlaceholder: (data: PlaceholderData) => void;
+  createPlaceholder: (data: PlaceholderData) => boolean | void;
 }
 
 /**
@@ -139,15 +140,17 @@ export async function syncCloudProjectsFromServer(
     callbacks.updateCloudMetadata(localId, updates, { preserveLocalSavedAt: true });
   }
 
+  let placeholdersCreated = 0;
   for (const sp of cloudOnlyProjects) {
-    callbacks.createPlaceholder({
+    const created = callbacks.createPlaceholder({
       title: sp.title ?? DEFAULT_PROJECT_NAME,
       cloudId: sp.id,
       visibility: sp.visibility,
       cloudSavedAt: sp.updatedAt,
       serverVersion: sp.version,
     });
+    if (created !== false) placeholdersCreated++;
   }
 
-  return { updatedCount: patches.length, staleCloudIds, placeholdersCreated: cloudOnlyProjects.length };
+  return { updatedCount: patches.length, staleCloudIds, placeholdersCreated };
 }

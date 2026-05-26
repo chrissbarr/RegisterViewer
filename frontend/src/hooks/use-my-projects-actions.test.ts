@@ -3,10 +3,11 @@ import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { useMyProjectsActions } from './use-my-projects-actions';
 import { DEFAULT_PROJECT_NAME } from '../types/project';
 
-const mockProjects = [
+const defaultMockProjects = [
   { localId: 'local-1', name: 'Project A', storage: 'cloud', cloudId: 'cloud-1', visibility: 'private', createdAt: '2026-01-01', localSavedAt: '2026-01-01', cloudSavedAt: '2026-01-01' },
   { localId: 'local-2', name: 'Project B', storage: 'local', cloudId: null, visibility: 'private', createdAt: '2026-01-01', localSavedAt: '2026-01-01', cloudSavedAt: null },
 ];
+const mockProjects = defaultMockProjects.map(project => ({ ...project }));
 
 const mockStorageActions = {
   createNewProject: vi.fn(() => 'new-id'),
@@ -80,6 +81,7 @@ import { isCloudEnabled } from '../utils/api-client';
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockProjects.splice(0, mockProjects.length, ...defaultMockProjects.map(project => ({ ...project })));
   (isCloudEnabled as Mock).mockReturnValue(true);
   mockStorageActions.createNewProject.mockReturnValue('new-id');
   mockStorageActions.switchProject.mockReturnValue(true);
@@ -168,9 +170,31 @@ describe('useMyProjectsActions', () => {
         await result.current.handleDelete('local-1');
       });
 
-      expect(mockCloudActions.deleteProjectFromCloud).toHaveBeenCalledWith('cloud-1');
+      expect(mockCloudActions.deleteProjectFromCloud).toHaveBeenCalledWith('local-1');
       expect(mockStorageActions.deleteLocalProject).toHaveBeenCalledWith('local-1');
       expect(mockAnnounce).toHaveBeenCalledWith('Project "Project A" deleted');
+    });
+
+    it('handleDelete treats saved local cloud-linked forks as local-only', async () => {
+      mockProjects.push({
+        localId: 'local-fork',
+        name: 'Local Fork',
+        storage: 'local',
+        cloudId: 'cloud-1',
+        visibility: 'private',
+        createdAt: '2026-01-01',
+        localSavedAt: '2026-01-01',
+        cloudSavedAt: '2026-01-01',
+      });
+      const onClose = vi.fn();
+      const { result } = await renderWithOpen(onClose);
+
+      await act(async () => {
+        await result.current.handleDelete('local-fork');
+      });
+
+      expect(mockCloudActions.deleteProjectFromCloud).not.toHaveBeenCalled();
+      expect(mockStorageActions.deleteLocalProject).toHaveBeenCalledWith('local-fork');
     });
 
     it('handleDelete deletes locally only for non-cloud project', async () => {

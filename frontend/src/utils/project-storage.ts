@@ -8,6 +8,7 @@ import {
   type UnsavedProjectSource,
 } from '../types/project';
 import type { SerializedAppState } from '../types/register';
+import { isOwnedCloudEntry } from './project-identity';
 
 export function buildProjectUrl(cloudId: string): string {
   return `${window.location.href.split('#')[0]}#/p/${cloudId}`;
@@ -101,11 +102,10 @@ function readStoredProjectRecord(localId: string): StoredProjectReadResult {
     if (!raw) return { status: 'missing' };
     const parsed = JSON.parse(raw);
     if (!isValidStoredProject(parsed)) return { status: 'corrupt' };
-    // Backfill or correct storage for pre-migration records.
     if (parsed.storage !== 'local' && parsed.storage !== 'cloud') {
-      parsed.storage = parsed.cloudId ? 'cloud' : 'local';
+      parsed.storage = 'local';
     }
-    return { status: 'ok', project: parsed };
+    return { status: 'ok', project: sanitizeStoredProject(parsed) };
   } catch (error) {
     return { status: 'corrupt', error };
   }
@@ -140,6 +140,76 @@ function isSafeCloudEvictionCandidate(entry: ProjectManifestEntry): boolean {
   const project = readResult.project;
   if (project.storage !== 'cloud' || project.cloudConflictVersion) return false;
   return project.hasUnsyncedChanges === false;
+}
+
+function sanitizeStoredProject(project: StoredLocalProject): StoredLocalProject {
+  if (isOwnedCloudEntry(project)) {
+    return {
+      ...project,
+      storage: 'cloud',
+      cloudSavedAt: project.cloudSavedAt ?? null,
+      serverVersion: project.serverVersion ?? null,
+      cloudConflictVersion: project.cloudConflictVersion ?? null,
+    };
+  }
+
+  const hadCloudMetadata = project.storage === 'cloud' ||
+    project.cloudId !== null ||
+    project.cloudSavedAt !== null ||
+    project.serverVersion != null ||
+    project.cloudConflictVersion != null ||
+    project.hasUnsyncedChanges !== undefined;
+
+  return {
+    ...project,
+    cloudId: null,
+    visibility: hadCloudMetadata ? 'private' : project.visibility,
+    cloudSavedAt: null,
+    serverVersion: null,
+    cloudConflictVersion: null,
+    hasUnsyncedChanges: undefined,
+    storage: 'local',
+  };
+}
+
+function sanitizeManifestEntry(entry: ProjectManifestEntry): ProjectManifestEntry {
+  if (isOwnedCloudEntry(entry)) {
+    return {
+      ...entry,
+      storage: 'cloud',
+      cloudSavedAt: entry.cloudSavedAt ?? null,
+      serverVersion: entry.serverVersion ?? null,
+      cloudConflictVersion: entry.cloudConflictVersion ?? null,
+    };
+  }
+
+  const hadCloudMetadata = entry.storage === 'cloud' ||
+    entry.cloudId !== null ||
+    entry.cloudSavedAt !== null ||
+    entry.serverVersion != null ||
+    entry.cloudConflictVersion != null ||
+    entry.hasUnsyncedChanges !== undefined;
+
+  return {
+    ...entry,
+    cloudId: null,
+    visibility: hadCloudMetadata ? 'private' : entry.visibility,
+    cloudSavedAt: null,
+    serverVersion: null,
+    cloudConflictVersion: null,
+    hasUnsyncedChanges: undefined,
+    storage: 'local',
+  };
+}
+
+function normalizeManifest(manifest: ProjectManifest): ProjectManifest {
+  return {
+    version: 1,
+    projects: manifest.projects.map((entry) => sanitizeManifestEntry({
+      ...entry,
+      storage: entry.storage === 'cloud' ? 'cloud' : 'local',
+    })),
+  };
 }
 
 function evictCloudProjectForQuota(excluded: Set<string>): string | null {
@@ -190,26 +260,25 @@ function generateLocalId(): string {
 
 /** Convert a StoredLocalProject to a ProjectManifestEntry */
 function toManifestEntry(project: StoredLocalProject): ProjectManifestEntry {
+  const sanitized = sanitizeStoredProject(project);
   return {
-    localId: project.localId,
-    cloudId: project.cloudId,
-    name: project.name,
-    visibility: project.visibility,
-    createdAt: project.createdAt,
-    localSavedAt: project.localSavedAt,
-    cloudSavedAt: project.cloudSavedAt,
-    serverVersion: project.serverVersion ?? null,
-    cloudConflictVersion: project.cloudConflictVersion ?? null,
-    hasUnsyncedChanges: project.hasUnsyncedChanges,
-    storage: project.storage ?? 'local',
+    localId: sanitized.localId,
+    cloudId: sanitized.cloudId,
+    name: sanitized.name,
+    visibility: sanitized.visibility,
+    createdAt: sanitized.createdAt,
+    localSavedAt: sanitized.localSavedAt,
+    cloudSavedAt: sanitized.cloudSavedAt,
+    serverVersion: sanitized.serverVersion ?? null,
+    cloudConflictVersion: sanitized.cloudConflictVersion ?? null,
+    hasUnsyncedChanges: sanitized.hasUnsyncedChanges,
+    storage: sanitized.storage,
   };
 }
 
 /** Convert a ProjectManifestEntry to a ProjectListEntry (UI view, no secrets) */
 export function toProjectListEntry(entry: ProjectManifestEntry): ProjectListEntry {
-  return {
-    ...entry,
-  };
+  return sanitizeManifestEntry(entry);
 }
 
 
@@ -221,10 +290,16 @@ function recoverOrphanedProjects(manifest: ProjectManifest): ProjectManifest {
     if (!key?.startsWith(PROJECT_PREFIX)) continue;
     const localId = key.slice(PROJECT_PREFIX.length);
     if (knownIds.has(localId)) continue;
+
     const raw = localStorage.getItem(key);
     if (!raw) continue;
     try {
-      const record: StoredLocalProject = JSON.parse(raw);
+      const parsed = JSON.parse(raw);
+      if (parsed.storage !== 'local' && parsed.storage !== 'cloud') {
+        parsed.storage = 'local';
+      }
+      const record: StoredLocalProject = sanitizeStoredProject(parsed);
+      localStorage.setItem(projectStorageKey(localId), JSON.stringify(record));
       manifest.projects.push(toManifestEntry(record));
     } catch (err) {
       if (import.meta.env.DEV) {
@@ -248,7 +323,7 @@ export function loadManifest(): ProjectManifest {
         if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.projects)) {
           cachedManifest = { version: 1, projects: [] };
         } else {
-          cachedManifest = parsed;
+          cachedManifest = normalizeManifest(parsed);
         }
       }
     } catch (err) {
@@ -263,8 +338,9 @@ export function loadManifest(): ProjectManifest {
 
 /** Save the manifest to localStorage and update cache */
 export function saveManifest(manifest: ProjectManifest): void {
-  localStorage.setItem(MANIFEST_KEY, JSON.stringify(manifest));
-  cachedManifest = manifest;
+  const normalized = normalizeManifest(manifest);
+  localStorage.setItem(MANIFEST_KEY, JSON.stringify(normalized));
+  cachedManifest = normalized;
 }
 
 /** Validate that a parsed object has the minimum shape of a StoredLocalProject */
@@ -293,6 +369,7 @@ export function loadProject(localId: string): StoredLocalProject | null {
 }
 
 function saveProjectRecord(project: StoredLocalProject, options?: ProjectStorageWriteOptions): StoredLocalProject {
+  project = sanitizeStoredProject(project);
   // Update timestamp without mutating input unless this is metadata-only background sync.
   const updated = options?.preserveLocalSavedAt
     ? { ...project }
@@ -405,7 +482,7 @@ export function createProject(
     storage: cloudMeta?.storage ?? 'local',
     state: initialState,
   };
-  const result = saveProject(project, options);
+  const result = saveProject(sanitizeStoredProject(project), options);
   if (!result.ok) {
     throw new Error(`Failed to create project: ${result.status}`);
   }
@@ -491,11 +568,13 @@ export function updateProjectMetadata(
     logWriteFailure('Update project metadata', result, localId);
     return result;
   }
-  const hasChanges = Object.entries(updates).some(([key, value]) =>
-    readResult.project[key as keyof StoredLocalProject] !== value
+  const current = sanitizeStoredProject(readResult.project);
+  const updated = sanitizeStoredProject({ ...readResult.project, ...updates });
+  const hasChanges = Object.entries(updates).some(([key]) =>
+    updated[key as keyof StoredLocalProject] !== current[key as keyof StoredLocalProject]
   );
-  if (!hasChanges) return writeOk([], readResult.project, true);
-  return saveProject({ ...readResult.project, ...updates }, options);
+  if (!hasChanges) return writeOk([], current, true);
+  return saveProject(updated, options);
 }
 
 /** Get the most recently saved project's localId.
@@ -640,7 +719,7 @@ function migrateLegacyState(): void {
  * 1. Convert legacy single-project state to manifest format
  * 2. Remove legacy localStorage keys
  * 3. Ensure manifest exists
- * 4. Backfill `storage` field for pre-existing manifest entries (cloud if cloudId, local otherwise)
+ * 4. Normalize saved project cloud identity so only owned cloud records carry cloud IDs
  * 5. Recover orphaned project keys not tracked in the manifest
  */
 export function runMigrationIfNeeded(): void {
@@ -657,17 +736,53 @@ export function runMigrationIfNeeded(): void {
     saveManifest({ version: 1, projects: [] });
   }
 
-  // Backfill storage field for manifests created before this field existed
-  const preOrphanManifest = loadManifest();
+  // Normalize storage/cloud identity for manifests created before the current invariant.
+  // Read the persisted manifest directly so migration writes back records that
+  // loadManifest() would otherwise normalize only in memory.
+  let preOrphanManifest = loadManifest();
+  try {
+    const rawManifest = localStorage.getItem(MANIFEST_KEY);
+    if (rawManifest) {
+      const parsed = JSON.parse(rawManifest) as ProjectManifest;
+      if (parsed && parsed.version === 1 && Array.isArray(parsed.projects)) {
+        preOrphanManifest = { version: 1, projects: [...parsed.projects] };
+      }
+    }
+  } catch {
+    // Corrupt manifests are handled by loadManifest's fallback path.
+  }
   let needsSave = false;
-  for (const entry of preOrphanManifest.projects) {
-    // Cast to partial — old localStorage data may lack or have invalid `storage`
-    const s = (entry as Partial<ProjectManifestEntry>).storage;
-    if (s !== 'local' && s !== 'cloud') {
-      entry.storage = entry.cloudId !== null ? 'cloud' : 'local';
+  preOrphanManifest.projects = preOrphanManifest.projects.map((entry) => {
+    let sanitized = sanitizeManifestEntry({
+      ...entry,
+      storage: entry.storage === 'cloud' ? 'cloud' : 'local',
+    });
+
+    try {
+      const raw = localStorage.getItem(projectStorageKey(entry.localId));
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (isValidStoredProject(parsed)) {
+          if (parsed.storage !== 'local' && parsed.storage !== 'cloud') {
+            parsed.storage = 'local';
+          }
+          const sanitizedProject = sanitizeStoredProject(parsed);
+          sanitized = toManifestEntry(sanitizedProject);
+          if (JSON.stringify(sanitizedProject) !== JSON.stringify(parsed)) {
+            const writeResult = saveProject(sanitizedProject, { preserveLocalSavedAt: true });
+            sanitized = toManifestEntry(writeResult.project ?? sanitizedProject);
+          }
+        }
+      }
+    } catch {
+      // Corrupt project records are handled by normal loadProject callers.
+    }
+
+    if (JSON.stringify(sanitized) !== JSON.stringify(entry)) {
       needsSave = true;
     }
-  }
+    return sanitized;
+  });
   if (needsSave) saveManifest(preOrphanManifest);
 
   // Run orphan recovery once at startup (not on every loadManifest call)

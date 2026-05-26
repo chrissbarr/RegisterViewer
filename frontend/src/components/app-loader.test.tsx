@@ -624,7 +624,7 @@ describe('AppLoader', () => {
       });
     });
 
-    it('does not treat stored shared cloud projects as owned just because a JWT exists', async () => {
+    it('does not expose stored local cloud metadata as cloud initialization', async () => {
       const stored = makeStoredProject({
         localId: 'local-shared',
         cloudId: 'shared-cloud',
@@ -641,14 +641,62 @@ describe('AppLoader', () => {
 
         await waitFor(() => {
           const shell = screen.getByTestId('app-shell');
-          expect(shell.dataset.cloudId).toBe('shared-cloud');
+          expect(shell.dataset.cloudId).toBe('');
           expect(shell.dataset.isOwner).toBe('false');
-          expect(shell.dataset.storage).toBe('local');
-          expect(shell.dataset.serverVersion).toBe('4');
+          expect(shell.dataset.storage).toBe('');
+          expect(shell.dataset.serverVersion).toBe('');
         });
       } finally {
         localStorage.removeItem('register-viewer-jwt');
       }
+    });
+
+    it('does not reuse a saved local cloud-linked entry for an owned direct cloud URL', async () => {
+      const importResult = makeImportResult({
+        isOwner: true,
+        version: 9,
+        visibility: 'unlisted',
+      });
+      const invalidLocalEntry = {
+        localId: 'local-fork',
+        cloudId: 'owned-cloud',
+        name: 'Local Fork',
+        visibility: 'private',
+        createdAt: '2024-01-01T00:00:00Z',
+        localSavedAt: '2024-05-01T00:00:00Z',
+        cloudSavedAt: '2024-05-01T00:00:00Z',
+        serverVersion: 3,
+        storage: 'local',
+      };
+      (loadManifest as Mock).mockReturnValue({ version: 1, projects: [invalidLocalEntry] });
+      (resolveInitialProject as Mock).mockReturnValue({ type: 'cloud', cloudId: 'owned-cloud' });
+      (fetchAndParseCloudProject as Mock).mockResolvedValue(importResult);
+      (createProject as Mock).mockReturnValue('new-owned-local');
+
+      render(<AppLoader />);
+
+      await waitFor(() => {
+        const shell = screen.getByTestId('app-shell');
+        expect(shell.dataset.localId).toBe('new-owned-local');
+        expect(shell.dataset.cloudId).toBe('owned-cloud');
+        expect(shell.dataset.storage).toBe('cloud');
+        expect(shell.dataset.serverVersion).toBe('9');
+      });
+
+      expect(saveProject).not.toHaveBeenCalledWith(
+        expect.objectContaining({ localId: 'local-fork' }),
+        expect.anything(),
+      );
+      expect(createProject).toHaveBeenCalledWith(
+        expect.anything(),
+        'Test Project',
+        expect.objectContaining({
+          cloudId: 'owned-cloud',
+          storage: 'cloud',
+          serverVersion: 9,
+        }),
+        expect.anything(),
+      );
     });
 
     it('falls back to unsaved seed when local project record is missing', async () => {

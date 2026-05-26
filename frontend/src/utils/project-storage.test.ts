@@ -376,19 +376,59 @@ describe('updateProjectMetadata', () => {
     expect(project!.name).toBe('New Name');
   });
 
-  it('updates cloudId and cloudSavedAt', () => {
+  it('updates cloudId and cloudSavedAt for owned cloud projects', () => {
     const localId = createProject(makeSerializedState());
     updateProjectMetadata(localId, {
       cloudId: 'abc123def456',
       cloudSavedAt: '2026-02-01T00:00:00.000Z',
+      storage: 'cloud',
     });
     const project = loadProject(localId);
     expect(project!.cloudId).toBe('abc123def456');
     expect(project!.cloudSavedAt).toBe('2026-02-01T00:00:00.000Z');
+    expect(project!.storage).toBe('cloud');
+  });
+
+  it('does not persist cloud identity when storage remains local', () => {
+    const localId = createProject(makeSerializedState());
+
+    updateProjectMetadata(localId, {
+      cloudId: 'abc123def456',
+      cloudSavedAt: '2026-02-01T00:00:00.000Z',
+      serverVersion: 3,
+      cloudConflictVersion: 4,
+      hasUnsyncedChanges: true,
+    });
+
+    const project = loadProject(localId);
+    const entry = loadManifest().projects.find(p => p.localId === localId);
+    expect(project).toMatchObject({
+      storage: 'local',
+      cloudId: null,
+      visibility: 'private',
+      cloudSavedAt: null,
+      serverVersion: null,
+      cloudConflictVersion: null,
+    });
+    expect(project!.hasUnsyncedChanges).toBeUndefined();
+    expect(entry).toMatchObject({
+      storage: 'local',
+      cloudId: null,
+      visibility: 'private',
+      cloudSavedAt: null,
+      serverVersion: null,
+      cloudConflictVersion: null,
+    });
+    expect(entry!.hasUnsyncedChanges).toBeUndefined();
   });
 
   it('updates serverVersion in project and manifest metadata', () => {
-    const localId = createProject(makeSerializedState());
+    const localId = createProject(makeSerializedState(), 'Cloud Project', {
+      cloudId: 'cloud-versioned',
+      visibility: 'private',
+      cloudSavedAt: '2026-01-01T00:00:00.000Z',
+      storage: 'cloud',
+    });
     updateProjectMetadata(localId, { serverVersion: 9 });
 
     const project = loadProject(localId);
@@ -410,7 +450,12 @@ describe('updateProjectMetadata', () => {
   });
 
   it('can preserve localSavedAt for background metadata updates', () => {
-    const localId = createProject(makeSerializedState(), 'Metadata Project');
+    const localId = createProject(makeSerializedState(), 'Metadata Project', {
+      cloudId: 'cloud-meta',
+      visibility: 'private',
+      cloudSavedAt: '2026-01-01T00:00:00.000Z',
+      storage: 'cloud',
+    });
     const before = loadProject(localId);
 
     const result = updateProjectMetadata(localId, {
@@ -615,7 +660,7 @@ describe('runMigrationIfNeeded', () => {
 });
 
 describe('migration: storage field', () => {
-  it('adds storage field based on cloudId', () => {
+  it('defaults legacy cloud-linked saved projects to local forks', () => {
     const legacyManifest = {
       version: 1,
       projects: [
@@ -624,12 +669,105 @@ describe('migration: storage field', () => {
       ],
     };
     localStorage.setItem('register-viewer-manifest', JSON.stringify(legacyManifest));
+    localStorage.setItem(projectStorageKey('a'), JSON.stringify(makeStoredProject({
+      localId: 'a',
+      cloudId: 'abc123',
+      cloudSavedAt: '2026-01-01T00:00:00Z',
+      serverVersion: 2,
+      storage: 'local',
+    })));
 
     runMigrationIfNeeded();
 
     const manifest = loadManifest();
-    expect(manifest.projects[0].storage).toBe('cloud');
+    expect(manifest.projects[0]).toMatchObject({
+      storage: 'local',
+      cloudId: null,
+      visibility: 'private',
+      cloudSavedAt: null,
+      serverVersion: null,
+      cloudConflictVersion: null,
+    });
     expect(manifest.projects[1].storage).toBe('local');
+    const project = loadProject('a');
+    expect(project).toMatchObject({
+      storage: 'local',
+      cloudId: null,
+      cloudSavedAt: null,
+      serverVersion: null,
+      cloudConflictVersion: null,
+    });
+  });
+
+  it('persists normalized manifest-only legacy cloud links', () => {
+    const legacyManifest = {
+      version: 1,
+      projects: [
+        {
+          localId: 'manifest-only',
+          cloudId: 'abc123',
+          name: 'Manifest Only',
+          visibility: 'unlisted',
+          createdAt: '2026-01-01T00:00:00Z',
+          localSavedAt: '2026-01-01T00:00:00Z',
+          cloudSavedAt: '2026-01-01T00:00:00Z',
+          serverVersion: 4,
+          storage: 'local',
+        },
+      ],
+    };
+    localStorage.setItem('register-viewer-manifest', JSON.stringify(legacyManifest));
+
+    runMigrationIfNeeded();
+
+    const rawManifest = JSON.parse(localStorage.getItem('register-viewer-manifest')!) as ProjectManifest;
+    expect(rawManifest.projects[0]).toMatchObject({
+      storage: 'local',
+      cloudId: null,
+      visibility: 'private',
+      cloudSavedAt: null,
+      serverVersion: null,
+      cloudConflictVersion: null,
+    });
+  });
+
+  it('demotes cloud storage without a cloudId to a local project', () => {
+    const project = makeStoredProject({
+      localId: 'no-cloud-id',
+      cloudId: null,
+      storage: 'cloud',
+      cloudSavedAt: '2026-01-01T00:00:00Z',
+      serverVersion: 3,
+      hasUnsyncedChanges: true,
+    });
+    localStorage.setItem(projectStorageKey('no-cloud-id'), JSON.stringify(project));
+    saveManifest({
+      version: 1,
+      projects: [{
+        localId: 'no-cloud-id',
+        cloudId: null,
+        name: 'No Cloud Id',
+        visibility: 'unlisted',
+        createdAt: '2026-01-01T00:00:00Z',
+        localSavedAt: '2026-01-01T00:00:00Z',
+        cloudSavedAt: '2026-01-01T00:00:00Z',
+        serverVersion: 3,
+        hasUnsyncedChanges: true,
+        storage: 'cloud',
+      }],
+    });
+
+    runMigrationIfNeeded();
+
+    expect(loadProject('no-cloud-id')).toMatchObject({
+      storage: 'local',
+      cloudId: null,
+      visibility: 'private',
+      cloudSavedAt: null,
+      serverVersion: null,
+      cloudConflictVersion: null,
+    });
+    expect(loadProject('no-cloud-id')!.hasUnsyncedChanges).toBeUndefined();
   });
 });
 

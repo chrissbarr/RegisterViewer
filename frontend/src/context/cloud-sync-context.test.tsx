@@ -669,7 +669,7 @@ describe('CloudSyncProvider', () => {
     it('updates visibility for a specific project', async () => {
       (loadManifest as Mock).mockReturnValue({
         version: 1,
-        projects: [makeManifestEntry({ cloudId: 'cloud-xyz' })],
+        projects: [makeManifestEntry({ cloudId: 'cloud-xyz', storage: 'cloud' })],
       });
       (apiPatchVisibility as Mock).mockResolvedValue({
         id: 'cloud-xyz',
@@ -692,7 +692,7 @@ describe('CloudSyncProvider', () => {
     it('throws on failure', async () => {
       (loadManifest as Mock).mockReturnValue({
         version: 1,
-        projects: [makeManifestEntry({ cloudId: 'cloud-xyz' })],
+        projects: [makeManifestEntry({ cloudId: 'cloud-xyz', storage: 'cloud' })],
       });
       (apiPatchVisibility as Mock).mockRejectedValue(new Error('Server error'));
 
@@ -803,58 +803,54 @@ describe('CloudSyncProvider', () => {
   });
 
   describe('deleteProjectFromCloud', () => {
-    it('deletes a cloud project by cloudId', async () => {
+    it('deletes a cloud project by localId', async () => {
       (loadManifest as Mock).mockReturnValue({
         version: 1,
-        projects: [makeManifestEntry({ cloudId: 'cloud-del' })],
+        projects: [makeManifestEntry({ cloudId: 'cloud-del', storage: 'cloud' })],
       });
       (apiDeleteProject as Mock).mockResolvedValue(undefined);
 
       const { result } = renderCloudSync();
 
       await act(async () => {
-        await result.current.actions.deleteProjectFromCloud('cloud-del');
+        await result.current.actions.deleteProjectFromCloud(TEST_LOCAL_ID);
       });
 
       expect(apiDeleteProject).toHaveBeenCalledWith('cloud-del', 'mock-jwt-token');
     });
 
     it('throws when JWT missing', async () => {
+      (loadManifest as Mock).mockReturnValue({
+        version: 1,
+        projects: [makeManifestEntry({ cloudId: 'cloud-del', storage: 'cloud' })],
+      });
       authMock.getJwt.mockReturnValue(null);
 
       const { result } = renderCloudSync();
 
       await expect(
         act(async () => {
-          await result.current.actions.deleteProjectFromCloud('cloud-del');
+          await result.current.actions.deleteProjectFromCloud(TEST_LOCAL_ID);
         }),
       ).rejects.toThrow('Authentication required. Please sign in.');
     });
 
     it('clears active cloud state when deleting the active cloud project', async () => {
-      // First save to cloud to set active cloudId
-      (apiCreateProject as Mock).mockResolvedValue({
-        id: 'cloud-active',
-        shareUrl: 'https://example.com/#/p/cloud-active',
-        createdAt: '2024-01-01T12:00:00Z',
-      });
-
-      const { result } = renderCloudSync();
-
-      await act(async () => {
-        await result.current.actions.saveToCloud();
-      });
-      expect(result.current.state.cloudId).toBe('cloud-active');
-
-      // Now delete that same cloud project via deleteProjectFromCloud
       (loadManifest as Mock).mockReturnValue({
         version: 1,
-        projects: [makeManifestEntry({ cloudId: 'cloud-active' })],
+        projects: [makeManifestEntry({ cloudId: 'cloud-active', storage: 'cloud' })],
       });
       (apiDeleteProject as Mock).mockResolvedValue(undefined);
 
+      const { result } = renderCloudSync();
+
+      act(() => {
+        result.current.actions.initFromProject('cloud-active', true, 'cloud');
+      });
+      expect(result.current.state.cloudId).toBe('cloud-active');
+
       await act(async () => {
-        await result.current.actions.deleteProjectFromCloud('cloud-active');
+        await result.current.actions.deleteProjectFromCloud(TEST_LOCAL_ID);
       });
 
       expect(result.current.state.cloudId).toBeNull();
@@ -1133,11 +1129,12 @@ describe('CloudSyncProvider', () => {
       expect(evictProjectData).toHaveBeenCalledWith('created-placeholder');
     });
 
-    it('does not sync metadata for shared projects with cloudId but storage=local', async () => {
+    it('creates an owned placeholder when server ownership matches an invalid saved local cloud fork', async () => {
       (loadManifest as Mock).mockReturnValue({
         version: 1,
         projects: [
           makeManifestEntry({
+            localId: 'local-fork',
             cloudId: 'shared-cloud-id',
             cloudSavedAt: '2024-01-01T00:00:00Z',
             visibility: 'private',
@@ -1145,14 +1142,16 @@ describe('CloudSyncProvider', () => {
           }),
         ],
       });
+      (createProjectInStorage as Mock).mockReturnValue('owned-placeholder');
       (apiListProjects as Mock).mockResolvedValue({
         projects: [
           {
             id: 'shared-cloud-id',
+            title: 'Owned Server Copy',
             visibility: 'unlisted',
             createdAt: '2024-01-01T00:00:00Z',
             updatedAt: '2024-02-01T00:00:00Z',
-            version: 1,
+            version: 5,
           },
         ],
       });
@@ -1165,8 +1164,23 @@ describe('CloudSyncProvider', () => {
       });
 
       expect(syncResult!.updatedCount).toBe(0);
+      expect(syncResult!.placeholdersCreated).toBe(1);
       expect(updateProjectMetadata).not.toHaveBeenCalled();
       expect(syncResult!.staleCloudIds).not.toContain('shared-cloud-id');
+      expect(createProjectInStorage).toHaveBeenCalledWith(
+        EMPTY_SERIALIZED_STATE,
+        'Owned Server Copy',
+        expect.objectContaining({
+          cloudId: 'shared-cloud-id',
+          visibility: 'unlisted',
+          cloudSavedAt: '2024-02-01T00:00:00Z',
+          serverVersion: 5,
+          storage: 'cloud',
+          hasUnsyncedChanges: false,
+        }),
+        expect.objectContaining({ protectedLocalIds: [TEST_LOCAL_ID] }),
+      );
+      expect(evictProjectData).toHaveBeenCalledWith('owned-placeholder');
     });
 
     it('returns empty result when cloud is disabled', async () => {
@@ -1202,7 +1216,7 @@ describe('CloudSyncProvider', () => {
     it('clears cloud metadata for a project', () => {
       (loadManifest as Mock).mockReturnValue({
         version: 1,
-        projects: [makeManifestEntry({ cloudId: 'cloud-unlink' })],
+        projects: [makeManifestEntry({ cloudId: 'cloud-unlink', storage: 'cloud' })],
       });
 
       const { result } = renderCloudSync();
@@ -1240,7 +1254,7 @@ describe('CloudSyncProvider', () => {
       // after saveToCloud → updateCloudMetadata → refreshProjectList
       (loadManifest as Mock).mockReturnValue({
         version: 1,
-        projects: [makeManifestEntry({ cloudId: 'cloud-active' })],
+        projects: [makeManifestEntry({ cloudId: 'cloud-active', storage: 'cloud' })],
       });
 
       (apiCreateProject as Mock).mockResolvedValue({
@@ -1901,16 +1915,14 @@ describe('CloudSyncProvider', () => {
       authMock.user = { id: 1, email: 'user@example.com' };
       authMock.getJwt.mockReturnValue('mock-jwt-token');
 
-      // Manifest has a cloud project
-      (loadManifest as Mock).mockReturnValue({
-        version: 1,
-        projects: [makeManifestEntry({ cloudId: 'shared-cloud-id' })],
-      });
-
       // Prevent the async re-evaluation effect from resolving during this test
       (apiGetProject as Mock).mockReturnValue(new Promise(() => {}));
 
       const { result } = renderCloudSync();
+
+      act(() => {
+        result.current.actions.initFromProject('shared-cloud-id', false, 'local');
+      });
 
       // The activeLocalId effect should NOT infer ownership from !!getJwt()
       expect(result.current.state.cloudId).toBe('shared-cloud-id');
@@ -1921,11 +1933,6 @@ describe('CloudSyncProvider', () => {
       authMock.user = { id: 1, email: 'user@example.com' };
       authMock.getJwt.mockReturnValue('mock-jwt-token');
 
-      (loadManifest as Mock).mockReturnValue({
-        version: 1,
-        projects: [makeManifestEntry({ cloudId: 'my-cloud-id' })],
-      });
-
       // Server confirms ownership
       (apiGetProject as Mock).mockResolvedValue({
         isOwner: true,
@@ -1935,6 +1942,10 @@ describe('CloudSyncProvider', () => {
       });
 
       const { result } = renderCloudSync();
+
+      act(() => {
+        result.current.actions.initFromProject('my-cloud-id', false, 'local');
+      });
 
       // Initially false (synchronous phase)
       expect(result.current.state.isOwner).toBe(false);
