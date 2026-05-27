@@ -75,11 +75,16 @@ export interface CloudMetadataUpdate {
 
 export interface CloudMetadataWriteOptions {
   preserveLocalSavedAt?: boolean;
+  protectedLocalIds?: readonly (string | null | undefined)[];
 }
 
 export interface SyncResult {
   updatedCount: number;
   staleCloudIds: string[];
+  /** Stale cloud IDs whose local metadata/placeholders were reconciled */
+  staleReconciledCloudIds: string[];
+  /** Stale cloud IDs that were detected but could not be reconciled */
+  staleReconcileFailedCloudIds: string[];
   /** Number of cloud-only projects that were added as local placeholders */
   placeholdersCreated: number;
 }

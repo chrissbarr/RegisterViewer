@@ -10,6 +10,13 @@ interface SyncPatch {
   serverVersion?: number;
 }
 
+export interface StaleCloudProject {
+  localId: string;
+  cloudId: string;
+  cloudSavedAt: string | null;
+  serverVersion: number | null;
+}
+
 export interface ServerProject {
   id: string;
   title: string | null;
@@ -21,6 +28,7 @@ export interface ServerProject {
 interface SyncPatchResult {
   patches: SyncPatch[];
   staleCloudIds: string[];
+  staleCloudProjects: StaleCloudProject[];
   /** Server projects that have no matching local entry */
   cloudOnlyProjects: ServerProject[];
 }
@@ -44,6 +52,7 @@ export function computeSyncPatches(
   const serverMap = new Map(serverProjects.map(p => [p.id, p]));
   const patches: SyncPatch[] = [];
   const staleCloudIds: string[] = [];
+  const staleCloudProjects: StaleCloudProject[] = [];
   const localCloudIds = new Set(projects.filter(isOwnedCloudEntry).map(p => p.cloudId));
 
   for (const entry of projects) {
@@ -89,13 +98,19 @@ export function computeSyncPatches(
       if (hasUpdate) patches.push(patch);
     } else {
       staleCloudIds.push(entry.cloudId);
+      staleCloudProjects.push({
+        localId: entry.localId,
+        cloudId: entry.cloudId,
+        cloudSavedAt: entry.cloudSavedAt ?? null,
+        serverVersion: entry.serverVersion ?? null,
+      });
     }
   }
 
   // Find server projects with no local counterpart
   const cloudOnlyProjects = serverProjects.filter(sp => !localCloudIds.has(sp.id));
 
-  return { patches, staleCloudIds, cloudOnlyProjects };
+  return { patches, staleCloudIds, staleCloudProjects, cloudOnlyProjects };
 }
 
 interface PlaceholderData {
@@ -106,13 +121,21 @@ interface PlaceholderData {
   serverVersion: number;
 }
 
+interface SyncWriteOptions {
+  protectedLocalIds: readonly string[];
+}
+
 interface SyncCallbacks {
   updateCloudMetadata: (
     localId: string,
     updates: Partial<{ cloudSavedAt: string; visibility: Visibility; serverVersion: number }>,
     options?: CloudMetadataWriteOptions,
   ) => void;
-  createPlaceholder: (data: PlaceholderData) => boolean | void;
+  createPlaceholder: (data: PlaceholderData, options?: SyncWriteOptions) => boolean | void;
+  reconcileStaleCloudProject: (
+    project: StaleCloudProject,
+    options: SyncWriteOptions,
+  ) => boolean | Promise<boolean>;
 }
 
 /**
@@ -131,26 +154,60 @@ export async function syncCloudProjectsFromServer(
 ): Promise<SyncResult> {
   const response = await listProjects(jwt);
 
-  const { patches, staleCloudIds, cloudOnlyProjects } = computeSyncPatches(
+  const { patches, staleCloudIds, staleCloudProjects, cloudOnlyProjects } = computeSyncPatches(
     projects,
     response.projects,
   );
 
+  const staleWriteOptions: SyncWriteOptions | undefined = staleCloudProjects.length > 0
+    ? { protectedLocalIds: staleCloudProjects.map(project => project.localId) }
+    : undefined;
+
+  const staleReconciledCloudIds: string[] = [];
+  const staleReconcileFailedCloudIds: string[] = [];
+  if (staleWriteOptions) {
+    for (const staleProject of staleCloudProjects) {
+      let reconciled = false;
+      try {
+        reconciled = await callbacks.reconcileStaleCloudProject(staleProject, staleWriteOptions);
+      } catch {
+        reconciled = false;
+      }
+      if (reconciled) {
+        staleReconciledCloudIds.push(staleProject.cloudId);
+      } else {
+        staleReconcileFailedCloudIds.push(staleProject.cloudId);
+      }
+    }
+  }
+
   for (const { localId, ...updates } of patches) {
-    callbacks.updateCloudMetadata(localId, updates, { preserveLocalSavedAt: true });
+    callbacks.updateCloudMetadata(localId, updates, {
+      preserveLocalSavedAt: true,
+      ...(staleWriteOptions ? { protectedLocalIds: staleWriteOptions.protectedLocalIds } : {}),
+    });
   }
 
   let placeholdersCreated = 0;
   for (const sp of cloudOnlyProjects) {
-    const created = callbacks.createPlaceholder({
+    const placeholderData = {
       title: sp.title ?? DEFAULT_PROJECT_NAME,
       cloudId: sp.id,
       visibility: sp.visibility,
       cloudSavedAt: sp.updatedAt,
       serverVersion: sp.version,
-    });
+    };
+    const created = staleWriteOptions
+      ? callbacks.createPlaceholder(placeholderData, staleWriteOptions)
+      : callbacks.createPlaceholder(placeholderData);
     if (created !== false) placeholdersCreated++;
   }
 
-  return { updatedCount: patches.length, staleCloudIds, placeholdersCreated };
+  return {
+    updatedCount: patches.length,
+    staleCloudIds,
+    staleReconciledCloudIds,
+    staleReconcileFailedCloudIds,
+    placeholdersCreated,
+  };
 }

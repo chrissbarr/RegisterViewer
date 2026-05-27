@@ -68,7 +68,9 @@ export function useAuthTransition(deps: UseAuthTransitionDeps): void {
       // Sync cloud projects (pull metadata from server)
       syncCloudProjectsRef.current?.()
         .then((result) => {
-          if (result.placeholdersCreated > 0) refreshProjectList();
+          if (result.placeholdersCreated > 0 || result.staleReconciledCloudIds.length > 0) {
+            refreshProjectList();
+          }
         })
         .catch(() => { /* best-effort on mount/sign-in */ });
     }

@@ -2,6 +2,7 @@ import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { useMyProjectsActions } from './use-my-projects-actions';
 import { DEFAULT_PROJECT_NAME } from '../types/project';
+import type { SyncResult } from '../types/cloud-sync';
 
 const defaultMockProjects = [
   { localId: 'local-1', name: 'Project A', storage: 'cloud', cloudId: 'cloud-1', visibility: 'private', createdAt: '2026-01-01', localSavedAt: '2026-01-01', cloudSavedAt: '2026-01-01' },
@@ -19,7 +20,7 @@ const mockStorageActions = {
 
 const mockCloudActions = {
   setProjectVisibility: vi.fn(),
-  syncCloudProjects: vi.fn(() => Promise.resolve({ staleCloudIds: [], updatedCount: 0, placeholdersCreated: 0 })),
+  syncCloudProjects: vi.fn(() => Promise.resolve(makeSyncResult())),
   deleteProjectFromCloud: vi.fn(),
 };
 
@@ -79,13 +80,24 @@ vi.mock('../utils/storage', () => ({
 
 import { isCloudEnabled } from '../utils/api-client';
 
+function makeSyncResult(overrides: Partial<SyncResult> = {}): SyncResult {
+  return {
+    staleCloudIds: [],
+    staleReconciledCloudIds: [],
+    staleReconcileFailedCloudIds: [],
+    updatedCount: 0,
+    placeholdersCreated: 0,
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockProjects.splice(0, mockProjects.length, ...defaultMockProjects.map(project => ({ ...project })));
   (isCloudEnabled as Mock).mockReturnValue(true);
   mockStorageActions.createNewProject.mockReturnValue('new-id');
   mockStorageActions.switchProject.mockReturnValue(true);
-  mockCloudActions.syncCloudProjects.mockResolvedValue({ staleCloudIds: [], updatedCount: 0, placeholdersCreated: 0 });
+  mockCloudActions.syncCloudProjects.mockResolvedValue(makeSyncResult());
 });
 
 /** Render the hook with open=true and flush the async cloud-sync useEffect. */
@@ -107,6 +119,18 @@ describe('useMyProjectsActions', () => {
       const onClose = vi.fn();
       await renderWithOpen(onClose);
       expect(mockCloudActions.syncCloudProjects).toHaveBeenCalled();
+    });
+
+    it('refreshes project list again when sync reconciles stale cloud projects', async () => {
+      mockCloudActions.syncCloudProjects.mockResolvedValue(makeSyncResult({
+        staleCloudIds: ['cloud-stale'],
+        staleReconciledCloudIds: ['cloud-stale'],
+      }));
+
+      const onClose = vi.fn();
+      await renderWithOpen(onClose);
+
+      expect(mockStorageActions.refreshProjectList).toHaveBeenCalledTimes(2);
     });
 
     it('sets cloudError when syncCloudProjects fails', async () => {

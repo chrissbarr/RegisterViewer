@@ -33,9 +33,18 @@ import {
   getProject,
 } from '../utils/api-client';
 import { useAuth, useAuthActions } from './auth-context';
-import { buildProjectUrl, createProject, evictProjectData, loadManifest } from '../utils/project-storage';
-import { EMPTY_SERIALIZED_STATE } from '../utils/storage';
-import { clearCloudUrl } from '../utils/cloud-utils';
+import {
+  buildProjectUrl,
+  createProject,
+  deleteProject,
+  evictProjectData,
+  hasLocalData,
+  loadManifest,
+  patchProjectState,
+  toProjectListEntry,
+} from '../utils/project-storage';
+import { EMPTY_SERIALIZED_STATE, serializeState } from '../utils/storage';
+import { CLEARED_CLOUD_METADATA, clearCloudUrl, withMutationLock } from '../utils/cloud-utils';
 import { useActiveProjectCloudOps } from '../hooks/use-active-project-cloud-ops';
 import { useProjectCloudOps } from '../hooks/use-project-cloud-ops';
 import { useCloudSyncEngine, type SyncStatus } from '../hooks/use-cloud-sync-engine';
@@ -48,6 +57,10 @@ import type { Visibility } from '../types/project';
 import { initialInternalState, type CloudInit, type CloudSyncCore, type InternalCloudSyncState, type SyncResult } from '../types/cloud-sync';
 
 export type { SyncStatus };
+
+function uniqueProtectedLocalIds(ids: readonly (string | null | undefined)[]): string[] {
+  return Array.from(new Set(ids.filter((id): id is string => !!id)));
+}
 
 interface CloudSyncState {
   cloudId: string | null;
@@ -291,22 +304,102 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const syncCloudProjects = useCallback(async (): Promise<SyncResult> => {
-    const emptyResult: SyncResult = { updatedCount: 0, staleCloudIds: [], placeholdersCreated: 0 };
+    const emptyResult: SyncResult = {
+      updatedCount: 0,
+      staleCloudIds: [],
+      staleReconciledCloudIds: [],
+      staleReconcileFailedCloudIds: [],
+      placeholdersCreated: 0,
+    };
     if (!isCloudEnabled()) return emptyResult;
 
     const jwt = getJwt();
     if (!jwt) return emptyResult;
 
-    // TODO(CQ-4): staleCloudIds are computed but not acted on — server-deleted
-    // projects remain in the local manifest. A future enhancement should unlink
-    // these entries via updateCloudMetadata(localId, CLEARED_CLOUD_METADATA).
-    return syncCloudProjectsFromServer(jwt, projectsRef.current, {
+    const latestProjects = loadManifest().projects.map(toProjectListEntry);
+    return syncCloudProjectsFromServer(jwt, latestProjects, {
       updateCloudMetadata,
+      reconcileStaleCloudProject: async ({ localId, cloudId, cloudSavedAt, serverVersion }, options) => {
+        const lockResult = await withMutationLock(mutationLockRef, async () => {
+          const protectedLocalIds = uniqueProtectedLocalIds([
+            activeLocalIdRef.current,
+            ...options.protectedLocalIds,
+          ]);
+          const latestEntry = loadManifest().projects.find(p => p.localId === localId);
+          if (!latestEntry) return true;
+          if (!isOwnedCloudEntry(latestEntry) || latestEntry.cloudId !== cloudId) return true;
+          if (
+            (latestEntry.cloudSavedAt ?? null) !== cloudSavedAt ||
+            (latestEntry.serverVersion ?? null) !== serverVersion
+          ) {
+            return false;
+          }
+
+          const isActiveLocalProject = activeLocalIdRef.current === localId;
+          const isActiveCloudProject = isActiveLocalProject && internalRef.current.cloudId === cloudId;
+
+          if (!isActiveLocalProject && !hasLocalData(localId)) {
+            deleteProject(localId);
+            return true;
+          }
+
+          if (isActiveLocalProject) {
+            const stateWrite = patchProjectState(localId, serializeState(appStateRef.current), {
+              protectedLocalIds,
+            });
+            if (!stateWrite.ok) {
+              setInternal((prev) => prev.cloudId === cloudId
+                ? { ...prev, error: 'Cloud project was deleted on the server, but local data could not be saved before unlinking.' }
+                : prev);
+              return false;
+            }
+          }
+
+          const metadataWrite = updateCloudMetadata(localId, CLEARED_CLOUD_METADATA, {
+            preserveLocalSavedAt: true,
+            protectedLocalIds,
+          });
+          if (!metadataWrite.ok) {
+            if (isActiveCloudProject) {
+              setInternal((prev) => prev.cloudId === cloudId
+                ? { ...prev, error: 'Cloud project was deleted on the server, but local metadata could not be updated.' }
+                : prev);
+            }
+            return false;
+          }
+
+          if (isActiveCloudProject) {
+            if (syncTimerRef.current) {
+              clearTimeout(syncTimerRef.current);
+              syncTimerRef.current = null;
+            }
+            const next = {
+              ...initialInternalState,
+              error: 'Cloud project was deleted on the server. Local copy kept.',
+            };
+            internalRef.current = next;
+            setInternal(next);
+            clearCloudUrl();
+          }
+
+          return true;
+        });
+
+        if (!lockResult.executed) {
+          if (activeLocalIdRef.current === localId && internalRef.current.cloudId === cloudId) {
+            setInternal((prev) => prev.cloudId === cloudId
+              ? { ...prev, error: 'Cloud project was deleted on the server, but another cloud operation is in progress.' }
+              : prev);
+          }
+          return false;
+        }
+        return lockResult.result;
+      },
       // AR-6: Uses raw `createProject` utility (not the context action `createNewProject`)
       // because this callback runs during async sync, not during a React render.
       // The context action would trigger additional side effects (project switching)
       // that are undesirable for background placeholder creation.
-      createPlaceholder: (data) => {
+      createPlaceholder: (data, options) => {
         const latestManifest = loadManifest();
         if (
           internalRef.current.cloudId === data.cloudId ||
@@ -323,7 +416,10 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
             hasUnsyncedChanges: false,
             storage: 'cloud',
           }, {
-            protectedLocalIds: [activeLocalIdRef.current],
+            protectedLocalIds: uniqueProtectedLocalIds([
+              activeLocalIdRef.current,
+              ...(options?.protectedLocalIds ?? []),
+            ]),
           });
           evictProjectData(localId);
           return true;
@@ -333,7 +429,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
         }
       },
     });
-  }, [updateCloudMetadata, getJwt]);
+  }, [appStateRef, mutationLockRef, syncTimerRef, updateCloudMetadata, getJwt]);
 
   // Callback ref: nullable because the callback references state/hooks defined below.
   // Direct assignment in render (not useEffect) ensures it's fresh by the time

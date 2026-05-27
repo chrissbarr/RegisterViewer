@@ -9,6 +9,7 @@ import { useAppDispatch } from './app-context';
 import { makeState, makeRegister } from '../test/helpers';
 import type { ProjectManifestEntry, StoredLocalProject } from '../types/project';
 import type { SerializedAppState } from '../types/register';
+import type { SyncResult } from '../types/cloud-sync';
 // ApiError import resolves to the mocked class — needed for instanceof checks in source
 import { ApiError } from '../utils/api-client';
 
@@ -50,6 +51,7 @@ vi.mock('../utils/project-storage', () => ({
   loadManifest: vi.fn(() => ({ version: 1, projects: [] })),
   saveManifest: vi.fn(),
   loadProject: vi.fn(() => null),
+  hasLocalData: vi.fn(() => true),
   flushProjectState: vi.fn(),
   patchProjectState: vi.fn(() => ({ ok: true, status: 'ok', evictedLocalIds: [] })),
   buildProjectUrl: vi.fn((id: string) => `https://example.com/#/p/${id}`),
@@ -118,11 +120,14 @@ import {
   createProject as createProjectInStorage,
   loadManifest,
   loadProject,
+  hasLocalData,
   flushProjectState,
+  patchProjectState,
+  deleteProject as deleteProjectFromStorage,
   updateProjectMetadata,
   evictProjectData,
 } from '../utils/project-storage';
-import { exportToObject, deserializeState } from '../utils/storage';
+import { exportToObject, deserializeState, serializeState } from '../utils/storage';
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -166,6 +171,18 @@ function makeStoredProject(overrides: Partial<StoredLocalProject> = {}): StoredL
 
 function writeOk(project?: StoredLocalProject) {
   return { ok: true, status: 'ok' as const, evictedLocalIds: [], project };
+}
+
+function mockServerProjects(...ids: string[]) {
+  (apiListProjects as Mock).mockResolvedValue({
+    projects: ids.map((id, index) => ({
+      id,
+      title: `Server Project ${index + 1}`,
+      visibility: 'private',
+      updatedAt: '2025-01-01T00:00:00Z',
+      version: 1,
+    })),
+  });
 }
 
 function wrapper({ children }: { children: ReactNode }) {
@@ -217,7 +234,9 @@ beforeEach(() => {
   (isCloudEnabled as Mock).mockReturnValue(true);
   (loadManifest as Mock).mockReturnValue({ version: 1, projects: [] });
   (loadProject as Mock).mockReturnValue(null);
+  (hasLocalData as Mock).mockReturnValue(true);
   (flushProjectState as Mock).mockReturnValue(writeOk(makeStoredProject()));
+  (patchProjectState as Mock).mockReturnValue(writeOk(makeStoredProject()));
   (updateProjectMetadata as Mock).mockReturnValue(writeOk(makeStoredProject()));
   (createProjectInStorage as Mock).mockReturnValue('created-local-id');
   (exportToObject as Mock).mockReturnValue({ version: 1, registers: [], values: {} });
@@ -749,6 +768,7 @@ describe('CloudSyncProvider', () => {
 
     it('delegates to active-project save when localId is active project', async () => {
       authMock.getJwt.mockReturnValue('mock-jwt');
+      mockServerProjects('cloud-existing');
       (loadManifest as Mock).mockReturnValue({
         version: 1,
         projects: [makeManifestEntry({ cloudId: 'cloud-existing', storage: 'cloud' })],
@@ -1023,6 +1043,10 @@ describe('CloudSyncProvider', () => {
   });
 
   describe('syncCloudProjects', () => {
+    beforeEach(() => {
+      authMock.user = null;
+    });
+
     it('syncs metadata from server and returns update count', async () => {
       (loadManifest as Mock).mockReturnValue({
         version: 1,
@@ -1050,7 +1074,7 @@ describe('CloudSyncProvider', () => {
 
       const { result } = renderCloudSync();
 
-      let syncResult: { updatedCount: number; staleCloudIds: string[]; placeholdersCreated: number };
+      let syncResult: SyncResult;
       await act(async () => {
         syncResult = await result.current.actions.syncCloudProjects();
       });
@@ -1068,11 +1092,123 @@ describe('CloudSyncProvider', () => {
       );
     });
 
-    it('detects stale cloud IDs not present on server', async () => {
+    it('uses the latest manifest snapshot when sync starts', async () => {
+      (loadManifest as Mock)
+        .mockReturnValueOnce({ version: 1, projects: [] })
+        .mockReturnValue({
+          version: 1,
+          projects: [makeManifestEntry({ cloudId: 'cloud-stale', storage: 'cloud' })],
+        });
+      (apiListProjects as Mock).mockResolvedValue({ projects: [] });
+
+      const { result } = renderCloudSync();
+
+      let syncResult: SyncResult;
+      await act(async () => {
+        syncResult = await result.current.actions.syncCloudProjects();
+      });
+
+      expect(syncResult!.staleCloudIds).toEqual(['cloud-stale']);
+      expect(syncResult!.staleReconciledCloudIds).toEqual(['cloud-stale']);
+      expect(updateProjectMetadata).toHaveBeenCalledWith(
+        TEST_LOCAL_ID,
+        expect.objectContaining({ cloudId: null, storage: 'local' }),
+        { protectedLocalIds: [TEST_LOCAL_ID], preserveLocalSavedAt: true },
+      );
+    });
+
+    it('does not demote a stale cloud project while another cloud mutation is in progress', async () => {
+      (loadManifest as Mock).mockReturnValue({
+        version: 1,
+        projects: [makeManifestEntry({ cloudId: 'cloud-active', storage: 'cloud' })],
+      });
+      (apiListProjects as Mock).mockResolvedValue({ projects: [] });
+      let resolveSave: ((value: unknown) => void) | undefined;
+      (apiUpdateProject as Mock).mockImplementation(
+        () => new Promise((resolve) => { resolveSave = resolve; }),
+      );
+
+      const { result } = renderCloudSync();
+
+      act(() => {
+        result.current.actions.initFromProject('cloud-active', true, 'cloud', { serverVersion: 1 });
+      });
+      act(() => {
+        void result.current.actions.saveToCloud();
+      });
+      expect(apiUpdateProject).toHaveBeenCalledTimes(1);
+
+      let syncResult: SyncResult;
+      await act(async () => {
+        syncResult = await result.current.actions.syncCloudProjects();
+      });
+
+      expect(syncResult!).toEqual({
+        updatedCount: 0,
+        staleCloudIds: ['cloud-active'],
+        staleReconciledCloudIds: [],
+        staleReconcileFailedCloudIds: ['cloud-active'],
+        placeholdersCreated: 0,
+      });
+      expect(apiListProjects).toHaveBeenCalledTimes(1);
+      expect(updateProjectMetadata).not.toHaveBeenCalled();
+      expect(result.current.state.cloudId).toBe('cloud-active');
+
+      await act(async () => {
+        resolveSave?.({ id: 'cloud-active', updatedAt: '2024-01-02T00:00:00Z', version: 2 });
+      });
+    });
+
+    it('does not demote stale cloud metadata when the local cloud snapshot changed after listing', async () => {
+      (loadManifest as Mock).mockReturnValue({
+        version: 1,
+        projects: [makeManifestEntry({
+          localId: 'local-updated-after-list',
+          cloudId: 'cloud-updated-after-list',
+          storage: 'cloud',
+          cloudSavedAt: '2024-01-01T00:00:00Z',
+          serverVersion: 1,
+        })],
+      });
+      (apiListProjects as Mock).mockImplementation(async () => {
+        (loadManifest as Mock).mockReturnValue({
+          version: 1,
+          projects: [makeManifestEntry({
+            localId: 'local-updated-after-list',
+            cloudId: 'cloud-updated-after-list',
+            storage: 'cloud',
+            cloudSavedAt: '2024-01-02T00:00:00Z',
+            serverVersion: 2,
+          })],
+        });
+        return { projects: [] };
+      });
+
+      const { result } = renderCloudSync();
+
+      let syncResult: SyncResult;
+      await act(async () => {
+        syncResult = await result.current.actions.syncCloudProjects();
+      });
+
+      expect(syncResult!.staleCloudIds).toEqual(['cloud-updated-after-list']);
+      expect(syncResult!.staleReconciledCloudIds).toEqual([]);
+      expect(syncResult!.staleReconcileFailedCloudIds).toEqual(['cloud-updated-after-list']);
+      expect(updateProjectMetadata).not.toHaveBeenCalled();
+      expect(deleteProjectFromStorage).not.toHaveBeenCalled();
+    });
+
+    it('demotes stale owned cloud projects to local forks', async () => {
       (loadManifest as Mock).mockReturnValue({
         version: 1,
         projects: [
-          makeManifestEntry({ cloudId: 'cloud-stale', storage: 'cloud' }),
+          makeManifestEntry({
+            cloudId: 'cloud-stale',
+            storage: 'cloud',
+            visibility: 'unlisted',
+            cloudSavedAt: '2024-01-01T00:00:00Z',
+            serverVersion: 7,
+          }),
         ],
       });
       (apiListProjects as Mock).mockResolvedValue({
@@ -1081,13 +1217,321 @@ describe('CloudSyncProvider', () => {
 
       const { result } = renderCloudSync();
 
-      let syncResult: { updatedCount: number; staleCloudIds: string[]; placeholdersCreated: number };
+      let syncResult: SyncResult;
       await act(async () => {
         syncResult = await result.current.actions.syncCloudProjects();
       });
 
       expect(syncResult!.updatedCount).toBe(0);
       expect(syncResult!.staleCloudIds).toEqual(['cloud-stale']);
+      expect(syncResult!.staleReconciledCloudIds).toEqual(['cloud-stale']);
+      expect(syncResult!.staleReconcileFailedCloudIds).toEqual([]);
+      expect(updateProjectMetadata).toHaveBeenCalledWith(
+        TEST_LOCAL_ID,
+        {
+          cloudId: null,
+          visibility: 'private',
+          cloudSavedAt: null,
+          serverVersion: null,
+          cloudConflictVersion: null,
+          hasUnsyncedChanges: undefined,
+          storage: 'local',
+        },
+        { protectedLocalIds: [TEST_LOCAL_ID], preserveLocalSavedAt: true },
+      );
+    });
+
+    it('clears dirty and conflicted stale cloud metadata', async () => {
+      (loadManifest as Mock).mockReturnValue({
+        version: 1,
+        projects: [
+          makeManifestEntry({
+            cloudId: 'cloud-conflicted',
+            storage: 'cloud',
+            hasUnsyncedChanges: true,
+            cloudConflictVersion: 12,
+          }),
+        ],
+      });
+      (apiListProjects as Mock).mockResolvedValue({ projects: [] });
+
+      const { result } = renderCloudSync();
+
+      await act(async () => {
+        await result.current.actions.syncCloudProjects();
+      });
+
+      expect(updateProjectMetadata).toHaveBeenCalledWith(
+        TEST_LOCAL_ID,
+        expect.objectContaining({
+          cloudId: null,
+          storage: 'local',
+          cloudConflictVersion: null,
+          hasUnsyncedChanges: undefined,
+        }),
+        { protectedLocalIds: [TEST_LOCAL_ID], preserveLocalSavedAt: true },
+      );
+    });
+
+    it('resets active cloud state after stale owned cloud project is demoted', async () => {
+      (loadManifest as Mock).mockReturnValue({
+        version: 1,
+        projects: [makeManifestEntry({ cloudId: 'cloud-active-stale', storage: 'cloud' })],
+      });
+      (apiListProjects as Mock).mockResolvedValue({ projects: [] });
+
+      const { result } = renderCloudSync();
+
+      act(() => {
+        result.current.actions.initFromProject('cloud-active-stale', true, 'cloud', {
+          serverVersion: 3,
+          cloudSavedAt: '2024-01-01T00:00:00Z',
+          visibility: 'unlisted',
+          cloudConflictVersion: 9,
+          hasUnsyncedChanges: true,
+        });
+      });
+      expect(result.current.state.cloudId).toBe('cloud-active-stale');
+
+      await act(async () => {
+        await result.current.actions.syncCloudProjects();
+      });
+
+      expect(result.current.state).toMatchObject({
+        cloudId: null,
+        isOwner: false,
+        status: 'idle',
+        shareUrl: null,
+        visibility: 'private',
+        conflict: null,
+      });
+      expect(result.current.state.error).toBe('Cloud project was deleted on the server. Local copy kept.');
+      expect(patchProjectState).toHaveBeenCalledWith(
+        TEST_LOCAL_ID,
+        expect.anything(),
+        { protectedLocalIds: [TEST_LOCAL_ID] },
+      );
+      expect(serializeState).toHaveBeenCalled();
+    });
+
+    it('keeps active cloud state when local state cannot be saved before demotion', async () => {
+      (loadManifest as Mock).mockReturnValue({
+        version: 1,
+        projects: [makeManifestEntry({ cloudId: 'cloud-active-stale', storage: 'cloud' })],
+      });
+      (apiListProjects as Mock).mockResolvedValue({ projects: [] });
+      (patchProjectState as Mock).mockReturnValue({
+        ok: false,
+        status: 'quota-exceeded',
+        evictedLocalIds: [],
+        project: undefined,
+      });
+
+      const { result } = renderCloudSync();
+
+      act(() => {
+        result.current.actions.initFromProject('cloud-active-stale', true, 'cloud', {
+          serverVersion: 3,
+          cloudSavedAt: '2024-01-01T00:00:00Z',
+          visibility: 'unlisted',
+        });
+      });
+
+      let syncResult: SyncResult;
+      await act(async () => {
+        syncResult = await result.current.actions.syncCloudProjects();
+      });
+
+      expect(syncResult!.staleCloudIds).toEqual(['cloud-active-stale']);
+      expect(syncResult!.staleReconciledCloudIds).toEqual([]);
+      expect(syncResult!.staleReconcileFailedCloudIds).toEqual(['cloud-active-stale']);
+      expect(updateProjectMetadata).not.toHaveBeenCalled();
+      expect(result.current.state.cloudId).toBe('cloud-active-stale');
+      expect(result.current.state.error).toBe('Cloud project was deleted on the server, but local data could not be saved before unlinking.');
+    });
+
+    it('preserves non-active local project data while clearing stale cloud metadata', async () => {
+      (loadManifest as Mock).mockReturnValue({
+        version: 1,
+        projects: [makeManifestEntry({
+          localId: 'local-with-data',
+          cloudId: 'stale-with-data',
+          storage: 'cloud',
+        })],
+      });
+      (hasLocalData as Mock).mockReturnValue(true);
+      (apiListProjects as Mock).mockResolvedValue({ projects: [] });
+
+      const { result } = renderCloudSync();
+
+      let syncResult: SyncResult;
+      await act(async () => {
+        syncResult = await result.current.actions.syncCloudProjects();
+      });
+
+      expect(syncResult!.staleReconciledCloudIds).toEqual(['stale-with-data']);
+      expect(deleteProjectFromStorage).not.toHaveBeenCalled();
+      expect(updateProjectMetadata).toHaveBeenCalledWith(
+        'local-with-data',
+        expect.objectContaining({
+          cloudId: null,
+          storage: 'local',
+        }),
+        {
+          protectedLocalIds: expect.arrayContaining([TEST_LOCAL_ID, 'local-with-data']),
+          preserveLocalSavedAt: true,
+        },
+      );
+    });
+
+    it('protects all stale project data while reconciling stale projects and applying sync writes', async () => {
+      (loadManifest as Mock).mockReturnValue({
+        version: 1,
+        projects: [
+          makeManifestEntry({
+            localId: 'stale-a',
+            cloudId: 'cloud-stale-a',
+            storage: 'cloud',
+          }),
+          makeManifestEntry({
+            localId: 'stale-b',
+            cloudId: 'cloud-stale-b',
+            storage: 'cloud',
+          }),
+          makeManifestEntry({
+            localId: 'patched-local',
+            cloudId: 'cloud-patched',
+            storage: 'cloud',
+            cloudSavedAt: '2024-01-01T00:00:00Z',
+          }),
+        ],
+      });
+      (hasLocalData as Mock).mockReturnValue(true);
+      (apiListProjects as Mock).mockResolvedValue({
+        projects: [
+          {
+            id: 'cloud-patched',
+            visibility: 'unlisted',
+            createdAt: '2024-01-01T00:00:00Z',
+            updatedAt: '2024-02-01T00:00:00Z',
+            version: 1,
+          },
+          {
+            id: 'cloud-new',
+            title: 'Remote Only',
+            visibility: 'private',
+            createdAt: '2024-01-01T00:00:00Z',
+            updatedAt: '2024-02-01T00:00:00Z',
+            version: 1,
+          },
+        ],
+      });
+
+      const { result } = renderCloudSync();
+
+      await act(async () => {
+        await result.current.actions.syncCloudProjects();
+      });
+
+      expect(updateProjectMetadata).toHaveBeenCalledWith(
+        'stale-a',
+        expect.objectContaining({ cloudId: null, storage: 'local' }),
+        {
+          preserveLocalSavedAt: true,
+          protectedLocalIds: expect.arrayContaining([TEST_LOCAL_ID, 'stale-a', 'stale-b']),
+        },
+      );
+      expect(updateProjectMetadata).toHaveBeenCalledWith(
+        'stale-b',
+        expect.objectContaining({ cloudId: null, storage: 'local' }),
+        {
+          preserveLocalSavedAt: true,
+          protectedLocalIds: expect.arrayContaining([TEST_LOCAL_ID, 'stale-a', 'stale-b']),
+        },
+      );
+      expect(updateProjectMetadata).toHaveBeenCalledWith(
+        'patched-local',
+        {
+          visibility: 'unlisted',
+        },
+        {
+          preserveLocalSavedAt: true,
+          protectedLocalIds: expect.arrayContaining([TEST_LOCAL_ID, 'stale-a', 'stale-b']),
+        },
+      );
+      expect(createProjectInStorage).toHaveBeenCalledWith(
+        expect.anything(),
+        'Remote Only',
+        expect.objectContaining({ cloudId: 'cloud-new' }),
+        {
+          protectedLocalIds: expect.arrayContaining([TEST_LOCAL_ID, 'stale-a', 'stale-b']),
+        },
+      );
+      const calls = (updateProjectMetadata as Mock).mock.calls.map(([localId]) => localId);
+      expect(calls.indexOf('stale-a')).toBeLessThan(calls.indexOf('patched-local'));
+      expect(calls.indexOf('stale-b')).toBeLessThan(calls.indexOf('patched-local'));
+    });
+
+    it('removes stale manifest-only placeholders without local project data', async () => {
+      const placeholderLocalId = 'placeholder-local';
+      (loadManifest as Mock).mockReturnValue({
+        version: 1,
+        projects: [makeManifestEntry({
+          localId: placeholderLocalId,
+          cloudId: 'placeholder-stale',
+          storage: 'cloud',
+        })],
+      });
+      (hasLocalData as Mock).mockReturnValue(false);
+      (apiListProjects as Mock).mockResolvedValue({ projects: [] });
+
+      const { result } = renderCloudSync();
+
+      let syncResult: SyncResult;
+      await act(async () => {
+        syncResult = await result.current.actions.syncCloudProjects();
+      });
+
+      expect(syncResult!.staleCloudIds).toEqual(['placeholder-stale']);
+      expect(syncResult!.staleReconciledCloudIds).toEqual(['placeholder-stale']);
+      expect(syncResult!.staleReconcileFailedCloudIds).toEqual([]);
+      expect(deleteProjectFromStorage).toHaveBeenCalledWith(placeholderLocalId);
+      expect(updateProjectMetadata).not.toHaveBeenCalled();
+    });
+
+    it('reports stale reconciliation failures without resetting active cloud state', async () => {
+      (loadManifest as Mock).mockReturnValue({
+        version: 1,
+        projects: [makeManifestEntry({ cloudId: 'failed-stale', storage: 'cloud' })],
+      });
+      (apiListProjects as Mock).mockResolvedValue({ projects: [] });
+      (updateProjectMetadata as Mock).mockReturnValue({
+        ok: false,
+        status: 'quota-exceeded',
+        evictedLocalIds: [],
+        project: undefined,
+      });
+
+      const { result } = renderCloudSync();
+
+      act(() => {
+        result.current.actions.initFromProject('failed-stale', true, 'cloud', {
+          serverVersion: 3,
+          cloudSavedAt: '2024-01-01T00:00:00Z',
+          visibility: 'private',
+        });
+      });
+
+      let syncResult: SyncResult;
+      await act(async () => {
+        syncResult = await result.current.actions.syncCloudProjects();
+      });
+
+      expect(syncResult!.staleCloudIds).toEqual(['failed-stale']);
+      expect(syncResult!.staleReconciledCloudIds).toEqual([]);
+      expect(syncResult!.staleReconcileFailedCloudIds).toEqual(['failed-stale']);
+      expect(result.current.state.cloudId).toBe('failed-stale');
+      expect(result.current.state.error).toBe('Cloud project was deleted on the server, but local metadata could not be updated.');
     });
 
     it('creates manifest-only placeholders for cloud-only projects', async () => {
@@ -1108,7 +1552,7 @@ describe('CloudSyncProvider', () => {
 
       const { result } = renderCloudSync();
 
-      let syncResult: { updatedCount: number; staleCloudIds: string[]; placeholdersCreated: number };
+      let syncResult: SyncResult;
       await act(async () => {
         syncResult = await result.current.actions.syncCloudProjects();
       });
@@ -1158,7 +1602,7 @@ describe('CloudSyncProvider', () => {
 
       const { result } = renderCloudSync();
 
-      let syncResult: { updatedCount: number; staleCloudIds: string[]; placeholdersCreated: number };
+      let syncResult: SyncResult;
       await act(async () => {
         syncResult = await result.current.actions.syncCloudProjects();
       });
@@ -1188,7 +1632,7 @@ describe('CloudSyncProvider', () => {
 
       const { result } = renderCloudSync();
 
-      let syncResult: { updatedCount: number; staleCloudIds: string[]; placeholdersCreated: number };
+      let syncResult: SyncResult;
       await act(async () => {
         syncResult = await result.current.actions.syncCloudProjects();
       });
@@ -1256,17 +1700,12 @@ describe('CloudSyncProvider', () => {
         version: 1,
         projects: [makeManifestEntry({ cloudId: 'cloud-active', storage: 'cloud' })],
       });
-
-      (apiCreateProject as Mock).mockResolvedValue({
-        id: 'cloud-active',
-        shareUrl: 'https://example.com/#/p/cloud-active',
-        createdAt: '2024-01-01T12:00:00Z',
-      });
+      mockServerProjects('cloud-active');
 
       const { result } = renderCloudSync();
 
-      await act(async () => {
-        await result.current.actions.saveToCloud();
+      act(() => {
+        result.current.actions.initFromProject('cloud-active', true, 'cloud');
       });
       expect(result.current.state.cloudId).toBe('cloud-active');
 
@@ -1523,6 +1962,7 @@ describe('CloudSyncProvider', () => {
 
     it('flushes a fast edit locally before switch and saves that departing payload to cloud', async () => {
       authMock.getJwt.mockReturnValue('mock-jwt');
+      mockServerProjects('cloud-prev');
 
       (loadManifest as Mock).mockReturnValue({
         version: 1,
@@ -1715,6 +2155,7 @@ describe('CloudSyncProvider', () => {
 
     it('marks departing non-active switch-save conflicts for later recovery', async () => {
       authMock.getJwt.mockReturnValue('mock-jwt');
+      mockServerProjects('cloud-prev');
       (loadManifest as Mock).mockReturnValue({
         version: 1,
         projects: [
@@ -1777,6 +2218,7 @@ describe('CloudSyncProvider', () => {
 
     it('defers departing switch save while an active save holds the mutation lock', async () => {
       authMock.getJwt.mockReturnValue('mock-jwt');
+      mockServerProjects('cloud-prev');
       (loadManifest as Mock).mockReturnValue({
         version: 1,
         projects: [

@@ -41,6 +41,7 @@ interface CloudMetadataUpdates {
 
 interface CloudMetadataWriteOptions {
   preserveLocalSavedAt?: boolean;
+  protectedLocalIds?: readonly (string | null | undefined)[];
 }
 
 interface ProjectStorageActions {
@@ -80,6 +81,10 @@ type DepartureFlushResult =
 
 const ProjectStorageStateContext = createContext<ProjectStorageState | null>(null);
 const ProjectStorageActionsContext = createContext<ProjectStorageActions | null>(null);
+
+function uniqueLocalIds(ids: readonly (string | null | undefined)[]): string[] {
+  return Array.from(new Set(ids.filter((id): id is string => !!id)));
+}
 
 interface ProjectStorageProviderProps {
   children: ReactNode;
@@ -271,7 +276,7 @@ export function ProjectStorageProvider({ children, initialLocalId, initialUnsave
   ): ProjectStorageWriteResult => {
     // updateProjectMetadata saves the project record and updates the manifest in one pass
     const storageOptions = {
-      protectedLocalIds: [activeLocalIdRef.current],
+      protectedLocalIds: uniqueLocalIds([activeLocalIdRef.current, ...(options?.protectedLocalIds ?? [])]),
       ...(options?.preserveLocalSavedAt ? { preserveLocalSavedAt: true } : {}),
     };
     const result = updateProjectMetadata(localId, updates, {

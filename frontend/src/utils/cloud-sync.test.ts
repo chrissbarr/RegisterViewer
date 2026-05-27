@@ -175,6 +175,12 @@ describe('computeSyncPatches', () => {
 
     const result = computeSyncPatches(local, server);
     expect(result.staleCloudIds).toEqual(['c-deleted']);
+    expect(result.staleCloudProjects).toEqual([{
+      localId: 'l1',
+      cloudId: 'c-deleted',
+      cloudSavedAt: null,
+      serverVersion: null,
+    }]);
     expect(result.patches).toEqual([]);
   });
 
@@ -313,6 +319,7 @@ describe('syncCloudProjectsFromServer', () => {
     const result = await syncCloudProjectsFromServer('jwt-token', projects, {
       updateCloudMetadata,
       createPlaceholder,
+      reconcileStaleCloudProject: vi.fn(() => true),
     });
 
     expect(updateCloudMetadata).toHaveBeenCalledWith(
@@ -343,6 +350,7 @@ describe('syncCloudProjectsFromServer', () => {
     const result = await syncCloudProjectsFromServer('jwt-token', projects, {
       updateCloudMetadata,
       createPlaceholder,
+      reconcileStaleCloudProject: vi.fn(() => true),
     });
 
     expect(updateCloudMetadata).not.toHaveBeenCalled();
@@ -361,6 +369,7 @@ describe('syncCloudProjectsFromServer', () => {
     const result = await syncCloudProjectsFromServer('jwt-token', [], {
       updateCloudMetadata,
       createPlaceholder,
+      reconcileStaleCloudProject: vi.fn(() => true),
     });
 
     expect(createPlaceholder).toHaveBeenCalledWith({
@@ -388,6 +397,7 @@ describe('syncCloudProjectsFromServer', () => {
     const result = await syncCloudProjectsFromServer('jwt-token', projects, {
       updateCloudMetadata,
       createPlaceholder,
+      reconcileStaleCloudProject: vi.fn(() => true),
     });
 
     expect(updateCloudMetadata).not.toHaveBeenCalled();
@@ -410,6 +420,7 @@ describe('syncCloudProjectsFromServer', () => {
     const result = await syncCloudProjectsFromServer('jwt-token', [], {
       updateCloudMetadata: vi.fn(),
       createPlaceholder,
+      reconcileStaleCloudProject: vi.fn(() => true),
     });
 
     expect(result.placeholdersCreated).toBe(0);
@@ -424,13 +435,142 @@ describe('syncCloudProjectsFromServer', () => {
     (listProjects as ReturnType<typeof vi.fn>).mockResolvedValue({ projects: [] });
     const updateCloudMetadata = vi.fn();
     const createPlaceholder = vi.fn();
+    const reconcileStaleCloudProject = vi.fn(() => true);
 
     const result = await syncCloudProjectsFromServer('jwt-token', projects, {
       updateCloudMetadata,
       createPlaceholder,
+      reconcileStaleCloudProject,
     });
 
     expect(result.staleCloudIds).toEqual(['c-deleted']);
+    expect(reconcileStaleCloudProject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        localId: 'l1',
+        cloudId: 'c-deleted',
+      }),
+      { protectedLocalIds: ['l1'] },
+    );
+    expect(result.staleReconciledCloudIds).toEqual(['c-deleted']);
+    expect(result.staleReconcileFailedCloudIds).toEqual([]);
+  });
+
+  it('reconciles stale projects before other writes and protects them from quota eviction', async () => {
+    const projects = [
+      makeEntry({
+        localId: 'stale-local',
+        cloudId: 'stale-cloud',
+        storage: 'cloud',
+      }),
+      makeEntry({
+        localId: 'patched-local',
+        cloudId: 'patched-cloud',
+        storage: 'cloud',
+        cloudSavedAt: '2024-01-01T00:00:00Z',
+      }),
+    ];
+    (listProjects as ReturnType<typeof vi.fn>).mockResolvedValue({
+      projects: [
+        makeServer({ id: 'patched-cloud', visibility: 'unlisted' }),
+        makeServer({ id: 'new-cloud', title: 'Remote Only' }),
+      ],
+    });
+    const calls: string[] = [];
+    const updateCloudMetadata = vi.fn(() => { calls.push('patch'); });
+    const createPlaceholder = vi.fn(() => { calls.push('placeholder'); });
+    const reconcileStaleCloudProject = vi.fn(() => { calls.push('reconcile-stale'); return true; });
+
+    await syncCloudProjectsFromServer('jwt-token', projects, {
+      updateCloudMetadata,
+      createPlaceholder,
+      reconcileStaleCloudProject,
+    });
+
+    expect(calls).toEqual(['reconcile-stale', 'patch', 'placeholder']);
+    expect(reconcileStaleCloudProject).toHaveBeenCalledWith(
+      expect.objectContaining({ localId: 'stale-local', cloudId: 'stale-cloud' }),
+      { protectedLocalIds: ['stale-local'] },
+    );
+    expect(updateCloudMetadata).toHaveBeenCalledWith(
+      'patched-local',
+      { visibility: 'unlisted' },
+      { preserveLocalSavedAt: true, protectedLocalIds: ['stale-local'] },
+    );
+    expect(createPlaceholder).toHaveBeenCalledWith(
+      expect.objectContaining({ cloudId: 'new-cloud' }),
+      { protectedLocalIds: ['stale-local'] },
+    );
+  });
+
+  it('reconciles dirty and conflicted stale owned cloud projects', async () => {
+    const projects = [makeEntry({
+      localId: 'dirty-local',
+      cloudId: 'dirty-cloud',
+      storage: 'cloud',
+      hasUnsyncedChanges: true,
+      cloudConflictVersion: 9,
+    })];
+    (listProjects as ReturnType<typeof vi.fn>).mockResolvedValue({ projects: [] });
+    const reconcileStaleCloudProject = vi.fn(() => true);
+
+    const result = await syncCloudProjectsFromServer('jwt-token', projects, {
+      updateCloudMetadata: vi.fn(),
+      createPlaceholder: vi.fn(),
+      reconcileStaleCloudProject,
+    });
+
+    expect(reconcileStaleCloudProject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        localId: 'dirty-local',
+        cloudId: 'dirty-cloud',
+      }),
+      { protectedLocalIds: ['dirty-local'] },
+    );
+    expect(result.staleReconciledCloudIds).toEqual(['dirty-cloud']);
+  });
+
+  it('does not reconcile saved local cloud-linked forks as stale owned projects', async () => {
+    const projects = [makeEntry({
+      localId: 'local-fork',
+      cloudId: 'shared-cloud-id',
+      storage: 'local',
+    })];
+    (listProjects as ReturnType<typeof vi.fn>).mockResolvedValue({ projects: [] });
+    const reconcileStaleCloudProject = vi.fn();
+
+    const result = await syncCloudProjectsFromServer('jwt-token', projects, {
+      updateCloudMetadata: vi.fn(),
+      createPlaceholder: vi.fn(),
+      reconcileStaleCloudProject,
+    });
+
+    expect(reconcileStaleCloudProject).not.toHaveBeenCalled();
+    expect(result.staleCloudIds).toEqual([]);
+    expect(result.staleReconciledCloudIds).toEqual([]);
+  });
+
+  it('reports stale reconciliation failures and continues', async () => {
+    const projects = [
+      makeEntry({ localId: 'ok-local', cloudId: 'ok-cloud', storage: 'cloud' }),
+      makeEntry({ localId: 'failed-local', cloudId: 'failed-cloud', storage: 'cloud' }),
+      makeEntry({ localId: 'later-local', cloudId: 'later-cloud', storage: 'cloud' }),
+    ];
+    (listProjects as ReturnType<typeof vi.fn>).mockResolvedValue({ projects: [] });
+    const reconcileStaleCloudProject = vi.fn(({ cloudId }: { cloudId: string }) => {
+      if (cloudId === 'failed-cloud') throw new Error('local write failed');
+      return true;
+    });
+
+    const result = await syncCloudProjectsFromServer('jwt-token', projects, {
+      updateCloudMetadata: vi.fn(),
+      createPlaceholder: vi.fn(),
+      reconcileStaleCloudProject,
+    });
+
+    expect(reconcileStaleCloudProject).toHaveBeenCalledTimes(3);
+    expect(result.staleCloudIds).toEqual(['ok-cloud', 'failed-cloud', 'later-cloud']);
+    expect(result.staleReconciledCloudIds).toEqual(['ok-cloud', 'later-cloud']);
+    expect(result.staleReconcileFailedCloudIds).toEqual(['failed-cloud']);
   });
 
   it('uses default project name when server title is null', async () => {
@@ -442,6 +582,7 @@ describe('syncCloudProjectsFromServer', () => {
     await syncCloudProjectsFromServer('jwt-token', [], {
       updateCloudMetadata: vi.fn(),
       createPlaceholder,
+      reconcileStaleCloudProject: vi.fn(() => true),
     });
 
     expect(createPlaceholder).toHaveBeenCalledWith(

@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MyProjectsDialog } from './my-projects-dialog';
 import type { ProjectListEntry } from '../../types/project';
+import type { SyncResult } from '../../types/cloud-sync';
 
 // jsdom doesn't implement HTMLDialogElement.showModal/close
 beforeEach(() => {
@@ -36,7 +37,14 @@ const mockGetActiveProject = vi.fn(() => null);
 const mockSetVisibility = vi.fn();
 const mockAnnounce = vi.fn();
 const mockDeleteProjectFromCloud = vi.fn().mockResolvedValue(undefined);
-const mockSyncCloudProjects = vi.fn().mockResolvedValue({ updatedCount: 0, staleCloudIds: [], placeholdersCreated: 0 });
+const makeSyncResult = (): SyncResult => ({
+  updatedCount: 0,
+  staleCloudIds: [],
+  staleReconciledCloudIds: [],
+  staleReconcileFailedCloudIds: [],
+  placeholdersCreated: 0,
+});
+const mockSyncCloudProjects = vi.fn().mockResolvedValue(makeSyncResult());
 
 let mockProjects: ProjectListEntry[] = [];
 let mockActiveLocalId: string | null = null;
@@ -130,7 +138,7 @@ describe('MyProjectsDialog', () => {
     mockCloudEnabled = false;
     mockSwitchProject.mockReturnValue(true);
     mockDeleteProjectFromCloud.mockResolvedValue(undefined);
-    mockSyncCloudProjects.mockResolvedValue({ updatedCount: 0, staleCloudIds: [], placeholdersCreated: 0 });
+    mockSyncCloudProjects.mockResolvedValue(makeSyncResult());
   });
 
   it('renders project list', () => {
@@ -205,7 +213,7 @@ describe('MyProjectsDialog interactions', () => {
     mockCloudEnabled = false;
     mockSwitchProject.mockReturnValue(true);
     mockDeleteProjectFromCloud.mockResolvedValue(undefined);
-    mockSyncCloudProjects.mockResolvedValue({ updatedCount: 0, staleCloudIds: [], placeholdersCreated: 0 });
+    mockSyncCloudProjects.mockResolvedValue(makeSyncResult());
   });
 
   describe('creating a new project', () => {

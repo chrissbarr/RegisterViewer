@@ -1,7 +1,7 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAuthTransition } from './use-auth-transition';
-import { initialInternalState } from '../types/cloud-sync';
+import { initialInternalState, type SyncResult } from '../types/cloud-sync';
 
 // ── Mocks ────────────────────────────────────────────────────────────
 
@@ -22,6 +22,17 @@ import { clearCloudUrl } from '../utils/cloud-utils';
 
 const INITIAL_INTERNAL_STATE = { ...initialInternalState };
 
+function makeSyncResult(overrides: Partial<SyncResult> = {}): SyncResult {
+  return {
+    updatedCount: 0,
+    staleCloudIds: [],
+    staleReconciledCloudIds: [],
+    staleReconcileFailedCloudIds: [],
+    placeholdersCreated: 0,
+    ...overrides,
+  };
+}
+
 function makeDeps(overrides: Partial<Parameters<typeof useAuthTransition>[0]> = {}) {
   const activeLocalIdRef = { current: 'local-1' };
   const setInternal = vi.fn();
@@ -40,7 +51,7 @@ function makeDeps(overrides: Partial<Parameters<typeof useAuthTransition>[0]> = 
     saveToCloud: vi.fn(() => Promise.resolve(true)),
     fork: vi.fn(() => Promise.resolve()),
     dismissLogin: vi.fn(),
-    syncCloudProjectsRef: { current: vi.fn(() => Promise.resolve({ updatedCount: 0, staleCloudIds: [], placeholdersCreated: 0 })) },
+    syncCloudProjectsRef: { current: vi.fn(() => Promise.resolve(makeSyncResult())) },
     syncTimerRef: { current: null as ReturnType<typeof setTimeout> | null },
     refreshProjectList: vi.fn(),
     switchProject: vi.fn(),
@@ -73,7 +84,25 @@ describe('useAuthTransition', () => {
   it('refreshes the project list after sign-in sync creates placeholders', async () => {
     const deps = makeDeps({
       syncCloudProjectsRef: {
-        current: vi.fn(() => Promise.resolve({ updatedCount: 0, staleCloudIds: [], placeholdersCreated: 2 })),
+        current: vi.fn(() => Promise.resolve(makeSyncResult({ placeholdersCreated: 2 }))),
+      },
+    });
+    const { rerender } = renderHook(
+      ({ authUser }) => useAuthTransition({ ...deps, authUser }),
+      { initialProps: { authUser: null as { email: string } | null } },
+    );
+
+    rerender({ authUser: { email: 'test@example.com' } });
+
+    await waitFor(() => {
+      expect(deps.refreshProjectList).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('refreshes the project list after sign-in sync reconciles stale cloud projects', async () => {
+    const deps = makeDeps({
+      syncCloudProjectsRef: {
+        current: vi.fn(() => Promise.resolve(makeSyncResult({ staleReconciledCloudIds: ['cloud-stale'] }))),
       },
     });
     const { rerender } = renderHook(
