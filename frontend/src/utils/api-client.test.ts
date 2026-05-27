@@ -91,6 +91,7 @@ describe('createProject', () => {
       id: 'ABC123DEF456',
       shareUrl: 'https://example.com/#/p/ABC123DEF456',
       createdAt: '2024-01-01T00:00:00Z',
+      version: 7,
     };
 
     mockFetch.mockResolvedValueOnce({

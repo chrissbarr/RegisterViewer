@@ -37,7 +37,7 @@ describe('saveProjectToCloudImpl', () => {
     (createProject as Mock).mockResolvedValue({
       id: 'cloud-new',
       createdAt: '2024-01-01T00:00:00Z',
-      version: 1,
+      version: 7,
     });
 
     const result = await saveProjectToCloudImpl(payload, null, jwt);
@@ -46,7 +46,7 @@ describe('saveProjectToCloudImpl', () => {
       kind: 'created',
       cloudId: 'cloud-new',
       timestamp: '2024-01-01T00:00:00Z',
-      version: 1,
+      version: 7,
     });
     expect(createProject).toHaveBeenCalledWith(payload, jwt);
   });

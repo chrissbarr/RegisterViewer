@@ -85,7 +85,7 @@ export async function saveProjectToCloudImpl(
     kind: 'created',
     cloudId: result.id,
     timestamp: result.createdAt,
-    version: 1,
+    version: result.version,
   };
 }
 
