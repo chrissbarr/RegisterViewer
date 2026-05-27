@@ -94,7 +94,7 @@ Key test areas:
 - **Utilities** — bitwise, float, fixed-point, decode/encode, validation, storage, format, snapshot-url, api-client, project-storage, cloud-project-loader, cloud-operations
 - **Context providers** — app-context (reducer), cloud-sync-context, project-storage-context, preferences-context, auth-context
 - **Components** — app-loader, share-dialog, my-projects-dialog, login-dialog
-- **Hooks** — use-dirty-tracking, use-my-projects-actions, use-project-cloud-ops
+- **Hooks** — use-cloud-sync-engine, use-my-projects-actions, use-project-cloud-ops, use-active-project-cloud-ops, use-auth-transition
 - **E2E (Playwright)** — project CRUD, cloud save/share/fork/delete, multi-tab, migration
 - **API Tests (PHPUnit)** — validation, ID generation, CORS, auth (extractAuth, isProjectOwner), JWT creation/verification, OTP send/verify flow, rate limiting, email sending
 
@@ -125,7 +125,7 @@ frontend/                           # React SPA
     context/
       app-context.tsx             # React Context + useReducer state management
       auth-context.tsx            # Email OTP auth state, JWT storage
-      cloud-sync-context.tsx      # Cloud project state (save/share/dirty tracking)
+      cloud-sync-context.tsx      # Cloud project state and sync orchestration
       preferences-context.tsx     # Theme + sidebar preferences
       edit-context.tsx            # Register draft management
       project-storage-context.tsx # Multi-project localStorage manifest
@@ -145,7 +145,8 @@ api/                              # PHP API backend (cPanel)
   config.php                      # Configuration with getenv() fallbacks
   src/
     database.php                  # PDO singleton factory
-    data-access.php               # All DB queries
+    data-access.php               # Loads per-domain data access modules
+    data-access/                  # Auth, token, user, and project queries
     validation.php                # Payload structural validation
     request-body.php              # Request body size limits and JSON parsing
     router.php                    # Route resolution, body policy, and dispatch

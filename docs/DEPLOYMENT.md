@@ -190,12 +190,12 @@ To manually deploy an existing CI artifact without rebuilding:
 
 **Error: "Build failed with tsc errors"**
 - Check CI logs for TypeScript compilation errors
-- Fix types locally: `npm run build`
+- Fix types locally: `cd frontend && npm run build`
 - Commit and push again
 
 **Error: "E2E tests failed"**
 - Check Playwright test logs in CI output
-- Run locally: `npm run test:e2e`
+- Run locally: `cd frontend && npm run test:e2e`
 - Fix the test failures or app bugs
 - Commit and push again
 
@@ -320,6 +320,8 @@ If automatic deployments are broken:
 ### Frontend Development
 
 ```bash
+cd frontend
+
 # Start dev server with hot reload
 npm run dev
 
@@ -364,8 +366,8 @@ docker compose down -v
 To test with a local frontend + API:
 
 1. Start API: `cd api && docker compose up -d`
-2. The `.env.development` file already sets `VITE_API_URL=http://localhost:8080`
-3. Start frontend: `npm run dev`
+2. The `frontend/.env.development` file already sets `VITE_API_URL=http://localhost:8080`
+3. Start frontend: `cd frontend && npm run dev`
 4. Frontend will use local API for all cloud operations
 
 The strict HTTPS-origin `VITE_API_URL` rule applies to GitHub Actions production CI/deploy. Local development may use `http://localhost:8080`.
@@ -394,7 +396,7 @@ FTP_PASSWORD             # FTP password
 | `.github/workflows/deploy.yml` | Downloads and verifies CI deploy artifacts, uploads via FTPS, and runs smoke tests |
 | `api/config.php` | API configuration (env var fallbacks) |
 | `api/docker-compose.yml` | Local dev: API + MySQL + test runner |
-| `vite.config.ts` | Frontend build configuration |
+| `frontend/vite.config.ts` | Frontend build configuration |
 
 ---
 
@@ -465,7 +467,7 @@ Each log entry includes:
 ## FAQ
 
 **Q: Can I test the API locally before deploying?**
-A: Yes! Run `cd api && docker compose up -d` to start a local server on `localhost:8080`. The `.env.development` file already points `VITE_API_URL` to `http://localhost:8080`.
+A: Yes! Run `cd api && docker compose up -d` to start a local server on `localhost:8080`. The `frontend/.env.development` file already points `VITE_API_URL` to `http://localhost:8080`.
 
 **Q: What if deployment succeeds but the app doesn't work?**
 A: Check: (1) `VITE_API_URL` is correct in GitHub variables, (2) `config.production.php` exists on the server with valid DB credentials, `app_url`, and `allowed_origins`, (3) browser console for errors.
@@ -588,9 +590,9 @@ After updating any auth config value, check the PHP error log for config warning
 - [ ] PHP extensions `curl`, `json`, `mbstring`, `pdo`, and `pdo_mysql` are enabled on the server
 - [ ] Apache `mod_rewrite` is enabled
 - [ ] Node.js version matches workflow config (22) locally
-- [ ] All dependencies installed (`npm ci`)
-- [ ] TypeScript compiles without errors (`npm run build`)
-- [ ] Tests pass locally (`npm test`, `npm run test:e2e`)
+- [ ] All frontend dependencies installed (`cd frontend && npm ci`)
+- [ ] TypeScript compiles without errors (`cd frontend && npm run build`)
+- [ ] Frontend tests pass locally (`cd frontend && npm test`, `cd frontend && npm run test:e2e`)
 
 ### Getting Help
 

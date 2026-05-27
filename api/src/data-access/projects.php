@@ -249,4 +249,3 @@ function dbListProjectsByUserId(PDO $db, int $userId): array
     $stmt->execute(['user_id' => $userId]);
     return $stmt->fetchAll();
 }
-

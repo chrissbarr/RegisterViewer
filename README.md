@@ -83,7 +83,7 @@ Contributions are welcome! See the [Developer Guide](docs/DEVELOPMENT.md) for lo
 
 ## AI Content Disclosure
 
-This project has been developed with heavy use of AI coding tools (Anthropic's Claude Code in particular). I am an Electronics Engineer by trade, and though I have a solid amount of software development experience, none of that experience is in web-app / frontend / fullstack domains. 
+This project has been developed with heavy use of AI coding tools (Anthropic's Claude Code in particular). I am an Electronics Engineer by trade, and though I have a solid amount of software development experience, none of that experience is in web-app / frontend / fullstack domains.
 
 I started this project as a test to see how "vibe coding" or "agentic AI development" works, and deliberately picked something in a domain I have little familiarity with. When I was pleased with the initial results, I decided to polish it into something releasable. Almost all of the codebase has been developed, reviewed, and iterated on using AI tools. I have only given high-level direction - add this feature, fix that bug, and so on. While I have reviewed the content of most commits, and have a reasonable understanding of the codebase, I have written virtually zero code myself.
 
