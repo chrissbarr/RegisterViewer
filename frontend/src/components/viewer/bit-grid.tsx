@@ -14,6 +14,7 @@ import {
   nibblesForRow,
 } from '../../utils/bit-grid-layout';
 import { fieldColor, fieldBorderColor } from '../../utils/field-colors';
+import { FieldHexInput } from './field-hex-input';
 
 /** Pre-computed colors for a field, keyed by field index. */
 interface FieldColors {
@@ -133,7 +134,19 @@ export function BitGrid({ register, hoveredFieldIndices, onFieldHover, fieldHove
         {rows.map((row, rowIdx) => {
           const { rowFields, rowUnassigned, gtc } = rowLayoutData[rowIdx];
           const rowNibbles = rowNibblesData[rowIdx];
+          
+          // Determine if this row has labels or unassigned ranges to decide grid rows
           const hasLabels = rowFields.length > 0 || rowUnassigned.length > 0;
+          
+          // Grid Rows: 
+          // 1: Hex Nibbles
+          // 2: Bit Cells
+          // 3: Field Labels / Rsvd
+          // 4: Field Hex Inputs (only if there are fields in this row)
+          const hasFieldInputs = rowFields.length > 0;
+          const gridTemplateRows = hasLabels 
+            ? (hasFieldInputs ? 'auto auto auto auto' : 'auto auto auto') 
+            : 'auto auto';
 
           return (
             <div
@@ -141,10 +154,10 @@ export function BitGrid({ register, hoveredFieldIndices, onFieldHover, fieldHove
               style={{
                 display: 'grid',
                 gridTemplateColumns: gtc,
-                gridTemplateRows: hasLabels ? 'auto auto auto' : 'auto auto',
+                gridTemplateRows: gridTemplateRows,
               }}
             >
-              {/* Hex digit row */}
+              {/* Row 1: Hex digit row */}
               {rowNibbles.map((nibble, nibbleIdx) => {
                 const isHighlighted = hoveredNibbleIndex !== null
                   ? hoveredNibbleIndex === nibble.nibbleIndex
@@ -189,7 +202,7 @@ export function BitGrid({ register, hoveredFieldIndices, onFieldHover, fieldHove
                 );
               })}
 
-              {/* Bit cells */}
+              {/* Row 2: Bit cells */}
               {row.bits.map((bitIdx) => {
                 const match = fieldLookup.get(bitIdx);
                 const isUnassigned = !match;
@@ -242,7 +255,7 @@ export function BitGrid({ register, hoveredFieldIndices, onFieldHover, fieldHove
                 );
               })}
 
-              {/* Field labels */}
+              {/* Row 3: Field labels */}
               {rowFields.map((fi) => {
                 const colors = fieldColors[fi.fieldIndex];
                 const isHighlighted = hoveredFieldIndices !== null && hoveredFieldIndices.has(fi.fieldIndex);
@@ -269,7 +282,30 @@ export function BitGrid({ register, hoveredFieldIndices, onFieldHover, fieldHove
                 );
               })}
 
-              {/* Unassigned range labels */}
+              {/* Row 4: Field Hex Inputs (NEW) */}
+              {/* Logic: Only show input if the field's LSB is in this row */}
+              {rowFields.map((fi) => {
+                const isLsbInThisRow = row.bits.includes(fi.field.lsb);
+                if (!isLsbInThisRow) return null;
+
+                const colors = fieldColors[fi.fieldIndex];
+                const isHighlighted = hoveredFieldIndices !== null && hoveredFieldIndices.has(fi.fieldIndex);
+
+                return (
+                  <FieldHexInput
+                    key={`hex-input-${fi.field.id}`}
+                    field={fi.field}
+                    registerId={register.id}
+                    registerValue={value}
+                    gridColumn={`${fi.startCol} / ${fi.endCol}`}
+                    gridRow={4}
+                    bgColor={isHighlighted ? colors.highlightBgColor : colors.bgColor}
+                    borderColor={colors.borderColor}
+                  />
+                );
+              })}
+
+              {/* Unassigned range labels (Row 3) */}
               {rowUnassigned.map((range) => (
                 <div
                   key={`rsvd-${range.startBit}-${range.endBit}`}
