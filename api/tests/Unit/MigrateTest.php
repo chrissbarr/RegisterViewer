@@ -23,11 +23,19 @@ final class MigrateTest extends TestCase
 
     protected function tearDown(): void
     {
-        // Clean up temporary migration files
+        // Clean up temporary migration files (including dotfiles such as .ready-* sentinels)
         $files = glob($this->migrationsDir . '/*');
         if ($files) {
             foreach ($files as $file) {
                 unlink($file);
+            }
+        }
+        $dotFiles = glob($this->migrationsDir . '/.*');
+        if ($dotFiles) {
+            foreach ($dotFiles as $file) {
+                if (!in_array(basename($file), ['.', '..'], true)) {
+                    unlink($file);
+                }
             }
         }
         rmdir($this->migrationsDir);
@@ -567,6 +575,73 @@ final class MigrateTest extends TestCase
         $this->assertContains('Required schema column has invalid type: projects.version', $readiness['errors']);
         $this->assertContains('Required schema column must be NOT NULL: projects.version', $readiness['errors']);
         $this->assertContains('Required schema column must default to 1: projects.version', $readiness['errors']);
+    }
+
+    #[Test]
+    public function testSchemaFingerprintChangesWhenAMigrationFileChanges(): void
+    {
+        $dir = sys_get_temp_dir() . '/fp_' . bin2hex(random_bytes(6));
+        mkdir($dir);
+        file_put_contents("$dir/001_a.sql", 'CREATE TABLE a (id INT);');
+        $fp1 = schemaFingerprint($dir);
+
+        // A new migration file changes the fingerprint.
+        file_put_contents("$dir/002_b.sql", 'CREATE TABLE b (id INT);');
+        $fp2 = schemaFingerprint($dir);
+
+        $this->assertNotSame('', $fp1);
+        $this->assertNotSame($fp1, $fp2);
+
+        // Stable when nothing changes.
+        $this->assertSame($fp2, schemaFingerprint($dir));
+
+        array_map('unlink', glob("$dir/*"));
+        rmdir($dir);
+    }
+
+    #[Test]
+    public function testReadinessSentinelPathAndStaleCleanup(): void
+    {
+        $dir = sys_get_temp_dir() . '/sn_' . bin2hex(random_bytes(6));
+        mkdir($dir);
+        touch(readinessSentinelPath($dir, 'OLDFP'));
+        touch(readinessSentinelPath($dir, 'KEEPFP'));
+
+        clearStaleReadinessSentinels($dir, 'KEEPFP');
+
+        $this->assertFileDoesNotExist(readinessSentinelPath($dir, 'OLDFP'));
+        $this->assertFileExists(readinessSentinelPath($dir, 'KEEPFP'));
+
+        array_map('unlink', glob("$dir/.ready-*"));
+        rmdir($dir);
+    }
+
+    #[Test]
+    public function testEnsureSchemaReadyShortCircuitsOnSentinelHit(): void
+    {
+        $dir = sys_get_temp_dir() . '/esr_' . bin2hex(random_bytes(6));
+        mkdir($dir);
+        file_put_contents("$dir/001_x.sql", 'CREATE TABLE x (id INT);');
+        $lock = "$dir/.migrate.lock";
+
+        // Pre-create the sentinel matching the current fingerprint.
+        $fp = schemaFingerprint($dir);
+        touch(readinessSentinelPath($dir, $fp));
+
+        // An in-memory PDO that would surface any query — the fast path must not query it.
+        $db = new \PDO('sqlite::memory:');
+        $db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+
+        $result = ensureSchemaReady($db, $dir, $lock);
+
+        $this->assertTrue($result['ready']);
+        $this->assertNull($result['readiness']); // short-circuit: no readiness detail computed
+        $this->assertSame([], $result['migrationResult']['applied']);
+
+        foreach (glob("$dir/*") ?: [] as $f) { unlink($f); }
+        foreach (glob("$dir/.ready-*") ?: [] as $f) { unlink($f); }
+        @unlink($lock);
+        rmdir($dir);
     }
 
     #[Test]

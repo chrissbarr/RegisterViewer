@@ -102,6 +102,51 @@ function scanMigrationFiles(string $migrationsDir): array
 }
 
 /**
+ * Stat-only fingerprint of the migrations directory (filename + size + mtime).
+ * No file reads, no DB. Changes whenever a migration is added/edited/removed,
+ * which is exactly when the readiness verdict must be re-derived.
+ */
+function schemaFingerprint(string $migrationsDir): string
+{
+    if (!is_dir($migrationsDir)) {
+        return 'no-migrations-dir';
+    }
+    $files = glob(rtrim($migrationsDir, "/\\") . '/*.sql');
+    if ($files === false) {
+        return 'glob-failed';
+    }
+    sort($files, SORT_STRING);
+    $parts = [];
+    foreach ($files as $file) {
+        $size = @filesize($file);
+        $mtime = @filemtime($file);
+        $parts[] = basename($file) . ':' . ($size === false ? '0' : $size) . ':' . ($mtime === false ? '0' : $mtime);
+    }
+    return hash('sha256', implode('|', $parts));
+}
+
+/** Absolute path of the readiness sentinel for a given fingerprint. */
+function readinessSentinelPath(string $migrationsDir, string $fingerprint): string
+{
+    return rtrim($migrationsDir, "/\\") . '/.ready-' . $fingerprint;
+}
+
+/** Remove every readiness sentinel except the one for $keepFingerprint. */
+function clearStaleReadinessSentinels(string $migrationsDir, string $keepFingerprint): void
+{
+    $sentinels = glob(rtrim($migrationsDir, "/\\") . '/.ready-*');
+    if ($sentinels === false) {
+        return;
+    }
+    $keep = readinessSentinelPath($migrationsDir, $keepFingerprint);
+    foreach ($sentinels as $sentinel) {
+        if ($sentinel !== $keep) {
+            @unlink($sentinel);
+        }
+    }
+}
+
+/**
  * Return applied migrations keyed by version.
  *
  * @return array<int, array{version: int, filename: string, checksum: string}>
@@ -601,8 +646,25 @@ function getSchemaReadiness(PDO $db, string $migrationsDir): array
 function ensureSchemaReady(PDO $db, string $migrationsDir, string $lockFile): array
 {
     $emptyMigrationResult = ['applied' => [], 'skipped' => [], 'errors' => []];
+
+    // Fast path: a sentinel keyed to the current migration inventory means the
+    // schema was verified ready for exactly these files. Skip the ~42-query check.
+    $fingerprint = schemaFingerprint($migrationsDir);
+    $sentinel = readinessSentinelPath($migrationsDir, $fingerprint);
+    if (is_file($sentinel)) {
+        return [
+            'ready' => true,
+            'status' => 'ready',
+            'errors' => [],
+            'readiness' => null, // /api/health recomputes detail on demand
+            'migrationResult' => $emptyMigrationResult,
+        ];
+    }
+
     $readiness = getSchemaReadiness($db, $migrationsDir);
     if ($readiness['ready']) {
+        @touch($sentinel);
+        clearStaleReadinessSentinels($migrationsDir, $fingerprint);
         return [
             'ready' => true,
             'status' => 'ready',
@@ -646,6 +708,8 @@ function ensureSchemaReady(PDO $db, string $migrationsDir, string $lockFile): ar
     try {
         $readiness = getSchemaReadiness($db, $migrationsDir);
         if ($readiness['ready']) {
+            @touch($sentinel);
+            clearStaleReadinessSentinels($migrationsDir, $fingerprint);
             return [
                 'ready' => true,
                 'status' => 'ready',
@@ -676,6 +740,10 @@ function ensureSchemaReady(PDO $db, string $migrationsDir, string $lockFile): ar
         }
 
         $readiness = getSchemaReadiness($db, $migrationsDir);
+        if ($readiness['ready']) {
+            @touch($sentinel);
+            clearStaleReadinessSentinels($migrationsDir, $fingerprint);
+        }
         return [
             'ready' => $readiness['ready'],
             'status' => $readiness['status'],
@@ -716,7 +784,7 @@ if (PHP_SAPI === 'cli' && realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === realpa
         echo "FAILED: $error\n";
         exit(1);
     }
-    foreach ($result['readiness']['errors'] as $error) {
+    foreach (($result['readiness']['errors'] ?? []) as $error) {
         echo "FAILED: $error\n";
         exit(1);
     }
