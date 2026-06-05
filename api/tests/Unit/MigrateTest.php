@@ -595,7 +595,7 @@ final class MigrateTest extends TestCase
         // Stable when nothing changes.
         $this->assertSame($fp2, schemaFingerprint($dir));
 
-        array_map('unlink', glob("$dir/*"));
+        array_map('unlink', glob("$dir/*") ?: []);
         rmdir($dir);
     }
 
@@ -607,12 +607,20 @@ final class MigrateTest extends TestCase
         touch(readinessSentinelPath($dir, 'OLDFP'));
         touch(readinessSentinelPath($dir, 'KEEPFP'));
 
+        // also drop files the GC must NOT touch
+        file_put_contents("$dir/001_keep.sql", 'CREATE TABLE k (id INT);');
+        touch("$dir/.migrate.lock");
+
         clearStaleReadinessSentinels($dir, 'KEEPFP');
 
         $this->assertFileDoesNotExist(readinessSentinelPath($dir, 'OLDFP'));
         $this->assertFileExists(readinessSentinelPath($dir, 'KEEPFP'));
+        $this->assertFileExists("$dir/001_keep.sql");
+        $this->assertFileExists("$dir/.migrate.lock");
 
-        array_map('unlink', glob("$dir/.ready-*"));
+        array_map('unlink', glob("$dir/.ready-*") ?: []);
+        @unlink("$dir/001_keep.sql");
+        @unlink("$dir/.migrate.lock");
         rmdir($dir);
     }
 

@@ -53,7 +53,7 @@ The API returns `503 schema_not_ready` with `Retry-After: 5` instead of routing 
 
 The PHP runtime user must be able to create and write `api/database/.migrate.lock`. This lock file is used only to serialize migration checks and pending migration application; it is not a schema-completion sentinel. If PHP cannot open this lock file, the API returns `503 schema_not_ready` until permissions are fixed.
 
-> **Cache note:** The API caches the schema-readiness verdict in a `database/migrations/.ready-<fingerprint>` sentinel file keyed to the migration inventory (filenames + sizes + mtimes). Any migration change invalidates it automatically. If you manually reset or restore the production database **without** deploying a migration change, delete `database/migrations/.ready-*` so the next request re-verifies the schema.
+> **Cache note:** The API caches the schema-readiness verdict in a `database/migrations/.ready-<fingerprint>` sentinel file keyed to the migration inventory (filenames + sizes + mtimes). Any change to a migration file's name, size, or modification time invalidates it automatically (adding, editing, or removing a migration does this). If you edit a migration in place without changing its size or mtime, or you manually reset/restore the database without deploying a migration change, delete `database/migrations/.ready-*` so the next request re-verifies the schema.
 
 The API sets PHP and MySQL sessions to UTC. App-written `DATETIME` values and API timestamp responses are UTC; API responses use `YYYY-MM-DDTHH:mm:ssZ`. The UTC cutover migration clears transient auth tables (`login_codes`, `auth_rate_limits`, and `revoked_tokens`) while preserving durable users and projects.
 
