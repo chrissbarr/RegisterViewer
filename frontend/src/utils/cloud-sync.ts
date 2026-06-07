@@ -10,7 +10,7 @@ interface SyncPatch {
   serverVersion?: number;
 }
 
-export interface StaleCloudProject {
+interface StaleCloudProject {
   localId: string;
   cloudId: string;
   cloudSavedAt: string | null;
