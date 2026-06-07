@@ -99,6 +99,8 @@ interface GetProjectResponse {
   createdAt: string;
   updatedAt: string;
   isOwner: boolean;
+  /** True when the server verified a valid JWT on this request. Absent on older API responses. */
+  authenticated?: boolean;
   visibility: Visibility;
   version: number;
 }

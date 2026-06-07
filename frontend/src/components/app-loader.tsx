@@ -9,7 +9,7 @@ import { ADDRESS_UNIT_BITS_DEFAULT, type AppState } from '../types/register';
 import { decompressSnapshot } from '../utils/snapshot-url';
 import { isCloudEnabled } from '../utils/api-client';
 import { friendlyErrorMessage } from '../utils/friendly-error';
-import { fetchAndParseCloudProject } from '../utils/cloud-project-loader';
+import { fetchAndParseCloudProject, isConfirmedNonOwner } from '../utils/cloud-project-loader';
 import { JWT_STORAGE_KEY } from '../context/auth-context';
 import { resolveInitialProject } from '../utils/project-resolution';
 import { DEFAULT_PROJECT_NAME, type ProjectManifest, type ProjectManifestEntry, type StoredLocalProject, type UnsavedProjectSource } from '../types/project';
@@ -154,7 +154,13 @@ function persistDownloadedCloudProject(
   localId: string,
   entry: ProjectManifestEntry & { cloudId: string },
   importResult: CloudProjectLoadResult,
-  storage: 'local' | 'cloud' = entry.storage === 'cloud' && importResult.isOwner ? 'cloud' : 'local',
+  // Demote to 'local' (a full unlink via sanitizeStoredProject) ONLY on
+  // positive evidence of confirmed non-ownership. A missing/false
+  // `authenticated` flag means "ownership unknown" — anonymous/expired-JWT
+  // request, an old API during a non-atomic deploy, or a stale cached
+  // anonymous response (unlisted GETs are cached for 60s) — so keep the
+  // manifest's storage class rather than silently unlinking an owned project.
+  storage: 'local' | 'cloud' = isConfirmedNonOwner(importResult) ? 'local' : entry.storage,
 ): 'local' | 'cloud' {
   const result = saveProject({
     localId,
@@ -347,7 +353,17 @@ export function AppLoader() {
           .then((importResult) => {
             const loadedState = buildCloudAppState(importResult);
 
-            if (!importResult.isOwner) {
+            // Open as an unsaved shared session only on confirmed
+            // non-ownership, or when ownership is unknown (anonymous or
+            // expired-JWT request — `authenticated` missing/false) and no
+            // owned manifest entry exists for this cloudId. With unknown
+            // ownership AND an owned entry, trust the manifest: opening your
+            // own share link while signed out must not fork a shared copy.
+            const treatAsShared = !importResult.isOwner
+              && (isConfirmedNonOwner(importResult)
+                || !findReusableOwnedCloudEntry(manifest, resolution.cloudId));
+
+            if (treatAsShared) {
               const unsaved = persistUnsavedProjectState(getImportDisplayName(importResult), loadedState, 'cloud');
               clearHashAfterSuccessfulLoad();
               setState({

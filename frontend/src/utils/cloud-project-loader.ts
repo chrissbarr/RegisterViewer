@@ -4,8 +4,24 @@ import { importFromObject, type ImportResult } from './storage';
 interface CloudProjectLoadResult extends ImportResult {
   updatedAt: string;
   isOwner: boolean;
+  /** True when the server verified a valid JWT on this request. Absent on older API responses. */
+  authenticated?: boolean;
   visibility: import('../types/project').Visibility;
   version: number;
+}
+
+/**
+ * Positive evidence of confirmed non-ownership: the server verified the
+ * request's JWT (`authenticated:true`) AND the user is not the owner.
+ *
+ * A missing/false `authenticated` flag means "ownership unknown" — the request
+ * was anonymous (signed out, expired JWT), hit an old API during a non-atomic
+ * deploy, or got a stale cached anonymous response (unlisted GETs are cached
+ * for 60s). Never treat unknown ownership as non-ownership: doing so silently
+ * unlinks owned cloud projects.
+ */
+export function isConfirmedNonOwner(result: Pick<CloudProjectLoadResult, 'isOwner' | 'authenticated'>): boolean {
+  return result.authenticated === true && !result.isOwner;
 }
 
 /**
@@ -41,6 +57,7 @@ export async function fetchAndParseCloudProject(id: string, jwt?: string): Promi
     ...parsed,
     updatedAt: result.updatedAt,
     isOwner: result.isOwner,
+    authenticated: result.authenticated,
     visibility: result.visibility,
     version: result.version,
   };

@@ -286,6 +286,120 @@ final class ProjectApiTest extends TestCase
         $this->assertFalse($body['isOwner']);
     }
 
+    // ---- handleGetProject authenticated flag (A-2+S-5) ----
+
+    #[Test]
+    public function handleGetProjectUnauthenticatedUnlistedReportsAuthenticatedFalse(): void
+    {
+        $userId = $this->createTestUser('get-anon-unlisted@example.com');
+        $id = generatePublicId();
+        dbCreateProject(self::$db, $id, 'unlisted', self::validDataJson(), null, $userId);
+
+        $response = handleGetProject(self::$db, $id, ['kind' => 'none']);
+
+        $this->assertSame(200, $response->status);
+        $body = json_decode($response->rawJson ?? '', true);
+        $this->assertFalse($body['authenticated']);
+        $this->assertFalse($body['isOwner']);
+    }
+
+    #[Test]
+    public function handleGetProjectOwnerReportsAuthenticatedAndOwner(): void
+    {
+        $userId = $this->createTestUser('get-owner@example.com');
+        $id = generatePublicId();
+        dbCreateProject(self::$db, $id, 'unlisted', self::validDataJson(), null, $userId);
+
+        $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => 'get-owner@example.com'];
+        $response = handleGetProject(self::$db, $id, $auth);
+
+        $this->assertSame(200, $response->status);
+        $body = json_decode($response->rawJson ?? '', true);
+        $this->assertTrue($body['authenticated']);
+        $this->assertTrue($body['isOwner']);
+    }
+
+    #[Test]
+    public function handleGetProjectOtherUserReportsAuthenticatedButNotOwner(): void
+    {
+        $ownerId = $this->createTestUser('get-real-owner@example.com');
+        $otherId = $this->createTestUser('get-other-user@example.com');
+        $id = generatePublicId();
+        dbCreateProject(self::$db, $id, 'unlisted', self::validDataJson(), null, $ownerId);
+
+        $auth = ['kind' => 'jwt', 'userId' => $otherId, 'email' => 'get-other-user@example.com'];
+        $response = handleGetProject(self::$db, $id, $auth);
+
+        $this->assertSame(200, $response->status);
+        $body = json_decode($response->rawJson ?? '', true);
+        $this->assertTrue($body['authenticated']);
+        $this->assertFalse($body['isOwner']);
+    }
+
+    #[Test]
+    public function handleGetProjectWithExpiredTokenBehavesAsUnauthenticated(): void
+    {
+        $userId = $this->createTestUser('get-expired-jwt@example.com');
+        $id = generatePublicId();
+        dbCreateProject(self::$db, $id, 'unlisted', self::validDataJson(), null, $userId);
+
+        $expiredToken = \Firebase\JWT\JWT::encode([
+            'sub'   => $userId,
+            'email' => 'get-expired-jwt@example.com',
+            'iat'   => time() - 7200,
+            'exp'   => time() - 3600,
+            'jti'   => bin2hex(random_bytes(16)),
+        ], self::JWT_CONFIG['jwt_secret'], 'HS256');
+
+        $previousAuth = $_SERVER['HTTP_AUTHORIZATION'] ?? null;
+        $_SERVER['HTTP_AUTHORIZATION'] = "Bearer $expiredToken";
+        try {
+            $auth = extractAuth(self::JWT_CONFIG, self::$db);
+        } finally {
+            if ($previousAuth === null) {
+                unset($_SERVER['HTTP_AUTHORIZATION']);
+            } else {
+                $_SERVER['HTTP_AUTHORIZATION'] = $previousAuth;
+            }
+        }
+
+        $this->assertSame('none', $auth['kind']);
+
+        $response = handleGetProject(self::$db, $id, $auth);
+
+        $this->assertSame(200, $response->status);
+        $body = json_decode($response->rawJson ?? '', true);
+        $this->assertFalse($body['authenticated']);
+        $this->assertFalse($body['isOwner']);
+    }
+
+    #[Test]
+    public function handleGetProjectPrivateUnauthenticatedStillReturns404(): void
+    {
+        $userId = $this->createTestUser('get-private-anon@example.com');
+        $id = generatePublicId();
+        dbCreateProject(self::$db, $id, 'private', self::validDataJson(), null, $userId);
+
+        $response = handleGetProject(self::$db, $id, ['kind' => 'none']);
+
+        $this->assertSame(404, $response->status);
+    }
+
+    #[Test]
+    public function handleGetProjectVaryHeaderIncludesOriginAndAuthorization(): void
+    {
+        $userId = $this->createTestUser('get-vary@example.com');
+        $id = generatePublicId();
+        dbCreateProject(self::$db, $id, 'unlisted', self::validDataJson(), null, $userId);
+
+        $response = handleGetProject(self::$db, $id, ['kind' => 'none']);
+
+        $this->assertSame(200, $response->status);
+        $this->assertArrayHasKey('Vary', $response->headers);
+        $this->assertStringContainsString('Origin', $response->headers['Vary']);
+        $this->assertStringContainsString('Authorization', $response->headers['Vary']);
+    }
+
     #[Test]
     public function countProjectsByUserIdReturnsCorrectCount(): void
     {

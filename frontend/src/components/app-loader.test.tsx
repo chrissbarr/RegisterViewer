@@ -37,9 +37,10 @@ vi.mock('../utils/api-client', () => ({
   isCloudEnabled: vi.fn(() => false),
 }));
 
-vi.mock('../utils/cloud-project-loader', () => ({
-  fetchAndParseCloudProject: vi.fn(),
-}));
+vi.mock('../utils/cloud-project-loader', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../utils/cloud-project-loader')>();
+  return { ...actual, fetchAndParseCloudProject: vi.fn() };
+});
 
 vi.mock('../utils/project-resolution', () => ({
   resolveInitialProject: vi.fn(() => ({ type: 'create-default' })),
@@ -129,6 +130,22 @@ function makeStoredProject(overrides: Record<string, unknown> = {}) {
     cloudId: null as string | null,
     name: 'Stored Project',
     state: TEST_APP_STATE,
+    ...overrides,
+  };
+}
+
+/** Manifest-only owned cloud entry (local data evicted: loadProject → null). */
+function makeEvictedCloudManifestEntry(overrides: Record<string, unknown> = {}) {
+  return {
+    localId: 'placeholder-id',
+    cloudId: 'cloud-placeholder',
+    name: 'Placeholder',
+    visibility: 'unlisted',
+    createdAt: '2024-01-01T00:00:00Z',
+    localSavedAt: '2024-05-01T00:00:00Z',
+    cloudSavedAt: '2024-05-01T00:00:00Z',
+    serverVersion: 7,
+    storage: 'cloud',
     ...overrides,
   };
 }
@@ -513,6 +530,110 @@ describe('AppLoader', () => {
       expect(deserializeState).toHaveBeenCalledWith(dirtyState);
     });
 
+    it('hydrates the owned manifest entry when opening an own share link with unknown ownership (authenticated:false)', async () => {
+      // Signed out / expired JWT: server says isOwner:false but cannot confirm
+      // non-ownership. The owned manifest entry must win over a shared fork.
+      const importResult = makeImportResult({
+        isOwner: false,
+        authenticated: false,
+        version: 8,
+        visibility: 'unlisted',
+      });
+      const manifestEntry = makeEvictedCloudManifestEntry({
+        localId: 'existing-cloud-local',
+        cloudId: 'owned-cloud',
+        name: 'Existing Cloud',
+        hasUnsyncedChanges: false,
+      });
+      (loadManifest as Mock).mockReturnValue({ version: 1, projects: [manifestEntry] });
+      (resolveInitialProject as Mock).mockReturnValue({ type: 'cloud', cloudId: 'owned-cloud' });
+      (fetchAndParseCloudProject as Mock).mockResolvedValue(importResult);
+      (loadProject as Mock).mockReturnValue(null);
+
+      render(<AppLoader />);
+
+      await waitFor(() => {
+        const shell = screen.getByTestId('app-shell');
+        expect(shell.dataset.localId).toBe('existing-cloud-local');
+        expect(shell.dataset.cloudId).toBe('owned-cloud');
+        expect(shell.dataset.isOwner).toBe('true');
+        expect(shell.dataset.storage).toBe('cloud');
+        expect(shell.dataset.unsavedName).toBe('');
+      });
+
+      expect(saveUnsavedProjectState).not.toHaveBeenCalled();
+      expect(createProject).not.toHaveBeenCalled();
+      expect(saveProject).toHaveBeenCalledWith(expect.objectContaining({
+        localId: 'existing-cloud-local',
+        cloudId: 'owned-cloud',
+        storage: 'cloud',
+      }), { protectedLocalIds: ['existing-cloud-local'] });
+    });
+
+    it('hydrates the owned manifest entry when the share-link response omits authenticated (old API)', async () => {
+      const importResult = makeImportResult({
+        isOwner: false,
+        version: 8,
+        visibility: 'unlisted',
+      });
+      const manifestEntry = makeEvictedCloudManifestEntry({
+        localId: 'existing-cloud-local',
+        cloudId: 'owned-cloud',
+        name: 'Existing Cloud',
+        hasUnsyncedChanges: false,
+      });
+      (loadManifest as Mock).mockReturnValue({ version: 1, projects: [manifestEntry] });
+      (resolveInitialProject as Mock).mockReturnValue({ type: 'cloud', cloudId: 'owned-cloud' });
+      (fetchAndParseCloudProject as Mock).mockResolvedValue(importResult);
+      (loadProject as Mock).mockReturnValue(null);
+
+      render(<AppLoader />);
+
+      await waitFor(() => {
+        const shell = screen.getByTestId('app-shell');
+        expect(shell.dataset.localId).toBe('existing-cloud-local');
+        expect(shell.dataset.isOwner).toBe('true');
+        expect(shell.dataset.storage).toBe('cloud');
+      });
+
+      expect(saveUnsavedProjectState).not.toHaveBeenCalled();
+      expect(createProject).not.toHaveBeenCalled();
+    });
+
+    it('opens an unsaved shared session on confirmed non-ownership even when a matching owned entry exists', async () => {
+      const importResult = makeImportResult({
+        isOwner: false,
+        authenticated: true,
+        version: 8,
+        visibility: 'unlisted',
+        project: { title: 'Shared Project' },
+      });
+      const manifestEntry = makeEvictedCloudManifestEntry({
+        localId: 'existing-cloud-local',
+        cloudId: 'owned-cloud',
+        name: 'Existing Cloud',
+        hasUnsyncedChanges: false,
+      });
+      (loadManifest as Mock).mockReturnValue({ version: 1, projects: [manifestEntry] });
+      (resolveInitialProject as Mock).mockReturnValue({ type: 'cloud', cloudId: 'owned-cloud' });
+      (fetchAndParseCloudProject as Mock).mockResolvedValue(importResult);
+      (loadProject as Mock).mockReturnValue(null);
+
+      render(<AppLoader />);
+
+      await waitFor(() => {
+        const shell = screen.getByTestId('app-shell');
+        expect(shell.dataset.localId).toBe('');
+        expect(shell.dataset.unsavedName).toBe('Shared Project');
+        expect(shell.dataset.unsavedSource).toBe('cloud');
+        expect(shell.dataset.isOwner).toBe('false');
+        expect(shell.dataset.storage).toBe('local');
+      });
+
+      expect(saveProject).not.toHaveBeenCalled();
+      expect(createProject).not.toHaveBeenCalled();
+    });
+
     it('sends JWT when available in localStorage', async () => {
       const importResult = makeImportResult({ isOwner: true });
       (resolveInitialProject as Mock).mockReturnValue({ type: 'cloud', cloudId: 'cloud-abc123' });
@@ -764,6 +885,94 @@ describe('AppLoader', () => {
           registerValues: { 'reg-1': '0xff' },
         }),
       }), { protectedLocalIds: ['placeholder-id'] });
+    });
+
+    it('keeps an evicted owned cloud entry cloud-backed when the restore fetch is unauthenticated', async () => {
+      // authenticated:false → ownership unknown (signed out / expired JWT at startup); must not demote
+      const importResult = makeImportResult({
+        isOwner: false,
+        authenticated: false,
+        version: 8,
+        visibility: 'unlisted',
+      });
+      (loadManifest as Mock).mockReturnValue({ version: 1, projects: [makeEvictedCloudManifestEntry()] });
+      (resolveInitialProject as Mock).mockReturnValue({ type: 'local', localId: 'placeholder-id' });
+      (loadProject as Mock).mockReturnValue(null);
+      (fetchAndParseCloudProject as Mock).mockResolvedValue(importResult);
+
+      render(<AppLoader />);
+
+      await waitFor(() => {
+        const shell = screen.getByTestId('app-shell');
+        expect(shell.dataset.localId).toBe('placeholder-id');
+        expect(shell.dataset.cloudId).toBe('cloud-placeholder');
+        expect(shell.dataset.isOwner).toBe('true');
+        expect(shell.dataset.storage).toBe('cloud');
+      });
+
+      expect(saveProject).toHaveBeenCalledWith(expect.objectContaining({
+        localId: 'placeholder-id',
+        cloudId: 'cloud-placeholder',
+        storage: 'cloud',
+      }), { protectedLocalIds: ['placeholder-id'] });
+    });
+
+    it('keeps an evicted owned cloud entry cloud-backed when the restore response omits authenticated (old API)', async () => {
+      // Old-API deploy-skew shape: no `authenticated` field at all → ownership unknown
+      const importResult = makeImportResult({
+        isOwner: false,
+        version: 8,
+        visibility: 'unlisted',
+      });
+      (loadManifest as Mock).mockReturnValue({ version: 1, projects: [makeEvictedCloudManifestEntry()] });
+      (resolveInitialProject as Mock).mockReturnValue({ type: 'local', localId: 'placeholder-id' });
+      (loadProject as Mock).mockReturnValue(null);
+      (fetchAndParseCloudProject as Mock).mockResolvedValue(importResult);
+
+      render(<AppLoader />);
+
+      await waitFor(() => {
+        const shell = screen.getByTestId('app-shell');
+        expect(shell.dataset.localId).toBe('placeholder-id');
+        expect(shell.dataset.cloudId).toBe('cloud-placeholder');
+        expect(shell.dataset.isOwner).toBe('true');
+        expect(shell.dataset.storage).toBe('cloud');
+      });
+
+      expect(saveProject).toHaveBeenCalledWith(expect.objectContaining({
+        localId: 'placeholder-id',
+        cloudId: 'cloud-placeholder',
+        storage: 'cloud',
+      }), { protectedLocalIds: ['placeholder-id'] });
+    });
+
+    it('demotes an evicted cloud entry to local on confirmed non-ownership (authenticated:true, isOwner:false)', async () => {
+      const importResult = makeImportResult({
+        isOwner: false,
+        authenticated: true,
+        version: 8,
+        visibility: 'unlisted',
+      });
+      (loadManifest as Mock).mockReturnValue({ version: 1, projects: [makeEvictedCloudManifestEntry()] });
+      (resolveInitialProject as Mock).mockReturnValue({ type: 'local', localId: 'placeholder-id' });
+      (loadProject as Mock).mockReturnValue(null);
+      (fetchAndParseCloudProject as Mock).mockResolvedValue(importResult);
+
+      render(<AppLoader />);
+
+      await waitFor(() => {
+        const shell = screen.getByTestId('app-shell');
+        expect(shell.dataset.localId).toBe('placeholder-id');
+        expect(shell.dataset.isOwner).toBe('false');
+        expect(shell.dataset.storage).toBe('local');
+      });
+
+      // The storage:'local' write triggers the full unlink (cloudId strip +
+      // visibility reset) via sanitizeStoredProject inside the real saveProject.
+      expect(saveProject).toHaveBeenCalledWith(
+        expect.objectContaining({ localId: 'placeholder-id', storage: 'local' }),
+        { protectedLocalIds: ['placeholder-id'] },
+      );
     });
   });
 

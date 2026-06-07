@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { fetchAndParseCloudProject } from './cloud-project-loader';
+import { fetchAndParseCloudProject, isConfirmedNonOwner } from './cloud-project-loader';
 import * as apiClient from './api-client';
 import * as storage from './storage';
 
@@ -152,5 +152,37 @@ describe('fetchAndParseCloudProject', () => {
     mockGetProject.mockRejectedValue(new apiClient.ApiError(404, { error: 'Project not found' }));
 
     await expect(fetchAndParseCloudProject('NONEXISTENT')).rejects.toThrow('Project not found');
+  });
+
+  it('threads authenticated from the API response', async () => {
+    const apiResponse = { ...makeGetProjectResponse(), authenticated: true };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockGetProject.mockResolvedValue(apiResponse as any);
+    mockImportFromObject.mockRestore();
+
+    const result = await fetchAndParseCloudProject('ABC123DEF456');
+
+    expect(result.authenticated).toBe(true);
+  });
+
+  it('leaves authenticated undefined when the API response omits it (old API)', async () => {
+    const apiResponse = makeGetProjectResponse();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockGetProject.mockResolvedValue(apiResponse as any);
+    mockImportFromObject.mockRestore();
+
+    const result = await fetchAndParseCloudProject('ABC123DEF456');
+
+    expect(result.authenticated).toBeUndefined();
+  });
+});
+
+describe('isConfirmedNonOwner', () => {
+  it('is true only on positive evidence: authenticated:true with isOwner:false', () => {
+    expect(isConfirmedNonOwner({ isOwner: false, authenticated: true })).toBe(true);
+    expect(isConfirmedNonOwner({ isOwner: true, authenticated: true })).toBe(false);
+    expect(isConfirmedNonOwner({ isOwner: false, authenticated: false })).toBe(false);
+    expect(isConfirmedNonOwner({ isOwner: false, authenticated: undefined })).toBe(false);
+    expect(isConfirmedNonOwner({ isOwner: false })).toBe(false);
   });
 });
