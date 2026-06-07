@@ -48,7 +48,7 @@ function makeDeps(overrides: Partial<Parameters<typeof useAuthTransition>[0]> = 
     setInternal: core.setInternal,
     authUser: null as { email: string } | null,
     pendingOpRef: { current: null as 'save' | 'fork' | null },
-    saveToCloud: vi.fn(() => Promise.resolve(true)),
+    saveToCloud: vi.fn(() => Promise.resolve('saved' as const)),
     fork: vi.fn(() => Promise.resolve()),
     dismissLogin: vi.fn(),
     syncCloudProjectsRef: { current: vi.fn(() => Promise.resolve(makeSyncResult())) },

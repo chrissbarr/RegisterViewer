@@ -1,13 +1,13 @@
 import { useEffect, useRef, type MutableRefObject } from 'react';
 import { purgeCloudProjects, getMostRecentProjectId, ACTIVE_PROJECT_SESSION_KEY } from '../utils/project-storage';
 import { clearCloudUrl } from '../utils/cloud-utils';
-import { type CloudSyncCore, type SyncResult, initialInternalState } from '../types/cloud-sync';
+import { type CloudSyncCore, type SaveOutcome, type SyncResult, initialInternalState } from '../types/cloud-sync';
 
 interface UseAuthTransitionDeps {
   core: CloudSyncCore;
   authUser: { email: string } | null;
   pendingOpRef: MutableRefObject<'save' | 'fork' | null>;
-  saveToCloud: () => Promise<boolean>;
+  saveToCloud: () => Promise<SaveOutcome>;
   fork: () => Promise<void>;
   dismissLogin: () => void;
   syncCloudProjectsRef: MutableRefObject<(() => Promise<SyncResult>) | null>;

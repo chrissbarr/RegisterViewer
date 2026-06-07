@@ -78,6 +78,21 @@ export interface CloudMetadataWriteOptions {
   protectedLocalIds?: readonly (string | null | undefined)[];
 }
 
+/**
+ * Outcome of an active-project cloud save. Replaces the ambiguous boolean so the
+ * auto-sync engine can reschedule ONLY on lock contention and never re-PUT a
+ * stale version after a local-persist failure.
+ * - `saved`/`created`/`noop` — terminal success (or nothing to do).
+ * - `login-required` — deferred to the login dialog.
+ * - `lock-held` — mutation lock busy; safe to retry.
+ * - `not-found`/`conflict` — server-side state handled via setInternal (no retry).
+ * - `local-persist-failed` — server write succeeded but the local write failed.
+ */
+export type SaveOutcome =
+  | 'saved' | 'created' | 'noop'
+  | 'login-required' | 'lock-held'
+  | 'not-found' | 'conflict' | 'local-persist-failed';
+
 export interface SyncResult {
   updatedCount: number;
   staleCloudIds: string[];

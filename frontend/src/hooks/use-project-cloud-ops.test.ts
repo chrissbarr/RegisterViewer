@@ -72,7 +72,7 @@ function makeDeps(overrides: Record<string, unknown> = {}) {
     projectsRef: { current: projects },
     mutationLockRef: { current: false },
     getJwt: (overrides.getJwt as (() => string | null)) ?? (() => 'mock-jwt'),
-    activeProjectSave: (overrides.activeProjectSave as (() => Promise<boolean>)) ?? vi.fn(async () => true),
+    activeProjectSave: (overrides.activeProjectSave as (() => Promise<import('../types/cloud-sync').SaveOutcome>)) ?? vi.fn(async () => 'saved' as const),
   };
 }
 
@@ -85,7 +85,7 @@ beforeEach(() => {
 describe('useProjectCloudOps', () => {
   describe('saveProjectToCloud', () => {
     it('delegates to activeProjectSave when localId is the active project', async () => {
-      const activeProjectSave = vi.fn(async () => true);
+      const activeProjectSave = vi.fn(async () => 'saved' as const);
       const deps = makeDeps({ activeProjectSave });
 
       const { result } = renderHook(() => useProjectCloudOps(deps));
@@ -114,7 +114,7 @@ describe('useProjectCloudOps', () => {
     });
 
     it('throws when activeProjectSave reports that the save did not complete', async () => {
-      const activeProjectSave = vi.fn(async () => false);
+      const activeProjectSave = vi.fn(async () => 'lock-held' as const);
       const deps = makeDeps({ activeProjectSave });
 
       const { result } = renderHook(() => useProjectCloudOps(deps));

@@ -9,7 +9,7 @@ import { setCloudUrl, clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock, r
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl, type SaveConflictResult } from '../utils/cloud-operations';
 import { DEFAULT_PROJECT_NAME, type Visibility } from '../types/project';
 import type { AppState } from '../types/register';
-import { type CloudSyncCore, type CloudMetadataUpdate, type InternalCloudSyncState, initialInternalState } from '../types/cloud-sync';
+import { type CloudSyncCore, type CloudMetadataUpdate, type InternalCloudSyncState, type SaveOutcome, initialInternalState } from '../types/cloud-sync';
 import type { ImportStateAction } from '../context/app-context';
 
 interface ConflictHandlerParams {
@@ -151,7 +151,7 @@ interface ActiveProjectCloudOpsDeps {
 }
 
 interface ActiveProjectCloudOps {
-  saveToCloud: () => Promise<boolean>;
+  saveToCloud: () => Promise<SaveOutcome>;
   fork: () => Promise<void>;
   deleteFromCloud: () => Promise<void>;
   setVisibility: (v: Visibility) => Promise<void>;
@@ -193,7 +193,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
     result: { cloudId: string; timestamp: string; version: number },
     savedDataVersion: number,
     hasUnsyncedChanges: boolean,
-  ): boolean => {
+  ): SaveOutcome => {
     let currentLocalId = activeLocalIdRef.current;
 
     // When forking a shared project, no local project exists yet — create one
@@ -207,7 +207,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
           status: 'idle',
           error: 'Project was saved to cloud, but local project metadata could not be persisted.',
         }));
-        return false;
+        return 'local-persist-failed';
       }
     } else {
       const stateResult = patchProjectState(currentLocalId, serializeState(appStateRef.current), {
@@ -219,7 +219,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
           status: 'idle',
           error: 'Project was saved to cloud, but the local copy could not be updated.',
         }));
-        return false;
+        return 'local-persist-failed';
       }
     }
 
@@ -237,7 +237,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
         status: 'idle',
         error: 'Project was saved to cloud, but local cloud metadata could not be persisted.',
       }));
-      return false;
+      return 'local-persist-failed';
     }
 
     const shareUrl = buildProjectUrl(result.cloudId);
@@ -255,18 +255,18 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
       serverVersion: result.version,
       conflict: null,
     }));
-    return true;
+    return 'created';
   }, [updateCloudMetadata, createNewProject, activeLocalIdRef, appStateRef, setInternal]);
 
-  const saveToCloud = useCallback(async (): Promise<boolean> => {
-    if (!isCloudEnabled()) return true;
+  const saveToCloud = useCallback(async (): Promise<SaveOutcome> => {
+    if (!isCloudEnabled()) return 'noop';
 
     // JWT guard: defer to login dialog if not authenticated
     const jwt = getJwt();
     if (!jwt) {
       setLoginRequired(true);
       pendingOpRef.current = 'save';
-      return false;
+      return 'login-required';
     }
 
     const lockResult = await withMutationLock(mutationLockRef, async () => {
@@ -305,7 +305,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
                   error: 'Cloud project was deleted on the server, but local cloud metadata could not be updated.',
                 }));
               }
-              return false;
+              return 'not-found';
             }
           }
           if (stillOnSameProject) {
@@ -321,7 +321,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
               error: 'Cloud project not found. It may have been deleted. Use "Save to Cloud" to create a new copy.',
             }));
           }
-          return false;
+          return 'not-found';
         }
 
         if (result.kind === 'conflict') {
@@ -330,15 +330,20 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
             activeLocalIdRef, internalRef, lastFreshnessCheckRef, needsVersionSyncRef,
             updateCloudMetadata, appStateRef, setInternal, dispatch, getJwt,
           });
-          return false;
+          return 'conflict';
         }
 
         if (result.kind === 'created') {
           if (stillOnSameProject) {
             return applyCreatedResult(result, attempt.dataVersion, editedDuringSave);
           }
-          return true;
+          return 'created';
         } else {
+          // Record the new server version immediately so a later sync can never
+          // re-PUT with the stale version and manufacture a 409.
+          if (stillOnSameProject) {
+            setInternal((prev) => ({ ...prev, serverVersion: result.version }));
+          }
           if (capturedLocalId) {
             const stateResult = patchProjectState(capturedLocalId, serializeState(appStateRef.current), {
               protectedLocalIds: [activeLocalIdRef.current],
@@ -351,7 +356,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
                   error: 'Project was saved to cloud, but the local copy could not be updated.',
                 }));
               }
-              return false;
+              return 'local-persist-failed';
             }
             const metadataResult = updateCloudMetadata(capturedLocalId, {
               cloudSavedAt: result.timestamp,
@@ -367,7 +372,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
                   error: 'Project was saved to cloud, but local cloud metadata could not be persisted.',
                 }));
               }
-              return false;
+              return 'local-persist-failed';
             }
           }
           if (stillOnSameProject) {
@@ -380,7 +385,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
               conflict: null,
             }));
           }
-          return true;
+          return 'saved';
         }
       } catch (err) {
         if (isSameActiveSaveTarget(capturedLocalId, existingCloudId, activeLocalIdRef, internalRef)) {
@@ -391,7 +396,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
         throw err;
       }
     });
-    return lockResult.executed ? lockResult.result : false;
+    return lockResult.executed ? lockResult.result : 'lock-held';
   }, [updateCloudMetadata, applyCreatedResult, mutationLockRef, dataVersionRef, getJwt, internalRef, appStateRef, activeLocalIdRef, setInternal, dispatch, needsVersionSyncRef, lastFreshnessCheckRef]);
 
   const fork = useCallback(async () => {

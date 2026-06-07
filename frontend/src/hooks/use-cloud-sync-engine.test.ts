@@ -33,7 +33,7 @@ function makeDeps(overrides: Record<string, any> = {}): UseCloudSyncEngineDeps {
     setInternal: overrides.setInternal ?? vi.fn(),
     canAutoSync: overrides.canAutoSync ?? false,
     getJwt: overrides.getJwt ?? vi.fn(() => 'mock-jwt'),
-    saveToCloud: overrides.saveToCloud ?? vi.fn(() => Promise.resolve(true)),
+    saveToCloud: overrides.saveToCloud ?? vi.fn(() => Promise.resolve('saved' as const)),
   };
 }
 
@@ -501,7 +501,7 @@ describe('useCloudSyncEngine - auto-sync', () => {
   });
 
   it('schedules save after debounce when dirty', async () => {
-    const saveToCloud = vi.fn(() => Promise.resolve(true as const));
+    const saveToCloud = vi.fn(() => Promise.resolve('saved' as const));
     const internal = makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 0 });
     const dataDeps = makeDataDeps();
 
@@ -562,11 +562,11 @@ describe('useCloudSyncEngine - auto-sync', () => {
     expect(result.current.syncStatus).toBe('offline');
   });
 
-  it('reschedules when mutation lock was held (saveToCloud returns false)', async () => {
+  it('reschedules when mutation lock was held (saveToCloud returns lock-held)', async () => {
     let callCount = 0;
     const saveToCloud = vi.fn(() => {
       callCount++;
-      return Promise.resolve(callCount === 1 ? false : true);
+      return Promise.resolve(callCount === 1 ? 'lock-held' as const : 'saved' as const);
     });
     const internal = makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 0 });
     const dataDeps = makeDataDeps();
@@ -603,8 +603,61 @@ describe('useCloudSyncEngine - auto-sync', () => {
     expect(saveToCloud).toHaveBeenCalledTimes(2);
   });
 
+  it('reschedules lock-held with backoff but stops at the retry cap', async () => {
+    const saveToCloud = vi.fn(async () => 'lock-held' as const);
+    const internal = makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 0 });
+    const dataDeps = makeDataDeps();
+
+    const deps = makeDeps({
+      dataDeps,
+      internal,
+      canAutoSync: true,
+      saveToCloud,
+    });
+
+    const { rerender } = renderHook(
+      (props: UseCloudSyncEngineDeps) => useCloudSyncEngine(props),
+      { initialProps: deps },
+    );
+
+    // Make dirty
+    rerender({ ...deps, dataDeps: makeDataDeps({ registers: [{ id: 'r2' }] }) });
+
+    // Advance well past the cap (5 attempts * growing backoff).
+    for (let i = 0; i < 10; i++) {
+      await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    }
+    // Capped at MAX_AUTO_SYNC_RETRIES attempts (not unbounded).
+    expect(saveToCloud.mock.calls.length).toBeLessThanOrEqual(5);
+  });
+
+  it('does not reschedule after a local-persist-failed outcome', async () => {
+    const saveToCloud = vi.fn(async () => 'local-persist-failed' as const);
+    const internal = makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 0 });
+    const dataDeps = makeDataDeps();
+
+    const deps = makeDeps({
+      dataDeps,
+      internal,
+      canAutoSync: true,
+      saveToCloud,
+    });
+
+    const { rerender } = renderHook(
+      (props: UseCloudSyncEngineDeps) => useCloudSyncEngine(props),
+      { initialProps: deps },
+    );
+
+    // Make dirty
+    rerender({ ...deps, dataDeps: makeDataDeps({ registers: [{ id: 'r2' }] }) });
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(100); }); // first fire
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); }); // no further retry
+    expect(saveToCloud).toHaveBeenCalledTimes(1);
+  });
+
   it('skips save when no JWT available', async () => {
-    const saveToCloud = vi.fn(() => Promise.resolve(true as const));
+    const saveToCloud = vi.fn(() => Promise.resolve('saved' as const));
     const internal = makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 0 });
     const dataDeps = makeDataDeps();
 
@@ -633,7 +686,7 @@ describe('useCloudSyncEngine - auto-sync', () => {
   });
 
   it('resets asyncOverride when canAutoSync toggles off', async () => {
-    const saveToCloud = vi.fn<() => Promise<boolean>>(() => Promise.reject(new Error('network error')));
+    const saveToCloud = vi.fn<() => Promise<'saved'>>(() => Promise.reject(new Error('network error')));
     const internal = makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 0 });
     const dataDeps = makeDataDeps();
 
@@ -667,7 +720,7 @@ describe('useCloudSyncEngine - auto-sync', () => {
     expect(result.current.syncStatus).toBe('local-only');
 
     // Toggle back on -- should be 'saved' (asyncOverride was cleared), not 'offline'
-    saveToCloud.mockResolvedValue(true);
+    saveToCloud.mockResolvedValue('saved');
     await act(async () => {
       rerender({
         ...deps,
@@ -681,7 +734,7 @@ describe('useCloudSyncEngine - auto-sync', () => {
 
   describe('flushCloudSync', () => {
     it('calls saveToCloud immediately when dirty', async () => {
-      const saveToCloud = vi.fn(() => Promise.resolve(true as const));
+      const saveToCloud = vi.fn(() => Promise.resolve('saved' as const));
       const internal = makeInternal({
         cloudId: 'cloud-abc',
         isOwner: true,
@@ -710,7 +763,7 @@ describe('useCloudSyncEngine - auto-sync', () => {
     });
 
     it('skips when versions match', async () => {
-      const saveToCloud = vi.fn(() => Promise.resolve(true as const));
+      const saveToCloud = vi.fn(() => Promise.resolve('saved' as const));
       const internal = makeInternal({
         cloudId: 'cloud-abc',
         isOwner: true,
@@ -762,7 +815,7 @@ describe('useCloudSyncEngine - auto-sync', () => {
     });
 
     it('skips when no cloudId', async () => {
-      const saveToCloud = vi.fn(() => Promise.resolve(true as const));
+      const saveToCloud = vi.fn(() => Promise.resolve('saved' as const));
       const internal = makeInternal({ cloudId: null });
 
       const deps = makeDeps({ internal, saveToCloud });
@@ -777,7 +830,7 @@ describe('useCloudSyncEngine - auto-sync', () => {
     });
 
     it('skips when not owner', async () => {
-      const saveToCloud = vi.fn(() => Promise.resolve(true as const));
+      const saveToCloud = vi.fn(() => Promise.resolve('saved' as const));
       const internal = makeInternal({
         cloudId: 'cloud-abc',
         isOwner: false,

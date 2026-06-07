@@ -207,7 +207,12 @@ function AppShellInner({ cloudInit }: AppShellProps) {
         <div className="mx-4 mt-3 shrink-0">
           <CloudConflictBanner
             serverVersion={cloud.conflict.serverVersion}
-            onKeepLocalVersion={cloudActions.saveToCloud}
+            onKeepLocalVersion={async () => {
+              const outcome = await cloudActions.saveToCloud();
+              if (outcome !== 'saved' && outcome !== 'created' && outcome !== 'noop') {
+                throw new Error('Could not save your changes. Please try again.');
+              }
+            }}
             onLoadServerVersion={cloudActions.loadServerVersion}
           />
         </div>

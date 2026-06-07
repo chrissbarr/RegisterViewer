@@ -54,7 +54,7 @@ import { syncCloudProjectsFromServer } from '../utils/cloud-sync';
 import { checkAndPullFreshVersion, type FreshnessCheckContext } from '../utils/cloud-freshness';
 import { isOwnedCloudEntry } from '../utils/project-identity';
 import type { Visibility } from '../types/project';
-import { initialInternalState, type CloudInit, type CloudSyncCore, type InternalCloudSyncState, type SyncResult } from '../types/cloud-sync';
+import { initialInternalState, type CloudInit, type CloudSyncCore, type InternalCloudSyncState, type SaveOutcome, type SyncResult } from '../types/cloud-sync';
 
 export type { SyncStatus };
 
@@ -83,11 +83,14 @@ interface CloudSyncActions {
   /**
    * Save the active project to the cloud.
    *
-   * Returns:
-   * - `true` — saved successfully (or cloud disabled)
-   * - `false` — no JWT (deferred to login) or mutation lock held
+   * Returns a `SaveOutcome` discriminated union:
+   * - `saved`/`created`/`noop` — terminal success (or nothing to do).
+   * - `login-required` — deferred to the login dialog.
+   * - `lock-held` — mutation lock busy; safe to retry.
+   * - `not-found`/`conflict` — server-side state handled (no retry).
+   * - `local-persist-failed` — server write succeeded but the local write failed.
    */
-  saveToCloud: () => Promise<boolean>;
+  saveToCloud: () => Promise<SaveOutcome>;
   saveProjectToCloud: (localId: string) => Promise<void>;
   deleteFromCloud: () => Promise<void>;
   deleteProjectFromCloud: (localId: string) => Promise<void>;
@@ -203,7 +206,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   // saveToCloud ref: breaks the circular dependency between useCloudSyncEngine
   // (needs saveToCloud) and useActiveProjectCloudOps (needs refs from the engine).
   // The engine only calls saveToCloud asynchronously (inside setTimeout), so a ref is safe.
-  const saveToCloudRef = useRef<() => Promise<boolean>>(() => Promise.resolve(false));
+  const saveToCloudRef = useRef<() => Promise<SaveOutcome>>(() => Promise.resolve('lock-held' as SaveOutcome));
   const saveToCloudStable = useCallback(() => saveToCloudRef.current(), []);
 
   // Merged dirty tracking + auto-sync engine

@@ -161,12 +161,12 @@ describe('useActiveProjectCloudOps', () => {
 
       const { result } = renderHook(() => useActiveProjectCloudOps(deps));
 
-      let returned: boolean | undefined;
+      let returned: string | undefined;
       await act(async () => {
         returned = await result.current.saveToCloud();
       });
 
-      expect(returned).toBe(true);
+      expect(returned).toBe('created');
       expect(saveProjectToCloudImpl).toHaveBeenCalledWith(
         { version: 1, registers: [], values: {} },
         null, // no existing cloudId
@@ -294,18 +294,18 @@ describe('useActiveProjectCloudOps', () => {
       });
     });
 
-    it('returns false when mutation lock is held', async () => {
+    it('returns "lock-held" when mutation lock is held', async () => {
       const deps = makeDefaultDeps();
       deps.mutationLockRef.current = true; // lock is already held
 
       const { result } = renderHook(() => useActiveProjectCloudOps(deps));
 
-      let returned: boolean | undefined;
+      let returned: string | undefined;
       await act(async () => {
         returned = await result.current.saveToCloud();
       });
 
-      expect(returned).toBe(false);
+      expect(returned).toBe('lock-held');
       expect(saveProjectToCloudImpl).not.toHaveBeenCalled();
     });
 
@@ -1047,19 +1047,51 @@ describe('useActiveProjectCloudOps', () => {
     });
   });
 
+  describe('SaveOutcome discriminated union', () => {
+    it('returns "local-persist-failed" (not a retriable lock-held) when PUT succeeds but local persist fails', async () => {
+      const deps = makeDefaultDeps();
+      deps.internalRef.current = { ...INITIAL_INTERNAL_STATE, cloudId: TEST_CLOUD_ID, isOwner: true, storage: 'cloud', serverVersion: 2 };
+      (saveProjectToCloudImpl as Mock).mockResolvedValue({ kind: 'updated', cloudId: TEST_CLOUD_ID, timestamp: TEST_TIMESTAMP, version: 3 });
+      (patchProjectState as Mock).mockReturnValueOnce({ ok: false, status: 'quota-exceeded', evictedLocalIds: [] });
+
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+      let outcome: string | undefined;
+      await act(async () => { outcome = await result.current.saveToCloud(); });
+
+      expect(outcome).toBe('local-persist-failed');
+      // Exactly one PUT — the failure path must not loop or re-PUT.
+      expect(saveProjectToCloudImpl).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns "saved" on a successful update and "lock-held" when the lock is busy', async () => {
+      const deps = makeDefaultDeps();
+      deps.internalRef.current = { ...INITIAL_INTERNAL_STATE, cloudId: TEST_CLOUD_ID, isOwner: true, storage: 'cloud', serverVersion: 2 };
+      (saveProjectToCloudImpl as Mock).mockResolvedValue({ kind: 'updated', cloudId: TEST_CLOUD_ID, timestamp: TEST_TIMESTAMP, version: 3 });
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+
+      let outcome: string | undefined;
+      await act(async () => { outcome = await result.current.saveToCloud(); });
+      expect(outcome).toBe('saved');
+
+      deps.mutationLockRef.current = true; // lock held
+      await act(async () => { outcome = await result.current.saveToCloud(); });
+      expect(outcome).toBe('lock-held');
+    });
+  });
+
   describe('cloud disabled', () => {
-    it('saveToCloud returns true without calling API when cloud is disabled', async () => {
+    it('saveToCloud returns "noop" without calling API when cloud is disabled', async () => {
       (isCloudEnabled as Mock).mockReturnValue(false);
       const deps = makeDefaultDeps();
 
       const { result } = renderHook(() => useActiveProjectCloudOps(deps));
 
-      let returned: boolean | undefined;
+      let returned: string | undefined;
       await act(async () => {
         returned = await result.current.saveToCloud();
       });
 
-      expect(returned).toBe(true);
+      expect(returned).toBe('noop');
       expect(saveProjectToCloudImpl).not.toHaveBeenCalled();
     });
 

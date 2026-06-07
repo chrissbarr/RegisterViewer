@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import { CLOUD_SYNC_DEBOUNCE_MS } from '../constants';
-import type { InternalCloudSyncState } from '../types/cloud-sync';
+import type { InternalCloudSyncState, SaveOutcome } from '../types/cloud-sync';
+
+const MAX_AUTO_SYNC_RETRIES = 4;
 
 /**
  * Cloud auto-sync status for the active project.
@@ -24,7 +26,7 @@ export interface UseCloudSyncEngineDeps {
   setInternal: Dispatch<SetStateAction<InternalCloudSyncState>>;
   canAutoSync: boolean;
   getJwt: () => string | null;
-  saveToCloud: () => Promise<boolean>;
+  saveToCloud: () => Promise<SaveOutcome>;
 }
 
 interface UseCloudSyncEngineResult {
@@ -128,19 +130,33 @@ export function useCloudSyncEngine(deps: UseCloudSyncEngineDeps): UseCloudSyncEn
     if (!canAutoSync || !isDirty) return;
 
     let cancelled = false;
+    let retryCount = 0;
     const attemptSync = async () => {
       if (cancelled) return;
       const jwt = getJwt();
       if (!jwt) return;
       setAsyncOverride('syncing');
       try {
-        const executed = await saveToCloud();
+        const outcome = await saveToCloud();
         if (cancelled) return;
-        if (!executed) {
-          // Mutation lock was held -- reschedule so data isn't silently dropped
-          syncTimerRef.current = setTimeout(attemptSync, CLOUD_SYNC_DEBOUNCE_MS);
+        if (outcome === 'lock-held') {
+          if (retryCount < MAX_AUTO_SYNC_RETRIES) {
+            // Exponential backoff so a wedged lock can't sustain a 0.33Hz PUT loop.
+            const delay = CLOUD_SYNC_DEBOUNCE_MS * 2 ** retryCount;
+            retryCount++;
+            syncTimerRef.current = setTimeout(attemptSync, delay);
+          } else {
+            setAsyncOverride('offline'); // gave up; next edit retriggers
+          }
           return;
         }
+        if (outcome === 'local-persist-failed') {
+          // Server write succeeded; the local write failed. Do NOT retry (a retry
+          // would re-PUT and could manufacture a 409). Surface offline.
+          setAsyncOverride('offline');
+          return;
+        }
+        // saved / created / noop / login-required / not-found / conflict — terminal.
         setAsyncOverride(null);
       } catch {
         if (!cancelled) setAsyncOverride('offline');
