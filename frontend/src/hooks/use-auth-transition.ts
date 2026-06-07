@@ -78,11 +78,12 @@ export function useAuthTransition(deps: UseAuthTransitionDeps): void {
     if (wasLoggedIn && !authUser) {
       hasRunInitialSyncRef.current = false;
       // Sign-out: purge cloud projects from localStorage
-      const purgedIds = purgeCloudProjects();
+      const { removed } = purgeCloudProjects();
       refreshProjectList();
 
-      // If active project was purged, switch to a remaining project or create new
-      if (activeLocalIdRef.current && purgedIds.includes(activeLocalIdRef.current)) {
+      // Re-home only if the active project was actually removed (a demoted one
+      // stays put as a now-local project).
+      if (activeLocalIdRef.current && removed.includes(activeLocalIdRef.current)) {
         const remaining = getMostRecentProjectId();
         if (remaining) {
           switchProject(remaining);

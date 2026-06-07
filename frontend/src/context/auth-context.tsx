@@ -1,8 +1,10 @@
-import { createContext, useContext, useState, useEffect, useCallback, useMemo, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from 'react';
 import { isCloudEnabled, sendLoginCode as apiSendLoginCode, verifyLoginCode as apiVerifyLoginCode, getAuthMe, postAuthLogout } from '../utils/api-client';
 
 /** localStorage key for the JWT token. Exported for use by AppLoader (pre-context). */
 export const JWT_STORAGE_KEY = 'register-viewer-jwt';
+
+const PRE_LOGOUT_TIMEOUT_MS = 4000;
 
 interface AuthUser {
   id: number;
@@ -34,8 +36,9 @@ interface AuthState {
 interface AuthActions {
   sendCode: (email: string) => Promise<void>;
   verifyCode: (email: string, code: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   getJwt: () => string | null;
+  registerPreLogout: (cb: (() => Promise<void>) | null) => void;
 }
 
 const AuthStateContext = createContext<AuthState | null>(null);
@@ -94,6 +97,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => { cancelled = true; };
   }, []);
 
+  const preLogoutRef = useRef<(() => Promise<void>) | null>(null);
+  const registerPreLogout = useCallback((cb: (() => Promise<void>) | null) => {
+    preLogoutRef.current = cb;
+  }, []);
+
   const sendCode = useCallback(async (email: string) => {
     await apiSendLoginCode(email);
   }, []);
@@ -104,8 +112,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(res.user);
   }, []);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
     const jwt = readJwt();
+    // Best-effort flush of unsynced cloud work while the JWT is still valid.
+    const preLogout = preLogoutRef.current;
+    if (preLogout) {
+      try {
+        await Promise.race([
+          preLogout(),
+          new Promise<void>((resolve) => setTimeout(resolve, PRE_LOGOUT_TIMEOUT_MS)),
+        ]);
+      } catch {
+        // Best-effort; sign out regardless.
+      }
+    }
     clearJwt();
     setUser(null);
     // Revoke the token server-side (best-effort, don't block on result)
@@ -119,7 +139,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const state = useMemo<AuthState>(() => ({ user }), [user]);
-  const actions = useMemo<AuthActions>(() => ({ sendCode, verifyCode, logout, getJwt }), [sendCode, verifyCode, logout, getJwt]);
+  const actions = useMemo<AuthActions>(() => ({ sendCode, verifyCode, logout, getJwt, registerPreLogout }), [sendCode, verifyCode, logout, getJwt, registerPreLogout]);
 
   return (
     <AuthStateContext.Provider value={state}>

@@ -777,8 +777,8 @@ describe('purgeCloudProjects', () => {
     createProject(makeSerializedState(), 'Cloud 2', { cloudId: 'c2', visibility: 'private', cloudSavedAt: '2024-01-01', storage: 'cloud' });
     createProject(makeSerializedState(), 'Local Only');
 
-    const purged = purgeCloudProjects();
-    expect(purged).toHaveLength(2);
+    const { removed } = purgeCloudProjects();
+    expect(removed).toHaveLength(2);
 
     const manifest = loadManifest();
     expect(manifest.projects).toHaveLength(1);
@@ -791,8 +791,8 @@ describe('purgeCloudProjects', () => {
     // Create a local project (storage: 'local')
     createProject(makeSerializedState(), 'Local Project');
 
-    const purged = purgeCloudProjects();
-    expect(purged).toHaveLength(1);
+    const { removed } = purgeCloudProjects();
+    expect(removed).toHaveLength(1);
 
     // Assert only 1 project remains (the local one)
     const manifest = loadManifest();
@@ -801,11 +801,40 @@ describe('purgeCloudProjects', () => {
     expect(manifest.projects[0].storage).toBe('local');
   });
 
-  it('returns empty array when no cloud projects exist', () => {
+  it('returns empty when no cloud projects exist', () => {
     createProject(makeSerializedState(), 'Local');
-    const purged = purgeCloudProjects();
-    expect(purged).toHaveLength(0);
+    const { removed, demoted } = purgeCloudProjects();
+    expect(removed).toHaveLength(0);
+    expect(demoted).toHaveLength(0);
     expect(loadManifest().projects).toHaveLength(1);
+  });
+
+  it('purgeCloudProjects demotes dirty/conflicted cloud projects to local and removes clean ones', () => {
+    const clean = createProject(makeSerializedState(), 'Clean', { cloudId: 'c-clean', visibility: 'private', cloudSavedAt: '2024-01-01', storage: 'cloud', serverVersion: 4, hasUnsyncedChanges: false });
+    const dirty = createProject(makeSerializedState(), 'Dirty', { cloudId: 'c-dirty', visibility: 'private', cloudSavedAt: '2024-01-01', storage: 'cloud', serverVersion: 7, hasUnsyncedChanges: true });
+    const conflicted = createProject(makeSerializedState(), 'Conflicted', { cloudId: 'c-conf', visibility: 'private', cloudSavedAt: '2024-01-01', storage: 'cloud', serverVersion: 2 });
+    // Give conflicted a cloudConflictVersion by updating metadata
+    updateProjectMetadata(conflicted, { cloudConflictVersion: 9 });
+
+    const { removed, demoted } = purgeCloudProjects();
+
+    expect(removed).toEqual([clean]);
+    expect(demoted.sort()).toEqual([dirty, conflicted].sort());
+
+    // Clean is gone entirely.
+    expect(loadProject(clean)).toBeNull();
+    expect(loadManifest().projects.some((p) => p.localId === clean)).toBe(false);
+
+    // Dirty/conflicted survive as LOCAL projects with their data intact and cloud metadata cleared.
+    for (const id of [dirty, conflicted]) {
+      const record = loadProject(id);
+      expect(record).not.toBeNull();
+      expect(record!.storage).toBe('local');
+      expect(record!.cloudId).toBeNull();
+      const entry = loadManifest().projects.find((p) => p.localId === id)!;
+      expect(entry.storage).toBe('local');
+      expect(entry.cloudId).toBeNull();
+    }
   });
 });
 

@@ -6,7 +6,7 @@ import { initialInternalState, type SyncResult } from '../types/cloud-sync';
 // ── Mocks ────────────────────────────────────────────────────────────
 
 vi.mock('../utils/project-storage', () => ({
-  purgeCloudProjects: vi.fn(() => []),
+  purgeCloudProjects: vi.fn(() => ({ removed: [], demoted: [] })),
   getMostRecentProjectId: vi.fn(() => null),
   ACTIVE_PROJECT_SESSION_KEY: 'test-active-project',
 }));
@@ -167,7 +167,7 @@ describe('useAuthTransition', () => {
   it('switches to remaining project when active was purged', () => {
     const deps = makeDeps({ authUser: { email: 'test@example.com' } });
     deps.activeLocalIdRef.current = 'purged-id';
-    vi.mocked(purgeCloudProjects).mockReturnValue(['purged-id']);
+    vi.mocked(purgeCloudProjects).mockReturnValue({ removed: ['purged-id'], demoted: [] });
     vi.mocked(getMostRecentProjectId).mockReturnValue('remaining-id');
 
     const { rerender } = renderHook(
@@ -183,7 +183,7 @@ describe('useAuthTransition', () => {
   it('creates new project when no remaining after purge', () => {
     const deps = makeDeps({ authUser: { email: 'test@example.com' } });
     deps.activeLocalIdRef.current = 'purged-id';
-    vi.mocked(purgeCloudProjects).mockReturnValue(['purged-id']);
+    vi.mocked(purgeCloudProjects).mockReturnValue({ removed: ['purged-id'], demoted: [] });
     vi.mocked(getMostRecentProjectId).mockReturnValue(null);
 
     const { rerender } = renderHook(

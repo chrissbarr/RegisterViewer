@@ -185,7 +185,7 @@ export function Header() {
     <div className="flex items-center justify-between px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
       <span className="truncate mr-2">{auth.user.email}</span>
       <button
-        onClick={() => authActions.logout()}
+        onClick={() => { void authActions.logout(); }}
         className="shrink-0 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
       >
         Sign out

@@ -98,7 +98,7 @@ const authMock = {
 };
 vi.mock('./auth-context', () => ({
   useAuth: () => ({ user: authMock.user }),
-  useAuthActions: () => ({ sendCode: vi.fn(), verifyCode: vi.fn(), logout: vi.fn(), getJwt: authMock.getJwt }),
+  useAuthActions: () => ({ sendCode: vi.fn(), verifyCode: vi.fn(), logout: vi.fn(), getJwt: authMock.getJwt, registerPreLogout: vi.fn() }),
 }));
 
 // Stub history.replaceState so it doesn't error in jsdom

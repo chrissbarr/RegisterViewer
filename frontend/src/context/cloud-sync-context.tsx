@@ -157,7 +157,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     saveCurrentProject,
   } = useProjectStorageActions();
   const { user: authUser } = useAuth();
-  const { getJwt } = useAuthActions();
+  const { getJwt, registerPreLogout } = useAuthActions();
 
   const [internal, setInternal] = useState<InternalCloudSyncState>(initialInternalState);
 
@@ -563,6 +563,28 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     mutationLockRef, getJwt,
     activeProjectSave: rawActiveOps.saveToCloud,
   });
+
+  // Pre-logout flush: while the JWT is still valid, push the active project's
+  // pending changes and best-effort save other dirty owned cloud projects.
+  // Anything still dirty after the flush is demoted (not deleted) by purgeCloudProjects.
+  useEffect(() => {
+    registerPreLogout(async () => {
+      // 1. Push the active project's pending changes (writes local + cloud).
+      await flushCloudSync();
+      // 2. Best-effort save of other dirty owned cloud projects.
+      const dirty = loadManifest().projects.filter(
+        (p) => isOwnedCloudEntry(p) && p.hasUnsyncedChanges && p.localId !== activeLocalIdRef.current,
+      );
+      for (const entry of dirty) {
+        try {
+          await projectOps.saveProjectToCloud(entry.localId);
+        } catch {
+          // Best-effort; anything still dirty is demoted (not lost) by purge.
+        }
+      }
+    });
+    return () => registerPreLogout(null);
+  }, [registerPreLogout, flushCloudSync, projectOps]);
 
   const loadServerVersion = useCallback(async () => {
     const { cloudId } = internalRef.current;

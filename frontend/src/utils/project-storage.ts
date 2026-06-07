@@ -588,23 +588,54 @@ export function getMostRecentProjectId(manifest?: ProjectManifest): string | nul
   return sorted[0].localId;
 }
 
-/** Purge all cloud-backed projects from localStorage. Returns purged localIds. */
-export function purgeCloudProjects(): string[] {
+/**
+ * Sign-out purge. Clean cloud projects are removed (the server has their data).
+ * Dirty or conflicted cloud projects are demoted to local projects — their data
+ * key is kept and cloud metadata is cleared — so unsynced edits are never lost.
+ */
+export function purgeCloudProjects(): { removed: string[]; demoted: string[] } {
   const manifest = loadManifest();
-  const purged: string[] = [];
+  const removed: string[] = [];
+  const demoted: string[] = [];
   const kept: ProjectManifestEntry[] = [];
 
   for (const entry of manifest.projects) {
-    if (entry.storage === 'cloud') {
-      evictProjectData(entry.localId);
-      purged.push(entry.localId);
-    } else {
+    if (entry.storage !== 'cloud') {
       kept.push(entry);
+      continue;
+    }
+    const isDirty = entry.hasUnsyncedChanges === true || entry.cloudConflictVersion != null;
+    if (isDirty && hasLocalData(entry.localId)) {
+      const record = loadProject(entry.localId);
+      if (record) {
+        saveProject(sanitizeStoredProject({
+          ...record,
+          storage: 'local',
+          cloudId: null,
+          cloudSavedAt: null,
+          serverVersion: null,
+          cloudConflictVersion: null,
+          hasUnsyncedChanges: false,
+        }));
+      }
+      kept.push(sanitizeManifestEntry({
+        ...entry,
+        storage: 'local',
+        cloudId: null,
+        cloudSavedAt: null,
+        serverVersion: null,
+        cloudConflictVersion: null,
+        hasUnsyncedChanges: false,
+      }));
+      demoted.push(entry.localId);
+    } else {
+      evictProjectData(entry.localId);
+      removed.push(entry.localId);
     }
   }
 
   saveManifest({ ...manifest, projects: kept });
-  return purged;
+  return { removed, demoted };
 }
 
 /** Check if a project has full data in localStorage (not just a manifest stub). */

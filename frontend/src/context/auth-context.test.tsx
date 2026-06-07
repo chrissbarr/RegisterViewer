@@ -239,6 +239,26 @@ describe('AuthProvider', () => {
     });
   });
 
+  describe('registerPreLogout', () => {
+    it('runs the registered pre-logout callback before clearing the JWT', async () => {
+      (postAuthLogout as Mock).mockResolvedValue(undefined);
+      localStorage.setItem(JWT_KEY, validJwt(1, 'a@b.com'));
+      let jwtDuringFlush: string | null = 'not-run';
+
+      const { result } = renderHook(() => useAuthActions(), { wrapper });
+      act(() => {
+        result.current.registerPreLogout(async () => {
+          jwtDuringFlush = localStorage.getItem(JWT_KEY);
+        });
+      });
+
+      await act(async () => { await result.current.logout(); });
+
+      expect(jwtDuringFlush).not.toBeNull();      // JWT still present during the flush
+      expect(localStorage.getItem(JWT_KEY)).toBeNull(); // cleared afterward
+    });
+  });
+
   describe('logout', () => {
     it('clears JWT and user', async () => {
       (postAuthLogout as Mock).mockResolvedValue(undefined);
@@ -260,8 +280,8 @@ describe('AuthProvider', () => {
       expect(result.current.state.user).not.toBeNull();
       expect(localStorage.getItem(JWT_KEY)).toBe('jwt-to-clear');
 
-      act(() => {
-        result.current.actions.logout();
+      await act(async () => {
+        await result.current.actions.logout();
       });
 
       expect(result.current.state.user).toBeNull();
@@ -284,8 +304,8 @@ describe('AuthProvider', () => {
         await result.current.actions.verifyCode('a@b.com', '123456');
       });
 
-      act(() => {
-        result.current.actions.logout();
+      await act(async () => {
+        await result.current.actions.logout();
       });
 
       expect(postAuthLogout).toHaveBeenCalledWith('jwt-to-revoke');
@@ -301,8 +321,8 @@ describe('AuthProvider', () => {
         { wrapper },
       );
 
-      act(() => {
-        result.current.actions.logout();
+      await act(async () => {
+        await result.current.actions.logout();
       });
 
       expect(postAuthLogout).not.toHaveBeenCalled();
@@ -324,8 +344,8 @@ describe('AuthProvider', () => {
         await result.current.actions.verifyCode('a@b.com', '123456');
       });
 
-      act(() => {
-        result.current.actions.logout();
+      await act(async () => {
+        await result.current.actions.logout();
       });
 
       // Local state should be cleared even though server call fails
