@@ -31,6 +31,12 @@ interface UseProjectSwitchInitDeps {
 // needs saving, even before any in-memory edit increments the generation.
 const STORED_UNSYNCED_LAST_SAVED_VERSION = Number.MAX_SAFE_INTEGER;
 
+// Maximum number of times scheduleRetry will re-arm attemptSave after a
+// contended withMutationLock call.  A wedged lock cannot sustain an unbounded
+// 4 Hz retry loop; the departing data is already durable in localStorage so
+// giving up after the cap is safe (A-20).
+const MAX_DEPARTURE_SAVE_RETRIES = 8;
+
 /**
  * Handles project switch lifecycle: cloud state init and best-effort save.
  *
@@ -90,7 +96,14 @@ export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
         if (jwt) {
           pendingDepartureSequencesRef.current.add(departure.sequence);
 
+          let departureSaveRetries = 0;
           const scheduleRetry = () => {
+            if (departureSaveRetries >= MAX_DEPARTURE_SAVE_RETRIES) {
+              // Give up — the departing data is already durable in localStorage.
+              pendingDepartureSequencesRef.current.delete(departure.sequence);
+              return;
+            }
+            departureSaveRetries++;
             const timer = setTimeout(() => {
               retryTimersRef.current.delete(timer);
               attemptSave();

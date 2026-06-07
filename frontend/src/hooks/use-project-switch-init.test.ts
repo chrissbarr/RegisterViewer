@@ -52,6 +52,7 @@ vi.mock('../utils/storage', () => ({
 import { saveProjectToCloudImpl } from '../utils/cloud-operations';
 import { checkAndPullFreshVersion } from '../utils/cloud-freshness';
 import { loadProject } from '../utils/project-storage';
+import { withMutationLock } from '../utils/cloud-utils';
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -373,6 +374,44 @@ describe('useProjectSwitchInit', () => {
         await vi.waitFor(() => {
           expect(saveProjectToCloudImpl).toHaveBeenCalled();
         });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('stops retrying the departure save after the cap when the lock stays held', async () => {
+      vi.useFakeTimers();
+      const deps = buildDeps();
+      deps.mutationLockRef.current = true; // lock permanently held
+      deps.lastDeparture = makeDeparture();
+      (loadProject as Mock).mockReturnValue({
+        localId: PROJECT_A_LOCAL_ID,
+        serverVersion: 2,
+        state: { registers: [], activeRegisterId: null, registerValues: {} },
+      });
+      (saveProjectToCloudImpl as Mock).mockResolvedValue({
+        kind: 'updated',
+        cloudId: PROJECT_A_CLOUD_ID,
+        timestamp: '2024-06-02T00:00:00Z',
+        version: 3,
+      });
+
+      try {
+        const { rerender } = renderHook(
+          (props: { activeLocalId: string | null }) =>
+            useProjectSwitchInit({ ...deps, activeLocalId: props.activeLocalId }),
+          { initialProps: { activeLocalId: PROJECT_A_LOCAL_ID } },
+        );
+
+        rerender({ activeLocalId: PROJECT_B_LOCAL_ID });
+
+        // Advance well past the cap (20 × 250ms = 5000ms >> MAX_DEPARTURE_SAVE_RETRIES × 250ms)
+        for (let i = 0; i < 20; i++) {
+          await vi.advanceTimersByTimeAsync(250);
+        }
+
+        // withMutationLock attempts are bounded: initial + ≤ MAX_DEPARTURE_SAVE_RETRIES retries
+        expect((withMutationLock as Mock).mock.calls.length).toBeLessThanOrEqual(9);
       } finally {
         vi.useRealTimers();
       }
