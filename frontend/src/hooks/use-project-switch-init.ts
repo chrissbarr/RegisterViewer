@@ -32,9 +32,9 @@ interface UseProjectSwitchInitDeps {
 const STORED_UNSYNCED_LAST_SAVED_VERSION = Number.MAX_SAFE_INTEGER;
 
 // Maximum number of times scheduleRetry will re-arm attemptSave after a
-// contended withMutationLock call.  A wedged lock cannot sustain an unbounded
-// 4 Hz retry loop; the departing data is already durable in localStorage so
-// giving up after the cap is safe (A-20).
+// contended withMutationLock call. A wedged lock must not be allowed to drive
+// an unbounded 4 Hz retry loop; the departing data is already durable in
+// localStorage so giving up after the cap is safe (A-20).
 const MAX_DEPARTURE_SAVE_RETRIES = 8;
 
 /**

@@ -410,8 +410,8 @@ describe('useProjectSwitchInit', () => {
           await vi.advanceTimersByTimeAsync(250);
         }
 
-        // withMutationLock attempts are bounded: initial + ≤ MAX_DEPARTURE_SAVE_RETRIES retries
-        expect((withMutationLock as Mock).mock.calls.length).toBeLessThanOrEqual(9);
+        // withMutationLock attempts are bounded: 1 initial + MAX_DEPARTURE_SAVE_RETRIES (8) retries
+        expect(withMutationLock).toHaveBeenCalledTimes(9);
       } finally {
         vi.useRealTimers();
       }
