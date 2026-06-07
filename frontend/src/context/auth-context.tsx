@@ -118,10 +118,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const preLogout = preLogoutRef.current;
     if (preLogout) {
       try {
+        let timerId: ReturnType<typeof setTimeout>;
         await Promise.race([
           preLogout(),
-          new Promise<void>((resolve) => setTimeout(resolve, PRE_LOGOUT_TIMEOUT_MS)),
-        ]);
+          new Promise<void>((resolve) => { timerId = setTimeout(resolve, PRE_LOGOUT_TIMEOUT_MS); }),
+        ]).finally(() => clearTimeout(timerId));
       } catch {
         // Best-effort; sign out regardless.
       }

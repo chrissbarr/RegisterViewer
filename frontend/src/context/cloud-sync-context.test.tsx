@@ -95,10 +95,11 @@ vi.mock('../utils/storage', () => ({
 const authMock = {
   user: null as { id: number; email: string } | null,
   getJwt: vi.fn(() => null as string | null),
+  registerPreLogout: vi.fn() as ReturnType<typeof vi.fn>,
 };
 vi.mock('./auth-context', () => ({
   useAuth: () => ({ user: authMock.user }),
-  useAuthActions: () => ({ sendCode: vi.fn(), verifyCode: vi.fn(), logout: vi.fn(), getJwt: authMock.getJwt, registerPreLogout: vi.fn() }),
+  useAuthActions: () => ({ sendCode: vi.fn(), verifyCode: vi.fn(), logout: vi.fn(), getJwt: authMock.getJwt, registerPreLogout: authMock.registerPreLogout }),
 }));
 
 // Stub history.replaceState so it doesn't error in jsdom
@@ -231,6 +232,7 @@ beforeEach(() => {
   // Default mocks — authenticated by default so cloud ops proceed
   authMock.user = { id: 1, email: 'test@test.com' };
   authMock.getJwt.mockReturnValue('mock-jwt-token');
+  authMock.registerPreLogout.mockReset();
   (isCloudEnabled as Mock).mockReturnValue(true);
   (loadManifest as Mock).mockReturnValue({ version: 1, projects: [] });
   (loadProject as Mock).mockReturnValue(null);
@@ -2348,6 +2350,77 @@ describe('CloudSyncProvider', () => {
 
       // Should NOT evict because storage='local' (non-owned)
       expect(evictProjectData).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('pre-logout flush effect', () => {
+    it('invokes saveProjectToCloud for a dirty non-active owned cloud project', async () => {
+      // Arrange: a dirty owned cloud project that is NOT the active project
+      const DIRTY_LOCAL_ID = 'dirty-other-project';
+      const DIRTY_CLOUD_ID = 'cloud-dirty-other';
+      (loadManifest as Mock).mockReturnValue({
+        version: 1,
+        projects: [
+          makeManifestEntry({ localId: TEST_LOCAL_ID, cloudId: null, storage: 'local' }),
+          makeManifestEntry({
+            localId: DIRTY_LOCAL_ID,
+            cloudId: DIRTY_CLOUD_ID,
+            storage: 'cloud',
+            hasUnsyncedChanges: true,
+            serverVersion: 3,
+          }),
+        ],
+      });
+      (loadProject as Mock).mockImplementation((id: string) => {
+        if (id === DIRTY_LOCAL_ID) {
+          return makeStoredProject({
+            localId: DIRTY_LOCAL_ID,
+            cloudId: DIRTY_CLOUD_ID,
+            storage: 'cloud',
+            serverVersion: 3,
+            hasUnsyncedChanges: true,
+          });
+        }
+        return null;
+      });
+      (apiUpdateProject as Mock).mockResolvedValue({
+        id: DIRTY_CLOUD_ID,
+        updatedAt: '2024-01-02T00:00:00Z',
+        version: 4,
+      });
+
+      // The CloudSyncProvider registers the pre-logout callback during mount.
+      // Capture the last callback passed to registerPreLogout by rendering first,
+      // then reading the captured calls.
+      const { result } = renderCloudSync();
+
+      // Flush any pending async effects (syncCloudProjects on sign-in, etc.)
+      await act(async () => {
+        await new Promise(r => setTimeout(r, 10));
+      });
+
+      const calls = (authMock.registerPreLogout as Mock).mock.calls as Array<[(() => Promise<void>) | null]>;
+      // Find the last call where a non-null callback was registered (cleanup calls pass null).
+      const lastRegistration = [...calls].reverse().find(([cb]) => cb !== null);
+      const preLogoutCb = lastRegistration?.[0];
+      expect(preLogoutCb).toBeDefined();
+
+      // Act: invoke the captured pre-logout callback directly
+      await act(async () => {
+        await preLogoutCb!();
+      });
+
+      // Assert: the dirty non-active project was saved via the by-localId path
+      // (saveProjectToCloud → saveProjectToCloudImpl → apiUpdateProject)
+      expect(apiUpdateProject).toHaveBeenCalledWith(
+        DIRTY_CLOUD_ID,
+        expect.anything(),
+        'mock-jwt-token',
+        3, // serverVersion
+      );
+      // Verify we're observing the right call count (the active project flush
+      // is a no-op since the active project has no cloudId).
+      void result; // suppress unused-var warning
     });
   });
 

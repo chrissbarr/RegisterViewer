@@ -1047,6 +1047,46 @@ describe('useActiveProjectCloudOps', () => {
     });
   });
 
+  describe('zombie-write guard (isSameActiveSaveTarget cloudId check)', () => {
+    it('does not paint error/conflict onto reset cloud state after sign-out mid-flight', async () => {
+      const deps = makeDefaultDeps();
+      deps.internalRef.current = {
+        ...INITIAL_INTERNAL_STATE,
+        cloudId: TEST_CLOUD_ID,
+        isOwner: true,
+        serverVersion: 2,
+      };
+
+      // Simulate sign-out resetting cloud state mid-flight:
+      // the save rejects with a 401-ish error, and by the time the catch runs,
+      // the internalRef has been reset (cloudId = null, matching sign-out behaviour).
+      (saveProjectToCloudImpl as Mock).mockImplementation(async () => {
+        // Sign-out reset: clear the cloud state while the save is in flight
+        deps.internalRef.current = { ...INITIAL_INTERNAL_STATE };
+        throw new Error('Unauthorized');
+      });
+
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+
+      await expect(
+        act(async () => {
+          await result.current.saveToCloud();
+        }),
+      ).rejects.toThrow('Unauthorized');
+
+      // isSameActiveSaveTarget now checks cloudId: null !== TEST_CLOUD_ID,
+      // so the catch block must NOT have written error state to internalRef.
+      // The initial reset sets cloudId=null and error=null — an error write would
+      // set error to a non-null string.
+      const errorCalls = deps.setInternal.mock.calls.filter((call) => {
+        const arg = call[0];
+        const state = typeof arg === 'function' ? arg(INITIAL_INTERNAL_STATE) : arg;
+        return state?.error !== null && state?.error !== undefined;
+      });
+      expect(errorCalls).toHaveLength(0);
+    });
+  });
+
   describe('SaveOutcome discriminated union', () => {
     it('returns "local-persist-failed" (not a retriable lock-held) when PUT succeeds but local persist fails', async () => {
       const deps = makeDefaultDeps();

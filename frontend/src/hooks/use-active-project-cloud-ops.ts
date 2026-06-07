@@ -35,6 +35,19 @@ interface SaveAttemptSnapshot {
   serverVersion: number;
 }
 
+/**
+ * Returns true only when the save's captured context still matches the current
+ * active project AND the cloud project has not changed.
+ *
+ * After sign-out (or delete/unlink/switch) resets cloud state,
+ * `internalRef.current.cloudId` no longer matches the save's captured cloudId,
+ * so late completions (401/409/success) skip their `setInternal` writes and
+ * cannot paint stale errors/conflicts onto the reset cloud state.
+ *
+ * For a save that CREATES a new cloud project, both `expectedCloudId` and
+ * `internalRef.current.cloudId` start as null — the `null === null` comparison
+ * holds throughout the POST, so `applyCreatedResult` still runs correctly.
+ */
 function isSameActiveSaveTarget(
   capturedLocalId: string | null,
   expectedCloudId: string | null,
@@ -42,7 +55,8 @@ function isSameActiveSaveTarget(
   internalRef: MutableRefObject<InternalCloudSyncState>,
 ): boolean {
   if (capturedLocalId !== null) {
-    return activeLocalIdRef.current === capturedLocalId;
+    return activeLocalIdRef.current === capturedLocalId
+      && internalRef.current.cloudId === expectedCloudId;
   }
   return activeLocalIdRef.current === null
     && internalRef.current.cloudId === expectedCloudId;

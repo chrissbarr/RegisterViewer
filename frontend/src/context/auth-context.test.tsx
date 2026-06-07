@@ -242,8 +242,9 @@ describe('AuthProvider', () => {
   describe('registerPreLogout', () => {
     it('runs the registered pre-logout callback before clearing the JWT', async () => {
       (postAuthLogout as Mock).mockResolvedValue(undefined);
-      localStorage.setItem(JWT_KEY, validJwt(1, 'a@b.com'));
-      let jwtDuringFlush: string | null = 'not-run';
+      const seededJwt = validJwt(1, 'a@b.com');
+      localStorage.setItem(JWT_KEY, seededJwt);
+      let jwtDuringFlush: string | null = null;
 
       const { result } = renderHook(() => useAuthActions(), { wrapper });
       act(() => {
@@ -254,8 +255,41 @@ describe('AuthProvider', () => {
 
       await act(async () => { await result.current.logout(); });
 
-      expect(jwtDuringFlush).not.toBeNull();      // JWT still present during the flush
+      // Must be the exact seeded JWT — null or 'not-run' both mean the hook never fired.
+      expect(jwtDuringFlush).toBe(seededJwt);
       expect(localStorage.getItem(JWT_KEY)).toBeNull(); // cleared afterward
+    });
+
+    it('clears the JWT even when the pre-logout callback times out', async () => {
+      vi.useFakeTimers();
+      (postAuthLogout as Mock).mockResolvedValue(undefined);
+      const seededJwt = validJwt(1, 'a@b.com');
+      localStorage.setItem(JWT_KEY, seededJwt);
+
+      const { result } = renderHook(() => useAuthActions(), { wrapper });
+      act(() => {
+        // Hook that never resolves — simulates a hung flush
+        result.current.registerPreLogout(() => new Promise<void>(() => {}));
+      });
+
+      // Start logout — it should be waiting on the race
+      let logoutDone = false;
+      act(() => {
+        result.current.logout().then(() => { logoutDone = true; });
+      });
+
+      // Before the timeout fires, JWT should still be present
+      expect(localStorage.getItem(JWT_KEY)).toBe(seededJwt);
+
+      // Advance past PRE_LOGOUT_TIMEOUT_MS (4000 ms)
+      await act(async () => {
+        vi.advanceTimersByTime(5000);
+      });
+
+      expect(logoutDone).toBe(true);
+      expect(localStorage.getItem(JWT_KEY)).toBeNull();
+
+      vi.useRealTimers();
     });
   });
 

@@ -836,6 +836,41 @@ describe('purgeCloudProjects', () => {
       expect(entry.cloudId).toBeNull();
     }
   });
+
+  it('demoted entries preserve localSavedAt (demotion is not a user edit)', () => {
+    const dirty = createProject(makeSerializedState(), 'Dirty', { cloudId: 'c-dirty', visibility: 'private', cloudSavedAt: '2024-01-01', storage: 'cloud', serverVersion: 7, hasUnsyncedChanges: true });
+    // Pin the localSavedAt to a known value
+    setProjectSavedAt(dirty, '2024-06-01T00:00:00.000Z');
+
+    purgeCloudProjects();
+
+    const record = loadProject(dirty)!;
+    expect(record).not.toBeNull();
+    // Demotion must not update the timestamp (preserveLocalSavedAt: true)
+    expect(record.localSavedAt).toBe('2024-06-01T00:00:00.000Z');
+    const entry = loadManifest().projects.find((p) => p.localId === dirty)!;
+    expect(entry.localSavedAt).toBe('2024-06-01T00:00:00.000Z');
+  });
+
+  it('keeps original manifest entry when record write fails during demotion', () => {
+    const dirty = createProject(makeSerializedState(), 'Dirty', { cloudId: 'c-dirty', visibility: 'private', cloudSavedAt: '2024-01-01', storage: 'cloud', serverVersion: 7, hasUnsyncedChanges: true });
+
+    // Simulate a quota failure on the project record write (one failure, then succeeds).
+    // After the write fails and there are no eviction candidates (the only cloud project
+    // is the one being demoted, and it's protected by targetLocalId), saveProject returns
+    // { ok: false } and purgeCloudProjects must keep the original manifest entry.
+    mockProjectSetItemFailures(quotaError(), 1);
+
+    const { demoted } = purgeCloudProjects();
+
+    // Record write failed: the project must NOT appear in demoted
+    expect(demoted).not.toContain(dirty);
+    // The original manifest entry must still be present (cloud, not local)
+    const entry = loadManifest().projects.find((p) => p.localId === dirty);
+    expect(entry).toBeDefined();
+    expect(entry!.storage).toBe('cloud');
+    expect(entry!.cloudId).toBe('c-dirty');
+  });
 });
 
 describe('hasLocalData', () => {

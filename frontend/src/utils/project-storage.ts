@@ -592,6 +592,10 @@ export function getMostRecentProjectId(manifest?: ProjectManifest): string | nul
  * Sign-out purge. Clean cloud projects are removed (the server has their data).
  * Dirty or conflicted cloud projects are demoted to local projects — their data
  * key is kept and cloud metadata is cleared — so unsynced edits are never lost.
+ *
+ * Invariant: abandoned post-sign-out saves cannot re-promote demoted entries
+ * because `updateProjectMetadata` writes pass through `sanitizeStoredProject`
+ * (cloudId stays null after demotion). This guarantee must not be weakened.
  */
 export function purgeCloudProjects(): { removed: string[]; demoted: string[] } {
   const manifest = loadManifest();
@@ -608,7 +612,9 @@ export function purgeCloudProjects(): { removed: string[]; demoted: string[] } {
     if (isDirty && hasLocalData(entry.localId)) {
       const record = loadProject(entry.localId);
       if (record) {
-        saveProject(sanitizeStoredProject({
+        // preserveLocalSavedAt: demotion is a metadata-only op, not a user edit;
+        // keeping the original timestamp avoids most-recent-project ordering drift.
+        const result = saveProject(sanitizeStoredProject({
           ...record,
           storage: 'local',
           cloudId: null,
@@ -616,7 +622,14 @@ export function purgeCloudProjects(): { removed: string[]; demoted: string[] } {
           serverVersion: null,
           cloudConflictVersion: null,
           hasUnsyncedChanges: false,
-        }));
+        }), { preserveLocalSavedAt: true });
+
+        if (!result.ok) {
+          // Record write failed — keep the original manifest entry so the
+          // record and manifest stay consistent; startup migration will re-derive.
+          kept.push(entry);
+          continue;
+        }
       }
       kept.push(sanitizeManifestEntry({
         ...entry,
