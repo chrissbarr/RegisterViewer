@@ -1,6 +1,6 @@
 import { useCallback, useMemo, type MutableRefObject } from 'react';
 import { exportToObject, deserializeState } from '../utils/storage';
-import { isCloudEnabled } from '../utils/api-client';
+import { isCloudEnabled, ApiError } from '../utils/api-client';
 import { loadProject, type ProjectStorageWriteResult } from '../utils/project-storage';
 import { clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock, requireJwt } from '../utils/cloud-utils';
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
@@ -107,7 +107,12 @@ export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
 
       const cloudId = entry.cloudId;
       const jwt = requireJwt(getJwt);
-      await deleteProjectFromCloudImpl(cloudId, jwt);
+      try {
+        await deleteProjectFromCloudImpl(cloudId, jwt);
+      } catch (err) {
+        if (!(err instanceof ApiError && err.status === 404)) throw err;
+        // 404 = server copy already gone; fall through to clear local metadata.
+      }
 
       const metadataResult = updateCloudMetadata(localId, CLEARED_CLOUD_METADATA);
       if (!metadataResult.ok) throw new Error('Deleted cloud project, but failed to persist local metadata.');

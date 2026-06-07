@@ -9,6 +9,16 @@ vi.mock('../utils/storage', () => ({
 
 vi.mock('../utils/api-client', () => ({
   isCloudEnabled: vi.fn(() => true),
+  ApiError: class ApiError extends Error {
+    status: number;
+    errorBody: { error: string };
+    constructor(status: number, errorBody: { error: string }) {
+      super(errorBody.error);
+      this.name = 'ApiError';
+      this.status = status;
+      this.errorBody = errorBody;
+    }
+  },
 }));
 
 vi.mock('../utils/project-storage', () => ({
@@ -31,7 +41,7 @@ vi.mock('../utils/cloud-operations', () => ({
   patchVisibilityImpl: vi.fn(),
 }));
 
-import { isCloudEnabled } from '../utils/api-client';
+import { isCloudEnabled, ApiError } from '../utils/api-client';
 import { loadProject } from '../utils/project-storage';
 import { setCloudUrl, clearCloudUrl } from '../utils/cloud-utils';
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
@@ -396,6 +406,31 @@ describe('useProjectCloudOps', () => {
       ).rejects.toThrow(/in progress/i);
 
       expect(deleteProjectFromCloudImpl).not.toHaveBeenCalled();
+    });
+
+    it('treats DELETE 404 as already-deleted and clears local cloud metadata', async () => {
+      const deps = makeDeps();
+      (deleteProjectFromCloudImpl as Mock).mockRejectedValue(new ApiError(404, { error: 'Project not found' }));
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      // must NOT throw
+      await act(async () => { await result.current.deleteProjectFromCloud('local-1'); });
+
+      expect(deps.updateCloudMetadata).toHaveBeenCalledWith('local-1', expect.objectContaining({ cloudId: null, storage: 'local' }));
+    });
+
+    it('propagates non-404 ApiErrors from deleteProjectFromCloudImpl', async () => {
+      const deps = makeDeps();
+      (deleteProjectFromCloudImpl as Mock).mockRejectedValue(new ApiError(500, { error: 'Internal server error' }));
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      await expect(
+        act(async () => { await result.current.deleteProjectFromCloud('local-1'); }),
+      ).rejects.toThrow('Internal server error');
+
+      expect(deps.updateCloudMetadata).not.toHaveBeenCalled();
     });
 
     it('does not delete a saved local cloud-linked fork even when an owned placeholder has the same cloudId', async () => {

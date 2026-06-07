@@ -243,7 +243,7 @@ describe('useMyProjectsActions', () => {
       });
 
       expect(mockStorageActions.deleteLocalProject).not.toHaveBeenCalled();
-      expect(result.current.cloudError).toBeTruthy();
+      expect(result.current.cloudError).toContain('Another cloud operation is in progress');
       expect(mockAnnounce).not.toHaveBeenCalledWith('Project "Project A" deleted');
     });
 
