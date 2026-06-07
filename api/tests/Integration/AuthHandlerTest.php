@@ -834,27 +834,60 @@ final class AuthHandlerTest extends TestCase
         }
     }
 
+    /**
+     * Seed the global verify fixed-window bucket to exactly the limit for both
+     * the current 60s window and the next one, so a subsequent handler call is
+     * over the limit no matter which side of a minute boundary it lands on.
+     */
+    private function seedGlobalVerifyLimitExhausted(): void
+    {
+        $now = time();
+        $update = self::$db->prepare(
+            'UPDATE auth_rate_limits SET attempt_count = :count
+             WHERE scope = :scope AND bucket_start = :bucketStart'
+        );
+        foreach ([$now, $now + AUTH_VERIFY_GLOBAL_WINDOW_SECONDS] as $windowTime) {
+            $bucket = dbConsumeAuthRateLimit(
+                self::$db,
+                'verify.global',
+                'global',
+                AUTH_VERIFY_GLOBAL_LIMIT,
+                AUTH_VERIFY_GLOBAL_WINDOW_SECONDS,
+                $windowTime,
+            );
+            $update->execute([
+                'count'       => AUTH_VERIFY_GLOBAL_LIMIT,
+                'scope'       => 'verify.global',
+                'bucketStart' => $bucket['bucketStart'],
+            ]);
+        }
+    }
+
     #[Test]
     public function verifyCodeEnforcesGlobalVerifyRateLimit(): void
     {
-        try {
-            for ($i = 0; $i < AUTH_VERIFY_GLOBAL_LIMIT; $i++) {
-                $_SERVER['REMOTE_ADDR'] = "198.51.100.$i";
-                $response = handleAuthVerifyCode(self::$db, self::JWT_CONFIG, [
-                    'email' => "global-verify-{$i}@example.com",
-                    'code'  => '999999',
-                ]);
-                $this->assertSame(401, $response->status);
-            }
+        // Under the limit, a bad code passes the global gate and fails OTP
+        // validation (401), proving the gate is not blocking prematurely.
+        $response = handleAuthVerifyCode(self::$db, self::JWT_CONFIG, [
+            'email' => 'global-verify-under@example.com',
+            'code'  => '999999',
+        ]);
+        $this->assertSame(401, $response->status);
 
-            $_SERVER['REMOTE_ADDR'] = '198.51.100.250';
-            $response = handleAuthVerifyCode(self::$db, self::JWT_CONFIG, [
-                'email' => 'victim@example.com',
-                'code'  => '999999',
-            ]);
-        } finally {
-            unset($_SERVER['REMOTE_ADDR']);
-        }
+        // Exhaust the global bucket by seeding rather than making
+        // AUTH_VERIFY_GLOBAL_LIMIT real handler calls: the fixed 60s window is
+        // keyed by intdiv(time(), 60), so a real-call loop that straddles a
+        // minute boundary splits its count across two buckets and the final
+        // call is still allowed (observed as a CI flake: 401 instead of 503).
+        // Seeding both adjacent windows makes the assertion deterministic.
+        // Exact at-limit/next-window arithmetic is covered by
+        // dbConsumeAuthRateLimitCountsFixedWindowAttempts.
+        $this->seedGlobalVerifyLimitExhausted();
+
+        $response = handleAuthVerifyCode(self::$db, self::JWT_CONFIG, [
+            'email' => 'victim@example.com',
+            'code'  => '999999',
+        ]);
 
         $this->assertSame(503, $response->status);
         $this->assertStringContainsString('Service temporarily unavailable', $response->body['error']);
