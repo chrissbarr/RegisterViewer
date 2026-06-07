@@ -385,6 +385,19 @@ describe('useProjectCloudOps', () => {
       expect(clearCloudUrl).not.toHaveBeenCalled();
     });
 
+    it('throws when the mutation lock is held', async () => {
+      const deps = makeDeps();
+      deps.mutationLockRef.current = true;
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      await expect(
+        act(async () => { await result.current.deleteProjectFromCloud('local-1'); }),
+      ).rejects.toThrow(/in progress/i);
+
+      expect(deleteProjectFromCloudImpl).not.toHaveBeenCalled();
+    });
+
     it('does not delete a saved local cloud-linked fork even when an owned placeholder has the same cloudId', async () => {
       const deps = makeDeps({
         activeLocalId: 'other-local',

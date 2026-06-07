@@ -101,7 +101,7 @@ export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
   }, [updateCloudMetadata, projectsRef, mutationLockRef, activeLocalIdRef, getJwt, activeProjectSave]);
 
   const deleteProjectFromCloud = useCallback(async (localId: string) => {
-    await withMutationLock(mutationLockRef, async () => {
+    const lockResult = await withMutationLock(mutationLockRef, async () => {
       const entry = projectsRef.current.find(p => p.localId === localId);
       if (!entry || !isOwnedCloudEntry(entry)) return;
 
@@ -118,6 +118,9 @@ export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
         setInternal(initialInternalState);
       }
     });
+    if (!lockResult.executed) {
+      throw new Error('Another cloud operation is in progress. Please try again.');
+    }
   }, [updateCloudMetadata, projectsRef, mutationLockRef, internalRef, setInternal, getJwt]);
 
   const setProjectVisibility = useCallback(async (localId: string, v: Visibility) => {

@@ -113,17 +113,20 @@ export function useMyProjectsActions(
 
   const handleDelete = useCallback(async (localId: string) => {
     const project = projects.find(p => p.localId === localId);
-    // Delete from cloud first if cloud-backed
+    // Delete from cloud first if cloud-backed. If that fails, keep BOTH copies
+    // so the user can retry — deleting locally now would leave an orphaned server
+    // copy that resurrects as a placeholder on the next sync.
     if (project && isOwnedCloudEntry(project)) {
       try {
         await deleteProjectFromCloud(localId);
-      } catch {
-        // Best-effort — delete locally regardless
+      } catch (err) {
+        setCloudError(friendlyErrorMessage(err, 'Failed to remove project from cloud. Please try again.'));
+        return;
       }
     }
     deleteLocalProject(localId);
     announce(`Project "${projectDisplayName(project?.name)}" deleted`);
-  }, [deleteLocalProject, deleteProjectFromCloud, announce, projects]);
+  }, [deleteLocalProject, deleteProjectFromCloud, announce, projects, setCloudError]);
 
   const handleRename = useCallback((localId: string, name: string) => {
     renameProject(localId, name);

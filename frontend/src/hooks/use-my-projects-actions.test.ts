@@ -233,17 +233,18 @@ describe('useMyProjectsActions', () => {
       expect(mockStorageActions.deleteLocalProject).toHaveBeenCalledWith('local-2');
     });
 
-    it('handleDelete still deletes locally if cloud delete fails', async () => {
+    it('does not delete locally when the cloud delete fails (keeps the link for retry)', async () => {
       const onClose = vi.fn();
-      mockCloudActions.deleteProjectFromCloud.mockRejectedValue(new Error('fail'));
+      mockCloudActions.deleteProjectFromCloud.mockRejectedValue(new Error('Another cloud operation is in progress.'));
       const { result } = await renderWithOpen(onClose);
 
       await act(async () => {
         await result.current.handleDelete('local-1');
       });
 
-      expect(mockStorageActions.deleteLocalProject).toHaveBeenCalledWith('local-1');
-      expect(mockAnnounce).toHaveBeenCalledWith('Project "Project A" deleted');
+      expect(mockStorageActions.deleteLocalProject).not.toHaveBeenCalled();
+      expect(result.current.cloudError).toBeTruthy();
+      expect(mockAnnounce).not.toHaveBeenCalledWith('Project "Project A" deleted');
     });
 
     it('handleDelete uses fallback name for unknown project', async () => {
