@@ -446,15 +446,23 @@ describe('ProjectStorageProvider', () => {
       expect(result.current.state.activeLocalId).toBe('fallback-id');
     });
 
-    it('sets activeLocalId to null when no remaining projects', () => {
+    it('creates a new project and switches to it when the last project is deleted', () => {
       (getMostRecentProjectId as Mock).mockReturnValue(null);
+      (createProjectInStorage as Mock).mockReturnValue('new-local-id');
+      // switchProject needs loadProject to return a valid project for the new id
+      (loadProject as Mock).mockImplementation((id: string) =>
+        id === 'new-local-id' ? makeStoredProject({ localId: 'new-local-id' }) : null,
+      );
+
       const { result } = renderProjectStorage(TEST_LOCAL_ID);
 
       act(() => {
         result.current.actions.deleteLocalProject(TEST_LOCAL_ID);
       });
 
-      expect(result.current.state.activeLocalId).toBeNull();
+      // A new blank project is created and switched to — activeLocalId is not null.
+      expect(createProjectInStorage).toHaveBeenCalled();
+      expect(result.current.state.activeLocalId).toBe('new-local-id');
     });
 
     it('does not change active project when deleting a non-active project', () => {
@@ -477,6 +485,40 @@ describe('ProjectStorageProvider', () => {
       });
 
       expect(loadManifest).toHaveBeenCalled();
+    });
+
+    it('dispatches LOAD_STATE with the fallback state when the active project is deleted', () => {
+      const fallbackState = { registers: [{ id: 'fb-reg' }], activeRegisterId: null, registerValues: {} };
+      (getMostRecentProjectId as Mock).mockReturnValue('fallback-id');
+      (loadProject as Mock).mockImplementation((id: string) =>
+        id === 'fallback-id'
+          ? makeStoredProject({ localId: 'fallback-id', name: 'Fallback', state: fallbackState as StoredLocalProject['state'] })
+          : null,
+      );
+
+      const { result } = renderProjectStorage(TEST_LOCAL_ID);
+
+      act(() => { result.current.actions.deleteLocalProject(TEST_LOCAL_ID); });
+
+      // The fallback's state must be loaded into AppState via switchProject → deserializeState → LOAD_STATE.
+      expect(deserializeState).toHaveBeenCalledWith(fallbackState);
+    });
+
+    it('creates and loads a fresh project when the last project is deleted', () => {
+      (getMostRecentProjectId as Mock).mockReturnValue(null);
+      (createProjectInStorage as Mock).mockReturnValue('new-local-id');
+      // switchProject('new-local-id') needs loadProject to return a project
+      (loadProject as Mock).mockImplementation((id: string) =>
+        id === 'new-local-id' ? makeStoredProject({ localId: 'new-local-id' }) : null,
+      );
+
+      const { result } = renderProjectStorage(TEST_LOCAL_ID);
+
+      act(() => { result.current.actions.deleteLocalProject(TEST_LOCAL_ID); });
+
+      // createNewProject + switchProject(newId) ⇒ createProjectInStorage called + LOAD_STATE dispatched via deserializeState.
+      expect(createProjectInStorage).toHaveBeenCalled();
+      expect(deserializeState).toHaveBeenCalled();
     });
   });
 
@@ -741,9 +783,13 @@ describe('ProjectStorageProvider', () => {
   });
 
   describe('sessionStorage persistence', () => {
-    it('clears sessionStorage when activeLocalId is set to null', () => {
+    it('updates sessionStorage to new project id when the last project is deleted', () => {
       sessionStorage.setItem('register-viewer-active-project', TEST_LOCAL_ID);
       (getMostRecentProjectId as Mock).mockReturnValue(null);
+      (createProjectInStorage as Mock).mockReturnValue('new-local-id');
+      (loadProject as Mock).mockImplementation((id: string) =>
+        id === 'new-local-id' ? makeStoredProject({ localId: 'new-local-id' }) : null,
+      );
 
       const { result } = renderProjectStorage(TEST_LOCAL_ID);
 
@@ -751,7 +797,8 @@ describe('ProjectStorageProvider', () => {
         result.current.actions.deleteLocalProject(TEST_LOCAL_ID);
       });
 
-      expect(sessionStorage.getItem('register-viewer-active-project')).toBeNull();
+      // A new project is created; sessionStorage holds the new id (not null, not the deleted id).
+      expect(sessionStorage.getItem('register-viewer-active-project')).toBe('new-local-id');
     });
   });
 });

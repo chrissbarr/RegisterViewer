@@ -231,15 +231,24 @@ export function ProjectStorageProvider({ children, initialLocalId, initialUnsave
   }, [dispatch, flushDepartingSavedProject, setActiveAndPersist]);
 
   const deleteLocalProject = useCallback((localId: string) => {
+    const wasActive = localId === activeLocalIdRef.current;
     deleteProject(localId);
 
-    // If we just deleted the active project, switch to most recent remaining
-    if (localId === activeLocalId) {
-      setActiveAndPersist(getMostRecentProjectId());
+    if (wasActive) {
+      // Load the fallback's state via the normal switch path so the in-memory
+      // AppState no longer belongs to the deleted project (prevents the debounced
+      // autosave from writing deleted-project state over the fallback's record).
+      const fallback = getMostRecentProjectId();
+      if (fallback) {
+        switchProject(fallback);
+      } else {
+        const newId = createNewProject();
+        if (newId) switchProject(newId);
+      }
     }
 
     refreshProjectList();
-  }, [activeLocalId, setActiveAndPersist, refreshProjectList]);
+  }, [switchProject, createNewProject, refreshProjectList]);
 
   const projectRef = useRef(appState.project);
   useEffect(() => {

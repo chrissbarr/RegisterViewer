@@ -76,6 +76,9 @@ function AppShellInner({ cloudInit }: AppShellProps) {
   const cloudActions = useCloudSyncActions();
   const { activeLocalId, isUnsaved, unsavedName, unsavedSource } = useProjectStorage();
 
+  const activeLocalIdRef = useRef(activeLocalId);
+  useEffect(() => { activeLocalIdRef.current = activeLocalId; }, [activeLocalId]);
+
   // Initialize cloud state from props (when loaded from #/p/{id} URL)
   const cloudInitRef = useRef(cloudInit);
   useEffect(() => {
@@ -104,6 +107,9 @@ function AppShellInner({ cloudInit }: AppShellProps) {
     };
     pendingSaveRef.current = pending;
     const timer = setTimeout(() => {
+      // Defense-in-depth: if the active project changed since this save was
+      // scheduled, the in-memory state no longer belongs to pending.localId — skip.
+      if (!pending.isUnsaved && pending.localId !== activeLocalIdRef.current) return;
       const result = persistPendingLocalSave(pending);
       if (result.ok && pendingSaveRef.current === pending) {
         pendingSaveRef.current = null;
