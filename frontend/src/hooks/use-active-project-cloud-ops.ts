@@ -339,9 +339,10 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
           }
           return 'created';
         } else {
-          // Record the new server version immediately so a later sync can never
-          // re-PUT with the stale version and manufacture a 409.
+          // Record the new server version immediately so a later retry reads the
+          // confirmed version and cannot re-PUT a stale version.
           if (stillOnSameProject) {
+            internalRef.current = { ...internalRef.current, serverVersion: result.version };
             setInternal((prev) => ({ ...prev, serverVersion: result.version }));
           }
           if (capturedLocalId) {
@@ -356,6 +357,10 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
                   error: 'Project was saved to cloud, but the local copy could not be updated.',
                 }));
               }
+              // Best-effort: persist the confirmed server version to the manifest so
+              // later readers (e.g. the departure save) can't re-PUT a stale version
+              // and manufacture a 409. Ignore the result — we're already failing.
+              updateCloudMetadata(capturedLocalId, { serverVersion: result.version });
               return 'local-persist-failed';
             }
             const metadataResult = updateCloudMetadata(capturedLocalId, {
@@ -372,6 +377,10 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
                   error: 'Project was saved to cloud, but local cloud metadata could not be persisted.',
                 }));
               }
+              // Best-effort: persist the confirmed server version to the manifest so
+              // later readers (e.g. the departure save) can't re-PUT a stale version
+              // and manufacture a 409. Ignore the result — we're already failing.
+              updateCloudMetadata(capturedLocalId, { serverVersion: result.version });
               return 'local-persist-failed';
             }
           }

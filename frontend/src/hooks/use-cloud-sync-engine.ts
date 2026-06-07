@@ -8,7 +8,9 @@ const MAX_AUTO_SYNC_RETRIES = 4;
  * Cloud auto-sync status for the active project.
  * - `saved`: cloud is up to date with local state
  * - `syncing`: a cloud save is in progress
- * - `offline`: last sync attempt failed (network/server error)
+ * - `offline`: last sync attempt failed (network/server error); also set when
+ *   auto-sync gave up after repeated lock contention, or when the server write
+ *   succeeded but the local write failed (local-persist-failed)
  * - `local-only`: project is not cloud-backed (no auto-sync)
  */
 export type SyncStatus = 'saved' | 'syncing' | 'offline' | 'local-only';
@@ -139,28 +141,39 @@ export function useCloudSyncEngine(deps: UseCloudSyncEngineDeps): UseCloudSyncEn
       try {
         const outcome = await saveToCloud();
         if (cancelled) return;
-        if (outcome === 'lock-held') {
-          if (retryCount < MAX_AUTO_SYNC_RETRIES) {
-            // Exponential backoff so a wedged lock can't sustain a 0.33Hz PUT loop.
-            const delay = CLOUD_SYNC_DEBOUNCE_MS * 2 ** retryCount;
-            retryCount++;
-            syncTimerRef.current = setTimeout(attemptSync, delay);
-          } else {
-            setAsyncOverride('offline'); // gave up; next edit retriggers
+        switch (outcome) {
+          case 'lock-held':
+            if (retryCount < MAX_AUTO_SYNC_RETRIES) {
+              // Exponential backoff so a wedged lock can't sustain a 0.33Hz PUT loop.
+              const delay = CLOUD_SYNC_DEBOUNCE_MS * 2 ** retryCount;
+              retryCount++;
+              syncTimerRef.current = setTimeout(attemptSync, delay);
+            } else {
+              // Gave up. Recovers via manual save, project switch, or auth change — further edits alone do not re-arm auto-sync.
+              setAsyncOverride('offline');
+            }
+            return;
+          case 'local-persist-failed':
+            // Server write succeeded; the local write failed. Do NOT retry (a retry
+            // would re-PUT and could manufacture a 409). Surface offline.
+            setAsyncOverride('offline');
+            return;
+          case 'saved':
+          case 'created':
+          case 'noop':
+          case 'login-required':
+          case 'not-found':
+          case 'conflict':
+            setAsyncOverride(null);
+            return;
+          default: {
+            void ((_e: never) => _e)(outcome);
+            setAsyncOverride(null);
           }
-          return;
         }
-        if (outcome === 'local-persist-failed') {
-          // Server write succeeded; the local write failed. Do NOT retry (a retry
-          // would re-PUT and could manufacture a 409). Surface offline.
-          setAsyncOverride('offline');
-          return;
-        }
-        // saved / created / noop / login-required / not-found / conflict — terminal.
-        setAsyncOverride(null);
       } catch {
         if (!cancelled) setAsyncOverride('offline');
-        // No automatic retry -- the next user edit will trigger a fresh sync attempt
+        // Recovers via manual save, project switch, or auth change — further edits alone do not re-arm auto-sync.
       }
     };
     syncTimerRef.current = setTimeout(attemptSync, CLOUD_SYNC_DEBOUNCE_MS);

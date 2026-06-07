@@ -1061,6 +1061,24 @@ describe('useActiveProjectCloudOps', () => {
       expect(outcome).toBe('local-persist-failed');
       // Exactly one PUT — the failure path must not loop or re-PUT.
       expect(saveProjectToCloudImpl).toHaveBeenCalledTimes(1);
+
+      // The serverVersion must be recorded BEFORE patchProjectState runs, so a
+      // departure save reading from localStorage sees the confirmed version.
+      const setInternalCallWithVersion = (deps.setInternal as Mock).mock.invocationCallOrder.findIndex(
+        (_order, i) => {
+          const arg = (deps.setInternal as Mock).mock.calls[i][0];
+          const state = typeof arg === 'function' ? arg(deps.internalRef.current) : arg;
+          return state?.serverVersion === 3;
+        },
+      );
+      expect(setInternalCallWithVersion).toBeGreaterThanOrEqual(0);
+      const setInternalOrder = (deps.setInternal as Mock).mock.invocationCallOrder[setInternalCallWithVersion];
+      const patchProjectStateOrder = (patchProjectState as Mock).mock.invocationCallOrder[0];
+      expect(setInternalOrder).toBeLessThan(patchProjectStateOrder);
+
+      // Best-effort manifest write: the confirmed server version must be persisted
+      // so the departure save can't re-PUT a stale version and manufacture a 409.
+      expect(deps.updateCloudMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, { serverVersion: 3 });
     });
 
     it('returns "saved" on a successful update and "lock-held" when the lock is busy', async () => {

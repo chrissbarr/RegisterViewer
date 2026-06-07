@@ -5,7 +5,7 @@ import { loadProject, type ProjectStorageWriteResult } from '../utils/project-st
 import { clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock, requireJwt } from '../utils/cloud-utils';
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
 import type { Visibility, ProjectListEntry } from '../types/project';
-import { type CloudSyncCore, type CloudMetadataUpdate, type SaveOutcome, initialInternalState } from '../types/cloud-sync';
+import { type CloudSyncCore, type CloudMetadataUpdate, type SaveOutcome, isSaveSuccess, initialInternalState } from '../types/cloud-sync';
 import { isOwnedCloudEntry } from '../utils/project-identity';
 
 interface ProjectCloudOpsDeps {
@@ -40,7 +40,7 @@ export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
     // dirty tracking, status indicators, and reads fresh React state.
     if (localId === activeLocalIdRef.current) {
       const outcome = await activeProjectSave();
-      if (outcome !== 'saved' && outcome !== 'created' && outcome !== 'noop') {
+      if (!isSaveSuccess(outcome)) {
         throw new Error('Failed to save active project to cloud.');
       }
       return;

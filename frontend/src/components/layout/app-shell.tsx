@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { ChevronRight } from 'lucide-react';
 import { SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MAX, type AppState } from '../../types/register';
 import type { UnsavedProjectSource } from '../../types/project';
-import type { CloudInit } from '../../types/cloud-sync';
+import { isSaveSuccess, type CloudInit } from '../../types/cloud-sync';
 import { useAppState } from '../../context/app-context';
 import { EditProvider } from '../../context/edit-context';
 import { PreferencesProvider, usePreferences, usePreferencesActions } from '../../context/preferences-context';
@@ -209,7 +209,7 @@ function AppShellInner({ cloudInit }: AppShellProps) {
             serverVersion={cloud.conflict.serverVersion}
             onKeepLocalVersion={async () => {
               const outcome = await cloudActions.saveToCloud();
-              if (outcome !== 'saved' && outcome !== 'created' && outcome !== 'noop') {
+              if (!isSaveSuccess(outcome)) {
                 throw new Error('Could not save your changes. Please try again.');
               }
             }}

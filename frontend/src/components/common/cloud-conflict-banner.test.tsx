@@ -50,4 +50,21 @@ describe('CloudConflictBanner', () => {
       expect(onLoadServerVersion).toHaveBeenCalledTimes(1);
     });
   });
+
+  it('shows inline error text when onKeepLocalVersion rejects', async () => {
+    const onKeepLocalVersion = vi.fn(() => Promise.reject(new Error('Could not save your changes. Please try again.')));
+    render(
+      <CloudConflictBanner
+        serverVersion={7}
+        onKeepLocalVersion={onKeepLocalVersion}
+        onLoadServerVersion={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Keep local/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('status')).toHaveTextContent('Could not save your changes. Please try again.');
+    });
+  });
 });

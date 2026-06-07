@@ -12,13 +12,15 @@ export function CloudConflictBanner({
   onLoadServerVersion,
 }: CloudConflictBannerProps) {
   const [pendingAction, setPendingAction] = useState<'keep-local' | 'load-server' | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const runAction = async (action: 'keep-local' | 'load-server', fn: () => Promise<unknown>) => {
     setPendingAction(action);
+    setActionError(null);
     try {
       await fn();
-    } catch {
-      // The conflict remains visible; cloud actions own user-facing error state.
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Action failed. Please try again.');
     } finally {
       setPendingAction(null);
     }
@@ -67,6 +69,11 @@ export function CloudConflictBanner({
       <p className="text-xs leading-relaxed text-amber-700/80 dark:text-amber-300/70">
         Another session saved version {serverVersion}; your local edits are preserved.
       </p>
+      {actionError && (
+        <p className="text-xs text-red-600 dark:text-red-400" role="status">
+          {actionError}
+        </p>
+      )}
     </div>
   );
 }

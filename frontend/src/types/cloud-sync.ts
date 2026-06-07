@@ -93,6 +93,11 @@ export type SaveOutcome =
   | 'login-required' | 'lock-held'
   | 'not-found' | 'conflict' | 'local-persist-failed';
 
+/** True when a save outcome means the data is safely on the server (or nothing to do). */
+export function isSaveSuccess(outcome: SaveOutcome): boolean {
+  return outcome === 'saved' || outcome === 'created' || outcome === 'noop';
+}
+
 export interface SyncResult {
   updatedCount: number;
   staleCloudIds: string[];

@@ -615,7 +615,7 @@ describe('useCloudSyncEngine - auto-sync', () => {
       saveToCloud,
     });
 
-    const { rerender } = renderHook(
+    const { result, rerender } = renderHook(
       (props: UseCloudSyncEngineDeps) => useCloudSyncEngine(props),
       { initialProps: deps },
     );
@@ -627,8 +627,10 @@ describe('useCloudSyncEngine - auto-sync', () => {
     for (let i = 0; i < 10; i++) {
       await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
     }
-    // Capped at MAX_AUTO_SYNC_RETRIES attempts (not unbounded).
-    expect(saveToCloud.mock.calls.length).toBeLessThanOrEqual(5);
+    // With 100ms debounce, all 5 attempts land deterministically in the first 60s advance.
+    expect(saveToCloud).toHaveBeenCalledTimes(5);
+    // After exhaustion the hook must report offline (not saved or syncing).
+    expect(result.current.syncStatus).toBe('offline');
   });
 
   it('does not reschedule after a local-persist-failed outcome', async () => {
