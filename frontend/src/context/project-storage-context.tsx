@@ -239,9 +239,9 @@ export function ProjectStorageProvider({ children, initialLocalId, initialUnsave
       // AppState no longer belongs to the deleted project (prevents the debounced
       // autosave from writing deleted-project state over the fallback's record).
       const fallback = getMostRecentProjectId();
-      if (fallback) {
-        switchProject(fallback);
-      } else {
+      // Fall through to creating a fresh project when there is no fallback or the
+      // fallback record is unloadable (e.g. a quota-evicted cloud stub).
+      if (!fallback || !switchProject(fallback)) {
         const newId = createNewProject();
         if (newId) switchProject(newId);
       }

@@ -144,6 +144,8 @@ beforeEach(() => {
   sessionStorage.clear();
   (saveProject as Mock).mockReturnValue({ ok: true, status: 'ok', evictedLocalIds: [] });
   (updateProjectMetadata as Mock).mockReturnValue({ ok: true, status: 'ok', evictedLocalIds: [] });
+  // Restore the vi.mock factory default so per-test mockReturnValue calls don't leak.
+  (loadProject as Mock).mockReturnValue(null);
 
   // Default: manifest with one project (toProjectListEntry impl lives in vi.mock factory)
   const entry = makeManifestEntry();
@@ -462,6 +464,26 @@ describe('ProjectStorageProvider', () => {
       });
 
       // A new blank project is created and switched to — activeLocalId is not null.
+      expect(createProjectInStorage).toHaveBeenCalled();
+      expect(result.current.state.activeLocalId).toBe('new-local-id');
+    });
+
+    it('creates a new project when the fallback record is unloadable (quota-evicted stub)', () => {
+      // getMostRecentProjectId returns a stub id but the record has been evicted
+      (getMostRecentProjectId as Mock).mockReturnValue('stub-id');
+      (loadProject as Mock).mockImplementation((id: string) =>
+        id === 'new-local-id' ? makeStoredProject({ localId: 'new-local-id' }) : null,
+      );
+      (createProjectInStorage as Mock).mockReturnValue('new-local-id');
+
+      const { result } = renderProjectStorage(TEST_LOCAL_ID);
+
+      act(() => {
+        result.current.actions.deleteLocalProject(TEST_LOCAL_ID);
+      });
+
+      // switchProject('stub-id') returns false (loadProject returns null for stub-id),
+      // so deleteLocalProject falls through to createNewProject → 'new-local-id'.
       expect(createProjectInStorage).toHaveBeenCalled();
       expect(result.current.state.activeLocalId).toBe('new-local-id');
     });
