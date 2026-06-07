@@ -25,8 +25,10 @@ interface UseAuthTransitionDeps {
  * - Syncs cloud project metadata from the server.
  *
  * On sign-out (user→null):
- * - Purges all cloud-storage projects from localStorage.
- * - Switches to a remaining local project or creates a new one.
+ * - Removes clean (fully-synced) cloud projects from localStorage; demotes
+ *   dirty/conflicted ones to local projects so unsynced edits are never lost.
+ * - Re-homes to a remaining project (or creates one) only when the active
+ *   project was removed; a demoted active project stays put.
  * - Resets cloud sync state.
  */
 export function useAuthTransition(deps: UseAuthTransitionDeps): void {

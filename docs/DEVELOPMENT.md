@@ -54,7 +54,7 @@ The API and CLI migration runner both use `api/database/.migrate.lock`, so local
 
 Composer uses `config.platform.php=8.3.0` so dependency updates continue to resolve against the production compatibility floor even when Composer is run from a newer PHP version. Do not introduce PHP 8.4+ language features or dependencies unless the production runtime, Docker image, Composer platform, CI checks, and deployment docs are raised together.
 
-To reset and re-run migrations: `cd api && docker compose down -v && docker compose up -d`, then request the API or run `php database/migrate.php` in the test container.
+To reset and re-run migrations: `cd api && docker compose down -v && docker compose up -d`, then request the API or run `php database/migrate.php` in the test container. Also delete `api/database/migrations/.ready-*` after `docker compose down -v` — the readiness sentinel lives on the host bind mount and survives the volume reset, so a stale sentinel would short-circuit the schema gate against the now-empty database.
 
 ### Local Frontend + API
 
