@@ -436,6 +436,7 @@ describe('ProjectStorageProvider', () => {
 
     it('auto-switches to most recent project when active project is deleted', () => {
       (getMostRecentProjectId as Mock).mockReturnValue('fallback-id');
+      (loadProject as Mock).mockReturnValue(makeStoredProject({ localId: 'fallback-id' }));
       const { result } = renderProjectStorage(TEST_LOCAL_ID);
 
       act(() => {
