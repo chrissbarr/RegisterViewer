@@ -85,6 +85,16 @@ function quotaError(): DOMException {
   return new DOMException('quota exceeded', 'QuotaExceededError');
 }
 
+function securityError(): DOMException {
+  return new DOMException('access denied', 'SecurityError');
+}
+
+function mockAllGetItemFailures(error: unknown) {
+  return vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+    throw error;
+  });
+}
+
 beforeEach(() => {
   localStorage.clear();
   invalidateManifestCache();
@@ -656,6 +666,24 @@ describe('runMigrationIfNeeded', () => {
     expect(localStorage.getItem('register-viewer-state')).toBeNull();
     // Should still create a manifest
     expect(localStorage.getItem('register-viewer-manifest')).not.toBeNull();
+  });
+
+  it('does not throw when localStorage reads are blocked (disabled storage)', () => {
+    // Simulates site-data/cookies disabled: every read throws SecurityError.
+    mockAllGetItemFailures(securityError());
+
+    expect(() => runMigrationIfNeeded()).not.toThrow();
+
+    // With reads restored, the manifest degrades to the empty default.
+    vi.restoreAllMocks();
+    expect(loadManifest()).toEqual({ version: 1, projects: [] });
+  });
+
+  it('degrades to a no-op when the first-run seed write is blocked (quota/disabled)', () => {
+    // No manifest exists, so runMigrationIfNeeded attempts the seed write.
+    mockManifestSetItemFailures(quotaError());
+
+    expect(() => runMigrationIfNeeded()).not.toThrow();
   });
 });
 

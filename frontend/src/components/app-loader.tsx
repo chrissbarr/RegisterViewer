@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'motion/react';
-import { Loader2, TriangleAlert } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { AppProvider } from '../context/app-context';
+import { ErrorScreen } from './common/error-screen';
 import { AppShell } from './layout/app-shell';
 import { importFromJson, deserializeState, serializeState, serializeImportResult } from '../utils/storage';
 import { createSeedRegisters } from '../utils/seed-data';
@@ -317,189 +318,206 @@ export function AppLoader() {
   const [state, setState] = useState<LoaderState>({ phase: 'loading' });
 
   useEffect(() => {
-    // Step 1: Run migration from legacy storage
-    runMigrationIfNeeded();
+    try {
+      // Step 1: Run migration from legacy storage
+      runMigrationIfNeeded();
 
-    // Step 2: Load manifest and resolve initial project
-    const manifest = loadManifest();
-    const hash = window.location.hash;
-    const sessionActiveId = getSessionActiveId();
-    const cloudEnabled = isCloudEnabled();
+      // Step 2: Load manifest and resolve initial project
+      const manifest = loadManifest();
+      const hash = window.location.hash;
+      const sessionActiveId = getSessionActiveId();
+      const cloudEnabled = isCloudEnabled();
 
-    const resolution = resolveInitialProject(hash, manifest, sessionActiveId, cloudEnabled);
+      const resolution = resolveInitialProject(hash, manifest, sessionActiveId, cloudEnabled);
 
-    switch (resolution.type) {
-      case 'snapshot': {
-        parseSnapshotHash(hash)
-          .then((parsed) => {
-            if (parsed) {
-              const unsaved = persistUnsavedProjectState(getStateDisplayName(parsed), parsed, 'import');
-              clearHashAfterSuccessfulLoad();
-              setState({ phase: 'ready', initialState: parsed, unsaved });
-            } else {
+      switch (resolution.type) {
+        case 'snapshot': {
+          parseSnapshotHash(hash)
+            .then((parsed) => {
+              if (parsed) {
+                const unsaved = persistUnsavedProjectState(getStateDisplayName(parsed), parsed, 'import');
+                clearHashAfterSuccessfulLoad();
+                setState({ phase: 'ready', initialState: parsed, unsaved });
+              } else {
+                setState({ phase: 'error', message: 'Failed to decode shared snapshot. The URL may be corrupted or invalid.' });
+              }
+            })
+            .catch(() => {
               setState({ phase: 'error', message: 'Failed to decode shared snapshot. The URL may be corrupted or invalid.' });
-            }
-          })
-          .catch(() => {
-            setState({ phase: 'error', message: 'Failed to decode shared snapshot. The URL may be corrupted or invalid.' });
-          });
-        break;
-      }
-
-      case 'cloud': {
-        const jwt = readStartupJwt();
-
-        fetchAndParseCloudProject(resolution.cloudId, jwt ?? undefined)
-          .then((importResult) => {
-            const loadedState = buildCloudAppState(importResult);
-
-            // Open as an unsaved shared session only on confirmed
-            // non-ownership, or when ownership is unknown (anonymous or
-            // expired-JWT request — `authenticated` missing/false) and no
-            // owned manifest entry exists for this cloudId. With unknown
-            // ownership AND an owned entry, trust the manifest: opening your
-            // own share link while signed out must not fork a shared copy.
-            const treatAsShared = !importResult.isOwner
-              && (isConfirmedNonOwner(importResult)
-                || !findReusableOwnedCloudEntry(manifest, resolution.cloudId));
-
-            if (treatAsShared) {
-              const unsaved = persistUnsavedProjectState(getImportDisplayName(importResult), loadedState, 'cloud');
-              clearHashAfterSuccessfulLoad();
-              setState({
-                phase: 'ready',
-                initialState: loadedState,
-                unsaved,
-                cloudInit: {
-                  projectId: resolution.cloudId,
-                  isOwner: false,
-                  storage: 'local',
-                  serverVersion: importResult.version,
-                  cloudSavedAt: importResult.updatedAt,
-                  visibility: importResult.visibility,
-                },
-              });
-              return;
-            }
-
-            const owned = hydrateOrLoadOwnedCloudProject(manifest, resolution.cloudId, importResult);
-
-            setState({
-              phase: 'ready',
-              initialState: owned.state,
-              localId: owned.localId,
-              cloudInit: owned.cloudInit,
             });
-          })
-          .catch((err) => {
-            const cached = findCachedCloudProject(manifest, resolution.cloudId);
-            if (cached) {
-              setState(readyFromStoredProject(cached.entry.localId, cached.project));
-              return;
-            }
-            setState({ phase: 'error', message: friendlyErrorMessage(err, 'Failed to load project.') });
-          });
-        break;
-      }
+          break;
+        }
 
-      case 'local': {
-        const project = loadProject(resolution.localId);
-        if (project) {
-          void Promise.resolve().then(() => {
-            setState(readyFromStoredProject(resolution.localId, project));
-          });
-        } else {
-          const entry = manifest.projects.find(p => p.localId === resolution.localId);
-          if (entry && isOwnedCloudEntry(entry)) {
-            const cloudId = entry.cloudId;
-            const jwt = readStartupJwt();
-            fetchAndParseCloudProject(cloudId, jwt ?? undefined)
-              .then((importResult) => {
-                const storage = persistDownloadedCloudProject(resolution.localId, { ...entry, cloudId }, importResult);
-                const appState = buildCloudAppState(importResult);
+        case 'cloud': {
+          const jwt = readStartupJwt();
+
+          fetchAndParseCloudProject(resolution.cloudId, jwt ?? undefined)
+            .then((importResult) => {
+              const loadedState = buildCloudAppState(importResult);
+
+              // Open as an unsaved shared session only on confirmed
+              // non-ownership, or when ownership is unknown (anonymous or
+              // expired-JWT request — `authenticated` missing/false) and no
+              // owned manifest entry exists for this cloudId. With unknown
+              // ownership AND an owned entry, trust the manifest: opening your
+              // own share link while signed out must not fork a shared copy.
+              const treatAsShared = !importResult.isOwner
+                && (isConfirmedNonOwner(importResult)
+                  || !findReusableOwnedCloudEntry(manifest, resolution.cloudId));
+
+              if (treatAsShared) {
+                const unsaved = persistUnsavedProjectState(getImportDisplayName(importResult), loadedState, 'cloud');
+                clearHashAfterSuccessfulLoad();
                 setState({
                   phase: 'ready',
-                  initialState: appState,
-                  localId: resolution.localId,
+                  initialState: loadedState,
+                  unsaved,
                   cloudInit: {
-                    projectId: cloudId,
-                    isOwner: storage === 'cloud',
-                    storage,
+                    projectId: resolution.cloudId,
+                    isOwner: false,
+                    storage: 'local',
                     serverVersion: importResult.version,
                     cloudSavedAt: importResult.updatedAt,
                     visibility: importResult.visibility,
                   },
                 });
-              })
-              .catch((err) => {
-                setState({ phase: 'error', message: friendlyErrorMessage(err, 'Failed to load project.') });
+                return;
+              }
+
+              const owned = hydrateOrLoadOwnedCloudProject(manifest, resolution.cloudId, importResult);
+
+              setState({
+                phase: 'ready',
+                initialState: owned.state,
+                localId: owned.localId,
+                cloudInit: owned.cloudInit,
               });
+            })
+            .catch((err) => {
+              const cached = findCachedCloudProject(manifest, resolution.cloudId);
+              if (cached) {
+                setState(readyFromStoredProject(cached.entry.localId, cached.project));
+                return;
+              }
+              setState({ phase: 'error', message: friendlyErrorMessage(err, 'Failed to load project.') });
+            });
+          break;
+        }
+
+        case 'local': {
+          const project = loadProject(resolution.localId);
+          if (project) {
+            void Promise.resolve().then(() => {
+              setState(readyFromStoredProject(resolution.localId, project));
+            });
           } else {
-            // Project record missing — fall back to creating default (unsaved)
+            const entry = manifest.projects.find(p => p.localId === resolution.localId);
+            if (entry && isOwnedCloudEntry(entry)) {
+              const cloudId = entry.cloudId;
+              const jwt = readStartupJwt();
+              fetchAndParseCloudProject(cloudId, jwt ?? undefined)
+                .then((importResult) => {
+                  const storage = persistDownloadedCloudProject(resolution.localId, { ...entry, cloudId }, importResult);
+                  const appState = buildCloudAppState(importResult);
+                  setState({
+                    phase: 'ready',
+                    initialState: appState,
+                    localId: resolution.localId,
+                    cloudInit: {
+                      projectId: cloudId,
+                      isOwner: storage === 'cloud',
+                      storage,
+                      serverVersion: importResult.version,
+                      cloudSavedAt: importResult.updatedAt,
+                      visibility: importResult.visibility,
+                    },
+                  });
+                })
+                .catch((err) => {
+                  setState({ phase: 'error', message: friendlyErrorMessage(err, 'Failed to load project.') });
+                });
+            } else {
+              // Project record missing — fall back to creating default (unsaved)
+              const { state: seedState, unsaved } = createDefaultUnsavedProject();
+              void Promise.resolve().then(() => {
+                setState({ phase: 'ready', initialState: seedState, unsaved });
+              });
+            }
+          }
+          break;
+        }
+
+        case 'unsaved': {
+          const unsavedData = loadUnsavedProject();
+          if (unsavedData) {
+            const appState = deserializeState(unsavedData.state);
+            void Promise.resolve().then(() => {
+              setState({
+                phase: 'ready',
+                initialState: appState,
+                unsaved: { name: unsavedData.name, source: unsavedData.source ?? 'new' },
+              });
+            });
+          } else {
+            // Unsaved data was cleared externally — fall through to most recent or seed
+            const mostRecentId = getMostRecentProjectId();
+            if (mostRecentId) {
+              const project = loadProject(mostRecentId);
+              if (project) {
+                void Promise.resolve().then(() => {
+                  setState(readyFromStoredProject(mostRecentId, project));
+                });
+                break;
+              }
+            }
             const { state: seedState, unsaved } = createDefaultUnsavedProject();
             void Promise.resolve().then(() => {
               setState({ phase: 'ready', initialState: seedState, unsaved });
             });
           }
+          break;
         }
-        break;
-      }
 
-      case 'unsaved': {
-        const unsavedData = loadUnsavedProject();
-        if (unsavedData) {
-          const appState = deserializeState(unsavedData.state);
-          void Promise.resolve().then(() => {
-            setState({
-              phase: 'ready',
-              initialState: appState,
-              unsaved: { name: unsavedData.name, source: unsavedData.source ?? 'new' },
-            });
-          });
-        } else {
-          // Unsaved data was cleared externally — fall through to most recent or seed
-          const mostRecentId = getMostRecentProjectId();
-          if (mostRecentId) {
-            const project = loadProject(mostRecentId);
-            if (project) {
-              void Promise.resolve().then(() => {
-                setState(readyFromStoredProject(mostRecentId, project));
-              });
-              break;
-            }
-          }
+        case 'create-default': {
           const { state: seedState, unsaved } = createDefaultUnsavedProject();
           void Promise.resolve().then(() => {
             setState({ phase: 'ready', initialState: seedState, unsaved });
           });
+          break;
         }
-        break;
       }
-
-      case 'create-default': {
-        const { state: seedState, unsaved } = createDefaultUnsavedProject();
-        void Promise.resolve().then(() => {
-          setState({ phase: 'ready', initialState: seedState, unsaved });
-        });
-        break;
-      }
+    } catch (err) {
+      // Synchronous storage throws (disabled site data → SecurityError, or a
+      // quota-failed seed write) must route to the error screen rather than
+      // leave a permanently stuck spinner. Message stays honest: disabled
+      // storage cannot be recovered by Continue. Defer the setState (like the
+      // resolution branches) so it doesn't run synchronously in the effect body.
+      void Promise.resolve().then(() => {
+        setState({ phase: 'error', message: friendlyErrorMessage(err, "Couldn't access browser storage. Your browser may be blocking site data, or storage may be full.") });
+      });
     }
   }, []);
 
   const handleContinue = useCallback(() => {
-    // Clear the hash and load default state
-    history.replaceState(null, '', window.location.pathname + window.location.search);
-    runMigrationIfNeeded();
-    const mostRecentId = getMostRecentProjectId();
-    if (mostRecentId) {
-      const project = loadProject(mostRecentId);
-      if (project) {
-        setState(readyFromStoredProject(mostRecentId, project));
-        return;
+    try {
+      // Clear the hash and load default state
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+      runMigrationIfNeeded();
+      const mostRecentId = getMostRecentProjectId();
+      if (mostRecentId) {
+        const project = loadProject(mostRecentId);
+        if (project) {
+          setState(readyFromStoredProject(mostRecentId, project));
+          return;
+        }
       }
+      const { state: seedState, unsaved } = createDefaultUnsavedProject();
+      setState({ phase: 'ready', initialState: seedState, unsaved });
+    } catch (err) {
+      // Under persistent disabled/quota storage the seed write re-throws —
+      // stay on the error screen rather than crash the tree.
+      setState({ phase: 'error', message: friendlyErrorMessage(err, "Couldn't access browser storage. Your browser may be blocking site data, or storage may be full.") });
     }
-    const { state: seedState, unsaved } = createDefaultUnsavedProject();
-    setState({ phase: 'ready', initialState: seedState, unsaved });
   }, []);
 
   if (state.phase === 'loading') {
@@ -515,13 +533,9 @@ export function AppLoader() {
 
   if (state.phase === 'error') {
     return (
-      <div className="h-screen flex items-center justify-center bg-gray-950 text-gray-100">
-        <div className="max-w-md w-full mx-4 rounded-xl border border-gray-700 bg-gray-800 p-6 shadow-xl">
-          <div className="flex items-center gap-3 mb-4">
-            <TriangleAlert size={24} className="text-red-400 shrink-0" />
-            <h2 className="text-lg font-bold">Unable to load project</h2>
-          </div>
-          <p className="text-sm text-gray-300 mb-6">{state.message}</p>
+      <ErrorScreen
+        message={state.message}
+        action={
           <button
             onClick={handleContinue}
             className="w-full px-4 py-2 rounded-lg text-sm font-medium
@@ -530,8 +544,8 @@ export function AppLoader() {
           >
             Continue to Register Viewer
           </button>
-        </div>
-      </div>
+        }
+      />
     );
   }
 

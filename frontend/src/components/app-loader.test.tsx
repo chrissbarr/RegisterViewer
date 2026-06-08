@@ -1114,6 +1114,55 @@ describe('AppLoader', () => {
     });
   });
 
+  describe('synchronous startup-throw handling', () => {
+    it('routes a SecurityError from runMigrationIfNeeded to the error screen', async () => {
+      (resolveInitialProject as Mock).mockReturnValue({ type: 'create-default' });
+      (runMigrationIfNeeded as Mock).mockImplementation(() => {
+        throw new DOMException('access denied', 'SecurityError');
+      });
+
+      render(<AppLoader />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Unable to load project')).toBeInTheDocument();
+      });
+      // Did not get stuck on the loading spinner.
+      expect(screen.queryByText('Loading project...')).not.toBeInTheDocument();
+    });
+
+    it('routes a failed unsaved-seed write (ok:false) on create-default to the error screen', async () => {
+      (resolveInitialProject as Mock).mockReturnValue({ type: 'create-default' });
+      (saveUnsavedProjectState as Mock).mockReturnValue({ ok: false, status: 'quota-exceeded' });
+
+      render(<AppLoader />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Unable to load project')).toBeInTheDocument();
+      });
+    });
+
+    it('does not crash when Continue is clicked while runMigrationIfNeeded still throws', async () => {
+      // Reach the error screen via the synchronous migration throw.
+      (resolveInitialProject as Mock).mockReturnValue({ type: 'create-default' });
+      (runMigrationIfNeeded as Mock).mockImplementation(() => {
+        throw new DOMException('access denied', 'SecurityError');
+      });
+
+      render(<AppLoader />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Continue to Register Viewer/i })).toBeInTheDocument();
+      });
+
+      act(() => {
+        fireEvent.click(screen.getByRole('button', { name: /Continue to Register Viewer/i }));
+      });
+
+      // Stays on the error screen rather than crashing the tree.
+      expect(screen.getByText('Unable to load project')).toBeInTheDocument();
+    });
+  });
+
   describe('AppProvider and AppShell integration', () => {
     it('renders AppShell inside AppProvider for ready state', async () => {
       (resolveInitialProject as Mock).mockReturnValue({ type: 'create-default' });

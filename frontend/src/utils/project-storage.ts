@@ -743,8 +743,21 @@ export function clearUnsavedProject(): void {
 
 /** Migrate legacy single-project state into a manifest project entry. */
 function migrateLegacyState(): void {
-  if (localStorage.getItem(MANIFEST_KEY)) return;
-  const legacyState = localStorage.getItem(LEGACY_STATE_KEY);
+  // Guard the first storage touch: a SecurityError here (site data/cookies
+  // disabled) must degrade to "no legacy state" rather than throw, matching
+  // loadManifest/getSessionActiveId which already swallow and return defaults.
+  let manifestRaw: string | null;
+  let legacyState: string | null;
+  try {
+    manifestRaw = localStorage.getItem(MANIFEST_KEY);
+    if (manifestRaw) return;
+    legacyState = localStorage.getItem(LEGACY_STATE_KEY);
+  } catch (err) {
+    if (import.meta.env.DEV) {
+      console.warn('[project-storage] Failed to read legacy state from localStorage:', err);
+    }
+    return;
+  }
   if (!legacyState) return;
   try {
     const parsed = JSON.parse(legacyState) as SerializedAppState;
@@ -767,6 +780,20 @@ function migrateLegacyState(): void {
  * 5. Recover orphaned project keys not tracked in the manifest
  */
 export function runMigrationIfNeeded(): void {
+  try {
+    runMigrationUnguarded();
+  } catch (err) {
+    // Disabled storage (SecurityError) or quota on the first-run seed write
+    // must not throw — startup degrades to an in-memory empty manifest rather
+    // than a dead-end screen. saveManifest's throwing contract is preserved for
+    // its other callers; only this startup path swallows.
+    if (import.meta.env.DEV) {
+      console.warn('[project-storage] Migration skipped due to storage failure:', err);
+    }
+  }
+}
+
+function runMigrationUnguarded(): void {
   migrateLegacyState();
 
   // Clean up legacy keys unconditionally.
