@@ -928,6 +928,45 @@ final class ProjectApiTest extends TestCase
         $this->assertSame(1, (int) $project['version']);
     }
 
+    /**
+     * Pins the server invariant the frontend sync layer depends on: a visibility
+     * PATCH is version-neutral (leaves `version` unchanged) while a PUT increments
+     * it. `version` is the sole payload identity; visibility metadata changes must
+     * never bump it (otherwise PUT optimistic concurrency would break).
+     */
+    #[Test]
+    public function handlePatchVisibilityLeavesVersionUnchangedWhilePutIncrementsIt(): void
+    {
+        $userId = $this->createTestUser('patch-version-invariant@example.com');
+        $id = generatePublicId();
+        dbCreateProject(self::$db, $id, 'private', self::validDataJson(), null, $userId);
+
+        $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => 'patch-version-invariant@example.com'];
+
+        // PATCH visibility: version must NOT change.
+        $patchResponse = handlePatchProject(self::$db, $id, $auth, ['visibility' => 'unlisted']);
+        $this->assertSame(200, $patchResponse->status);
+        $afterPatch = dbGetProject(self::$db, $id);
+        $this->assertSame('unlisted', $afterPatch['visibility']);
+        $this->assertSame(1, (int) $afterPatch['version']);
+
+        // A second PATCH is still version-neutral.
+        $secondPatch = handlePatchProject(self::$db, $id, $auth, ['visibility' => 'private']);
+        $this->assertSame(200, $secondPatch->status);
+        $this->assertSame(1, (int) dbGetProject(self::$db, $id)['version']);
+
+        // PUT increments version (optimistic concurrency).
+        $putResponse = handleUpdateProject(
+            self::$db,
+            $id,
+            $auth,
+            $this->makeParsedBody($this->updateDataWithRegister('BUMPED'), null, 1),
+        );
+        $this->assertSame(200, $putResponse->status);
+        $this->assertSame(2, $putResponse->body['version']);
+        $this->assertSame(2, (int) dbGetProject(self::$db, $id)['version']);
+    }
+
     #[Test]
     public function handlePatchThenMatchingVersionUpdatePreservesPatchedVisibility(): void
     {

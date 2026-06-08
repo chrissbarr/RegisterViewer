@@ -485,11 +485,14 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
     if (cloudId && isOwner) {
       try {
         const jwt = requireJwt(getJwt);
-        await patchVisibilityImpl(cloudId, v, jwt);
+        // A visibility PATCH advances the server's updated_at without bumping
+        // version; persist the returned updatedAt so local cloudSavedAt tracks it
+        // immediately rather than waiting for the next LIST sync.
+        const updatedAt = await patchVisibilityImpl(cloudId, v, jwt);
 
         const currentLocalId = activeLocalIdRef.current;
         if (currentLocalId) {
-          const metadataResult = updateCloudMetadata(currentLocalId, { visibility: v });
+          const metadataResult = updateCloudMetadata(currentLocalId, { visibility: v, cloudSavedAt: updatedAt });
           if (!metadataResult.ok) {
             setInternal((prev) => ({
               ...prev,

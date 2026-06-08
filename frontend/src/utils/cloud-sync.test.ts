@@ -56,22 +56,28 @@ describe('computeSyncPatches', () => {
     expect(result.cloudOnlyProjects).toEqual([]);
   });
 
-  it('repairs missing serverVersion when cloudSavedAt matches the server timestamp', () => {
+  // Version is the sole payload identity: a missing/zero local serverVersion is
+  // backfilled from list metadata regardless of timestamps.
+  it('backfills a missing serverVersion from list metadata regardless of timestamps', () => {
     const local = [makeEntry({
       localId: 'l1',
       cloudId: 'c1',
       storage: 'cloud',
-      cloudSavedAt: '2024-01-02T00:00:00Z',
+      // Deliberately mismatched timestamp — the old behavior depended on this
+      // matching; the version-only rule no longer cares.
+      cloudSavedAt: '2024-01-01T00:00:00Z',
       visibility: 'private',
       serverVersion: null,
     })];
     const server = [makeServer({ id: 'c1', visibility: 'private', updatedAt: '2024-01-02T00:00:00Z', version: 7 })];
 
     const result = computeSyncPatches(local, server);
-    expect(result.patches).toEqual([{ localId: 'l1', serverVersion: 7 }]);
+    // Server is newer and version was unknown: backfill the version AND advance
+    // the informational timestamp.
+    expect(result.patches).toEqual([{ localId: 'l1', cloudSavedAt: '2024-01-02T00:00:00Z', serverVersion: 7 }]);
   });
 
-  it('does not advance serverVersion from list metadata when the server payload is newer', () => {
+  it('does not advance serverVersion from list metadata when both versions are known and differ', () => {
     const local = [makeEntry({
       localId: 'l1',
       cloudId: 'c1',
@@ -83,10 +89,12 @@ describe('computeSyncPatches', () => {
     const server = [makeServer({ id: 'c1', visibility: 'private', updatedAt: '2024-01-02T00:00:00Z', version: 2 })];
 
     const result = computeSyncPatches(local, server);
-    expect(result.patches).toEqual([]);
+    // Known-but-different versions defer to the version-gated freshness GET; no
+    // serverVersion patch. Timestamp still advances (informational only).
+    expect(result.patches).toEqual([{ localId: 'l1', cloudSavedAt: '2024-01-02T00:00:00Z' }]);
   });
 
-  it('does not repair serverVersion when the local timestamp is newer than the list timestamp', () => {
+  it('backfills a missing serverVersion even when the local timestamp is newer than the list timestamp', () => {
     const local = [makeEntry({
       localId: 'l1',
       cloudId: 'c1',
@@ -98,7 +106,9 @@ describe('computeSyncPatches', () => {
     const server = [makeServer({ id: 'c1', visibility: 'private', updatedAt: '2024-01-02T00:00:00Z', version: 7 })];
 
     const result = computeSyncPatches(local, server);
-    expect(result.patches).toEqual([]);
+    // Version unknown locally → backfill from list. Timestamp does NOT advance
+    // (local is newer; never regress the informational timestamp).
+    expect(result.patches).toEqual([{ localId: 'l1', serverVersion: 7 }]);
   });
 
   it('does not regress a higher local serverVersion from an older list response', () => {
@@ -281,7 +291,9 @@ describe('computeSyncPatches', () => {
     expect(result.patches).toEqual([{ localId: 'l1', cloudSavedAt: '2024-01-01T00:00:00Z' }]);
   });
 
-  it('repairs stale serverVersion when cloudSavedAt matches the server timestamp', () => {
+  // Same-second DATETIME(1s) collision: identical updatedAt strings must NOT be
+  // treated as payload identity. Pre-fix wrongly adopted the listed version.
+  it('does not adopt a differing server version on a same-second timestamp collision', () => {
     const local = [makeEntry({
       localId: 'l1',
       cloudId: 'c1',
@@ -293,7 +305,9 @@ describe('computeSyncPatches', () => {
     const server = [makeServer({ id: 'c1', updatedAt: '2024-01-02T00:00:00Z', visibility: 'private', version: 7 })];
 
     const result = computeSyncPatches(local, server);
-    expect(result.patches).toEqual([{ localId: 'l1', serverVersion: 7 }]);
+    // Known-but-different versions: no serverVersion patch despite the identical
+    // timestamp. Timestamps are equal so no informational advance either.
+    expect(result.patches).toEqual([]);
   });
 });
 
@@ -466,12 +480,16 @@ describe('syncCloudProjectsFromServer', () => {
         localId: 'patched-local',
         cloudId: 'patched-cloud',
         storage: 'cloud',
-        cloudSavedAt: '2024-01-01T00:00:00Z',
+        // Version + timestamp already match the server: only visibility differs,
+        // keeping this test focused on ordering/protection rather than the
+        // version-identity behavior covered elsewhere.
+        cloudSavedAt: '2024-01-02T00:00:00Z',
+        serverVersion: 1,
       }),
     ];
     (listProjects as ReturnType<typeof vi.fn>).mockResolvedValue({
       projects: [
-        makeServer({ id: 'patched-cloud', visibility: 'unlisted' }),
+        makeServer({ id: 'patched-cloud', visibility: 'unlisted', updatedAt: '2024-01-02T00:00:00Z', version: 1 }),
         makeServer({ id: 'new-cloud', title: 'Remote Only' }),
       ],
     });

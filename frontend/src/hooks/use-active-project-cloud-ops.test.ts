@@ -884,7 +884,9 @@ describe('useActiveProjectCloudOps', () => {
   });
 
   describe('setVisibility', () => {
-    it('patches visibility on server and updates metadata', async () => {
+    const PATCH_UPDATED_AT = '2024-07-15T12:34:56Z';
+
+    it('patches visibility on server and updates both visibility and cloudSavedAt metadata', async () => {
       const deps = makeDefaultDeps();
       deps.internalRef.current = {
         ...INITIAL_INTERNAL_STATE,
@@ -892,7 +894,10 @@ describe('useActiveProjectCloudOps', () => {
         isOwner: true,
         visibility: 'private',
       };
-      (patchVisibilityImpl as Mock).mockResolvedValue(undefined);
+      // patchVisibilityImpl now returns the server updatedAt so cloudSavedAt can
+      // track server updated_at immediately (a visibility PATCH advances
+      // updated_at without bumping version).
+      (patchVisibilityImpl as Mock).mockResolvedValue(PATCH_UPDATED_AT);
 
       const { result } = renderHook(() => useActiveProjectCloudOps(deps));
 
@@ -901,7 +906,10 @@ describe('useActiveProjectCloudOps', () => {
       });
 
       expect(patchVisibilityImpl).toHaveBeenCalledWith(TEST_CLOUD_ID, 'unlisted', TEST_JWT);
-      expect(deps.updateCloudMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, { visibility: 'unlisted' });
+      expect(deps.updateCloudMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, {
+        visibility: 'unlisted',
+        cloudSavedAt: PATCH_UPDATED_AT,
+      });
       // Optimistic update — setInternal is called with the new visibility
       expect(deps.setInternal).toHaveBeenCalled();
     });
@@ -933,6 +941,34 @@ describe('useActiveProjectCloudOps', () => {
       expect(revertedState).toMatchObject({
         visibility: 'private',
         error: 'Failed to update visibility.',
+      });
+    });
+
+    it('reverts both visibility and cloudSavedAt atomically on a failed metadata write', async () => {
+      const deps = makeDefaultDeps();
+      deps.internalRef.current = {
+        ...INITIAL_INTERNAL_STATE,
+        cloudId: TEST_CLOUD_ID,
+        isOwner: true,
+        visibility: 'private',
+      };
+      (patchVisibilityImpl as Mock).mockResolvedValue(PATCH_UPDATED_AT);
+      // Local metadata write fails after a successful server PATCH.
+      deps.updateCloudMetadata.mockReturnValue({ ok: false, status: 'unknown-error', evictedLocalIds: [] });
+
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+
+      await act(async () => {
+        await result.current.setVisibility('unlisted');
+      });
+
+      // The revert must restore the previous visibility (no half-applied state
+      // where visibility is reverted but cloudSavedAt advanced).
+      const lastCall = deps.setInternal.mock.calls.at(-1)![0];
+      const revertedState = typeof lastCall === 'function' ? lastCall(INITIAL_INTERNAL_STATE) : lastCall;
+      expect(revertedState).toMatchObject({
+        visibility: 'private',
+        error: 'Visibility changed on server, but local metadata could not be updated.',
       });
     });
   });

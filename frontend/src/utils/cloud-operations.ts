@@ -99,12 +99,19 @@ export async function deleteProjectFromCloudImpl(cloudId: string, jwt: string): 
 
 /**
  * Patch the visibility of a cloud project using the PATCH endpoint.
+ *
+ * Returns the server `updatedAt` from the PATCH response so callers can keep
+ * local `cloudSavedAt` in sync with the server's `updated_at` immediately. Note
+ * a visibility PATCH advances `updated_at` but does NOT bump `version` — the
+ * timestamp is informational, not payload identity.
+ *
  * @throws If the API call fails.
  */
 export async function patchVisibilityImpl(
   cloudId: string,
   visibility: Visibility,
   jwt: string,
-): Promise<void> {
-  await apiPatchVisibility(cloudId, visibility, jwt);
+): Promise<string> {
+  const result = await apiPatchVisibility(cloudId, visibility, jwt);
+  return result.updatedAt;
 }

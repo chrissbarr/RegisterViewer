@@ -71,13 +71,20 @@ export function computeSyncPatches(
       // Do not regress metadata from an older list response that arrived late.
       if (localVersion && serverVersion && serverVersion < localVersion) continue;
 
+      // Invariant: `version` is the sole payload identity. `updated_at` /
+      // `cloudSavedAt` is informational/ordering only — a metadata-only PATCH
+      // (e.g. visibility) advances `updated_at` without bumping `version`, so a
+      // timestamp must never be used as a proxy for payload identity.
       const serverTime = new Date(serverProject.updatedAt).getTime();
       const localCloudTime = entry.cloudSavedAt ? new Date(entry.cloudSavedAt).getTime() : 0;
       const effectiveLocalTime = Number.isNaN(localCloudTime) ? 0 : localCloudTime;
-      const serverPayloadVersionMatchesLocal = !!localVersion && !!serverVersion && serverVersion === localVersion;
       if (!Number.isNaN(serverTime)) {
-        // Treat malformed local date as epoch 0 (always older than server)
-        if (serverTime > effectiveLocalTime && serverPayloadVersionMatchesLocal) {
+        // Advance the informational timestamp when the server is genuinely newer.
+        // Version regression already short-circuited above, so reaching here means
+        // the server version is not older; the timestamp is ordering metadata,
+        // never payload identity. Treat a malformed local date as epoch 0 (always
+        // older than server).
+        if (serverTime > effectiveLocalTime) {
           patch.cloudSavedAt = serverProject.updatedAt;
           hasUpdate = true;
         }
@@ -86,14 +93,13 @@ export function computeSyncPatches(
         patch.visibility = serverProject.visibility;
         hasUpdate = true;
       }
-      if (serverVersion && serverVersion !== localVersion) {
-        const cachedPayloadMatchesListedServer = !Number.isNaN(serverTime) &&
-          !Number.isNaN(localCloudTime) &&
-          localCloudTime === serverTime;
-        if (cachedPayloadMatchesListedServer) {
-          patch.serverVersion = serverVersion;
-          hasUpdate = true;
-        }
+      // Backfill a missing/zero local serverVersion from list metadata. When both
+      // versions are known AND differ, emit NO serverVersion patch — defer to the
+      // version-gated freshness GET (checkAndPullFreshVersion) rather than guessing
+      // payload identity from a timestamp.
+      if (serverVersion && !localVersion) {
+        patch.serverVersion = serverVersion;
+        hasUpdate = true;
       }
       if (hasUpdate) patches.push(patch);
     } else {

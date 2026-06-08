@@ -1454,7 +1454,12 @@ describe('CloudSyncProvider', () => {
       expect(updateProjectMetadata).toHaveBeenCalledWith(
         'patched-local',
         {
+          // version is sole payload identity: a missing local serverVersion is
+          // backfilled from list metadata, and the informational cloudSavedAt
+          // advances because the server is genuinely newer.
           visibility: 'unlisted',
+          cloudSavedAt: '2024-02-01T00:00:00Z',
+          serverVersion: 1,
         },
         {
           preserveLocalSavedAt: true,

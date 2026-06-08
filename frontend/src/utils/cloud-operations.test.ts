@@ -162,15 +162,16 @@ describe('deleteProjectFromCloudImpl', () => {
 describe('patchVisibilityImpl', () => {
   const jwt = 'test-jwt-token';
 
-  it('patches visibility via PATCH endpoint', async () => {
+  it('patches visibility via PATCH endpoint and returns the server updatedAt', async () => {
     (patchProjectVisibility as Mock).mockResolvedValue({
       id: 'cloud-vis',
       updatedAt: '2024-01-03T00:00:00Z',
     });
 
-    await patchVisibilityImpl('cloud-vis', 'unlisted', jwt);
+    const updatedAt = await patchVisibilityImpl('cloud-vis', 'unlisted', jwt);
 
     expect(patchProjectVisibility).toHaveBeenCalledWith('cloud-vis', 'unlisted', jwt);
+    expect(updatedAt).toBe('2024-01-03T00:00:00Z');
   });
 
   it('propagates API errors', async () => {
