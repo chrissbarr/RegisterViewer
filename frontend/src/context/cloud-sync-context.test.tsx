@@ -2182,7 +2182,7 @@ describe('CloudSyncProvider', () => {
         state,
       })));
       (apiUpdateProject as Mock).mockRejectedValue(
-        new ApiError(409, { error: 'version_conflict', currentVersion: 9 }),
+        new ApiError(409, { error: 'Project has been modified by another session', code: 'version_conflict', currentVersion: 9 }),
       );
       (apiGetProject as Mock).mockReturnValue(new Promise(() => {}));
 

@@ -4,9 +4,9 @@ import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl
 vi.mock('./api-client', () => ({
   ApiError: class ApiError extends Error {
     status: number;
-    errorBody: { error: string };
-    constructor(status: number, errorBody: { error: string }) {
-      super(errorBody.error);
+    errorBody: Record<string, unknown>;
+    constructor(status: number, errorBody: Record<string, unknown>) {
+      super(String(errorBody.error));
       this.name = 'ApiError';
       this.status = status;
       this.errorBody = errorBody;
@@ -111,6 +111,21 @@ describe('saveProjectToCloudImpl', () => {
     const result = await saveProjectToCloudImpl(payload, 'cloud-abc', jwt, 3);
 
     expect(result).toEqual({ kind: 'conflict', serverVersion: 5 });
+  });
+
+  it('intercepts the new server 409 envelope on currentVersion, not the code/error token', async () => {
+    // Mirrors the exact body update-project.php now returns: `error` is human,
+    // the machine token lives in `code`. Interception must key on `currentVersion`.
+    const err = new ApiError(409, {
+      error: 'Project has been modified by another session',
+      code: 'version_conflict',
+      currentVersion: 7,
+    });
+    (updateProject as Mock).mockRejectedValue(err);
+
+    const result = await saveProjectToCloudImpl(payload, 'cloud-abc', jwt, 3);
+
+    expect(result).toEqual({ kind: 'conflict', serverVersion: 7 });
   });
 
   it('throws on network error during update', async () => {

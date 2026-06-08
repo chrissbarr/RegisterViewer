@@ -848,7 +848,8 @@ final class ProjectApiTest extends TestCase
         );
 
         $this->assertSame(409, $staleResponse->status);
-        $this->assertSame('version_conflict', $staleResponse->body['error']);
+        $this->assertSame('version_conflict', $staleResponse->body['code']);
+        $this->assertSame('Project has been modified by another session', $staleResponse->body['error']);
         $this->assertSame(2, $staleResponse->body['currentVersion']);
         $this->assertProjectStorageUnchanged($id, $afterVisibilityPatch['data'], 2, 'unlisted');
     }

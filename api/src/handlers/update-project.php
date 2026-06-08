@@ -61,8 +61,8 @@ function handleUpdateProject(PDO $db, string $id, array $auth, array|\Closure $b
             $id, $clientVersion, $result['version']
         ));
         return new ApiResponse([
-            'error'          => 'version_conflict',
-            'message'        => 'Project has been modified by another session',
+            'error'          => 'Project has been modified by another session',
+            'code'           => 'version_conflict',
             'currentVersion' => $result['version'],
         ], 409);
     }

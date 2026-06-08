@@ -431,13 +431,16 @@ The `version` must match the server's current version. On success, the server in
 
 ```json
 {
-  "error": "version_conflict",
-  "message": "Project has been modified by another session",
+  "error": "Project has been modified by another session",
+  "code": "version_conflict",
   "currentVersion": 5
 }
 ```
 
-The client should fetch the latest version and either merge or let the user choose.
+`error` is the human-readable sentence; `code` is the stable machine token (see
+[Error Response Format](#error-response-format)); `currentVersion` is the
+server's current data version. The client should fetch the latest version and
+either merge or let the user choose.
 
 **Errors:**
 
@@ -586,11 +589,52 @@ Strict-Transport-Security: max-age=31536000; includeSubDomains
 
 ## Error Response Format
 
+The standard error envelope is:
+
 ```json
 {
-  "error": "Human-readable error message"
+  "error": "Human-readable error message",
+  "code": "stable_machine_token",
+  "currentVersion": 5
 }
 ```
+
+- `error` — **always present, always human-readable.** Safe to surface directly
+  to users. Never carries a machine token.
+- `code` — **optional** stable machine token for programmatic handling. Present
+  only on the responses listed in the table below; clients should branch on
+  `code` (or, for `version_conflict`, on the `currentVersion` field) rather than
+  string-matching `error`, whose wording may change.
+- Additional fields — endpoint-specific details may accompany the envelope. For
+  example, the 409 version conflict adds `currentVersion` (the server's current
+  data version).
+
+### Stable error codes
+
+This table is the authoritative list of machine `code` values. It is maintained
+as part of the API contract; new codes are added here when introduced.
+
+| `code` | HTTP status | Where | Meaning |
+|---|---|---|---|
+| `version_conflict` | 409 | Update Project (PUT) | The project was modified by another session; `currentVersion` holds the server's current data version. |
+| `schema_not_ready` | 503 | Any route (readiness gate) | Database migrations are not fully applied; the API is not yet serving. |
+| `config_not_ready` | 503 | Any route (readiness gate) | Required auth configuration (`jwt_secret` / `otp_hash_secret`) is missing or invalid. |
+
+**Accepted variants (outside the standard envelope).** Two responses
+intentionally diverge from the `{ error, code?, ... }` shape and are documented
+here rather than normalized:
+
+- **CORS preflight rejection** — a disallowed `Origin` yields an empty-body
+  `403` with no JSON envelope.
+- **Health endpoints** — `/api/health` and `/api/health/email` return a status
+  document keyed on `status` (e.g. `{ "status": "ok", ... }` or
+  `{ "status": "error", "error": "..." }`), not the standard error envelope.
+
+> **Contract note.** The documented routes are the only public API contract (see
+> [Public HTTP Surface](#public-http-surface)). The sole in-tree consumer is this
+> repository's React frontend, which keys conflict handling on `currentVersion`,
+> so moving the `version_conflict` token from `error` into `code` is a clean,
+> non-breaking change for that consumer.
 
 ## Validation Limits
 
