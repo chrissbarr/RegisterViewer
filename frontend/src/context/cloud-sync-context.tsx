@@ -77,7 +77,7 @@ interface SyncReconcileDeps {
   appStateRef: MutableRefObject<AppState>;
   syncTimerRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
   mutationLockRef: MutableRefObject<boolean>;
-  setInternal: Dispatch<SetStateAction<InternalCloudSyncState>>;
+  dispatchInternal: Dispatch<CloudSyncAction>;
   updateCloudMetadata: ReturnType<typeof useProjectStorageActions>['updateCloudMetadata'];
 }
 
@@ -101,7 +101,7 @@ async function reconcileStaleCloudProjectImpl(
 ): Promise<boolean> {
   const {
     internalRef, activeLocalIdRef, appStateRef, syncTimerRef,
-    mutationLockRef, setInternal, updateCloudMetadata,
+    mutationLockRef, dispatchInternal, updateCloudMetadata,
   } = deps;
 
   const lockResult = await withMutationLock(mutationLockRef, async () => {
@@ -132,9 +132,11 @@ async function reconcileStaleCloudProjectImpl(
         protectedLocalIds,
       });
       if (!stateWrite.ok) {
-        setInternal((prev) => prev.cloudId === cloudId
-          ? { ...prev, error: 'Cloud project was deleted on the server, but local data could not be saved before unlinking.' }
-          : prev);
+        dispatchInternal({
+          type: 'SET_ERROR',
+          ifCloudId: cloudId,
+          error: 'Cloud project was deleted on the server, but local data could not be saved before unlinking.',
+        });
         return false;
       }
     }
@@ -145,9 +147,11 @@ async function reconcileStaleCloudProjectImpl(
     });
     if (!metadataWrite.ok) {
       if (isActiveCloudProject) {
-        setInternal((prev) => prev.cloudId === cloudId
-          ? { ...prev, error: 'Cloud project was deleted on the server, but local metadata could not be updated.' }
-          : prev);
+        dispatchInternal({
+          type: 'SET_ERROR',
+          ifCloudId: cloudId,
+          error: 'Cloud project was deleted on the server, but local metadata could not be updated.',
+        });
       }
       return false;
     }
@@ -157,12 +161,11 @@ async function reconcileStaleCloudProjectImpl(
         clearTimeout(syncTimerRef.current);
         syncTimerRef.current = null;
       }
-      const next = {
-        ...initialInternalState,
-        error: 'Cloud project was deleted on the server. Local copy kept.',
-      };
+      const error = 'Cloud project was deleted on the server. Local copy kept.';
+      const next = { ...initialInternalState, error };
+      // Synchronous ref write preceding the dispatch (same-commit ref visibility).
       internalRef.current = next;
-      setInternal(next);
+      dispatchInternal({ type: 'RESET_WITH_ERROR', error });
       clearCloudUrl();
     }
 
@@ -171,9 +174,11 @@ async function reconcileStaleCloudProjectImpl(
 
   if (!lockResult.executed) {
     if (activeLocalIdRef.current === localId && internalRef.current.cloudId === cloudId) {
-      setInternal((prev) => prev.cloudId === cloudId
-        ? { ...prev, error: 'Cloud project was deleted on the server, but another cloud operation is in progress.' }
-        : prev);
+      dispatchInternal({
+        type: 'SET_ERROR',
+        ifCloudId: cloudId,
+        error: 'Cloud project was deleted on the server, but another cloud operation is in progress.',
+      });
     }
     return false;
   }
@@ -470,11 +475,13 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       if (cloudId === null) {
         const next = { ...initialInternalState, storage };
         internalRef.current = next;
-        setInternal(next);
+        dispatch__internal({ type: 'INIT_LOCAL', storage });
         clearCloudUrl();
       } else {
         const hasStoredUnsyncedChanges = metadata.hasUnsyncedChanges === true;
-        const next = {
+        // Temporary inline seed builder — the pure `cloudStateForEntry` lands in
+        // S10. Produces the same flat state the former `__RAW` updater did.
+        const seed: InternalCloudSyncState = {
           ...internalRef.current,
           cloudId,
           isOwner,
@@ -489,16 +496,16 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
         };
         // Synchronous ref write so the activeLocalId effect's guard
         // (cloudId === internalRef.current.cloudId) sees this in the same commit.
-        internalRef.current = next;
-        setInternal(next);
+        internalRef.current = seed;
+        dispatch__internal({ type: 'INIT_CLOUD', seed });
       }
     },
-    [dataVersionRef, setInternal],
+    [dataVersionRef],
   );
 
   const dismissError = useCallback(() => {
-    setInternal((prev) => ({ ...prev, error: null }));
-  }, [setInternal]);
+    dispatch__internal({ type: 'CLEAR_ERROR' });
+  }, []);
 
   const syncCloudProjects = useCallback(async (): Promise<SyncResult> => {
     const emptyResult: SyncResult = {
@@ -515,7 +522,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
 
     const reconcileDeps: SyncReconcileDeps = {
       internalRef, activeLocalIdRef, appStateRef, syncTimerRef,
-      mutationLockRef, setInternal, updateCloudMetadata,
+      mutationLockRef, dispatchInternal: dispatch__internal, updateCloudMetadata,
     };
 
     const latestProjects = loadManifest().projects.map(toProjectListEntry);
@@ -526,7 +533,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       createPlaceholder: (data, options) =>
         createPlaceholderImpl(reconcileDeps, data, options),
     });
-  }, [appStateRef, mutationLockRef, syncTimerRef, updateCloudMetadata, getJwt, setInternal]);
+  }, [appStateRef, mutationLockRef, syncTimerRef, updateCloudMetadata, getJwt]);
 
   // Callback ref: nullable because the callback references state/hooks defined below.
   // Direct assignment in render (not useEffect) ensures it's fresh by the time
@@ -608,9 +615,11 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
         if (!promotedLocalId && isUnsavedRef.current) {
           promotedLocalId = saveCurrentProject();
           if (!promotedLocalId) {
-            setInternal((prev) => prev.cloudId === checkedCloudId
-              ? { ...prev, error: 'Cloud ownership was confirmed, but the project could not be saved locally.' }
-              : prev);
+            dispatch__internal({
+              type: 'SET_ERROR',
+              ifCloudId: checkedCloudId,
+              error: 'Cloud ownership was confirmed, but the project could not be saved locally.',
+            });
             return;
           }
         }
@@ -629,27 +638,26 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
             hasUnsyncedChanges: hasLocalEdits,
           });
           if (!metadataResult.ok) {
-            setInternal((prev) => prev.cloudId === checkedCloudId
-              ? { ...prev, error: 'Cloud ownership was confirmed, but local cloud metadata could not be persisted.' }
-              : prev);
+            dispatch__internal({
+              type: 'SET_ERROR',
+              ifCloudId: checkedCloudId,
+              error: 'Cloud ownership was confirmed, but local cloud metadata could not be persisted.',
+            });
             return;
           }
         }
 
-        setInternal((prev) => prev.cloudId === checkedCloudId
-          ? {
-              ...prev,
-              isOwner: true,
-              storage: 'cloud',
-              serverVersion: res.version,
-              lastCloudSavedAt: confirmedCloudSavedAt,
-              visibility: confirmedVisibility,
-            }
-          : prev);
+        dispatch__internal({
+          type: 'OWNERSHIP_CONFIRMED',
+          ifCloudId: checkedCloudId,
+          serverVersion: res.version,
+          cloudSavedAt: confirmedCloudSavedAt,
+          visibility: confirmedVisibility,
+        });
       })
       .catch(() => { /* best-effort; ownership stays false */ });
     return () => { cancelled = true; };
-  }, [authUser, getJwt, internal.cloudId, internal.isOwner, saveCurrentProject, updateCloudMetadata, dataVersionRef, setInternal]);
+  }, [authUser, getJwt, internal.cloudId, internal.isOwner, saveCurrentProject, updateCloudMetadata, dataVersionRef]);
 
   // By-localId cloud operations (used by My Projects dialog)
   const projectOps = useProjectCloudOps({
