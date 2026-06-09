@@ -37,6 +37,67 @@ function makeDeps(overrides: Record<string, any> = {}): UseCloudSyncEngineDeps {
   };
 }
 
+/**
+ * Render the engine with a LIVE reducer-backed `internal`: every `setInternal`
+ * dispatch (functional updater) is applied to a mutable internal object and the
+ * hook is rerendered. This lets the S9 `asyncTransient` overlay (and the S8
+ * baseline-capture handshake) flow back into the rendered state so `syncStatus`
+ * derivations observe the dispatched transient — replacing the former white-box
+ * `asyncOverride` useState that the engine owned directly.
+ */
+function renderEngineWithLiveInternal(initial: InternalCloudSyncState, overrides: Record<string, unknown> = {}) {
+  let internal = initial;
+  let mounted = true;
+  const setInternal = vi.fn((updater: unknown) => {
+    internal = typeof updater === 'function'
+      ? (updater as (prev: InternalCloudSyncState) => InternalCloudSyncState)(internal)
+      : (updater as InternalCloudSyncState);
+    rerenderInternal();
+  });
+  let rerenderInternal = () => {};
+
+  const baseDeps = makeDeps({ ...overrides, internal, setInternal });
+  const utils = renderHook(
+    (props: UseCloudSyncEngineDeps) => useCloudSyncEngine(props),
+    { initialProps: baseDeps },
+  );
+
+  // Keep `dataDeps`/other props stable across internal-driven rerenders; only
+  // the live `internal` changes (mirrors how the provider re-renders the engine
+  // when reducer state updates). After unmount, the microtask cleanup may still
+  // dispatch SET_ASYNC_TRANSIENT(null) — drop it rather than touching a dead root.
+  let currentProps: UseCloudSyncEngineDeps = baseDeps;
+  rerenderInternal = () => {
+    if (!mounted) return;
+    currentProps = { ...currentProps, internal };
+    try {
+      utils.rerender(currentProps);
+    } catch {
+      // The microtask cleanup (SET_ASYNC_TRANSIENT(null)) can land after RTL's
+      // auto-cleanup has unmounted the root ("Cannot update an unmounted root").
+      // The dispatch is a no-op for an unmounted hook; swallow it.
+      mounted = false;
+    }
+  };
+
+  return {
+    ...utils,
+    setInternal,
+    getInternal: () => internal,
+    unmount: () => {
+      mounted = false;
+      utils.unmount();
+    },
+    rerenderProps: (next: Partial<UseCloudSyncEngineDeps>) => {
+      // An explicit `internal` override adopts the new value as the live state;
+      // otherwise the live (dispatch-driven) internal is preserved.
+      if (next.internal) internal = next.internal;
+      currentProps = { ...currentProps, ...next, internal };
+      utils.rerender(currentProps);
+    },
+  };
+}
+
 // ── deriveSyncStatus (pure function) ─────────────────────────────────
 
 describe('deriveSyncStatus', () => {
@@ -503,31 +564,24 @@ describe('useCloudSyncEngine - auto-sync', () => {
     expect(saveToCloud).toHaveBeenCalledTimes(1);
   });
 
-  it('sets offline status when save rejects', async () => {
+  it('sets offline status (asyncTransient) when save rejects', async () => {
     const saveToCloud = vi.fn(() => Promise.reject(new Error('network error')));
-    const internal = makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 0 });
-    const dataDeps = makeDataDeps();
-
-    const deps = makeDeps({
-      dataDeps,
-      internal,
-      canAutoSync: true,
-      saveToCloud,
-    });
-
-    const { result, rerender } = renderHook(
-      (props: UseCloudSyncEngineDeps) => useCloudSyncEngine(props),
-      { initialProps: deps },
+    // Live internal so the dispatched SET_ASYNC_TRANSIENT('offline') flows back
+    // into deriveSyncStatus's third input (the reducer field, not a useState).
+    const { result, rerenderProps, getInternal } = renderEngineWithLiveInternal(
+      makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 0 }),
+      { dataDeps: makeDataDeps(), canAutoSync: true, saveToCloud },
     );
 
     // Make dirty
-    rerender({ ...deps, dataDeps: makeDataDeps({ registers: [{ id: 'r2' }] }) });
+    rerenderProps({ dataDeps: makeDataDeps({ registers: [{ id: 'r2' }] }) });
 
     await act(async () => {
       vi.advanceTimersByTime(150);
       await Promise.resolve();
     });
 
+    expect(getInternal().asyncTransient).toBe('offline');
     expect(result.current.syncStatus).toBe('offline');
   });
 
@@ -574,23 +628,14 @@ describe('useCloudSyncEngine - auto-sync', () => {
 
   it('reschedules lock-held with backoff but stops at the retry cap', async () => {
     const saveToCloud = vi.fn(async () => 'lock-held' as const);
-    const internal = makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 0 });
-    const dataDeps = makeDataDeps();
-
-    const deps = makeDeps({
-      dataDeps,
-      internal,
-      canAutoSync: true,
-      saveToCloud,
-    });
-
-    const { result, rerender } = renderHook(
-      (props: UseCloudSyncEngineDeps) => useCloudSyncEngine(props),
-      { initialProps: deps },
+    // Live internal so the terminal SET_ASYNC_TRANSIENT('offline') is observable.
+    const { result, rerenderProps } = renderEngineWithLiveInternal(
+      makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 0 }),
+      { dataDeps: makeDataDeps(), canAutoSync: true, saveToCloud },
     );
 
     // Make dirty
-    rerender({ ...deps, dataDeps: makeDataDeps({ registers: [{ id: 'r2' }] }) });
+    rerenderProps({ dataDeps: makeDataDeps({ registers: [{ id: 'r2' }] }) });
 
     // Advance well past the cap (5 attempts * growing backoff).
     for (let i = 0; i < 10; i++) {
@@ -656,26 +701,18 @@ describe('useCloudSyncEngine - auto-sync', () => {
     expect(saveToCloud).not.toHaveBeenCalled();
   });
 
-  it('resets asyncOverride when canAutoSync toggles off', async () => {
+  it('resets the asyncTransient via the microtask cleanup when canAutoSync toggles off', async () => {
     const saveToCloud = vi.fn<() => Promise<'saved'>>(() => Promise.reject(new Error('network error')));
-    const internal = makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 0 });
-    const dataDeps = makeDataDeps();
-
-    const deps = makeDeps({
-      dataDeps,
-      internal,
-      canAutoSync: true,
-      saveToCloud,
-    });
-
-    const { result, rerender } = renderHook(
-      (props: UseCloudSyncEngineDeps) => useCloudSyncEngine(props),
-      { initialProps: deps },
+    const dirtyDataDeps = makeDataDeps({ registers: [{ id: 'r2' }] });
+    // Live internal so the dispatched SET_ASYNC_TRANSIENT (set + microtask clear)
+    // round-trips through the reducer field that deriveSyncStatus reads.
+    const { result, rerenderProps, getInternal } = renderEngineWithLiveInternal(
+      makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 0 }),
+      { dataDeps: makeDataDeps(), canAutoSync: true, saveToCloud },
     );
 
     // Make dirty
-    const dirtyDataDeps = makeDataDeps({ registers: [{ id: 'r2' }] });
-    rerender({ ...deps, dataDeps: dirtyDataDeps });
+    rerenderProps({ dataDeps: dirtyDataDeps });
 
     // Trigger offline state
     await act(async () => {
@@ -683,20 +720,22 @@ describe('useCloudSyncEngine - auto-sync', () => {
       await Promise.resolve();
     });
     expect(result.current.syncStatus).toBe('offline');
+    expect(getInternal().asyncTransient).toBe('offline');
 
-    // Toggle canAutoSync off -- should reset asyncOverride
+    // Toggle canAutoSync off -- the effect cleanup dispatches the microtask clear.
     await act(async () => {
-      rerender({ ...deps, dataDeps: dirtyDataDeps, canAutoSync: false });
+      rerenderProps({ canAutoSync: false });
+      await Promise.resolve(); // flush the microtask cleanup
     });
     expect(result.current.syncStatus).toBe('local-only');
+    // The transient was cleared in the same microtask the effect cleanup scheduled.
+    expect(getInternal().asyncTransient).toBeNull();
 
-    // Toggle back on -- should be 'saved' (asyncOverride was cleared), not 'offline'
+    // Toggle back on -- should be 'saved' (transient was cleared), not 'offline'.
     saveToCloud.mockResolvedValue('saved');
     await act(async () => {
-      rerender({
-        ...deps,
-        dataDeps: dirtyDataDeps,
-        internal: makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 2 }),
+      rerenderProps({
+        internal: makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 2, asyncTransient: null }),
         canAutoSync: true,
       });
     });

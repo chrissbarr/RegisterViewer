@@ -69,6 +69,14 @@ import type { Visibility } from '../types/project';
  * - `CAPTURE_BASELINE { version }` → `{ ...prev, lastSavedVersion: version,
  *   awaitingBaselineCapture: false }`, dispatched by the engine at the
  *   post-increment effect tick with `dataVersionRef.current`
+ *
+ * S9 async sync/offline transient (replaces the engine-local `asyncOverride`
+ * useState). Operates on the current flat shape via the transient
+ * `asyncTransient` field:
+ * - `SET_ASYNC_TRANSIENT { value }` → `{ ...prev, asyncTransient: value }`, the
+ *   `'syncing'`/`'offline'`/`null` overlay the auto-sync engine sets from its
+ *   async callbacks and microtask-clears on cleanup. Does NOT touch `status`
+ *   (the underlying op lifecycle is independent).
  */
 export type CloudSyncAction =
   | {
@@ -129,7 +137,8 @@ export type CloudSyncAction =
     }
   | { type: 'OP_FAILED'; error: string }
   | { type: 'REQUEST_BASELINE' }
-  | { type: 'CAPTURE_BASELINE'; version: number };
+  | { type: 'CAPTURE_BASELINE'; version: number }
+  | { type: 'SET_ASYNC_TRANSIENT'; value: 'syncing' | 'offline' | null };
 
 export function cloudSyncReducer(
   state: InternalCloudSyncState,
@@ -247,6 +256,10 @@ export function cloudSyncReducer(
       return { ...state, awaitingBaselineCapture: true };
     case 'CAPTURE_BASELINE':
       return { ...state, lastSavedVersion: action.version, awaitingBaselineCapture: false };
+    case 'SET_ASYNC_TRANSIENT':
+      // Overlay the sync/offline transient without disturbing the op `status`;
+      // the engine sets this from async callbacks and microtask-clears it.
+      return { ...state, asyncTransient: action.value };
     default: {
       // Exhaustiveness guard: a later slice that adds an action without a case
       // here gets a compile error. Returns `state` unchanged at runtime.

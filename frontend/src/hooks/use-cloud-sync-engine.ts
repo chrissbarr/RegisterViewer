@@ -89,11 +89,17 @@ export function useCloudSyncEngine(deps: UseCloudSyncEngineDeps): UseCloudSyncEn
 
   // ── Auto-sync refs and state ───────────────────────────────────────
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Async status override: only set from async callbacks (never synchronously
-  // in an effect body) to satisfy the react-hooks/set-state-in-effect rule.
-  // `null` means "derive from canAutoSync/isDirty". Stale overrides are
+  // Async status override (S9): lives on reducer state as `internal.asyncTransient`,
+  // dispatched via SET_ASYNC_TRANSIENT. Only set from async callbacks (never
+  // synchronously in an effect body) to satisfy the react-hooks/set-state-in-effect
+  // rule. `null` means "derive from canAutoSync/isDirty". Stale overrides are
   // handled by deriveSyncStatus priority (e.g., !isDirty overrides 'offline').
-  const [asyncOverride, setAsyncOverride] = useState<'syncing' | 'offline' | null>(null);
+  const setAsyncOverride = useCallback(
+    (value: 'syncing' | 'offline' | null) => {
+      setInternal((prev) => cloudSyncReducer(prev, { type: 'SET_ASYNC_TRANSIENT', value }));
+    },
+    [setInternal],
+  );
 
   // ── Dirty tracking effect ──────────────────────────────────────────
   // The setState-in-effect pattern is intentional here: we must compare the
@@ -189,10 +195,10 @@ export function useCloudSyncEngine(deps: UseCloudSyncEngineDeps): UseCloudSyncEn
       // Scheduled as microtask to satisfy react-hooks/set-state-in-effect.
       void Promise.resolve().then(() => setAsyncOverride(null));
     };
-  }, [isDirty, canAutoSync, getJwt, saveToCloud]);
+  }, [isDirty, canAutoSync, getJwt, saveToCloud, setAsyncOverride]);
 
   // ── Derived sync status ────────────────────────────────────────────
-  const syncStatus = deriveSyncStatus(canAutoSync, isDirty, asyncOverride);
+  const syncStatus = deriveSyncStatus(canAutoSync, isDirty, internal.asyncTransient ?? null);
 
   // ── Flush callback ─────────────────────────────────────────────────
   // We need a ref for internal to avoid stale closures in flushCloudSync.

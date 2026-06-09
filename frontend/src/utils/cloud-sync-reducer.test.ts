@@ -534,4 +534,47 @@ describe('cloudSyncReducer', () => {
       expect(next.cloudId).toBe('abc');
     });
   });
+
+  // S9: the async sync/offline transient — replaces the engine's asyncOverride useState.
+  describe('async transient (S9)', () => {
+    it('SET_ASYNC_TRANSIENT sets the syncing overlay, preserving other fields', () => {
+      const prev: InternalCloudSyncState = {
+        ...initialInternalState,
+        cloudId: 'abc',
+        isOwner: true,
+        storage: 'cloud',
+        status: 'idle',
+        serverVersion: 3,
+      };
+      const next = cloudSyncReducer(prev, { type: 'SET_ASYNC_TRANSIENT', value: 'syncing' });
+      expect(next.asyncTransient).toBe('syncing');
+      // The overlay does NOT touch the underlying op status.
+      expect(next.status).toBe('idle');
+      expect(next.cloudId).toBe('abc');
+      expect(next.serverVersion).toBe(3);
+    });
+
+    it('SET_ASYNC_TRANSIENT sets the offline overlay', () => {
+      const prev: InternalCloudSyncState = {
+        ...initialInternalState,
+        cloudId: 'abc',
+        asyncTransient: 'syncing',
+      };
+      const next = cloudSyncReducer(prev, { type: 'SET_ASYNC_TRANSIENT', value: 'offline' });
+      expect(next.asyncTransient).toBe('offline');
+    });
+
+    it('SET_ASYNC_TRANSIENT clears the overlay with null (microtask cleanup)', () => {
+      const prev: InternalCloudSyncState = {
+        ...initialInternalState,
+        cloudId: 'abc',
+        status: 'saving',
+        asyncTransient: 'offline',
+      };
+      const next = cloudSyncReducer(prev, { type: 'SET_ASYNC_TRANSIENT', value: null });
+      expect(next.asyncTransient).toBeNull();
+      // Clearing the overlay must NOT clobber the underlying op status.
+      expect(next.status).toBe('saving');
+    });
+  });
 });
