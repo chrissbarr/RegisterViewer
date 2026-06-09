@@ -50,7 +50,7 @@ import { useProjectCloudOps } from '../hooks/use-project-cloud-ops';
 import { useCloudSyncEngine, type SyncStatus } from '../hooks/use-cloud-sync-engine';
 import { useAuthTransition } from '../hooks/use-auth-transition';
 import { useProjectSwitchInit } from '../hooks/use-project-switch-init';
-import { syncCloudProjectsFromServer } from '../utils/cloud-sync';
+import { syncCloudProjectsFromServer, positiveVersion, normalizeServerVersion } from '../utils/cloud-sync';
 import { checkAndPullFreshVersion, type FreshnessCheckContext } from '../utils/cloud-freshness';
 import { isOwnedCloudEntry } from '../utils/project-identity';
 import type { Visibility } from '../types/project';
@@ -230,7 +230,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
         && dataVersionRef.current !== current.lastSavedVersion;
       return {
         wasDirty,
-        serverVersion: current.serverVersion > 0 ? current.serverVersion : meta.serverVersion,
+        serverVersion: positiveVersion(current.serverVersion) ?? meta.serverVersion,
       };
     });
     return () => registerDepartureSnapshotter(null);
@@ -290,7 +290,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
           lastCloudSavedAt: metadata.cloudSavedAt ?? null,
           error: null,
           visibility: metadata.visibility ?? 'private',
-          serverVersion: metadata.serverVersion ?? 0,
+          serverVersion: normalizeServerVersion(metadata.serverVersion),
           conflict: metadata.cloudConflictVersion ? { serverVersion: metadata.cloudConflictVersion } : null,
         };
         // Synchronous ref write so the activeLocalId effect's guard

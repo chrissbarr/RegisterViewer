@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { computeSyncPatches, syncCloudProjectsFromServer, type ServerProject } from './cloud-sync';
+import {
+  computeSyncPatches,
+  syncCloudProjectsFromServer,
+  positiveVersion,
+  normalizeServerVersion,
+  type ServerProject,
+} from './cloud-sync';
 import type { ProjectListEntry } from '../types/project';
 
 vi.mock('./api-client', () => ({
@@ -30,6 +36,46 @@ function makeServer(overrides: Partial<ServerProject> & { id: string }): ServerP
     ...overrides,
   };
 }
+
+describe('positiveVersion', () => {
+  it('returns the value for a positive version', () => {
+    expect(positiveVersion(1)).toBe(1);
+    expect(positiveVersion(42)).toBe(42);
+  });
+
+  it('returns null for zero (the unknown sentinel)', () => {
+    expect(positiveVersion(0)).toBeNull();
+  });
+
+  it('returns null for a negative version', () => {
+    expect(positiveVersion(-1)).toBeNull();
+  });
+
+  it('returns null for null and undefined', () => {
+    expect(positiveVersion(null)).toBeNull();
+    expect(positiveVersion(undefined)).toBeNull();
+  });
+});
+
+describe('normalizeServerVersion', () => {
+  it('returns the value for a positive version', () => {
+    expect(normalizeServerVersion(1)).toBe(1);
+    expect(normalizeServerVersion(42)).toBe(42);
+  });
+
+  it('returns 0 for zero', () => {
+    expect(normalizeServerVersion(0)).toBe(0);
+  });
+
+  it('returns 0 for a negative version', () => {
+    expect(normalizeServerVersion(-1)).toBe(0);
+  });
+
+  it('returns 0 for null and undefined (unknown / not-yet-fetched)', () => {
+    expect(normalizeServerVersion(null)).toBe(0);
+    expect(normalizeServerVersion(undefined)).toBe(0);
+  });
+});
 
 describe('computeSyncPatches', () => {
   it('returns empty result when both lists are empty', () => {

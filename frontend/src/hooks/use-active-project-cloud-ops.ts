@@ -7,6 +7,7 @@ import { friendlyErrorMessage } from '../utils/friendly-error';
 import { buildProjectUrl, patchProjectState, type ProjectStorageWriteResult } from '../utils/project-storage';
 import { setCloudUrl, clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock, requireJwt } from '../utils/cloud-utils';
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl, type SaveConflictResult } from '../utils/cloud-operations';
+import { positiveVersion } from '../utils/cloud-sync';
 import { DEFAULT_PROJECT_NAME, type Visibility } from '../types/project';
 import type { AppState } from '../types/register';
 import { type CloudSyncCore, type CloudMetadataUpdate, type InternalCloudSyncState, type SaveOutcome, initialInternalState } from '../types/cloud-sync';
@@ -298,7 +299,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
         };
         const jsonPayload = exportToObject(appStateRef.current);
         const freshJwt = requireJwt(getJwt);
-        const result = await saveProjectToCloudImpl(jsonPayload, existingCloudId, freshJwt, serverVersion > 0 ? serverVersion : undefined);
+        const result = await saveProjectToCloudImpl(jsonPayload, existingCloudId, freshJwt, positiveVersion(serverVersion) ?? undefined);
         const editedDuringSave = dataVersionRef.current !== attempt.dataVersion;
 
         const stillOnSameProject = isSameActiveSaveTarget(

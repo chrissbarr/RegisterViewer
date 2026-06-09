@@ -85,7 +85,7 @@ export async function checkAndPullFreshVersion(
   }
 
   const serverResponse = await getProject(cloudId, jwt);
-  const serverVersion = serverResponse.version ?? knownVersion;
+  const serverVersion = serverResponse.version;
 
   if (!bypassVersionCheck && serverVersion <= knownVersion) {
     return { applied: false, reason: 'fresh', serverVersion };

@@ -33,8 +33,22 @@ interface SyncPatchResult {
   cloudOnlyProjects: ServerProject[];
 }
 
-function positiveVersion(value: number | null | undefined): number | null {
+/**
+ * Coerce a serverVersion to the manifest / "absent" view: a positive integer or
+ * `null` when unknown/non-positive. Use for `ProjectManifestEntry.serverVersion`
+ * and for deciding whether a known version exists.
+ */
+export function positiveVersion(value: number | null | undefined): number | null {
   return typeof value === 'number' && value > 0 ? value : null;
+}
+
+/**
+ * Coerce a serverVersion to the internal "0 = unknown" view used by
+ * `InternalCloudSyncState`: a positive integer or `0` when
+ * unknown/not-yet-fetched/non-positive. The inverse view of `positiveVersion`.
+ */
+export function normalizeServerVersion(value: number | null | undefined): number {
+  return typeof value === 'number' && value > 0 ? value : 0;
 }
 
 /**

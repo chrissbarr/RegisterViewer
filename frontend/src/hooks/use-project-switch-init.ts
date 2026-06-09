@@ -5,6 +5,7 @@ import { exportToObject, deserializeState } from '../utils/storage';
 import { saveProjectToCloudImpl } from '../utils/cloud-operations';
 import { checkAndPullFreshVersion, type FreshnessCheckContext } from '../utils/cloud-freshness';
 import { isOwnedCloudEntry } from '../utils/project-identity';
+import { positiveVersion, normalizeServerVersion } from '../utils/cloud-sync';
 import { type CloudSyncCore, initialInternalState } from '../types/cloud-sync';
 import type { CloudMetadataUpdate } from '../types/cloud-sync';
 import type { ProjectListEntry } from '../types/project';
@@ -123,9 +124,7 @@ export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
                 const savedStateFingerprint = JSON.stringify(project.state);
                 const latestEntry = projectsRef.current.find(p => p.localId === prevLocalId);
                 const knownVersion = project.serverVersion ?? latestEntry?.serverVersion ?? departure.serverVersion ?? undefined;
-                const serverVersion = typeof knownVersion === 'number' && knownVersion > 0
-                  ? knownVersion
-                  : undefined;
+                const serverVersion = positiveVersion(knownVersion) ?? undefined;
                 const result = await saveProjectToCloudImpl(payload, departingCloudId, jwt, serverVersion);
                 if (result.kind === 'updated' || result.kind === 'created') {
                   const latestProject = loadProject(prevLocalId);
@@ -185,7 +184,7 @@ export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
       clearCloudUrl();
     } else {
       const conflictVersion = ownedEntry?.cloudConflictVersion ?? ownedProject?.cloudConflictVersion ?? null;
-      const serverVersion = ownedEntry?.serverVersion ?? ownedProject?.serverVersion ?? 0;
+      const serverVersion = normalizeServerVersion(ownedEntry?.serverVersion ?? ownedProject?.serverVersion);
       const hasStoredUnsyncedChanges = (ownedEntry?.hasUnsyncedChanges ?? ownedProject?.hasUnsyncedChanges) === true;
       const lastSavedVersion = hasStoredUnsyncedChanges
         ? STORED_UNSYNCED_LAST_SAVED_VERSION
@@ -217,7 +216,7 @@ export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
         };
         checkAndPullFreshVersion(freshnessCtx, {
           cloudId,
-          knownVersion: serverVersion > 0 ? serverVersion : 0,
+          knownVersion: normalizeServerVersion(serverVersion),
           localId: activeLocalId,
           jwt,
         }).catch((err) => {

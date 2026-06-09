@@ -4,6 +4,7 @@ import { isCloudEnabled, ApiError } from '../utils/api-client';
 import { loadProject, type ProjectStorageWriteResult } from '../utils/project-storage';
 import { clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock, requireJwt } from '../utils/cloud-utils';
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
+import { positiveVersion } from '../utils/cloud-sync';
 import type { Visibility, ProjectListEntry } from '../types/project';
 import { type CloudSyncCore, type CloudMetadataUpdate, type SaveOutcome, isSaveSuccess, initialInternalState } from '../types/cloud-sync';
 import { isOwnedCloudEntry } from '../utils/project-identity';
@@ -59,9 +60,7 @@ export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
       const ownedProject = isOwnedCloudEntry(project) ? project : null;
       const existingCloudId = ownedEntry?.cloudId ?? ownedProject?.cloudId ?? null;
       const knownServerVersion = ownedEntry?.serverVersion ?? ownedProject?.serverVersion ?? undefined;
-      const serverVersion = typeof knownServerVersion === 'number' && knownServerVersion > 0
-        ? knownServerVersion
-        : undefined;
+      const serverVersion = positiveVersion(knownServerVersion) ?? undefined;
 
       const jwt = requireJwt(getJwt);
       const result = await saveProjectToCloudImpl(jsonPayload, existingCloudId, jwt, serverVersion);
