@@ -2,7 +2,7 @@ import { useCallback, useMemo, type MutableRefObject } from 'react';
 import { exportToObject, deserializeState } from '../utils/storage';
 import { isCloudEnabled, ApiError } from '../utils/api-client';
 import { loadProject, type ProjectStorageWriteResult } from '../utils/project-storage';
-import { clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock, requireJwt } from '../utils/cloud-utils';
+import { clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock, requireJwt, applyVisibilityWrite } from '../utils/cloud-utils';
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
 import { positiveVersion } from '../utils/cloud-sync';
 import { cloudSyncReducer } from '../utils/cloud-sync-reducer';
@@ -136,14 +136,18 @@ export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
     if (!entry || !isOwnedCloudEntry(entry)) return;
 
     const jwt = requireJwt(getJwt);
-    await patchVisibilityImpl(entry.cloudId, v, jwt);
+    // A visibility PATCH advances the server's updated_at without bumping version;
+    // persist the returned updatedAt so local cloudSavedAt tracks it immediately
+    // rather than waiting for the next LIST sync (A-9 parity with the active path).
+    const updatedAt = await patchVisibilityImpl(entry.cloudId, v, jwt);
 
-    const metadataResult = updateCloudMetadata(localId, { visibility: v });
+    const metadataResult = applyVisibilityWrite(updateCloudMetadata, localId, v, updatedAt);
     if (!metadataResult.ok) throw new Error('Visibility changed on server, but failed to persist local metadata.');
 
-    // If this is the active project, update cloud state too
+    // If this is the active project, update cloud state too (mirror the advanced
+    // cloudSavedAt so the active state tracks it).
     if (localId === activeLocalIdRef.current) {
-      setInternal((prev) => cloudSyncReducer(prev, { type: 'SET_VISIBILITY', visibility: v }));
+      setInternal((prev) => cloudSyncReducer(prev, { type: 'SET_VISIBILITY', visibility: v, cloudSavedAt: updatedAt }));
     }
   }, [updateCloudMetadata, projectsRef, activeLocalIdRef, setInternal, getJwt]);
 

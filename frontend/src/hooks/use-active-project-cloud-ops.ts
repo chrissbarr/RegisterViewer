@@ -6,7 +6,7 @@ import { checkAndPullFreshVersion, type FreshnessCheckContext } from './use-clou
 import { materializeCloudProject } from '../utils/cloud-materialize';
 import { friendlyErrorMessage } from '../utils/friendly-error';
 import { buildProjectUrl, patchProjectState, type ProjectStorageWriteResult } from '../utils/project-storage';
-import { setCloudUrl, clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock, requireJwt } from '../utils/cloud-utils';
+import { setCloudUrl, clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock, requireJwt, applyVisibilityWrite } from '../utils/cloud-utils';
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl, type SaveConflictResult } from '../utils/cloud-operations';
 import { positiveVersion } from '../utils/cloud-sync';
 import { cloudSyncReducer } from '../utils/cloud-sync-reducer';
@@ -490,7 +490,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
 
         const currentLocalId = activeLocalIdRef.current;
         if (currentLocalId) {
-          const metadataResult = updateCloudMetadata(currentLocalId, { visibility: v, cloudSavedAt: updatedAt });
+          const metadataResult = applyVisibilityWrite(updateCloudMetadata, currentLocalId, v, updatedAt);
           if (!metadataResult.ok) {
             setInternal((prev) => cloudSyncReducer(prev, {
               type: 'REVERT_VISIBILITY',

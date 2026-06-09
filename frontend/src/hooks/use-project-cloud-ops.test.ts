@@ -455,9 +455,14 @@ describe('useProjectCloudOps', () => {
   });
 
   describe('setProjectVisibility', () => {
-    it('patches visibility and updates metadata', async () => {
+    const PATCH_UPDATED_AT = '2024-09-09T09:09:09Z';
+
+    it('patches visibility and advances cloudSavedAt to the PATCH updatedAt', async () => {
       const deps = makeDeps();
-      (patchVisibilityImpl as Mock).mockResolvedValue(undefined);
+      // A visibility PATCH advances the server's updated_at; the by-localId path
+      // must persist it immediately (A-9 parity with the active path) instead of
+      // leaving cloudSavedAt stale until the next LIST sync.
+      (patchVisibilityImpl as Mock).mockResolvedValue(PATCH_UPDATED_AT);
 
       const { result } = renderHook(() => useProjectCloudOps(deps));
 
@@ -466,12 +471,15 @@ describe('useProjectCloudOps', () => {
       });
 
       expect(patchVisibilityImpl).toHaveBeenCalledWith('cloud-1', 'unlisted', 'mock-jwt');
-      expect(deps.updateCloudMetadata).toHaveBeenCalledWith('local-1', { visibility: 'unlisted' });
+      expect(deps.updateCloudMetadata).toHaveBeenCalledWith('local-1', {
+        visibility: 'unlisted',
+        cloudSavedAt: PATCH_UPDATED_AT,
+      });
     });
 
-    it('updates internal state when targeting active project', async () => {
+    it('updates internal state and advances cloudSavedAt when targeting active project', async () => {
       const deps = makeDeps({ activeLocalId: 'local-1' });
-      (patchVisibilityImpl as Mock).mockResolvedValue(undefined);
+      (patchVisibilityImpl as Mock).mockResolvedValue(PATCH_UPDATED_AT);
 
       const { result } = renderHook(() => useProjectCloudOps(deps));
 
@@ -479,10 +487,14 @@ describe('useProjectCloudOps', () => {
         await result.current.setProjectVisibility('local-1', 'unlisted');
       });
 
-      // setInternal is called with an updater function that sets visibility
+      // setInternal is called with an updater function that sets visibility and
+      // advances lastCloudSavedAt (active mirror parity with the by-localId write).
       expect(deps.setInternal).toHaveBeenCalledWith(expect.any(Function));
       const updater = (deps.setInternal as Mock).mock.calls[0][0] as (prev: Record<string, unknown>) => Record<string, unknown>;
-      expect(updater({ visibility: 'private' })).toEqual({ visibility: 'unlisted' });
+      expect(updater({ visibility: 'private' })).toEqual({
+        visibility: 'unlisted',
+        lastCloudSavedAt: PATCH_UPDATED_AT,
+      });
     });
 
     it('returns early when project has no cloudId', async () => {
