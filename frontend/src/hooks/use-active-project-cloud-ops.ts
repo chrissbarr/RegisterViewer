@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState, type Dispatch, type MutableRefObject } from 'react';
 import { exportToObject, serializeState } from '../utils/storage';
 import { isCloudEnabled, ApiError } from '../utils/api-client';
-import { fetchAndParseCloudProject } from '../utils/cloud-project-loader';
+import { fetchAndParseCloudProject, decideStorageForFetched } from '../utils/cloud-project-loader';
 import { checkAndPullFreshVersion, type FreshnessCheckContext } from '../utils/cloud-freshness';
 import { materializeCloudProject } from '../utils/cloud-materialize';
 import { friendlyErrorMessage } from '../utils/friendly-error';
@@ -518,13 +518,20 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
         const jwt = getJwt();
         const importResult = await fetchAndParseCloudProject(cloudId, jwt ?? undefined);
         const isOwner = importResult.isOwner;
+        // Conservative ownership policy (unified with the A-2 startup and
+        // My-Projects paths): demote to 'local' ONLY on POSITIVE evidence of
+        // non-ownership (`authenticated:true && !isOwner`). When ownership is
+        // unknown (missing/expired JWT, old API, stale cached response), trust
+        // the manifest — 'cloud' here, matching the AppLoader `treatAsShared`
+        // default for a freshly-opened share link with no clear local entry —
+        // rather than silently unlinking an owned cloud project.
+        const storage = decideStorageForFetched(importResult, 'cloud');
         const name = importResult.project?.title?.trim() || DEFAULT_PROJECT_NAME;
         const shareUrl = buildProjectUrl(cloudId);
 
-        if (isOwner) {
+        if (storage === 'cloud') {
           // P5 — `create`: create a new local record from the import result,
-          // dropping local-only UI fields. Ownership branch stays raw `isOwner`
-          // (the ownership-policy unification is a separate slice).
+          // dropping local-only UI fields.
           let localId: string | null = null;
           materializeCloudProject({
             writeMode: 'create',
@@ -588,7 +595,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
           seed: {
             cloudId,
             isOwner,
-            storage: isOwner ? 'cloud' : 'local',
+            storage,
             status: 'idle',
             shareUrl,
             lastCloudSavedAt: importResult.updatedAt,

@@ -32,11 +32,12 @@ export function isConfirmedNonOwner(result: Pick<CloudProjectLoadResult, 'isOwne
  * (anonymous / expired-JWT / old-API / stale-cached response), keep the
  * manifest's storage class rather than silently unlinking an owned project.
  *
- * Consumed by P1 (`persistDownloadedCloudProject`) and the AppLoader
- * `treatAsShared` decision — both already branched on `isConfirmedNonOwner`, so
- * routing them through this helper is behavior-identical. P5
- * (`loadCloudProject`) intentionally stays on raw `importResult.isOwner` pending
- * its own behavior-changing slice.
+ * Consumed by P1 (`persistDownloadedCloudProject`), the AppLoader
+ * `treatAsShared` decision, and P5 (`loadCloudProject`) — so all fetch paths
+ * share one ownership policy. (P1/treatAsShared already branched on
+ * `isConfirmedNonOwner`; P5 was moved onto the conservative policy in the
+ * consolidation, intentionally changing the unknown-ownership load to trust the
+ * manifest instead of demoting on raw `isOwner`.)
  */
 export function decideStorageForFetched(
   result: Pick<CloudProjectLoadResult, 'isOwner' | 'authenticated'>,

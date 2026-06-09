@@ -41,10 +41,16 @@ vi.mock('../utils/api-client', () => {
   };
 });
 
-vi.mock('../utils/cloud-project-loader', () => ({
-  fetchAndParseCloudProject: vi.fn(),
-  parseProjectData: vi.fn(() => null),
-}));
+vi.mock('../utils/cloud-project-loader', async () => {
+  // Keep the real ownership policy (decideStorageForFetched) so P5's
+  // conservative storage decision runs; only stub the network fetch + parse.
+  const actual = await vi.importActual<typeof import('../utils/cloud-project-loader')>('../utils/cloud-project-loader');
+  return {
+    ...actual,
+    fetchAndParseCloudProject: vi.fn(),
+    parseProjectData: vi.fn(() => null),
+  };
+});
 
 
 vi.mock('../utils/project-storage', () => ({

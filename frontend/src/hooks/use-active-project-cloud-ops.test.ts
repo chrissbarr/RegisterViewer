@@ -24,9 +24,16 @@ vi.mock('../utils/api-client', () => ({
   },
 }));
 
-vi.mock('../utils/cloud-project-loader', () => ({
-  fetchAndParseCloudProject: vi.fn(),
-}));
+vi.mock('../utils/cloud-project-loader', async () => {
+  // Keep the real ownership policy (decideStorageForFetched/isConfirmedNonOwner)
+  // so P5's conservative storage decision is exercised end-to-end; only the
+  // network fetch is stubbed.
+  const actual = await vi.importActual<typeof import('../utils/cloud-project-loader')>('../utils/cloud-project-loader');
+  return {
+    ...actual,
+    fetchAndParseCloudProject: vi.fn(),
+  };
+});
 
 vi.mock('../utils/cloud-freshness', () => ({
   checkAndPullFreshVersion: vi.fn(),
@@ -1064,6 +1071,91 @@ describe('useActiveProjectCloudOps', () => {
       const loadedState = typeof lastSetCall === 'function' ? lastSetCall(INITIAL_INTERNAL_STATE) : lastSetCall;
       expect(loadedState).toMatchObject({
         serverVersion: 5,
+      });
+    });
+
+    // ── P5 conservative ownership policy (S15) ────────────────────────
+    // P5 routes the owned-vs-shared decision through decideStorageForFetched,
+    // so it only demotes to 'local' on POSITIVE evidence of non-ownership
+    // and trusts the manifest (cloud) when ownership is unknown.
+    describe('conservative ownership policy', () => {
+      function makeLoadResult(overrides: Record<string, unknown>) {
+        return {
+          registers: [makeRegister({ id: 'r1', name: 'CTRL' })],
+          values: { r1: 1n },
+          project: { title: 'Cloud Project' },
+          addressUnitBits: 8,
+          updatedAt: TEST_TIMESTAMP,
+          version: 3,
+          visibility: 'unlisted',
+          ...overrides,
+        };
+      }
+
+      function lastSeed(deps: ReturnType<typeof makeDefaultDeps>) {
+        const lastSetCall = deps.setInternal.mock.calls.at(-1)![0];
+        return typeof lastSetCall === 'function' ? lastSetCall(INITIAL_INTERNAL_STATE) : lastSetCall;
+      }
+
+      it('authenticated owner → cloud storage (owned branch)', async () => {
+        const deps = makeDefaultDeps();
+        (fetchAndParseCloudProject as Mock).mockResolvedValue(
+          makeLoadResult({ isOwner: true, authenticated: true }),
+        );
+
+        const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+        await act(async () => { await result.current.loadCloudProject(TEST_CLOUD_ID); });
+
+        // Owned branch: a new local record is created and IMPORT_STATE dispatched.
+        expect(deps.createNewProject).toHaveBeenCalled();
+        expect(deps.loadAsUnsaved).not.toHaveBeenCalled();
+        expect(deps.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'IMPORT_STATE' }));
+        expect(deps.updateCloudMetadata).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.objectContaining({ storage: 'cloud' }),
+        );
+        expect(lastSeed(deps)).toMatchObject({ isOwner: true, storage: 'cloud' });
+      });
+
+      it('authenticated non-owner → demote to local (confirmed demotion preserved)', async () => {
+        const deps = makeDefaultDeps();
+        (fetchAndParseCloudProject as Mock).mockResolvedValue(
+          makeLoadResult({ isOwner: false, authenticated: true }),
+        );
+
+        const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+        await act(async () => { await result.current.loadCloudProject(TEST_CLOUD_ID); });
+
+        // Shared branch: opened as an unsaved workspace, no owned local record.
+        expect(deps.loadAsUnsaved).toHaveBeenCalled();
+        expect(deps.createNewProject).not.toHaveBeenCalled();
+        expect(deps.dispatch).not.toHaveBeenCalled();
+        expect(lastSeed(deps)).toMatchObject({ isOwner: false, storage: 'local' });
+      });
+
+      it('unknown ownership (missing/expired JWT) → trusts manifest, keeps cloud (NEW)', async () => {
+        const deps = makeDefaultDeps();
+        deps.getJwt.mockReturnValue(null);
+        // isOwner:false with authenticated absent => ownership UNKNOWN, not
+        // confirmed non-ownership. Pre-S15 code demoted on raw isOwner; the
+        // conservative policy now keeps cloud storage (owned branch).
+        (fetchAndParseCloudProject as Mock).mockResolvedValue(
+          makeLoadResult({ isOwner: false }),
+        );
+
+        const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+        await act(async () => { await result.current.loadCloudProject(TEST_CLOUD_ID); });
+
+        // NEW behavior: owned branch is taken — a cloud-backed local record is
+        // created and IMPORT_STATE dispatched, rather than an unsaved fork.
+        expect(deps.createNewProject).toHaveBeenCalled();
+        expect(deps.loadAsUnsaved).not.toHaveBeenCalled();
+        expect(deps.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'IMPORT_STATE' }));
+        expect(deps.updateCloudMetadata).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.objectContaining({ storage: 'cloud' }),
+        );
+        expect(lastSeed(deps)).toMatchObject({ storage: 'cloud' });
       });
     });
 
