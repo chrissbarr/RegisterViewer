@@ -14,6 +14,16 @@ export interface InternalCloudSyncState {
   visibility: Visibility;
   serverVersion: number; // last known server version (0 = unknown)
   conflict: { serverVersion: number } | null; // non-null triggers conflict UX
+  /**
+   * One-shot "awaiting baseline capture" marker (S8). Set by REQUEST_BASELINE
+   * when a writer (switch-init / load / freshness-pull) has just adopted a new
+   * cloud baseline and the engine must snapshot the post-increment generation
+   * into `lastSavedVersion` on its next effect tick; cleared by CAPTURE_BASELINE.
+   * Optional/transient so white-box `makeInternal({...})` constructions stay
+   * valid without it (defaults to undefined === not awaiting). Replaces the
+   * former `needsVersionSyncRef`.
+   */
+  awaitingBaselineCapture?: boolean;
 }
 
 export interface CloudInit {

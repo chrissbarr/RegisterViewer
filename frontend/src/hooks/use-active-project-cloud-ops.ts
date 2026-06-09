@@ -23,7 +23,6 @@ interface ConflictHandlerParams {
   activeLocalIdRef: MutableRefObject<string | null>;
   internalRef: MutableRefObject<InternalCloudSyncState>;
   lastFreshnessCheckRef: MutableRefObject<number>;
-  needsVersionSyncRef: MutableRefObject<boolean>;
   updateCloudMetadata: (localId: string, updates: CloudMetadataUpdate) => ProjectStorageWriteResult;
   appStateRef: MutableRefObject<AppState>;
   setInternal: (updater: (prev: InternalCloudSyncState) => InternalCloudSyncState) => void;
@@ -166,7 +165,7 @@ function handleUpdatedResultImpl(params: UpdatedHandlerParams): SaveOutcome {
 async function handleConflictResult(params: ConflictHandlerParams): Promise<void> {
   const {
     result, attempt, dataVersionRef, capturedLocalId, existingCloudId,
-    activeLocalIdRef, internalRef, lastFreshnessCheckRef, needsVersionSyncRef,
+    activeLocalIdRef, internalRef, lastFreshnessCheckRef,
     updateCloudMetadata, appStateRef, setInternal, dispatch, getJwt,
   } = params;
 
@@ -211,7 +210,7 @@ async function handleConflictResult(params: ConflictHandlerParams): Promise<void
     }
 
     const freshnessCtx: FreshnessCheckContext = {
-      internalRef, dataVersionRef, dispatch, needsVersionSyncRef,
+      internalRef, dataVersionRef, dispatch,
       lastFreshnessCheckRef, updateCloudMetadata, setInternal,
     };
     const pullResult = await checkAndPullFreshVersion(freshnessCtx, {
@@ -238,7 +237,6 @@ interface ActiveProjectCloudOpsDeps {
   appStateRef: MutableRefObject<AppState>;
   dataVersionRef: MutableRefObject<number>;
   mutationLockRef: MutableRefObject<boolean>;
-  needsVersionSyncRef: MutableRefObject<boolean>;
   lastFreshnessCheckRef: MutableRefObject<number>;
   updateCloudMetadata: (localId: string, updates: CloudMetadataUpdate) => ProjectStorageWriteResult;
   createNewProject: (name: string, state: ReturnType<typeof serializeState>) => string | null;
@@ -273,7 +271,7 @@ interface ActiveProjectCloudOps {
 export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): ActiveProjectCloudOps {
   const {
     core: { internalRef, activeLocalIdRef, setInternal },
-    appStateRef, dataVersionRef, mutationLockRef, needsVersionSyncRef, lastFreshnessCheckRef,
+    appStateRef, dataVersionRef, mutationLockRef, lastFreshnessCheckRef,
     updateCloudMetadata, createNewProject, loadAsUnsaved, getJwt, dispatch,
   } = deps;
 
@@ -393,7 +391,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
         if (result.kind === 'conflict') {
           await handleConflictResult({
             result, attempt, dataVersionRef, capturedLocalId, existingCloudId,
-            activeLocalIdRef, internalRef, lastFreshnessCheckRef, needsVersionSyncRef,
+            activeLocalIdRef, internalRef, lastFreshnessCheckRef,
             updateCloudMetadata, appStateRef, setInternal, dispatch, getJwt,
           });
           return 'conflict';
@@ -420,7 +418,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
       }
     });
     return lockResult.executed ? lockResult.result : 'lock-held';
-  }, [updateCloudMetadata, applyCreatedResult, mutationLockRef, dataVersionRef, getJwt, internalRef, appStateRef, activeLocalIdRef, setInternal, dispatch, needsVersionSyncRef, lastFreshnessCheckRef]);
+  }, [updateCloudMetadata, applyCreatedResult, mutationLockRef, dataVersionRef, getJwt, internalRef, appStateRef, activeLocalIdRef, setInternal, dispatch, lastFreshnessCheckRef]);
 
   const fork = useCallback(async () => {
     if (!isCloudEnabled()) return;
@@ -563,8 +561,10 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
           return;
         }
 
-        // Signal the version-tracking useEffect to capture lastSavedVersion
-        needsVersionSyncRef.current = true;
+        // Signal the engine to capture lastSavedVersion on its next effect tick
+        // (replaces needsVersionSyncRef). LOAD_SUCCEEDED merges over this, so the
+        // awaiting-capture marker survives until the engine clears it.
+        setInternal((prev) => cloudSyncReducer(prev, { type: 'REQUEST_BASELINE' }));
 
         setInternal((prev) => cloudSyncReducer(prev, {
           type: 'LOAD_SUCCEEDED',
@@ -594,7 +594,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
         }));
       }
     },
-    [activeLocalIdRef, createNewProject, dispatch, loadAsUnsaved, needsVersionSyncRef, getJwt, setInternal, updateCloudMetadata],
+    [activeLocalIdRef, createNewProject, dispatch, loadAsUnsaved, getJwt, setInternal, updateCloudMetadata],
   );
 
   const ops = useMemo(

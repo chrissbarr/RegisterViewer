@@ -13,7 +13,6 @@ export interface FreshnessCheckContext {
   internalRef: MutableRefObject<InternalCloudSyncState>;
   dataVersionRef: MutableRefObject<number>;
   dispatch: (action: ImportStateAction) => void;
-  needsVersionSyncRef: MutableRefObject<boolean>;
   lastFreshnessCheckRef: MutableRefObject<number>;
   updateCloudMetadata: (localId: string, updates: CloudMetadataUpdate) => ProjectStorageWriteResult;
   setInternal: (updater: (prev: InternalCloudSyncState) => InternalCloudSyncState) => void;
@@ -57,7 +56,7 @@ export async function checkAndPullFreshVersion(
 ): Promise<FreshnessCheckResult> {
   const {
     internalRef, dataVersionRef, dispatch,
-    needsVersionSyncRef, lastFreshnessCheckRef,
+    lastFreshnessCheckRef,
     updateCloudMetadata, setInternal,
   } = ctx;
   const {
@@ -148,7 +147,9 @@ export async function checkAndPullFreshVersion(
     project: parsed.project,
     addressUnitBits: parsed.addressUnitBits,
   });
-  needsVersionSyncRef.current = true;
+  // Mark "awaiting baseline capture" so the engine snapshots the new generation
+  // into lastSavedVersion on its next effect tick (replaces needsVersionSyncRef).
+  setInternal((prev) => cloudSyncReducer(prev, { type: 'REQUEST_BASELINE' }));
 
   setInternal((prev) => cloudSyncReducer(prev, {
     type: 'APPLY_PULL',

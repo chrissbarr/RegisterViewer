@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import { CLOUD_SYNC_DEBOUNCE_MS } from '../constants';
+import { cloudSyncReducer } from '../utils/cloud-sync-reducer';
 import type { InternalCloudSyncState, SaveOutcome } from '../types/cloud-sync';
 
 const MAX_AUTO_SYNC_RETRIES = 4;
@@ -37,7 +38,6 @@ interface UseCloudSyncEngineResult {
   flushCloudSync: () => Promise<void>;
   syncTimerRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
   dataVersionRef: MutableRefObject<number>;
-  needsVersionSyncRef: MutableRefObject<boolean>;
   mutationLockRef: MutableRefObject<boolean>;
 }
 
@@ -81,7 +81,6 @@ export function useCloudSyncEngine(deps: UseCloudSyncEngineDeps): UseCloudSyncEn
   // ── Dirty tracking refs and state ──────────────────────────────────
   const mutationLockRef = useRef(false);
   const dataVersionRef = useRef(0);
-  const needsVersionSyncRef = useRef(false);
   const [isDirty, setIsDirty] = useState(false);
   // Sentinel: use Symbol() so the first effect run always detects a data change
   const prevDataDepsRef = useRef<DataDeps>({
@@ -114,10 +113,14 @@ export function useCloudSyncEngine(deps: UseCloudSyncEngineDeps): UseCloudSyncEn
       dataVersionRef.current++;
     }
 
-    if (needsVersionSyncRef.current) {
-      needsVersionSyncRef.current = false;
+    // Baseline-capture handshake (S8): a writer adopted a new cloud baseline and
+    // set `awaitingBaselineCapture`. Snapshot the POST-increment generation into
+    // lastSavedVersion via CAPTURE_BASELINE (clears the marker). Must run after
+    // the dataVersionRef bump above so the captured tick matches the legacy
+    // needsVersionSyncRef behavior exactly.
+    if (internal.awaitingBaselineCapture) {
       const capturedVersion = dataVersionRef.current;
-      setInternal((prev) => ({ ...prev, lastSavedVersion: capturedVersion }));
+      setInternal((prev) => cloudSyncReducer(prev, { type: 'CAPTURE_BASELINE', version: capturedVersion }));
       return;
     }
 
@@ -125,7 +128,7 @@ export function useCloudSyncEngine(deps: UseCloudSyncEngineDeps): UseCloudSyncEn
       && internal.lastSavedVersion >= 0
       && dataVersionRef.current !== internal.lastSavedVersion);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- dataDeps is accessed only via its individual properties (already in the dep array); the object reference is stored for next-render comparison only
-  }, [dataDeps.registers, dataDeps.registerValues, dataDeps.project, dataDeps.addressUnitBits, internal.cloudId, internal.lastSavedVersion, setInternal]);
+  }, [dataDeps.registers, dataDeps.registerValues, dataDeps.project, dataDeps.addressUnitBits, internal.cloudId, internal.lastSavedVersion, internal.awaitingBaselineCapture, setInternal]);
 
   // ── Auto-sync effect ───────────────────────────────────────────────
   useEffect(() => {
@@ -215,5 +218,5 @@ export function useCloudSyncEngine(deps: UseCloudSyncEngineDeps): UseCloudSyncEn
     }
   }, [getJwt, saveToCloud]);
 
-  return { isDirty, syncStatus, flushCloudSync, syncTimerRef, dataVersionRef, needsVersionSyncRef, mutationLockRef };
+  return { isDirty, syncStatus, flushCloudSync, syncTimerRef, dataVersionRef, mutationLockRef };
 }

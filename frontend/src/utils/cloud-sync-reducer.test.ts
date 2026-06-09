@@ -499,4 +499,39 @@ describe('cloudSyncReducer', () => {
       expect(next.serverVersion).toBe(7);
     });
   });
+
+  // S8: the version-sync handshake — replaces needsVersionSyncRef.
+  describe('baseline-capture handshake (S8)', () => {
+    it('REQUEST_BASELINE sets the awaiting-capture marker, preserving other fields', () => {
+      const prev: InternalCloudSyncState = {
+        ...initialInternalState,
+        cloudId: 'abc',
+        isOwner: true,
+        storage: 'cloud',
+        lastSavedVersion: 7,
+        serverVersion: 3,
+      };
+      const next = cloudSyncReducer(prev, { type: 'REQUEST_BASELINE' });
+      expect(next.awaitingBaselineCapture).toBe(true);
+      // The marker does NOT itself touch lastSavedVersion — capture happens later.
+      expect(next.lastSavedVersion).toBe(7);
+      expect(next.cloudId).toBe('abc');
+      expect(next.serverVersion).toBe(3);
+    });
+
+    it('CAPTURE_BASELINE records the supplied version and clears the marker', () => {
+      const prev: InternalCloudSyncState = {
+        ...initialInternalState,
+        cloudId: 'abc',
+        isOwner: true,
+        storage: 'cloud',
+        lastSavedVersion: -1,
+        awaitingBaselineCapture: true,
+      };
+      const next = cloudSyncReducer(prev, { type: 'CAPTURE_BASELINE', version: 5 });
+      expect(next.lastSavedVersion).toBe(5);
+      expect(next.awaitingBaselineCapture).toBe(false);
+      expect(next.cloudId).toBe('abc');
+    });
+  });
 });

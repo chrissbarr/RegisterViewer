@@ -59,6 +59,16 @@ import type { Visibility } from '../types/project';
  * - `OP_FAILED { error }` → `{ ...prev, status:'idle', error }` (the flat-shape
  *   "operation failed → idle + error" transition; converts the active-ops
  *   save/fork/delete/load failure arms that today write that shape raw)
+ *
+ * S8 version-sync handshake (replaces `needsVersionSyncRef` — the three
+ * true-writers + the engine reader). Operates on the current flat shape via the
+ * transient `awaitingBaselineCapture` field:
+ * - `REQUEST_BASELINE` → `{ ...prev, awaitingBaselineCapture: true }`, the
+ *   one-shot "awaiting capture" marker the writers (switch-init / load /
+ *   freshness-pull) set after adopting a new cloud baseline
+ * - `CAPTURE_BASELINE { version }` → `{ ...prev, lastSavedVersion: version,
+ *   awaitingBaselineCapture: false }`, dispatched by the engine at the
+ *   post-increment effect tick with `dataVersionRef.current`
  */
 export type CloudSyncAction =
   | {
@@ -117,7 +127,9 @@ export type CloudSyncAction =
       cloudSavedAt: string | null;
       visibility: Visibility;
     }
-  | { type: 'OP_FAILED'; error: string };
+  | { type: 'OP_FAILED'; error: string }
+  | { type: 'REQUEST_BASELINE' }
+  | { type: 'CAPTURE_BASELINE'; version: number };
 
 export function cloudSyncReducer(
   state: InternalCloudSyncState,
@@ -229,6 +241,12 @@ export function cloudSyncReducer(
       };
     case 'OP_FAILED':
       return { ...state, status: 'idle', error: action.error };
+    case 'REQUEST_BASELINE':
+      // One-shot marker; the engine captures the post-increment generation on
+      // its next effect tick (CAPTURE_BASELINE). Does NOT touch lastSavedVersion.
+      return { ...state, awaitingBaselineCapture: true };
+    case 'CAPTURE_BASELINE':
+      return { ...state, lastSavedVersion: action.version, awaitingBaselineCapture: false };
     default: {
       // Exhaustiveness guard: a later slice that adds an action without a case
       // here gets a compile error. Returns `state` unchanged at runtime.

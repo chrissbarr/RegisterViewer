@@ -18,7 +18,6 @@ interface UseProjectSwitchInitDeps {
   activeLocalId: string | null;
   projects: ProjectListEntry[];
   projectsRef: MutableRefObject<ProjectListEntry[]>;
-  needsVersionSyncRef: MutableRefObject<boolean>;
   syncTimerRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
   dataVersionRef: MutableRefObject<number>;
   mutationLockRef: MutableRefObject<boolean>;
@@ -56,7 +55,7 @@ export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
   const {
     core: { internalRef, setInternal },
     activeLocalId, projects,
-    projectsRef, needsVersionSyncRef, syncTimerRef,
+    projectsRef, syncTimerRef,
     dataVersionRef, mutationLockRef, getJwt, lastFreshnessCheckRef, updateCloudMetadata, dispatch,
     lastDeparture,
   } = deps;
@@ -190,7 +189,6 @@ export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
       const lastSavedVersion = hasStoredUnsyncedChanges
         ? STORED_UNSYNCED_LAST_SAVED_VERSION
         : dataVersionRef.current;
-      needsVersionSyncRef.current = !hasStoredUnsyncedChanges;
       setCloudUrl(cloudId);
       const next = {
         ...internalRef.current,
@@ -207,12 +205,20 @@ export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
       };
       internalRef.current = next;
       setInternal((prev) => cloudSyncReducer(prev, { type: 'INIT_CLOUD', seed: next }));
+      // Clean incoming cloud project: mark "awaiting baseline capture" so the
+      // engine snapshots the current generation into lastSavedVersion on its
+      // next effect tick (replaces `needsVersionSyncRef.current = true`). When
+      // stored unsynced changes exist we stay dirty (no capture) — the
+      // STORED_UNSYNCED_LAST_SAVED_VERSION sentinel above keeps it dirty.
+      if (!hasStoredUnsyncedChanges) {
+        setInternal((prev) => cloudSyncReducer(prev, { type: 'REQUEST_BASELINE' }));
+      }
 
       // Freshness check for incoming project
       const jwt = getJwt();
       if (jwt && isOwner && !conflictVersion && !hasStoredUnsyncedChanges) {
         const freshnessCtx: FreshnessCheckContext = {
-          internalRef, dataVersionRef, dispatch, needsVersionSyncRef,
+          internalRef, dataVersionRef, dispatch,
           lastFreshnessCheckRef, updateCloudMetadata, setInternal,
         };
         checkAndPullFreshVersion(freshnessCtx, {

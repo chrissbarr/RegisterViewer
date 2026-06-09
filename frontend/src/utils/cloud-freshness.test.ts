@@ -47,12 +47,24 @@ function makeCtx(overrides: Partial<FreshnessCheckContext> = {}): FreshnessCheck
     internalRef: { current: makeInternalState() },
     dataVersionRef: { current: 5 }, // matches lastSavedVersion => not dirty
     dispatch: vi.fn(),
-    needsVersionSyncRef: { current: false },
     lastFreshnessCheckRef: { current: 0 }, // never checked before
     updateCloudMetadata: vi.fn(() => writeOk()),
     setInternal: vi.fn(),
     ...overrides,
   };
+}
+
+/**
+ * True when one of the setInternal dispatches requested a baseline capture
+ * (REQUEST_BASELINE → awaitingBaselineCapture: true). Replaces the former
+ * `needsVersionSyncRef.current` white-box assertion.
+ */
+function requestedBaselineCapture(setInternal: Mock): boolean {
+  return setInternal.mock.calls.some((call) => {
+    const updater = call[0];
+    return typeof updater === 'function'
+      && updater(initialInternalState).awaitingBaselineCapture === true;
+  });
 }
 
 function makeCall(overrides: Partial<FreshnessCheckCall> = {}): FreshnessCheckCall {
@@ -104,7 +116,7 @@ describe('checkAndPullFreshVersion', () => {
       addressUnitBits: PARSED_DATA.addressUnitBits,
     });
     expect(patchProjectState).toHaveBeenCalledWith(TEST_LOCAL_ID, expect.anything());
-    expect(ctx.needsVersionSyncRef.current).toBe(true);
+    expect(requestedBaselineCapture(ctx.setInternal as Mock)).toBe(true);
     expect(ctx.setInternal).toHaveBeenCalled();
     expect(ctx.updateCloudMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, {
       cloudSavedAt: '2024-06-01T00:00:00Z',
@@ -267,7 +279,7 @@ describe('checkAndPullFreshVersion', () => {
     });
     expect(patchProjectState).not.toHaveBeenCalled();
     expect(ctx.updateCloudMetadata).not.toHaveBeenCalled();
-    expect(ctx.needsVersionSyncRef.current).toBe(true);
+    expect(requestedBaselineCapture(ctx.setInternal as Mock)).toBe(true);
   });
 
   it('calls getProject exactly once (single-fetch pattern)', async () => {
@@ -321,7 +333,7 @@ describe('checkAndPullFreshVersion', () => {
 
     expect(result).toEqual({ applied: false, reason: 'local-persist-failed', serverVersion: 3 });
     expect(ctx.dispatch).not.toHaveBeenCalled();
-    expect(ctx.needsVersionSyncRef.current).toBe(false);
+    expect(requestedBaselineCapture(ctx.setInternal as Mock)).toBe(false);
     expect(ctx.setInternal).not.toHaveBeenCalled();
     expect(ctx.updateCloudMetadata).not.toHaveBeenCalled();
   });
@@ -347,7 +359,7 @@ describe('checkAndPullFreshVersion', () => {
     expect(result).toEqual({ applied: false, reason: 'local-persist-failed', serverVersion: 3 });
     expect(patchProjectState).toHaveBeenCalled();
     expect(ctx.dispatch).not.toHaveBeenCalled();
-    expect(ctx.needsVersionSyncRef.current).toBe(false);
+    expect(requestedBaselineCapture(ctx.setInternal as Mock)).toBe(false);
     expect(ctx.setInternal).not.toHaveBeenCalled();
   });
 

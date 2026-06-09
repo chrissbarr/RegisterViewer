@@ -410,7 +410,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
 
   // Merged dirty tracking + auto-sync engine
   const canAutoSync = internal.storage === 'cloud' && internal.isOwner && !!authUser && !internal.conflict;
-  const { isDirty, syncStatus, flushCloudSync, syncTimerRef, dataVersionRef, needsVersionSyncRef, mutationLockRef } = useCloudSyncEngine({
+  const { isDirty, syncStatus, flushCloudSync, syncTimerRef, dataVersionRef, mutationLockRef } = useCloudSyncEngine({
     dataDeps: appState,
     internal,
     setInternal,
@@ -439,7 +439,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   // All items are refs or stable functions — empty deps array is correct.
   const freshnessCtx: FreshnessCheckContext = useMemo(
     () => ({
-      internalRef, dataVersionRef, dispatch, needsVersionSyncRef,
+      internalRef, dataVersionRef, dispatch,
       lastFreshnessCheckRef, updateCloudMetadata, setInternal,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -451,7 +451,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   // absorbed into useActiveProjectCloudOps.
   const { loginRequired, pendingOpRef, dismissLogin, ...rawActiveOps } = useActiveProjectCloudOps({
     core, appStateRef,
-    dataVersionRef, mutationLockRef, needsVersionSyncRef, lastFreshnessCheckRef,
+    dataVersionRef, mutationLockRef, lastFreshnessCheckRef,
     updateCloudMetadata, createNewProject, loadAsUnsaved, getJwt, dispatch,
   });
   saveToCloudRef.current = rawActiveOps.saveToCloud;
@@ -556,7 +556,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   // --- Active project switch: cloud state init + best-effort save ---
   useProjectSwitchInit({
     core, activeLocalId, projects,
-    projectsRef, needsVersionSyncRef, syncTimerRef,
+    projectsRef, syncTimerRef,
     dataVersionRef, mutationLockRef, getJwt, lastFreshnessCheckRef, updateCloudMetadata,
     dispatch,
     lastDeparture,

@@ -89,12 +89,11 @@ describe('useCloudSyncEngine - dirty tracking', () => {
       expect(result.current.isDirty).toBe(false);
     });
 
-    it('returns ref objects for dataVersion, needsVersionSync, and mutationLock', () => {
+    it('returns ref objects for dataVersion and mutationLock', () => {
       const { result } = renderHook(() =>
         useCloudSyncEngine(makeDeps({ setInternal })),
       );
       expect(result.current.dataVersionRef).toHaveProperty('current');
-      expect(result.current.needsVersionSyncRef).toHaveProperty('current');
       expect(result.current.mutationLockRef).toHaveProperty('current');
     });
   });
@@ -273,19 +272,17 @@ describe('useCloudSyncEngine - dirty tracking', () => {
     });
   });
 
-  // ── needsVersionSyncRef ──────────────────────────────────────────
+  // ── baseline-capture handshake (S8, replaces needsVersionSyncRef) ─
 
-  describe('needsVersionSyncRef', () => {
-    it('initializes needsVersionSyncRef to false', () => {
-      const { result } = renderHook(() =>
-        useCloudSyncEngine(makeDeps({ setInternal })),
-      );
-      expect(result.current.needsVersionSyncRef.current).toBe(false);
-    });
+  describe('baseline-capture handshake', () => {
+    // The engine no longer owns a `needsVersionSyncRef`; the "awaiting capture"
+    // marker now lives on reducer state as `internal.awaitingBaselineCapture`,
+    // and the engine dispatches CAPTURE_BASELINE (via setInternal) on its next
+    // effect tick. These tests re-express the SAME capture behavior.
 
-    it('calls setInternal with captured version when needsVersionSyncRef is true', () => {
+    it('dispatches CAPTURE_BASELINE with the post-increment version when awaiting and data changed', () => {
       const dataDeps = makeDataDeps();
-      const internal = makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 0 });
+      const internal = makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 0, awaitingBaselineCapture: true });
       const deps = makeDeps({ dataDeps, internal, setInternal });
 
       const { result, rerender } = renderHook(
@@ -293,40 +290,20 @@ describe('useCloudSyncEngine - dirty tracking', () => {
         { initialProps: deps },
       );
 
-      act(() => {
-        result.current.needsVersionSyncRef.current = true;
-      });
-
-      // Trigger a data change to fire the effect
-      rerender({ ...deps, dataDeps: makeDataDeps({ registers: [{ id: 'r3' }] }) });
+      // Trigger a data change to fire the effect (capture is post-increment).
+      rerender({ ...deps, internal, dataDeps: makeDataDeps({ registers: [{ id: 'r3' }] }) });
 
       expect(setInternal).toHaveBeenCalled();
       const updater = setInternal.mock.calls[setInternal.mock.calls.length - 1][0] as (prev: InternalCloudSyncState) => InternalCloudSyncState;
       const updated = updater(internal);
+      // Captured at the post-increment generation (the off-by-one guard).
       expect(updated.lastSavedVersion).toBe(result.current.dataVersionRef.current);
-    });
-
-    it('clears needsVersionSyncRef after syncing', () => {
-      const dataDeps = makeDataDeps();
-      const internal = makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 0 });
-      const deps = makeDeps({ dataDeps, internal, setInternal });
-
-      const { result, rerender } = renderHook(
-        (props: UseCloudSyncEngineDeps) => useCloudSyncEngine(props),
-        { initialProps: deps },
-      );
-
-      act(() => {
-        result.current.needsVersionSyncRef.current = true;
-      });
-
-      rerender({ ...deps, dataDeps: makeDataDeps({ registers: [{ id: 'r4' }] }) });
-      expect(result.current.needsVersionSyncRef.current).toBe(false);
+      expect(updated.awaitingBaselineCapture).toBe(false);
     });
 
     it('captures current version without bump when data deps did not change', () => {
       const dataDeps = makeDataDeps();
-      const internal = makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 1 });
+      const internal = makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 1, awaitingBaselineCapture: true });
       const deps = makeDeps({ dataDeps, internal, setInternal });
 
       const { result, rerender } = renderHook(
@@ -336,26 +313,22 @@ describe('useCloudSyncEngine - dirty tracking', () => {
 
       const versionBeforeSync = result.current.dataVersionRef.current;
 
-      act(() => {
-        result.current.needsVersionSyncRef.current = true;
-      });
-
-      // Rerender with same data deps but changed internal to retrigger effect
+      // Rerender with same data deps but changed internal (still awaiting) to retrigger effect.
       rerender({
         ...deps,
-        internal: makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 0 }),
+        internal: makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 0, awaitingBaselineCapture: true }),
       });
 
       expect(setInternal).toHaveBeenCalled();
       const updater = setInternal.mock.calls[setInternal.mock.calls.length - 1][0] as (prev: InternalCloudSyncState) => InternalCloudSyncState;
-      const updated = updater(makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 0 }));
+      const updated = updater(makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 0, awaitingBaselineCapture: true }));
       // Version should not have bumped since data deps are same references
       expect(updated.lastSavedVersion).toBe(versionBeforeSync);
     });
 
-    it('early-returns before isDirty update when needsVersionSyncRef triggers', () => {
+    it('early-returns before isDirty update when awaiting baseline capture', () => {
       const dataDeps = makeDataDeps();
-      const internal = makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 1 });
+      const internal = makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 1, awaitingBaselineCapture: true });
       const deps = makeDeps({ dataDeps, internal, setInternal });
 
       const { result, rerender } = renderHook(
@@ -365,12 +338,8 @@ describe('useCloudSyncEngine - dirty tracking', () => {
 
       expect(result.current.isDirty).toBe(false);
 
-      act(() => {
-        result.current.needsVersionSyncRef.current = true;
-      });
-
-      // Data change would normally make it dirty, but the sync path returns early
-      rerender({ ...deps, dataDeps: makeDataDeps({ registers: [{ id: 'r9' }] }) });
+      // Data change would normally make it dirty, but the capture path returns early.
+      rerender({ ...deps, internal, dataDeps: makeDataDeps({ registers: [{ id: 'r9' }] }) });
       expect(result.current.isDirty).toBe(false);
     });
   });

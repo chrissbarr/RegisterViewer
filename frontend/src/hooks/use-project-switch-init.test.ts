@@ -131,7 +131,6 @@ function buildDefaultDeps() {
     activeLocalId: PROJECT_A_LOCAL_ID as string | null,
     projects,
     projectsRef: makeRef<ProjectListEntry[]>(projects),
-    needsVersionSyncRef: makeRef(false),
     syncTimerRef: makeRef<ReturnType<typeof setTimeout> | null>(null),
     dataVersionRef: makeRef(1),
     mutationLockRef: makeRef(false),
@@ -581,6 +580,9 @@ describe('useProjectSwitchInit', () => {
       rerender({ activeLocalId: PROJECT_B_LOCAL_ID });
 
       expect(deps.internalRef.current.lastSavedVersion).toBe(4);
+      // A clean incoming cloud project requests a baseline capture so the engine
+      // snapshots the generation into lastSavedVersion (replaces needsVersionSync).
+      expect(deps.internalRef.current.awaitingBaselineCapture).toBe(true);
       expect(checkAndPullFreshVersion).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({ knownVersion: 9 }),
@@ -665,7 +667,8 @@ describe('useProjectSwitchInit', () => {
       rerender({ activeLocalId: PROJECT_B_LOCAL_ID });
 
       expect(deps.internalRef.current.lastSavedVersion).not.toBe(deps.dataVersionRef.current);
-      expect(deps.needsVersionSyncRef.current).toBe(false);
+      // Stored unsynced changes stay dirty: no baseline-capture request is made.
+      expect(deps.internalRef.current.awaitingBaselineCapture).toBeFalsy();
       expect(checkAndPullFreshVersion).not.toHaveBeenCalled();
     });
 

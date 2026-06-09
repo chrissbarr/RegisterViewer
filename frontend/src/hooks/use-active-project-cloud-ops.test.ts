@@ -128,7 +128,6 @@ function buildDeps() {
     appStateRef: makeRef<AppState>(appState),
     dataVersionRef: makeRef(1),
     mutationLockRef: makeRef(false),
-    needsVersionSyncRef: makeRef(false),
     lastFreshnessCheckRef: makeRef(0),
     updateCloudMetadata: vi.fn(() => writeOk()),
     createNewProject: vi.fn(() => 'new-local-id'),
@@ -1001,7 +1000,13 @@ describe('useActiveProjectCloudOps', () => {
         project: { title: 'Cloud Project' },
         addressUnitBits: 8,
       });
-      expect(deps.needsVersionSyncRef.current).toBe(true);
+      // A baseline-capture request is dispatched (replaces needsVersionSyncRef)
+      // so the engine snapshots lastSavedVersion on its next effect tick.
+      const requestedBaseline = deps.setInternal.mock.calls.some((call) => {
+        const arg = call[0];
+        return typeof arg === 'function' && arg(INITIAL_INTERNAL_STATE).awaitingBaselineCapture === true;
+      });
+      expect(requestedBaseline).toBe(true);
       // setInternal should reflect loaded state
       const lastSetCall = deps.setInternal.mock.calls.at(-1)![0];
       const loadedState = typeof lastSetCall === 'function' ? lastSetCall(INITIAL_INTERNAL_STATE) : lastSetCall;
