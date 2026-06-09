@@ -52,7 +52,7 @@ import { useCloudSyncEngine, type SyncStatus } from '../hooks/use-cloud-sync-eng
 import { useAuthTransition } from '../hooks/use-auth-transition';
 import { useProjectSwitchInit } from '../hooks/use-project-switch-init';
 import { syncCloudProjectsFromServer, positiveVersion, normalizeServerVersion } from '../utils/cloud-sync';
-import { cloudSyncReducer, type CloudSyncAction } from '../utils/cloud-sync-reducer';
+import { cloudSyncReducer, cloudStateForEntry, type CloudSyncAction } from '../utils/cloud-sync-reducer';
 import { checkAndPullFreshVersion, type FreshnessCheckContext } from '../utils/cloud-freshness';
 import { isOwnedCloudEntry } from '../utils/project-identity';
 import type { Visibility } from '../types/project';
@@ -479,21 +479,31 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
         clearCloudUrl();
       } else {
         const hasStoredUnsyncedChanges = metadata.hasUnsyncedChanges === true;
-        // Temporary inline seed builder — the pure `cloudStateForEntry` lands in
-        // S10. Produces the same flat state the former `__RAW` updater did.
-        const seed: InternalCloudSyncState = {
-          ...internalRef.current,
+        // Path A of the unified init (S10a / DESIGN §3a): build the flat INIT
+        // state via the shared pure `cloudStateForEntry`. The four divergences
+        // from Path B (`useProjectSwitchInit`) are explicit decisions here:
+        //   • lastCloudSavedAt — Path A threads `metadata.cloudSavedAt` (carried
+        //     in the seed, vs Path B's hardcoded null).
+        //   • setCloudUrl — DELIBERATELY OMITTED on Path A's cloud branch:
+        //     initFromProject runs at startup where AppLoader already owns the
+        //     URL, so it intentionally does not call setCloudUrl(cloudId).
+        //   • baseline seeding — Path A does NOT dispatch REQUEST_BASELINE; the
+        //     untracked/dirty split is carried entirely by `lastSavedVersion`
+        //     (the dirty sentinel vs. the current generation in the seed).
+        //   • freshness kickoff — Path A does NOT kick off a freshness check.
+        const seed = cloudStateForEntry({
+          prev: internalRef.current,
           cloudId,
           isOwner,
           storage,
           shareUrl: buildProjectUrl(cloudId),
-          lastSavedVersion: hasStoredUnsyncedChanges ? Number.MAX_SAFE_INTEGER : dataVersionRef.current,
           lastCloudSavedAt: metadata.cloudSavedAt ?? null,
-          error: null,
           visibility: metadata.visibility ?? 'private',
           serverVersion: normalizeServerVersion(metadata.serverVersion),
-          conflict: metadata.cloudConflictVersion ? { serverVersion: metadata.cloudConflictVersion } : null,
-        };
+          conflictVersion: metadata.cloudConflictVersion ?? null,
+          hasUnsyncedChanges: hasStoredUnsyncedChanges,
+          dataVersion: dataVersionRef.current,
+        });
         // Synchronous ref write so the activeLocalId effect's guard
         // (cloudId === internalRef.current.cloudId) sees this in the same commit.
         internalRef.current = seed;

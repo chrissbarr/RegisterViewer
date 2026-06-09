@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cloudSyncReducer } from './cloud-sync-reducer';
+import { cloudSyncReducer, cloudStateForEntry, type CloudEntrySeed } from './cloud-sync-reducer';
 import { initialInternalState, type InternalCloudSyncState } from '../types/cloud-sync';
 
 describe('cloudSyncReducer', () => {
@@ -532,6 +532,88 @@ describe('cloudSyncReducer', () => {
       expect(next.lastSavedVersion).toBe(5);
       expect(next.awaitingBaselineCapture).toBe(false);
       expect(next.cloudId).toBe('abc');
+    });
+  });
+
+  // S10a: the pure init-seed builder shared by both init paths.
+  describe('cloudStateForEntry (S10a)', () => {
+    const base: CloudEntrySeed = {
+      prev: initialInternalState,
+      cloudId: 'cloud123',
+      isOwner: true,
+      storage: 'cloud',
+      shareUrl: 'https://example/p/cloud123',
+      lastCloudSavedAt: '2026-01-01T00:00:00Z',
+      visibility: 'unlisted',
+      serverVersion: 7,
+      conflictVersion: null,
+      hasUnsyncedChanges: false,
+      dataVersion: 4,
+    };
+
+    it('builds the flat cloud INIT state, spreading prev underneath', () => {
+      const prev: InternalCloudSyncState = {
+        ...initialInternalState,
+        // A field not overwritten by the seed should survive (proves the spread).
+        asyncTransient: 'syncing',
+      };
+      const next = cloudStateForEntry({ ...base, prev });
+      expect(next).toEqual({
+        ...prev,
+        cloudId: 'cloud123',
+        isOwner: true,
+        storage: 'cloud',
+        shareUrl: 'https://example/p/cloud123',
+        lastSavedVersion: 4,
+        lastCloudSavedAt: '2026-01-01T00:00:00Z',
+        error: null,
+        visibility: 'unlisted',
+        serverVersion: 7,
+        conflict: null,
+      });
+      // Untouched prev field carries through.
+      expect(next.asyncTransient).toBe('syncing');
+    });
+
+    it('seeds lastSavedVersion from dataVersion when there are no unsynced changes (untracked baseline)', () => {
+      const next = cloudStateForEntry({ ...base, hasUnsyncedChanges: false, dataVersion: 11 });
+      expect(next.lastSavedVersion).toBe(11);
+    });
+
+    it('seeds lastSavedVersion to the dirty sentinel when stored unsynced changes exist', () => {
+      const next = cloudStateForEntry({ ...base, hasUnsyncedChanges: true, dataVersion: 11 });
+      expect(next.lastSavedVersion).toBe(Number.MAX_SAFE_INTEGER);
+    });
+
+    it('carries lastCloudSavedAt from the seed verbatim — Path A threads metadata.cloudSavedAt', () => {
+      const next = cloudStateForEntry({ ...base, lastCloudSavedAt: '2026-02-02T00:00:00Z' });
+      expect(next.lastCloudSavedAt).toBe('2026-02-02T00:00:00Z');
+    });
+
+    it('carries a null lastCloudSavedAt from the seed verbatim — Path B hardcodes null', () => {
+      const next = cloudStateForEntry({ ...base, lastCloudSavedAt: null });
+      expect(next.lastCloudSavedAt).toBeNull();
+    });
+
+    it('sets the conflict marker from conflictVersion when present', () => {
+      const next = cloudStateForEntry({ ...base, conflictVersion: 9 });
+      expect(next.conflict).toEqual({ serverVersion: 9 });
+    });
+
+    it('leaves conflict null when conflictVersion is null', () => {
+      const next = cloudStateForEntry({ ...base, conflictVersion: null });
+      expect(next.conflict).toBeNull();
+    });
+
+    it('always clears error on entry', () => {
+      const next = cloudStateForEntry({ ...base, prev: { ...initialInternalState, error: 'stale' } });
+      expect(next.error).toBeNull();
+    });
+
+    it('feeds INIT_CLOUD as the seed — the single materialize transition', () => {
+      const seed = cloudStateForEntry(base);
+      const next = cloudSyncReducer(initialInternalState, { type: 'INIT_CLOUD', seed });
+      expect(next).toBe(seed);
     });
   });
 

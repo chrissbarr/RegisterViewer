@@ -6,7 +6,7 @@ import { saveProjectToCloudImpl } from '../utils/cloud-operations';
 import { checkAndPullFreshVersion, type FreshnessCheckContext } from '../utils/cloud-freshness';
 import { isOwnedCloudEntry } from '../utils/project-identity';
 import { positiveVersion, normalizeServerVersion } from '../utils/cloud-sync';
-import { cloudSyncReducer } from '../utils/cloud-sync-reducer';
+import { cloudSyncReducer, cloudStateForEntry } from '../utils/cloud-sync-reducer';
 import { type CloudSyncCore } from '../types/cloud-sync';
 import type { CloudMetadataUpdate } from '../types/cloud-sync';
 import type { ProjectListEntry } from '../types/project';
@@ -27,10 +27,6 @@ interface UseProjectSwitchInitDeps {
   dispatch: (action: ImportStateAction) => void;
   lastDeparture: ProjectDepartureSnapshot | null;
 }
-
-// Stored `hasUnsyncedChanges` means this tab loaded a payload that already
-// needs saving, even before any in-memory edit increments the generation.
-const STORED_UNSYNCED_LAST_SAVED_VERSION = Number.MAX_SAFE_INTEGER;
 
 // Maximum number of times scheduleRetry will re-arm attemptSave after a
 // contended withMutationLock call. A wedged lock must not be allowed to drive
@@ -186,30 +182,35 @@ export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
       const conflictVersion = ownedEntry?.cloudConflictVersion ?? ownedProject?.cloudConflictVersion ?? null;
       const serverVersion = normalizeServerVersion(ownedEntry?.serverVersion ?? ownedProject?.serverVersion);
       const hasStoredUnsyncedChanges = (ownedEntry?.hasUnsyncedChanges ?? ownedProject?.hasUnsyncedChanges) === true;
-      const lastSavedVersion = hasStoredUnsyncedChanges
-        ? STORED_UNSYNCED_LAST_SAVED_VERSION
-        : dataVersionRef.current;
+      // Path B of the unified init (S10a / DESIGN §3a): build the flat INIT state
+      // via the shared pure `cloudStateForEntry`. The four divergences from Path A
+      // (`initFromProject`) are explicit decisions here:
+      //   • setCloudUrl — Path B explicitly sets the URL on switch (below).
+      //   • lastCloudSavedAt — Path B hardcodes null (vs Path A's metadata value).
+      //   • baseline seeding — Path B dispatches REQUEST_BASELINE when there are
+      //     no stored unsynced changes (below); the dirty case keeps the sentinel.
+      //   • freshness kickoff — Path B kicks off a freshness check (below).
       setCloudUrl(cloudId);
-      const next = {
-        ...internalRef.current,
+      const next = cloudStateForEntry({
+        prev: internalRef.current,
         cloudId,
         isOwner,
         storage,
         shareUrl: buildProjectUrl(cloudId),
-        lastSavedVersion,
         lastCloudSavedAt: null,
-        error: null,
         visibility: ownedEntry?.visibility ?? ownedProject?.visibility ?? 'private',
         serverVersion,
-        conflict: conflictVersion ? { serverVersion: conflictVersion } : null,
-      };
+        conflictVersion,
+        hasUnsyncedChanges: hasStoredUnsyncedChanges,
+        dataVersion: dataVersionRef.current,
+      });
       internalRef.current = next;
       setInternal((prev) => cloudSyncReducer(prev, { type: 'INIT_CLOUD', seed: next }));
       // Clean incoming cloud project: mark "awaiting baseline capture" so the
       // engine snapshots the current generation into lastSavedVersion on its
       // next effect tick (replaces `needsVersionSyncRef.current = true`). When
-      // stored unsynced changes exist we stay dirty (no capture) — the
-      // STORED_UNSYNCED_LAST_SAVED_VERSION sentinel above keeps it dirty.
+      // stored unsynced changes exist we stay dirty (no capture) — the dirty
+      // sentinel `cloudStateForEntry` seeded above keeps it dirty.
       if (!hasStoredUnsyncedChanges) {
         setInternal((prev) => cloudSyncReducer(prev, { type: 'REQUEST_BASELINE' }));
       }

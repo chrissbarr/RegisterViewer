@@ -140,6 +140,66 @@ export type CloudSyncAction =
   | { type: 'CAPTURE_BASELINE'; version: number }
   | { type: 'SET_ASYNC_TRANSIENT'; value: 'syncing' | 'offline' | null };
 
+/**
+ * Inputs to {@link cloudStateForEntry}, the pure builder shared by both cloud
+ * INIT paths (S10a — DESIGN §3a). Carries exactly the values that vary between
+ * Path A (`initFromProject`) and Path B (`useProjectSwitchInit`), so each
+ * divergence is a visible seed field rather than a buried per-path difference.
+ */
+export interface CloudEntrySeed {
+  /** State to spread underneath — both paths spread `internalRef.current`. */
+  prev: InternalCloudSyncState;
+  cloudId: string;
+  isOwner: boolean;
+  storage: 'local' | 'cloud';
+  shareUrl: string;
+  /**
+   * The A-9 divergence made visible: Path A threads `metadata.cloudSavedAt`,
+   * Path B hardcodes `null`. Carried in the seed instead of inside the builder.
+   */
+  lastCloudSavedAt: string | null;
+  visibility: Visibility;
+  /** Already-normalized server version (0 = unknown). */
+  serverVersion: number;
+  /** Conflict version, or null when there is no recorded conflict. */
+  conflictVersion: number | null;
+  /**
+   * Whether the stored payload already needs saving. Drives the dirty sentinel
+   * vs. the current generation in `lastSavedVersion` (the untracked/dirty
+   * baseline split the callers reproduce as a follow-up `REQUEST_BASELINE`).
+   */
+  hasUnsyncedChanges: boolean;
+  /** The engine's current generation (`dataVersionRef.current`). */
+  dataVersion: number;
+}
+
+/**
+ * Pure builder for the cloud INIT state, consumed by `INIT_CLOUD` from BOTH init
+ * paths (`initFromProject` and `useProjectSwitchInit`). Returns the current flat
+ * `InternalCloudSyncState` shape (the `Baseline`/`Phase` split is S14) — the same
+ * state the temporary inline seed builders produced. The four documented
+ * divergences (`setCloudUrl`, baseline seeding, freshness kickoff,
+ * `lastCloudSavedAt`) live in the callers as explicit post-steps; this builder
+ * only owns the shape, with the `lastCloudSavedAt` divergence carried in the seed.
+ */
+export function cloudStateForEntry(seed: CloudEntrySeed): InternalCloudSyncState {
+  return {
+    ...seed.prev,
+    cloudId: seed.cloudId,
+    isOwner: seed.isOwner,
+    storage: seed.storage,
+    shareUrl: seed.shareUrl,
+    // Dirty sentinel (MAX_SAFE_INTEGER) keeps a stored-unsynced payload dirty
+    // until the first save; otherwise snapshot the current generation.
+    lastSavedVersion: seed.hasUnsyncedChanges ? Number.MAX_SAFE_INTEGER : seed.dataVersion,
+    lastCloudSavedAt: seed.lastCloudSavedAt,
+    error: null,
+    visibility: seed.visibility,
+    serverVersion: seed.serverVersion,
+    conflict: seed.conflictVersion ? { serverVersion: seed.conflictVersion } : null,
+  };
+}
+
 export function cloudSyncReducer(
   state: InternalCloudSyncState,
   action: CloudSyncAction,
