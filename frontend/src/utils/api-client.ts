@@ -93,7 +93,7 @@ export async function createProject(
   });
 }
 
-interface GetProjectResponse {
+export interface GetProjectResponse {
   id: string;
   data: unknown;
   createdAt: string;

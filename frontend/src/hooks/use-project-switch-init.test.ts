@@ -11,7 +11,7 @@ vi.mock('../utils/cloud-operations', () => ({
   saveProjectToCloudImpl: vi.fn(),
 }));
 
-vi.mock('../utils/cloud-freshness', () => ({
+vi.mock('./use-cloud-freshness', () => ({
   checkAndPullFreshVersion: vi.fn(),
 }));
 
@@ -50,7 +50,7 @@ vi.mock('../utils/storage', () => ({
 // ── Imports for mocked modules ───────────────────────────────────────
 
 import { saveProjectToCloudImpl } from '../utils/cloud-operations';
-import { checkAndPullFreshVersion } from '../utils/cloud-freshness';
+import { checkAndPullFreshVersion } from './use-cloud-freshness';
 import { loadProject } from '../utils/project-storage';
 import { withMutationLock } from '../utils/cloud-utils';
 

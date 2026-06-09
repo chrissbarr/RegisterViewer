@@ -2,7 +2,7 @@ import { useCallback, useMemo, useRef, useState, type Dispatch, type MutableRefO
 import { exportToObject, serializeState } from '../utils/storage';
 import { isCloudEnabled, ApiError } from '../utils/api-client';
 import { fetchAndParseCloudProject, decideStorageForFetched } from '../utils/cloud-project-loader';
-import { checkAndPullFreshVersion, type FreshnessCheckContext } from '../utils/cloud-freshness';
+import { checkAndPullFreshVersion, type FreshnessCheckContext } from './use-cloud-freshness';
 import { materializeCloudProject } from '../utils/cloud-materialize';
 import { friendlyErrorMessage } from '../utils/friendly-error';
 import { buildProjectUrl, patchProjectState, type ProjectStorageWriteResult } from '../utils/project-storage';

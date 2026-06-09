@@ -1,22 +1,22 @@
-import type { MutableRefObject } from 'react';
-import { getProject } from './api-client';
 import { parseProjectData } from './cloud-project-loader';
-import { patchProjectState, loadProject } from './project-storage';
-import { cloudSyncReducer } from './cloud-sync-reducer';
-import { deserializeState } from './storage';
-import { materializeCloudProject } from './cloud-materialize';
-import type { ImportStateAction } from '../context/app-context';
-import type { InternalCloudSyncState, CloudMetadataUpdate } from '../types/cloud-sync';
-import type { ProjectStorageWriteResult } from './project-storage';
+import type { ImportResult } from './storage';
+import type { GetProjectResponse } from './api-client';
+import type { Visibility } from '../types/project';
 
-/** Stable refs and callbacks; same across all freshness check calls within a provider. */
-export interface FreshnessCheckContext {
-  internalRef: MutableRefObject<InternalCloudSyncState>;
-  dataVersionRef: MutableRefObject<number>;
-  dispatch: (action: ImportStateAction) => void;
-  lastFreshnessCheckRef: MutableRefObject<number>;
-  updateCloudMetadata: (localId: string, updates: CloudMetadataUpdate) => ProjectStorageWriteResult;
-  setInternal: (updater: (prev: InternalCloudSyncState) => InternalCloudSyncState) => void;
+/**
+ * Primitive inputs the pure freshness decision reads. The effectful shim
+ * (`use-cloud-freshness.ts`) snapshots these off its refs/state before each
+ * call so the decision logic stays free of React/context dependencies.
+ */
+export interface FreshnessDecisionState {
+  /** Current time (ms). The shim passes `Date.now()`. */
+  now: number;
+  /** Timestamp of the last freshness check (ms); used for the throttle gate. */
+  lastCheck: number;
+  /** Current data generation counter (`dataVersionRef.current`). */
+  dataVersion: number;
+  /** Baseline the data is compared against for dirtiness (`lastSavedVersion`). */
+  baseline: number;
 }
 
 /** Per-call parameters that vary on each invocation. */
@@ -29,144 +29,97 @@ export interface FreshnessCheckCall {
   expectedDataVersion?: number;
 }
 
-type FreshnessCheckResult =
-  | { applied: true; serverVersion: number }
+/**
+ * The discriminated decision returned by `decideFreshnessPull`. Non-`pull`
+ * kinds are terminal "do not pull" outcomes; `pull` carries the parsed payload
+ * and the metadata the shim applies.
+ */
+type FreshnessDecision =
+  | { kind: 'throttled' }
+  | { kind: 'dirty'; serverVersion?: number }
+  | { kind: 'fresh'; serverVersion: number }
+  | { kind: 'changed-during-pull'; serverVersion?: number }
+  | { kind: 'parse-failed'; serverVersion: number }
+  | { kind: 'local-persist-failed'; serverVersion: number }
   | {
-      applied: false;
-      reason: 'throttled' | 'fresh' | 'dirty' | 'changed-during-pull' | 'parse-failed' | 'local-persist-failed';
-      serverVersion?: number;
+      kind: 'pull';
+      serverVersion: number;
+      cloudSavedAt: string;
+      visibility: Visibility;
+      importPayload: ImportResult;
     };
 
 const FRESHNESS_CHECK_INTERVAL = 30_000; // 30 seconds
 
 /**
- * Check whether the server has a newer version of the project.
- * If it does and the user hasn't started editing (isDirty=false), pull the latest.
+ * Pure freshness decision. Mirrors the `cloud-sync.ts` pure-core pattern: no
+ * React/context imports, fed entirely by primitive inputs.
  *
- * Throttled to at most once per 30 seconds (reset on project switch).
- * `pull-if-clean` bypasses throttle/version checks for clean 409 recovery,
- * but still refuses to overwrite local edits. `replace-with-server` is for
- * explicit user action from the conflict UI.
+ * Called twice by the shim to preserve the original two-phase timing:
  *
- * Uses a single fetch; the full project data from getProject() is parsed
- * directly via parseProjectData() to avoid a double-fetch.
+ * 1. **Pre-fetch** (`serverResponse` omitted): runs the throttle gate and the
+ *    pre-fetch dirty / changed-during-pull re-checks. Returns a blocking
+ *    decision when one fires, or `null` to signal "proceed to the network
+ *    fetch". (`now`/`lastCheck` only matter here.)
+ * 2. **Post-fetch** (`serverResponse` provided): runs the version compare and
+ *    the SAME dirty / changed-during-pull re-checks against the now-current
+ *    `dataVersion`, then parses the payload. Always returns a terminal
+ *    decision (`fresh` | `dirty` | `changed-during-pull` | `parse-failed` |
+ *    `pull`).
+ *
+ * The two-phase dirty re-check (before AND after the fetch) is what prevents a
+ * new local edit landing mid-fetch from being silently overwritten.
  */
-export async function checkAndPullFreshVersion(
-  ctx: FreshnessCheckContext,
+export function decideFreshnessPull(
+  state: FreshnessDecisionState,
   call: FreshnessCheckCall,
-): Promise<FreshnessCheckResult> {
-  const {
-    internalRef, dataVersionRef, dispatch,
-    lastFreshnessCheckRef,
-    updateCloudMetadata, setInternal,
-  } = ctx;
-  const {
-    cloudId,
-    knownVersion,
-    localId,
-    jwt,
-    mode = 'normal',
-    expectedDataVersion,
-  } = call;
+  serverResponse?: GetProjectResponse,
+): FreshnessDecision | null {
+  const { now, lastCheck, dataVersion, baseline } = state;
+  const { knownVersion, mode = 'normal', expectedDataVersion } = call;
   const bypassThrottle = mode !== 'normal';
   const bypassVersionCheck = mode !== 'normal';
   const allowDirtyOverwrite = mode === 'replace-with-server';
 
-  // Throttle check (visibilitychange can fire rapidly).
-  if (!bypassThrottle && Date.now() - lastFreshnessCheckRef.current < FRESHNESS_CHECK_INTERVAL) {
-    return { applied: false, reason: 'throttled' };
+  if (serverResponse === undefined) {
+    // ── Pre-fetch gate ──────────────────────────────────────────────────
+    // Throttle check (visibilitychange can fire rapidly).
+    if (!bypassThrottle && now - lastCheck < FRESHNESS_CHECK_INTERVAL) {
+      return { kind: 'throttled' };
+    }
+    if (!allowDirtyOverwrite && dataVersion !== baseline) {
+      return { kind: 'dirty' };
+    }
+    if (expectedDataVersion !== undefined && dataVersion !== expectedDataVersion) {
+      return { kind: 'changed-during-pull' };
+    }
+    // No blocking gate — proceed to the network fetch.
+    return null;
   }
-  lastFreshnessCheckRef.current = Date.now();
 
-  if (!allowDirtyOverwrite && dataVersionRef.current !== internalRef.current.lastSavedVersion) {
-    return { applied: false, reason: 'dirty' };
-  }
-  if (expectedDataVersion !== undefined && dataVersionRef.current !== expectedDataVersion) {
-    return { applied: false, reason: 'changed-during-pull' };
-  }
-
-  const serverResponse = await getProject(cloudId, jwt);
+  // ── Post-fetch decision ───────────────────────────────────────────────
   const serverVersion = serverResponse.version;
 
   if (!bypassVersionCheck && serverVersion <= knownVersion) {
-    return { applied: false, reason: 'fresh', serverVersion };
+    return { kind: 'fresh', serverVersion };
   }
 
   // Re-check after the network round-trip so a new edit cannot be overwritten.
-  if (!allowDirtyOverwrite && dataVersionRef.current !== internalRef.current.lastSavedVersion) {
-    return { applied: false, reason: 'dirty', serverVersion };
+  if (!allowDirtyOverwrite && dataVersion !== baseline) {
+    return { kind: 'dirty', serverVersion };
   }
-  if (expectedDataVersion !== undefined && dataVersionRef.current !== expectedDataVersion) {
-    return { applied: false, reason: 'changed-during-pull', serverVersion };
+  if (expectedDataVersion !== undefined && dataVersion !== expectedDataVersion) {
+    return { kind: 'changed-during-pull', serverVersion };
   }
 
   const parsed = parseProjectData(serverResponse.data);
-  if (!parsed) return { applied: false, reason: 'parse-failed', serverVersion };
+  if (!parsed) return { kind: 'parse-failed', serverVersion };
 
-  if (localId) {
-    // P4 — `merge`: update localStorage with fresh server data while preserving
-    // local-only UI fields (activeRegisterId, mapTableWidth, mapShowGaps,
-    // mapSortDescending). These fields are not synced to the server, so
-    // overwriting them with defaults would reset the user's view preferences.
-    // This is the ONLY persist path that preserves UI fields.
-    let persistStatus = '';
-    let persistError: unknown;
-    const { persisted } = materializeCloudProject({
-      writeMode: 'merge',
-      localId,
-      cloudId,
-      importResult: parsed,
-      callbacks: {
-        loadExistingState: (id) => {
-          const existingProject = loadProject(id);
-          return existingProject ? deserializeState(existingProject.state) : null;
-        },
-        persist: (serialized) => {
-          const persistResult = patchProjectState(localId, serialized);
-          persistStatus = persistResult.status;
-          persistError = persistResult.error;
-          return persistResult.ok;
-        },
-      },
-    });
-    if (!persisted) {
-      if (import.meta.env.DEV) {
-        console.warn('[cloud-freshness] Failed to persist pulled project:', localId, persistStatus, persistError);
-      }
-      return { applied: false, reason: 'local-persist-failed', serverVersion };
-    }
-    const metadataResult = updateCloudMetadata(localId, {
-      cloudSavedAt: serverResponse.updatedAt,
-      visibility: serverResponse.visibility,
-      serverVersion,
-      cloudConflictVersion: null,
-      hasUnsyncedChanges: false,
-    });
-    if (!metadataResult.ok) {
-      if (import.meta.env.DEV) {
-        console.warn('[cloud-freshness] Failed to persist pulled project metadata:', localId, metadataResult.status, metadataResult.error);
-      }
-      return { applied: false, reason: 'local-persist-failed', serverVersion };
-    }
-  }
-
-  dispatch({
-    type: 'IMPORT_STATE',
-    registers: parsed.registers,
-    values: parsed.values,
-    project: parsed.project,
-    addressUnitBits: parsed.addressUnitBits,
-  });
-  // Mark "awaiting baseline capture" so the engine snapshots the new generation
-  // into lastSavedVersion on its next effect tick (replaces needsVersionSyncRef).
-  setInternal((prev) => cloudSyncReducer(prev, { type: 'REQUEST_BASELINE' }));
-
-  setInternal((prev) => cloudSyncReducer(prev, {
-    type: 'APPLY_PULL',
+  return {
+    kind: 'pull',
     serverVersion,
     cloudSavedAt: serverResponse.updatedAt,
     visibility: serverResponse.visibility,
-  }));
-
-  return { applied: true, serverVersion };
+    importPayload: parsed,
+  };
 }

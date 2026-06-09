@@ -1,32 +1,20 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
-import { checkAndPullFreshVersion, type FreshnessCheckContext, type FreshnessCheckCall } from './cloud-freshness';
-import { initialInternalState, type InternalCloudSyncState } from '../types/cloud-sync';
-import type { ProjectStorageWriteResult } from './project-storage';
+import {
+  decideFreshnessPull,
+  type FreshnessDecisionState,
+  type FreshnessCheckCall,
+} from './cloud-freshness';
+import type { GetProjectResponse } from './api-client';
 
 // ── Mocks ────────────────────────────────────────────────────────────
-
-vi.mock('./api-client', () => ({
-  getProject: vi.fn(),
-}));
+// `decideFreshnessPull` parses the server payload via parseProjectData; mock it
+// so the pure decision is driven by a primitive (parsed vs null).
 
 vi.mock('./cloud-project-loader', () => ({
   parseProjectData: vi.fn(),
 }));
 
-vi.mock('./project-storage', () => ({
-  patchProjectState: vi.fn(),
-  loadProject: vi.fn(),
-}));
-
-vi.mock('./storage', () => ({
-  serializeState: vi.fn((state: unknown) => state),
-  deserializeState: vi.fn((state: unknown) => state),
-}));
-
-import { getProject } from './api-client';
 import { parseProjectData } from './cloud-project-loader';
-import { patchProjectState, loadProject } from './project-storage';
-import { deserializeState } from './storage';
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -34,37 +22,22 @@ const TEST_CLOUD_ID = 'cloud-abc';
 const TEST_LOCAL_ID = 'local-123';
 const TEST_JWT = 'mock-jwt';
 
-function writeOk(): ProjectStorageWriteResult {
-  return { ok: true, status: 'ok', evictedLocalIds: [] };
-}
+const PARSED_DATA = {
+  registers: [{ id: 'r1', name: 'STATUS', width: 32, fields: [] }],
+  values: { r1: 0xFFn },
+  project: { title: 'Test' },
+  addressUnitBits: 8,
+};
 
-function makeInternalState(overrides: Partial<InternalCloudSyncState> = {}): InternalCloudSyncState {
-  return { ...initialInternalState, cloudId: TEST_CLOUD_ID, lastSavedVersion: 5, serverVersion: 1, ...overrides };
-}
-
-function makeCtx(overrides: Partial<FreshnessCheckContext> = {}): FreshnessCheckContext {
+/** Baseline decision state: clean (dataVersion === baseline), never checked. */
+function makeState(overrides: Partial<FreshnessDecisionState> = {}): FreshnessDecisionState {
   return {
-    internalRef: { current: makeInternalState() },
-    dataVersionRef: { current: 5 }, // matches lastSavedVersion => not dirty
-    dispatch: vi.fn(),
-    lastFreshnessCheckRef: { current: 0 }, // never checked before
-    updateCloudMetadata: vi.fn(() => writeOk()),
-    setInternal: vi.fn(),
+    now: 1_000_000,
+    lastCheck: 0,
+    dataVersion: 5,
+    baseline: 5,
     ...overrides,
   };
-}
-
-/**
- * True when one of the setInternal dispatches requested a baseline capture
- * (REQUEST_BASELINE → awaitingBaselineCapture: true). Replaces the former
- * `needsVersionSyncRef.current` white-box assertion.
- */
-function requestedBaselineCapture(setInternal: Mock): boolean {
-  return setInternal.mock.calls.some((call) => {
-    const updater = call[0];
-    return typeof updater === 'function'
-      && updater(initialInternalState).awaitingBaselineCapture === true;
-  });
 }
 
 function makeCall(overrides: Partial<FreshnessCheckCall> = {}): FreshnessCheckCall {
@@ -77,376 +50,124 @@ function makeCall(overrides: Partial<FreshnessCheckCall> = {}): FreshnessCheckCa
   };
 }
 
-const PARSED_DATA = {
-  registers: [{ id: 'r1', name: 'STATUS', width: 32, fields: [] }],
-  values: { r1: 0xFFn },
-  project: { title: 'Test' },
-  addressUnitBits: 8,
-};
-
-// ── Setup ────────────────────────────────────────────────────────────
+function makeServerResponse(overrides: Partial<GetProjectResponse> = {}): GetProjectResponse {
+  return {
+    id: TEST_CLOUD_ID,
+    data: { version: 1, registers: [], registerValues: {} },
+    createdAt: '2024-06-01T00:00:00Z',
+    updatedAt: '2024-06-01T00:00:00Z',
+    isOwner: true,
+    visibility: 'private',
+    version: 3, // newer than knownVersion (1) by default
+    ...overrides,
+  };
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
-  (patchProjectState as Mock).mockReturnValue(writeOk());
+  (parseProjectData as Mock).mockReturnValue(PARSED_DATA);
 });
 
-// ── Tests ────────────────────────────────────────────────────────────
+// ── Pre-fetch gate ───────────────────────────────────────────────────
 
-describe('checkAndPullFreshVersion', () => {
-  it('pulls fresh version when server has newer version', async () => {
-    const ctx = makeCtx();
-    const call = makeCall();
-    (getProject as Mock).mockResolvedValue({
-      data: { version: 1, registers: [], registerValues: {} },
-      updatedAt: '2024-06-01T00:00:00Z',
-      version: 3, // newer than knownVersion (1)
-    });
-    (parseProjectData as Mock).mockReturnValue(PARSED_DATA);
+describe('decideFreshnessPull — pre-fetch gate', () => {
+  it('returns null (proceed) when clean, un-throttled, and no expected version mismatch', () => {
+    expect(decideFreshnessPull(makeState(), makeCall())).toBeNull();
+  });
 
-    await checkAndPullFreshVersion(ctx, call);
+  it('throttles a second call within 30s', () => {
+    const state = makeState({ now: 1_005_000, lastCheck: 1_000_000 }); // 5s ago
+    expect(decideFreshnessPull(state, makeCall())).toEqual({ kind: 'throttled' });
+  });
 
-    expect(getProject).toHaveBeenCalledTimes(1);
-    expect(getProject).toHaveBeenCalledWith(TEST_CLOUD_ID, TEST_JWT);
-    expect(ctx.dispatch).toHaveBeenCalledWith({
-      type: 'IMPORT_STATE',
-      registers: PARSED_DATA.registers,
-      values: PARSED_DATA.values,
-      project: PARSED_DATA.project,
-      addressUnitBits: PARSED_DATA.addressUnitBits,
-    });
-    expect(patchProjectState).toHaveBeenCalledWith(TEST_LOCAL_ID, expect.anything());
-    expect(requestedBaselineCapture(ctx.setInternal as Mock)).toBe(true);
-    expect(ctx.setInternal).toHaveBeenCalled();
-    expect(ctx.updateCloudMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, {
-      cloudSavedAt: '2024-06-01T00:00:00Z',
+  it('does not throttle once 30s have elapsed', () => {
+    const state = makeState({ now: 1_031_000, lastCheck: 1_000_000 }); // 31s ago
+    expect(decideFreshnessPull(state, makeCall())).toBeNull();
+  });
+
+  it('reports dirty (phase 1) when dataVersion diverges from baseline', () => {
+    const state = makeState({ dataVersion: 10, baseline: 5 });
+    expect(decideFreshnessPull(state, makeCall())).toEqual({ kind: 'dirty' });
+  });
+
+  it('reports changed-during-pull (phase 1) when expectedDataVersion no longer matches', () => {
+    // dataVersion === baseline (not dirty) but diverges from expectedDataVersion.
+    const state = makeState({ dataVersion: 6, baseline: 6 });
+    const call = makeCall({ expectedDataVersion: 5 });
+    expect(decideFreshnessPull(state, call)).toEqual({ kind: 'changed-during-pull' });
+  });
+
+  it('replace-with-server bypasses throttle and the dirty gate pre-fetch', () => {
+    const state = makeState({ now: 1_001_000, lastCheck: 1_000_000, dataVersion: 10, baseline: 5 });
+    const call = makeCall({ mode: 'replace-with-server' });
+    expect(decideFreshnessPull(state, call)).toBeNull();
+  });
+
+  it('pull-if-clean bypasses throttle but still refuses a dirty overwrite pre-fetch', () => {
+    const state = makeState({ now: 1_001_000, lastCheck: 1_000_000, dataVersion: 10, baseline: 5 });
+    const call = makeCall({ mode: 'pull-if-clean', expectedDataVersion: 5 });
+    expect(decideFreshnessPull(state, call)).toEqual({ kind: 'dirty' });
+  });
+});
+
+// ── Post-fetch decision ──────────────────────────────────────────────
+
+describe('decideFreshnessPull — post-fetch decision', () => {
+  it('pulls when the server has a newer version', () => {
+    const decision = decideFreshnessPull(makeState(), makeCall(), makeServerResponse({ version: 3 }));
+    expect(decision).toEqual({
+      kind: 'pull',
       serverVersion: 3,
-      cloudConflictVersion: null,
-      hasUnsyncedChanges: false,
+      cloudSavedAt: '2024-06-01T00:00:00Z',
+      visibility: 'private',
+      importPayload: PARSED_DATA,
     });
   });
 
-  it('skips when server version equals known version (cache is fresh)', async () => {
-    const ctx = makeCtx();
+  it('reports fresh when server version equals known version', () => {
     const call = makeCall({ knownVersion: 2 });
-    (getProject as Mock).mockResolvedValue({
-      data: {},
-      updatedAt: '2024-06-01T00:00:00Z',
-      version: 2, // same as knownVersion
-    });
-
-    await checkAndPullFreshVersion(ctx, call);
-
-    expect(getProject).toHaveBeenCalledTimes(1);
-    expect(ctx.dispatch).not.toHaveBeenCalled();
-    expect(ctx.updateCloudMetadata).not.toHaveBeenCalled();
+    const decision = decideFreshnessPull(makeState(), call, makeServerResponse({ version: 2 }));
+    expect(decision).toEqual({ kind: 'fresh', serverVersion: 2 });
   });
 
-  it('skips when server version is less than known version', async () => {
-    const ctx = makeCtx();
+  it('reports fresh when server version is less than known version', () => {
     const call = makeCall({ knownVersion: 5 });
-    (getProject as Mock).mockResolvedValue({
-      data: {},
-      updatedAt: '2024-06-01T00:00:00Z',
-      version: 3, // less than knownVersion
-    });
-
-    await checkAndPullFreshVersion(ctx, call);
-
-    expect(ctx.dispatch).not.toHaveBeenCalled();
+    const decision = decideFreshnessPull(makeState(), call, makeServerResponse({ version: 3 }));
+    expect(decision).toEqual({ kind: 'fresh', serverVersion: 3 });
   });
 
-  it('skips when project is dirty (user has edited)', async () => {
-    const ctx = makeCtx({
-      dataVersionRef: { current: 10 }, // different from lastSavedVersion (5)
-    });
-    const call = makeCall();
-    (getProject as Mock).mockResolvedValue({
-      data: {},
-      updatedAt: '2024-06-01T00:00:00Z',
-      version: 3, // newer
-    });
-
-    await checkAndPullFreshVersion(ctx, call);
-
-    expect(getProject).not.toHaveBeenCalled();
-    expect(ctx.dispatch).not.toHaveBeenCalled();
+  it('reports dirty (phase 2) when an edit landed during the fetch', () => {
+    // Pre-fetch was clean; post-fetch dataVersion now diverges from baseline.
+    const state = makeState({ dataVersion: 6, baseline: 5 });
+    const decision = decideFreshnessPull(state, makeCall(), makeServerResponse({ version: 3 }));
+    expect(decision).toEqual({ kind: 'dirty', serverVersion: 3 });
   });
 
-  it('skips when throttled (second call within 30s)', async () => {
-    const ctx = makeCtx({
-      lastFreshnessCheckRef: { current: Date.now() - 5_000 }, // 5 seconds ago
-    });
-    const call = makeCall();
-
-    await checkAndPullFreshVersion(ctx, call);
-
-    expect(getProject).not.toHaveBeenCalled();
-    expect(ctx.dispatch).not.toHaveBeenCalled();
+  it('reports changed-during-pull (phase 2) when expectedDataVersion drifted during the fetch', () => {
+    // dataVersion === baseline (not dirty) but no longer matches expectedDataVersion,
+    // so the dirty gate passes and the changed-during-pull gate fires.
+    const state = makeState({ dataVersion: 6, baseline: 6 });
+    const call = makeCall({ expectedDataVersion: 5, mode: 'pull-if-clean' });
+    const decision = decideFreshnessPull(state, call, makeServerResponse({ version: 3 }));
+    expect(decision).toEqual({ kind: 'changed-during-pull', serverVersion: 3 });
   });
 
-  it('replace-with-server bypasses throttle, version check, and isDirty guard', async () => {
-    const ctx = makeCtx({
-      lastFreshnessCheckRef: { current: Date.now() - 1_000 }, // recent = throttled
-      dataVersionRef: { current: 10 }, // dirty
-    });
-    const call = makeCall({
-      knownVersion: 5,
-      mode: 'replace-with-server',
-    });
-    (getProject as Mock).mockResolvedValue({
-      data: { version: 1, registers: [], registerValues: {} },
-      updatedAt: '2024-06-01T00:00:00Z',
-      version: 3, // less than knownVersion (would normally skip)
-    });
-    (parseProjectData as Mock).mockReturnValue(PARSED_DATA);
-
-    await checkAndPullFreshVersion(ctx, call);
-
-    // Should pull despite throttle, stale version, and dirty state
-    expect(getProject).toHaveBeenCalledTimes(1);
-    expect(ctx.dispatch).toHaveBeenCalledWith({
-      type: 'IMPORT_STATE',
-      registers: PARSED_DATA.registers,
-      values: PARSED_DATA.values,
-      project: PARSED_DATA.project,
-      addressUnitBits: PARSED_DATA.addressUnitBits,
-    });
-    expect(ctx.updateCloudMetadata).toHaveBeenCalled();
-  });
-
-  it('pull-if-clean bypasses throttle and version check but refuses dirty overwrite', async () => {
-    const ctx = makeCtx({
-      lastFreshnessCheckRef: { current: Date.now() - 1_000 },
-      dataVersionRef: { current: 10 },
-    });
-    const call = makeCall({
-      knownVersion: 5,
-      mode: 'pull-if-clean',
-      expectedDataVersion: 5,
-    });
-
-    const result = await checkAndPullFreshVersion(ctx, call);
-
-    expect(result).toEqual({ applied: false, reason: 'dirty' });
-    expect(getProject).not.toHaveBeenCalled();
-    expect(ctx.dispatch).not.toHaveBeenCalled();
-  });
-
-  it('pull-if-clean aborts when user edits during the fetch', async () => {
-    const ctx = makeCtx();
-    const call = makeCall({
-      knownVersion: 5,
-      mode: 'pull-if-clean',
-      expectedDataVersion: 5,
-    });
-    (getProject as Mock).mockImplementation(async () => {
-      ctx.dataVersionRef.current = 6;
-      return {
-        data: { version: 1, registers: [], registerValues: {} },
-        updatedAt: '2024-06-01T00:00:00Z',
-        version: 3,
-      };
-    });
-    (parseProjectData as Mock).mockReturnValue(PARSED_DATA);
-
-    const result = await checkAndPullFreshVersion(ctx, call);
-
-    expect(result).toEqual({ applied: false, reason: 'dirty', serverVersion: 3 });
-    expect(ctx.dispatch).not.toHaveBeenCalled();
-    expect(patchProjectState).not.toHaveBeenCalled();
-  });
-
-  it('pulls into memory without localStorage writes when no localId exists', async () => {
-    const ctx = makeCtx();
-    const call = makeCall({ localId: null, mode: 'replace-with-server' });
-    (getProject as Mock).mockResolvedValue({
-      data: { version: 1, registers: [], registerValues: {} },
-      updatedAt: '2024-06-01T00:00:00Z',
-      version: 3,
-    });
-    (parseProjectData as Mock).mockReturnValue(PARSED_DATA);
-
-    const result = await checkAndPullFreshVersion(ctx, call);
-
-    expect(result).toEqual({ applied: true, serverVersion: 3 });
-    expect(ctx.dispatch).toHaveBeenCalledWith({
-      type: 'IMPORT_STATE',
-      registers: PARSED_DATA.registers,
-      values: PARSED_DATA.values,
-      project: PARSED_DATA.project,
-      addressUnitBits: PARSED_DATA.addressUnitBits,
-    });
-    expect(patchProjectState).not.toHaveBeenCalled();
-    expect(ctx.updateCloudMetadata).not.toHaveBeenCalled();
-    expect(requestedBaselineCapture(ctx.setInternal as Mock)).toBe(true);
-  });
-
-  it('calls getProject exactly once (single-fetch pattern)', async () => {
-    const ctx = makeCtx();
-    const call = makeCall();
-    (getProject as Mock).mockResolvedValue({
-      data: { version: 1, registers: [], registerValues: {} },
-      updatedAt: '2024-06-01T00:00:00Z',
-      version: 3,
-    });
-    (parseProjectData as Mock).mockReturnValue(PARSED_DATA);
-
-    await checkAndPullFreshVersion(ctx, call);
-
-    expect(getProject).toHaveBeenCalledTimes(1);
-  });
-
-  it('does not update state when parseProjectData returns null', async () => {
-    const ctx = makeCtx();
-    const call = makeCall();
-    (getProject as Mock).mockResolvedValue({
-      data: 'invalid-data',
-      updatedAt: '2024-06-01T00:00:00Z',
-      version: 3,
-    });
+  it('reports parse-failed when the server payload cannot be parsed', () => {
     (parseProjectData as Mock).mockReturnValue(null);
-
-    await checkAndPullFreshVersion(ctx, call);
-
-    expect(ctx.dispatch).not.toHaveBeenCalled();
-    expect(patchProjectState).not.toHaveBeenCalled();
-    expect(ctx.updateCloudMetadata).not.toHaveBeenCalled();
+    const decision = decideFreshnessPull(makeState(), makeCall(), makeServerResponse({ version: 3 }));
+    expect(decision).toEqual({ kind: 'parse-failed', serverVersion: 3 });
   });
 
-  it('does not dispatch or update metadata when local payload persistence fails', async () => {
-    const ctx = makeCtx();
-    const call = makeCall();
-    (getProject as Mock).mockResolvedValue({
-      data: { version: 1, registers: [], registerValues: {} },
-      updatedAt: '2024-06-01T00:00:00Z',
-      version: 3,
-    });
-    (parseProjectData as Mock).mockReturnValue(PARSED_DATA);
-    (patchProjectState as Mock).mockReturnValue({
-      ok: false,
-      status: 'quota-exceeded',
-      evictedLocalIds: ['cached-cloud'],
-    });
-
-    const result = await checkAndPullFreshVersion(ctx, call);
-
-    expect(result).toEqual({ applied: false, reason: 'local-persist-failed', serverVersion: 3 });
-    expect(ctx.dispatch).not.toHaveBeenCalled();
-    expect(requestedBaselineCapture(ctx.setInternal as Mock)).toBe(false);
-    expect(ctx.setInternal).not.toHaveBeenCalled();
-    expect(ctx.updateCloudMetadata).not.toHaveBeenCalled();
+  it('replace-with-server pulls despite a stale server version and dirty state', () => {
+    const state = makeState({ dataVersion: 10, baseline: 5 });
+    const call = makeCall({ knownVersion: 5, mode: 'replace-with-server' });
+    const decision = decideFreshnessPull(state, call, makeServerResponse({ version: 3 }));
+    expect(decision).toMatchObject({ kind: 'pull', serverVersion: 3 });
   });
 
-  it('does not dispatch or mark internal state fresh when metadata persistence fails', async () => {
-    const ctx = makeCtx({
-      updateCloudMetadata: vi.fn((): ProjectStorageWriteResult => ({
-        ok: false,
-        status: 'quota-exceeded',
-        evictedLocalIds: [],
-      })),
-    });
-    const call = makeCall();
-    (getProject as Mock).mockResolvedValue({
-      data: { version: 1, registers: [], registerValues: {} },
-      updatedAt: '2024-06-01T00:00:00Z',
-      version: 3,
-    });
-    (parseProjectData as Mock).mockReturnValue(PARSED_DATA);
-
-    const result = await checkAndPullFreshVersion(ctx, call);
-
-    expect(result).toEqual({ applied: false, reason: 'local-persist-failed', serverVersion: 3 });
-    expect(patchProjectState).toHaveBeenCalled();
-    expect(ctx.dispatch).not.toHaveBeenCalled();
-    expect(requestedBaselineCapture(ctx.setInternal as Mock)).toBe(false);
-    expect(ctx.setInternal).not.toHaveBeenCalled();
-  });
-
-  it('preserves existing UI fields (mapTableWidth, mapShowGaps, etc.) during pull', async () => {
-    const ctx = makeCtx();
-    const call = makeCall();
-    (getProject as Mock).mockResolvedValue({
-      data: { version: 1, registers: [], registerValues: {} },
-      updatedAt: '2024-06-01T00:00:00Z',
-      version: 3,
-    });
-    (parseProjectData as Mock).mockReturnValue(PARSED_DATA);
-
-    // Mock existing project with custom UI state
-    (loadProject as Mock).mockReturnValue({
-      localId: TEST_LOCAL_ID,
-      state: {
-        registers: [],
-        activeRegisterId: 'REG_X',
-        registerValues: {},
-        mapTableWidth: 64,
-        mapShowGaps: false,
-        mapSortDescending: true,
-      },
-    });
-    (deserializeState as Mock).mockReturnValue({
-      registers: [],
-      activeRegisterId: 'REG_X',
-      registerValues: {},
-      mapTableWidth: 64,
-      mapShowGaps: false,
-      mapSortDescending: true,
-    });
-
-    await checkAndPullFreshVersion(ctx, call);
-
-    expect(patchProjectState).toHaveBeenCalledWith(
-      TEST_LOCAL_ID,
-      expect.objectContaining({
-        activeRegisterId: 'REG_X',
-        mapTableWidth: 64,
-        mapShowGaps: false,
-        mapSortDescending: true,
-      }),
-    );
-  });
-
-  it('falls back to defaults when no existing project data', async () => {
-    const ctx = makeCtx();
-    const call = makeCall();
-    (getProject as Mock).mockResolvedValue({
-      data: { version: 1, registers: [], registerValues: {} },
-      updatedAt: '2024-06-01T00:00:00Z',
-      version: 3,
-    });
-    (parseProjectData as Mock).mockReturnValue(PARSED_DATA);
-    (loadProject as Mock).mockReturnValue(null);
-
-    await checkAndPullFreshVersion(ctx, call);
-
-    expect(patchProjectState).toHaveBeenCalledWith(
-      TEST_LOCAL_ID,
-      expect.objectContaining({
-        activeRegisterId: 'r1', // first register ID from PARSED_DATA
-        mapTableWidth: 32,
-        mapShowGaps: true,
-        mapSortDescending: false,
-      }),
-    );
-  });
-
-  it('updates lastFreshnessCheckRef timestamp', async () => {
-    const ctx = makeCtx({
-      lastFreshnessCheckRef: { current: 0 },
-    });
-    const call = makeCall();
-    (getProject as Mock).mockResolvedValue({
-      data: {},
-      updatedAt: '2024-06-01T00:00:00Z',
-      version: 1, // same as known — won't pull but still updates timestamp
-    });
-
-    const before = Date.now();
-    await checkAndPullFreshVersion(ctx, call);
-    const after = Date.now();
-
-    expect(ctx.lastFreshnessCheckRef.current).toBeGreaterThanOrEqual(before);
-    expect(ctx.lastFreshnessCheckRef.current).toBeLessThanOrEqual(after);
+  it('pull-if-clean bypasses the version check but pulls only when clean', () => {
+    const call = makeCall({ knownVersion: 5, mode: 'pull-if-clean', expectedDataVersion: 5 });
+    const decision = decideFreshnessPull(makeState(), call, makeServerResponse({ version: 3 }));
+    expect(decision).toMatchObject({ kind: 'pull', serverVersion: 3 });
   });
 });

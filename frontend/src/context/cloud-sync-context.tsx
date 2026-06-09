@@ -53,7 +53,7 @@ import { useAuthTransition } from '../hooks/use-auth-transition';
 import { useProjectSwitchInit } from '../hooks/use-project-switch-init';
 import { syncCloudProjectsFromServer, positiveVersion, normalizeServerVersion } from '../utils/cloud-sync';
 import { cloudSyncReducer, cloudStateForEntry, type CloudSyncAction } from '../utils/cloud-sync-reducer';
-import { checkAndPullFreshVersion, type FreshnessCheckContext } from '../utils/cloud-freshness';
+import { checkAndPullFreshVersion, type FreshnessCheckContext } from '../hooks/use-cloud-freshness';
 import { isOwnedCloudEntry } from '../utils/project-identity';
 import type { Visibility } from '../types/project';
 import { initialInternalState, type CloudInit, type CloudSyncCore, type InternalCloudSyncState, type SaveOutcome, type SyncResult } from '../types/cloud-sync';

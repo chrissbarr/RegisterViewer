@@ -3,7 +3,7 @@ import { buildProjectUrl, loadProject, type ProjectStorageWriteResult } from '..
 import { setCloudUrl, clearCloudUrl, withMutationLock } from '../utils/cloud-utils';
 import { exportToObject, deserializeState } from '../utils/storage';
 import { saveProjectToCloudImpl } from '../utils/cloud-operations';
-import { checkAndPullFreshVersion, type FreshnessCheckContext } from '../utils/cloud-freshness';
+import { checkAndPullFreshVersion, type FreshnessCheckContext } from './use-cloud-freshness';
 import { isOwnedCloudEntry } from '../utils/project-identity';
 import { positiveVersion, normalizeServerVersion } from '../utils/cloud-sync';
 import { cloudSyncReducer, cloudStateForEntry } from '../utils/cloud-sync-reducer';

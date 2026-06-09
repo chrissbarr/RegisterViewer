@@ -35,7 +35,7 @@ vi.mock('../utils/cloud-project-loader', async () => {
   };
 });
 
-vi.mock('../utils/cloud-freshness', () => ({
+vi.mock('./use-cloud-freshness', () => ({
   checkAndPullFreshVersion: vi.fn(),
 }));
 
@@ -85,7 +85,7 @@ import { isCloudEnabled } from '../utils/api-client';
 import { fetchAndParseCloudProject } from '../utils/cloud-project-loader';
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
 import { setCloudUrl, clearCloudUrl } from '../utils/cloud-utils';
-import { checkAndPullFreshVersion } from '../utils/cloud-freshness';
+import { checkAndPullFreshVersion } from './use-cloud-freshness';
 import { exportToObject } from '../utils/storage';
 import { patchProjectState } from '../utils/project-storage';
 
