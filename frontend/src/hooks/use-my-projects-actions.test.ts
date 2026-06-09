@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { useMyProjectsActions } from './use-my-projects-actions';
 import { DEFAULT_PROJECT_NAME } from '../types/project';
 import type { SyncResult } from '../types/cloud-sync';
+import { saveProject, hasLocalData } from '../utils/project-storage';
+import { fetchAndParseCloudProject } from '../utils/cloud-project-loader';
 
 const defaultMockProjects = [
   { localId: 'local-1', name: 'Project A', storage: 'cloud', cloudId: 'cloud-1', visibility: 'private', createdAt: '2026-01-01', localSavedAt: '2026-01-01', cloudSavedAt: '2026-01-01' },
@@ -98,6 +100,8 @@ beforeEach(() => {
   mockStorageActions.createNewProject.mockReturnValue('new-id');
   mockStorageActions.switchProject.mockReturnValue(true);
   mockCloudActions.syncCloudProjects.mockResolvedValue(makeSyncResult());
+  (hasLocalData as Mock).mockReturnValue(true);
+  (saveProject as Mock).mockReturnValue({ ok: true, status: 'ok', evictedLocalIds: [] });
 });
 
 /** Render the hook with open=true and flush the async cloud-sync useEffect. */
@@ -183,6 +187,77 @@ describe('useMyProjectsActions', () => {
       expect(mockStorageActions.switchProject).toHaveBeenCalledWith('local-1');
       expect(mockAnnounce).toHaveBeenCalledWith('Project opened');
       expect(onClose).toHaveBeenCalled();
+    });
+
+    it('handleOpen downloads and persists an evicted cloud project with the byte-identical replace payload', async () => {
+      (hasLocalData as Mock).mockReturnValue(false);
+      const parsed = {
+        registers: [{ id: 'reg-0' }],
+        values: { 'reg-0': 0x1234n },
+        project: { title: 'Cloud Title' },
+        addressUnitBits: 16,
+        version: 7,
+        updatedAt: '2026-02-02T00:00:00.000Z',
+        visibility: 'unlisted',
+      };
+      (fetchAndParseCloudProject as Mock).mockResolvedValue(parsed);
+
+      const onClose = vi.fn();
+      const { result } = await renderWithOpen(onClose);
+
+      await act(async () => {
+        await result.current.handleOpen('local-1');
+      });
+
+      expect(fetchAndParseCloudProject).toHaveBeenCalledWith('cloud-1', undefined);
+      expect(saveProject).toHaveBeenCalledTimes(1);
+      const [record, options] = (saveProject as Mock).mock.calls[0];
+      expect(record).toMatchObject({
+        localId: 'local-1',
+        cloudId: 'cloud-1',
+        name: 'Project A',
+        visibility: 'private',
+        createdAt: '2026-01-01',
+        cloudSavedAt: '2026-02-02T00:00:00.000Z',
+        storage: 'cloud',
+        serverVersion: 7,
+        hasUnsyncedChanges: false,
+        state: {
+          registers: [{ id: 'reg-0' }],
+          activeRegisterId: 'reg-0',
+          registerValues: { 'reg-0': '0x1234' },
+          project: { title: 'Cloud Title' },
+          addressUnitBits: 16,
+        },
+      });
+      expect(typeof record.localSavedAt).toBe('string');
+      expect(options).toEqual({ protectedLocalIds: ['local-1'] });
+      expect(mockStorageActions.refreshProjectList).toHaveBeenCalled();
+      expect(result.current.cloudError).toBeNull();
+    });
+
+    it('handleOpen surfaces a persist failure with the Failed-to-persist message', async () => {
+      (hasLocalData as Mock).mockReturnValue(false);
+      (fetchAndParseCloudProject as Mock).mockResolvedValue({
+        registers: [{ id: 'reg-0' }],
+        values: {},
+        project: undefined,
+        addressUnitBits: 8,
+        version: 1,
+        updatedAt: '2026-02-02T00:00:00.000Z',
+        visibility: 'private',
+      });
+      (saveProject as Mock).mockReturnValue({ ok: false, status: 'quota', evictedLocalIds: [] });
+
+      const onClose = vi.fn();
+      const { result } = await renderWithOpen(onClose);
+
+      await act(async () => {
+        await result.current.handleOpen('local-1');
+      });
+
+      expect(result.current.cloudError).toContain('Failed to persist downloaded project: quota');
+      expect(mockStorageActions.switchProject).not.toHaveBeenCalled();
     });
 
     it('handleDelete deletes from cloud and locally for cloud-backed project', async () => {

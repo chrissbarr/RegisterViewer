@@ -9,7 +9,8 @@ import { friendlyErrorMessage } from '../utils/friendly-error';
 import { loadProject, saveProject, hasLocalData } from '../utils/project-storage';
 import { isOwnedCloudEntry } from '../utils/project-identity';
 import { fetchAndParseCloudProject } from '../utils/cloud-project-loader';
-import { sanitizeProjectMetadata, serializeImportResult } from '../utils/storage';
+import { materializeCloudProject } from '../utils/cloud-materialize';
+import { sanitizeProjectMetadata } from '../utils/storage';
 import type { ProjectSettingsData } from '../components/common/project-settings-dialog';
 import type { Visibility } from '../types/project';
 import { projectDisplayName } from '../utils/project-helpers';
@@ -75,21 +76,38 @@ export function useMyProjectsActions(
         // JWT is optional — unauthenticated users can open shared projects
         const jwt = getJwt();
         const result = await fetchAndParseCloudProject(project.cloudId, jwt ?? undefined);
-        const saveResult = saveProject({
+        // P6 — `replace`: overwrite the local record straight from the import
+        // result, dropping local-only UI fields (same pattern as P1). This site
+        // makes no storage decision; it keeps the manifest's storage class.
+        let writeStatus = '';
+        const { persisted } = materializeCloudProject({
+          writeMode: 'replace',
           localId,
           cloudId: project.cloudId,
-          name: project.name,
-          visibility: project.visibility,
-          createdAt: project.createdAt,
-          localSavedAt: new Date().toISOString(),
-          cloudSavedAt: result.updatedAt,
-          storage: project.storage,
-          serverVersion: result.version,
-          hasUnsyncedChanges: false,
-          state: serializeImportResult(result),
-        }, { protectedLocalIds: [activeLocalId] });
-        if (!saveResult.ok) {
-          throw new Error(`Failed to persist downloaded project: ${saveResult.status}`);
+          importResult: result,
+          callbacks: {
+            persist: (serialized) => {
+              const saveResult = saveProject({
+                localId,
+                cloudId: project.cloudId,
+                name: project.name,
+                visibility: project.visibility,
+                createdAt: project.createdAt,
+                localSavedAt: new Date().toISOString(),
+                cloudSavedAt: result.updatedAt,
+                storage: project.storage,
+                serverVersion: result.version,
+                hasUnsyncedChanges: false,
+                state: serialized,
+              }, { protectedLocalIds: [activeLocalId] });
+              writeStatus = saveResult.status;
+              return saveResult.ok;
+            },
+            loadExistingState: () => null,
+          },
+        });
+        if (!persisted) {
+          throw new Error(`Failed to persist downloaded project: ${writeStatus}`);
         }
         refreshProjectList();
       } catch (err) {
