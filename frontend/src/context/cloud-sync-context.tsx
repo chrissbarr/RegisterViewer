@@ -25,8 +25,9 @@
  *   without needing the state in their dependency arrays.
  * - **Mutation lock**: `withMutationLock` prevents concurrent cloud operations.
  */
-import { createContext, useContext, useCallback, useState, useMemo, useRef, useEffect, type ReactNode } from 'react';
+import { createContext, useContext, useCallback, useState, useMemo, useRef, useEffect, type ReactNode, type MutableRefObject, type Dispatch, type SetStateAction } from 'react';
 import { useAppState, useAppDispatch } from './app-context';
+import type { AppState } from '../types/register';
 import { useProjectStorage, useProjectStorageActions } from './project-storage-context';
 import {
   isCloudEnabled,
@@ -60,6 +61,176 @@ export type { SyncStatus };
 
 function uniqueProtectedLocalIds(ids: readonly (string | null | undefined)[]): string[] {
   return Array.from(new Set(ids.filter((id): id is string => !!id)));
+}
+
+/**
+ * Ref/callback bag shared by the extracted stale-reconcile and placeholder
+ * `*Impl` functions. These mirror the `cloud-operations.ts` `*Impl` pattern:
+ * the side-effecting logic lives in a named function that closes over nothing
+ * itself; everything it touches is threaded in via this bag. Refs stay raw
+ * (reducer/actions conversion is a later slice).
+ */
+interface SyncReconcileDeps {
+  internalRef: MutableRefObject<InternalCloudSyncState>;
+  activeLocalIdRef: MutableRefObject<string | null>;
+  appStateRef: MutableRefObject<AppState>;
+  syncTimerRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
+  mutationLockRef: MutableRefObject<boolean>;
+  setInternal: Dispatch<SetStateAction<InternalCloudSyncState>>;
+  updateCloudMetadata: ReturnType<typeof useProjectStorageActions>['updateCloudMetadata'];
+}
+
+/**
+ * Reconcile a single stale (server-deleted) owned cloud project: keep the local
+ * data, clear the cloud metadata, and — when it's the active project — reset
+ * active cloud state. Extracted from the inline `syncCloudProjects` closure
+ * (behavior identical). Returns the same boolean semantics that
+ * `syncCloudProjectsFromServer` consumes (true = reconciled / nothing to do,
+ * false = could not reconcile this round).
+ */
+async function reconcileStaleCloudProjectImpl(
+  deps: SyncReconcileDeps,
+  { localId, cloudId, cloudSavedAt, serverVersion }: {
+    localId: string;
+    cloudId: string;
+    cloudSavedAt: string | null;
+    serverVersion: number | null;
+  },
+  options: { protectedLocalIds: readonly string[] },
+): Promise<boolean> {
+  const {
+    internalRef, activeLocalIdRef, appStateRef, syncTimerRef,
+    mutationLockRef, setInternal, updateCloudMetadata,
+  } = deps;
+
+  const lockResult = await withMutationLock(mutationLockRef, async () => {
+    const protectedLocalIds = uniqueProtectedLocalIds([
+      activeLocalIdRef.current,
+      ...options.protectedLocalIds,
+    ]);
+    const latestEntry = loadManifest().projects.find(p => p.localId === localId);
+    if (!latestEntry) return true;
+    if (!isOwnedCloudEntry(latestEntry) || latestEntry.cloudId !== cloudId) return true;
+    if (
+      (latestEntry.cloudSavedAt ?? null) !== cloudSavedAt ||
+      (latestEntry.serverVersion ?? null) !== serverVersion
+    ) {
+      return false;
+    }
+
+    const isActiveLocalProject = activeLocalIdRef.current === localId;
+    const isActiveCloudProject = isActiveLocalProject && internalRef.current.cloudId === cloudId;
+
+    if (!isActiveLocalProject && !hasLocalData(localId)) {
+      deleteProject(localId);
+      return true;
+    }
+
+    if (isActiveLocalProject) {
+      const stateWrite = patchProjectState(localId, serializeState(appStateRef.current), {
+        protectedLocalIds,
+      });
+      if (!stateWrite.ok) {
+        setInternal((prev) => prev.cloudId === cloudId
+          ? { ...prev, error: 'Cloud project was deleted on the server, but local data could not be saved before unlinking.' }
+          : prev);
+        return false;
+      }
+    }
+
+    const metadataWrite = updateCloudMetadata(localId, CLEARED_CLOUD_METADATA, {
+      preserveLocalSavedAt: true,
+      protectedLocalIds,
+    });
+    if (!metadataWrite.ok) {
+      if (isActiveCloudProject) {
+        setInternal((prev) => prev.cloudId === cloudId
+          ? { ...prev, error: 'Cloud project was deleted on the server, but local metadata could not be updated.' }
+          : prev);
+      }
+      return false;
+    }
+
+    if (isActiveCloudProject) {
+      if (syncTimerRef.current) {
+        clearTimeout(syncTimerRef.current);
+        syncTimerRef.current = null;
+      }
+      const next = {
+        ...initialInternalState,
+        error: 'Cloud project was deleted on the server. Local copy kept.',
+      };
+      internalRef.current = next;
+      setInternal(next);
+      clearCloudUrl();
+    }
+
+    return true;
+  });
+
+  if (!lockResult.executed) {
+    if (activeLocalIdRef.current === localId && internalRef.current.cloudId === cloudId) {
+      setInternal((prev) => prev.cloudId === cloudId
+        ? { ...prev, error: 'Cloud project was deleted on the server, but another cloud operation is in progress.' }
+        : prev);
+    }
+    return false;
+  }
+  return lockResult.result;
+}
+
+/**
+ * Create a manifest-only local placeholder for a server-side cloud project that
+ * has no local counterpart. Extracted from the inline `syncCloudProjects`
+ * closure (behavior identical).
+ *
+ * AR-6: Uses the raw `createProject` utility (not the context action
+ * `createNewProject`) because this runs during async sync, not during a React
+ * render. The context action would trigger additional side effects (project
+ * switching) that are undesirable for background placeholder creation.
+ *
+ * Returns `false` when a placeholder already exists (active project or an owned
+ * manifest entry already references this cloudId) or creation failed.
+ */
+function createPlaceholderImpl(
+  deps: Pick<SyncReconcileDeps, 'internalRef' | 'activeLocalIdRef'>,
+  data: {
+    title: string;
+    cloudId: string;
+    visibility: Visibility;
+    cloudSavedAt: string;
+    serverVersion: number;
+  },
+  options?: { protectedLocalIds: readonly string[] },
+): boolean {
+  const { internalRef, activeLocalIdRef } = deps;
+  const latestManifest = loadManifest();
+  if (
+    internalRef.current.cloudId === data.cloudId ||
+    latestManifest.projects.filter(isOwnedCloudEntry).some(p => p.cloudId === data.cloudId)
+  ) {
+    return false;
+  }
+  try {
+    const localId = createProject(EMPTY_SERIALIZED_STATE, data.title, {
+      cloudId: data.cloudId,
+      visibility: data.visibility,
+      cloudSavedAt: data.cloudSavedAt,
+      serverVersion: data.serverVersion,
+      hasUnsyncedChanges: false,
+      storage: 'cloud',
+    }, {
+      protectedLocalIds: uniqueProtectedLocalIds([
+        activeLocalIdRef.current,
+        ...(options?.protectedLocalIds ?? []),
+      ]),
+    });
+    evictProjectData(localId);
+    return true;
+  } catch (err) {
+    console.warn('[cloud-sync] Failed to create placeholder for cloud project', data.cloudId, err);
+    return false;
+  }
 }
 
 interface CloudSyncState {
@@ -319,118 +490,18 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     const jwt = getJwt();
     if (!jwt) return emptyResult;
 
+    const reconcileDeps: SyncReconcileDeps = {
+      internalRef, activeLocalIdRef, appStateRef, syncTimerRef,
+      mutationLockRef, setInternal, updateCloudMetadata,
+    };
+
     const latestProjects = loadManifest().projects.map(toProjectListEntry);
     return syncCloudProjectsFromServer(jwt, latestProjects, {
       updateCloudMetadata,
-      reconcileStaleCloudProject: async ({ localId, cloudId, cloudSavedAt, serverVersion }, options) => {
-        const lockResult = await withMutationLock(mutationLockRef, async () => {
-          const protectedLocalIds = uniqueProtectedLocalIds([
-            activeLocalIdRef.current,
-            ...options.protectedLocalIds,
-          ]);
-          const latestEntry = loadManifest().projects.find(p => p.localId === localId);
-          if (!latestEntry) return true;
-          if (!isOwnedCloudEntry(latestEntry) || latestEntry.cloudId !== cloudId) return true;
-          if (
-            (latestEntry.cloudSavedAt ?? null) !== cloudSavedAt ||
-            (latestEntry.serverVersion ?? null) !== serverVersion
-          ) {
-            return false;
-          }
-
-          const isActiveLocalProject = activeLocalIdRef.current === localId;
-          const isActiveCloudProject = isActiveLocalProject && internalRef.current.cloudId === cloudId;
-
-          if (!isActiveLocalProject && !hasLocalData(localId)) {
-            deleteProject(localId);
-            return true;
-          }
-
-          if (isActiveLocalProject) {
-            const stateWrite = patchProjectState(localId, serializeState(appStateRef.current), {
-              protectedLocalIds,
-            });
-            if (!stateWrite.ok) {
-              setInternal((prev) => prev.cloudId === cloudId
-                ? { ...prev, error: 'Cloud project was deleted on the server, but local data could not be saved before unlinking.' }
-                : prev);
-              return false;
-            }
-          }
-
-          const metadataWrite = updateCloudMetadata(localId, CLEARED_CLOUD_METADATA, {
-            preserveLocalSavedAt: true,
-            protectedLocalIds,
-          });
-          if (!metadataWrite.ok) {
-            if (isActiveCloudProject) {
-              setInternal((prev) => prev.cloudId === cloudId
-                ? { ...prev, error: 'Cloud project was deleted on the server, but local metadata could not be updated.' }
-                : prev);
-            }
-            return false;
-          }
-
-          if (isActiveCloudProject) {
-            if (syncTimerRef.current) {
-              clearTimeout(syncTimerRef.current);
-              syncTimerRef.current = null;
-            }
-            const next = {
-              ...initialInternalState,
-              error: 'Cloud project was deleted on the server. Local copy kept.',
-            };
-            internalRef.current = next;
-            setInternal(next);
-            clearCloudUrl();
-          }
-
-          return true;
-        });
-
-        if (!lockResult.executed) {
-          if (activeLocalIdRef.current === localId && internalRef.current.cloudId === cloudId) {
-            setInternal((prev) => prev.cloudId === cloudId
-              ? { ...prev, error: 'Cloud project was deleted on the server, but another cloud operation is in progress.' }
-              : prev);
-          }
-          return false;
-        }
-        return lockResult.result;
-      },
-      // AR-6: Uses raw `createProject` utility (not the context action `createNewProject`)
-      // because this callback runs during async sync, not during a React render.
-      // The context action would trigger additional side effects (project switching)
-      // that are undesirable for background placeholder creation.
-      createPlaceholder: (data, options) => {
-        const latestManifest = loadManifest();
-        if (
-          internalRef.current.cloudId === data.cloudId ||
-          latestManifest.projects.filter(isOwnedCloudEntry).some(p => p.cloudId === data.cloudId)
-        ) {
-          return false;
-        }
-        try {
-          const localId = createProject(EMPTY_SERIALIZED_STATE, data.title, {
-            cloudId: data.cloudId,
-            visibility: data.visibility,
-            cloudSavedAt: data.cloudSavedAt,
-            serverVersion: data.serverVersion,
-            hasUnsyncedChanges: false,
-            storage: 'cloud',
-          }, {
-            protectedLocalIds: uniqueProtectedLocalIds([
-              activeLocalIdRef.current,
-              ...(options?.protectedLocalIds ?? []),
-            ]),
-          });
-          evictProjectData(localId);
-          return true;
-        } catch (err) {
-          console.warn('[cloud-sync] Failed to create placeholder for cloud project', data.cloudId, err);
-          return false;
-        }
-      },
+      reconcileStaleCloudProject: (project, options) =>
+        reconcileStaleCloudProjectImpl(reconcileDeps, project, options),
+      createPlaceholder: (data, options) =>
+        createPlaceholderImpl(reconcileDeps, data, options),
     });
   }, [appStateRef, mutationLockRef, syncTimerRef, updateCloudMetadata, getJwt]);
 
