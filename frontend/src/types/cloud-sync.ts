@@ -1,6 +1,27 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import type { Visibility } from './project';
 
+/**
+ * The save baseline a cloud project's data generation is compared against to
+ * derive dirtiness (S14a). Replaces the three overloaded meanings of the former
+ * `lastSavedVersion: number` sentinel AND folds in the S8 "awaiting capture"
+ * marker (the former `awaitingBaselineCapture` flag):
+ * - `untracked` — was `lastSavedVersion === -1`. The initial/local state, AND
+ *   the one-shot "awaiting baseline capture" marker set by REQUEST_BASELINE
+ *   after a writer adopts a new cloud baseline. The engine snapshots the
+ *   post-increment generation into a `clean` baseline on its next effect tick
+ *   (CAPTURE_BASELINE) when `cloudId !== null` — the `cloudId` guard separates
+ *   an awaiting CLOUD project from a fresh untracked LOCAL one. `isDirty=false`.
+ * - `dirty` — was `Number.MAX_SAFE_INTEGER`. Always dirty until the first save
+ *   (stored-unsynced cloud payload).
+ * - `clean` — was a real `dataVersion` generation. Dirty iff the current
+ *   generation differs from `version`.
+ */
+export type Baseline =
+  | { kind: 'untracked' }
+  | { kind: 'dirty' }
+  | { kind: 'clean'; version: number };
+
 /** Shared with useActiveProjectCloudOps, useProjectCloudOps, and other cloud hooks. */
 export interface InternalCloudSyncState {
   cloudId: string | null;
@@ -10,20 +31,17 @@ export interface InternalCloudSyncState {
   error: string | null;
   shareUrl: string | null;
   lastCloudSavedAt: string | null;
-  lastSavedVersion: number;
+  /**
+   * Save baseline for dirtiness (S14a). Replaces the former
+   * `lastSavedVersion: number` sentinel and the separate
+   * `awaitingBaselineCapture` flag — `{kind:'untracked'}` doubles as the
+   * "awaiting baseline capture" marker (gated by `cloudId !== null` in the
+   * engine). See {@link Baseline}.
+   */
+  baseline: Baseline;
   visibility: Visibility;
   serverVersion: number; // last known server version (0 = unknown)
   conflict: { serverVersion: number } | null; // non-null triggers conflict UX
-  /**
-   * One-shot "awaiting baseline capture" marker (S8). Set by REQUEST_BASELINE
-   * when a writer (switch-init / load / freshness-pull) has just adopted a new
-   * cloud baseline and the engine must snapshot the post-increment generation
-   * into `lastSavedVersion` on its next effect tick; cleared by CAPTURE_BASELINE.
-   * Optional/transient so white-box `makeInternal({...})` constructions stay
-   * valid without it (defaults to undefined === not awaiting). Replaces the
-   * former `needsVersionSyncRef`.
-   */
-  awaitingBaselineCapture?: boolean;
   /**
    * Async sync/offline overlay (S9). Set ONLY from the auto-sync engine's async
    * callbacks (never synchronously in an effect body) and microtask-cleared on
@@ -63,7 +81,7 @@ export const initialInternalState: InternalCloudSyncState = Object.freeze({
   error: null,
   shareUrl: null,
   lastCloudSavedAt: null,
-  lastSavedVersion: -1,
+  baseline: { kind: 'untracked' } as Baseline,
   visibility: 'private',
   serverVersion: 0,
   conflict: null,

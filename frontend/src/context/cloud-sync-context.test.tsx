@@ -318,7 +318,7 @@ describe('CloudSyncProvider', () => {
       expect(result.current.state.isDirty).toBe(true);
     });
 
-    it('isDirty requires both cloudId and lastSavedVersion to be set', () => {
+    it('isDirty requires both cloudId and a clean baseline at the current generation', () => {
       const { result } = renderCloudSync();
 
       // Use initFromProject to set cloudId without going through save
@@ -326,8 +326,8 @@ describe('CloudSyncProvider', () => {
         result.current.actions.initFromProject('cloud-init', true);
       });
 
-      // cloudId is set and lastSavedVersion is set to current dataVersion
-      // isDirty depends on version drift, not just cloudId presence
+      // cloudId is set and the baseline is a clean snapshot of the current
+      // dataVersion; isDirty depends on version drift, not just cloudId presence
       expect(result.current.state.cloudId).toBe('cloud-init');
       expect(typeof result.current.state.isDirty).toBe('boolean');
     });

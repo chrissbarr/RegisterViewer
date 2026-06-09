@@ -1,14 +1,49 @@
-import { initialInternalState, type InternalCloudSyncState } from '../types/cloud-sync';
+import { initialInternalState, type Baseline, type InternalCloudSyncState } from '../types/cloud-sync';
 import type { Visibility } from '../types/project';
+
+/** Baseline constructors (S14a) — terse builders for the discriminated union. */
+export const untrackedBaseline = (): Baseline => ({ kind: 'untracked' });
+export const dirtyBaseline = (): Baseline => ({ kind: 'dirty' });
+export const cleanBaseline = (version: number): Baseline => ({ kind: 'clean', version });
+
+/**
+ * Pure dirtiness predicate (S14a / DESIGN §1). Byte-for-byte equal to the
+ * engine's former expression
+ * `cloudId !== null && lastSavedVersion >= 0 && dataVersion !== lastSavedVersion`:
+ * - `cloudId === null` → false (local-only project never auto-syncs).
+ * - `untracked` → false (the former `lastSavedVersion >= 0` guard was false at -1).
+ * - `dirty` → true (the former `MAX_SAFE_INTEGER !== dataVersion`).
+ * - `clean` → `dataVersion !== version` (a real generation comparison).
+ */
+export function isDirty(baseline: Baseline, cloudId: string | null, dataVersion: number): boolean {
+  if (cloudId === null) return false;
+  switch (baseline.kind) {
+    case 'untracked':
+      return false;
+    case 'dirty':
+      return true;
+    case 'clean':
+      return dataVersion !== baseline.version;
+  }
+}
+
+/**
+ * Selector for the departure snapshotter (DESIGN §5): whether the active cloud
+ * project has unsaved edits. Identical to `isDirty(state.baseline, …)`.
+ */
+export function selectWasDirty(state: InternalCloudSyncState, dataVersion: number): boolean {
+  return isDirty(state.baseline, state.cloudId, dataVersion);
+}
 
 /**
  * Reducer foundation for the cloud-sync provider (consolidation slice S3+).
  *
  * Pure and React-free, mirroring `cloud-sync.ts`'s injected-callback purity.
- * Operates over the existing flat `InternalCloudSyncState` shape — the
- * `Baseline`/`Phase` split is a later slice (S14). Each named-action handler
- * reproduces, byte-for-byte, the `__RAW` updater it replaces on the current
- * flat shape.
+ * Operates over `InternalCloudSyncState`. S14a collapsed the former
+ * `lastSavedVersion` sentinel (and the S8 `awaitingBaselineCapture` flag) into
+ * the `baseline: Baseline` discriminated union; `status` and `asyncTransient`
+ * remain two separate fields. Each named-action handler reproduces, byte-for-byte,
+ * the `__RAW` updater it replaces.
  *
  * The `__RAW` action whose handler applies the supplied updater verbatim is
  * retained for the still-unconverted writers (S5–S7 modules): a functional
@@ -31,12 +66,11 @@ import type { Visibility } from '../types/project';
  *   → promote `isOwner`/`storage` + version/time/visibility, guarded on cloudId
  *
  * S5 named actions (active-ops writers — saveToCloud / applyCreated / fork /
- * delete / visibility / load). All operate on the current flat shape; the
- * DESIGN §2 `baseline`/`phase` effects map to the present `lastSavedVersion`/
- * `status` fields:
+ * delete / visibility / load). The DESIGN §2 `baseline` effects write the
+ * `baseline` union (S14a); `status` is its own field:
  * - `BEGIN_SAVE`                 → `{ status:'saving', error:null }`
  * - `MARK_SAVED { cloudSavedAt, serverVersion, baselineVersion }`
- *   → `{ status:'idle', lastCloudSavedAt, lastSavedVersion, serverVersion, conflict:null }`
+ *   → `{ status:'idle', lastCloudSavedAt, baseline:{clean,version}, serverVersion, conflict:null }`
  * - `MARK_CREATED { cloudId, shareUrl, cloudSavedAt, serverVersion, baselineVersion }`
  *   → the local→cloud transition
  * - `RECORD_SERVER_VERSION { serverVersion }` → `serverVersion` only
@@ -61,14 +95,14 @@ import type { Visibility } from '../types/project';
  *   save/fork/delete/load failure arms that today write that shape raw)
  *
  * S8 version-sync handshake (replaces `needsVersionSyncRef` — the three
- * true-writers + the engine reader). Operates on the current flat shape via the
- * transient `awaitingBaselineCapture` field:
- * - `REQUEST_BASELINE` → `{ ...prev, awaitingBaselineCapture: true }`, the
+ * true-writers + the engine reader). Operates on the `baseline` field (S14a):
+ * - `REQUEST_BASELINE` → `{ ...prev, baseline:{kind:'untracked'} }`, the
  *   one-shot "awaiting capture" marker the writers (switch-init / load /
- *   freshness-pull) set after adopting a new cloud baseline
- * - `CAPTURE_BASELINE { version }` → `{ ...prev, lastSavedVersion: version,
- *   awaitingBaselineCapture: false }`, dispatched by the engine at the
- *   post-increment effect tick with `dataVersionRef.current`
+ *   freshness-pull) set after adopting a new cloud baseline. `{untracked}`
+ *   doubles as the marker; the engine captures when `cloudId !== null`.
+ * - `CAPTURE_BASELINE { version }` → `{ ...prev, baseline:{kind:'clean',version} }`,
+ *   dispatched by the engine at the post-increment effect tick with
+ *   `dataVersionRef.current`
  *
  * S9 async sync/offline transient (replaces the engine-local `asyncOverride`
  * useState). Operates on the current flat shape via the transient
@@ -164,9 +198,9 @@ export interface CloudEntrySeed {
   /** Conflict version, or null when there is no recorded conflict. */
   conflictVersion: number | null;
   /**
-   * Whether the stored payload already needs saving. Drives the dirty sentinel
-   * vs. the current generation in `lastSavedVersion` (the untracked/dirty
-   * baseline split the callers reproduce as a follow-up `REQUEST_BASELINE`).
+   * Whether the stored payload already needs saving. Drives the `dirty` baseline
+   * vs. a `clean` snapshot of the current generation (the clean case the callers
+   * convert to "awaiting capture" via a follow-up `REQUEST_BASELINE`).
    */
   hasUnsyncedChanges: boolean;
   /** The engine's current generation (`dataVersionRef.current`). */
@@ -175,9 +209,9 @@ export interface CloudEntrySeed {
 
 /**
  * Pure builder for the cloud INIT state, consumed by `INIT_CLOUD` from BOTH init
- * paths (`initFromProject` and `useProjectSwitchInit`). Returns the current flat
- * `InternalCloudSyncState` shape (the `Baseline`/`Phase` split is S14) — the same
- * state the temporary inline seed builders produced. The four documented
+ * paths (`initFromProject` and `useProjectSwitchInit`). Returns an
+ * `InternalCloudSyncState` (with the S14a `baseline` union) — the same state the
+ * temporary inline seed builders produced. The four documented
  * divergences (`setCloudUrl`, baseline seeding, freshness kickoff,
  * `lastCloudSavedAt`) live in the callers as explicit post-steps; this builder
  * only owns the shape, with the `lastCloudSavedAt` divergence carried in the seed.
@@ -189,9 +223,11 @@ export function cloudStateForEntry(seed: CloudEntrySeed): InternalCloudSyncState
     isOwner: seed.isOwner,
     storage: seed.storage,
     shareUrl: seed.shareUrl,
-    // Dirty sentinel (MAX_SAFE_INTEGER) keeps a stored-unsynced payload dirty
-    // until the first save; otherwise snapshot the current generation.
-    lastSavedVersion: seed.hasUnsyncedChanges ? Number.MAX_SAFE_INTEGER : seed.dataVersion,
+    // A `dirty` baseline keeps a stored-unsynced payload dirty until the first
+    // save; otherwise snapshot the current generation as a `clean` baseline
+    // (the callers then dispatch REQUEST_BASELINE to await capture on the next
+    // engine tick — see DESIGN §3a).
+    baseline: seed.hasUnsyncedChanges ? dirtyBaseline() : cleanBaseline(seed.dataVersion),
     lastCloudSavedAt: seed.lastCloudSavedAt,
     error: null,
     visibility: seed.visibility,
@@ -241,7 +277,7 @@ export function cloudSyncReducer(
         ...state,
         status: 'idle',
         lastCloudSavedAt: action.cloudSavedAt,
-        lastSavedVersion: action.baselineVersion,
+        baseline: cleanBaseline(action.baselineVersion),
         serverVersion: action.serverVersion,
         conflict: null,
       };
@@ -254,7 +290,7 @@ export function cloudSyncReducer(
         status: 'idle',
         shareUrl: action.shareUrl,
         lastCloudSavedAt: action.cloudSavedAt,
-        lastSavedVersion: action.baselineVersion,
+        baseline: cleanBaseline(action.baselineVersion),
         serverVersion: action.serverVersion,
         conflict: null,
       };
@@ -311,11 +347,12 @@ export function cloudSyncReducer(
     case 'OP_FAILED':
       return { ...state, status: 'idle', error: action.error };
     case 'REQUEST_BASELINE':
-      // One-shot marker; the engine captures the post-increment generation on
-      // its next effect tick (CAPTURE_BASELINE). Does NOT touch lastSavedVersion.
-      return { ...state, awaitingBaselineCapture: true };
+      // One-shot marker: `{untracked}` doubles as "awaiting capture". The engine
+      // captures the post-increment generation on its next effect tick when
+      // `cloudId !== null` (CAPTURE_BASELINE).
+      return { ...state, baseline: untrackedBaseline() };
     case 'CAPTURE_BASELINE':
-      return { ...state, lastSavedVersion: action.version, awaitingBaselineCapture: false };
+      return { ...state, baseline: cleanBaseline(action.version) };
     case 'SET_ASYNC_TRANSIENT':
       // Overlay the sync/offline transient without disturbing the op `status`;
       // the engine sets this from async callbacks and microtask-clears it.
@@ -326,5 +363,46 @@ export function cloudSyncReducer(
       const _exhaustive: never = action;
       return _exhaustive ?? state;
     }
+  }
+}
+
+/**
+ * The legacy flat cloud-sync state shape, before S14a collapsed the
+ * `lastSavedVersion` sentinel + `awaitingBaselineCapture` flag into `baseline`.
+ * Used ONLY by the {@link toInternalCloudSyncState} equivalence oracle (S14a)
+ * to prove the `baseline → lastSavedVersion` collapse is behavior-preserving.
+ * The oracle scaffolding is removed in S14b.
+ */
+type LegacyFlatCloudSyncState =
+  Omit<InternalCloudSyncState, 'baseline'> & {
+    lastSavedVersion: number;
+    awaitingBaselineCapture?: boolean;
+  };
+
+/**
+ * Equivalence oracle (S14a / DESIGN §9). Maps the NEW `baseline`-based state
+ * back to the LEGACY flat shape so a state-equivalence test can assert the
+ * collapse preserves behavior. ONLY the `baseline → lastSavedVersion` axis
+ * differs (`{untracked}`→`-1`, `{dirty}`→`MAX_SAFE_INTEGER`, `{clean,version}`→
+ * `version`); `status`, `asyncTransient`, and every other field map identity.
+ *
+ * `{untracked}` doubles as the "awaiting capture" marker, recovered as the
+ * legacy `awaitingBaselineCapture` flag when `cloudId !== null` (the same guard
+ * the engine uses to distinguish an awaiting CLOUD project from a fresh
+ * untracked LOCAL one). Removed with the rest of the oracle in S14b.
+ */
+export function toInternalCloudSyncState(state: InternalCloudSyncState): LegacyFlatCloudSyncState {
+  const { baseline, ...rest } = state;
+  switch (baseline.kind) {
+    case 'untracked':
+      return {
+        ...rest,
+        lastSavedVersion: -1,
+        awaitingBaselineCapture: state.cloudId !== null,
+      };
+    case 'dirty':
+      return { ...rest, lastSavedVersion: Number.MAX_SAFE_INTEGER, awaitingBaselineCapture: false };
+    case 'clean':
+      return { ...rest, lastSavedVersion: baseline.version, awaitingBaselineCapture: false };
   }
 }

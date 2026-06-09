@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { checkAndPullFreshVersion, type FreshnessCheckContext } from './use-cloud-freshness';
 import type { FreshnessCheckCall } from '../utils/cloud-freshness';
 import { initialInternalState, type InternalCloudSyncState } from '../types/cloud-sync';
+import { cleanBaseline } from '../utils/cloud-sync-reducer';
 import type { ProjectStorageWriteResult } from '../utils/project-storage';
 
 // ── Mocks ────────────────────────────────────────────────────────────
@@ -40,13 +41,13 @@ function writeOk(): ProjectStorageWriteResult {
 }
 
 function makeInternalState(overrides: Partial<InternalCloudSyncState> = {}): InternalCloudSyncState {
-  return { ...initialInternalState, cloudId: TEST_CLOUD_ID, lastSavedVersion: 5, serverVersion: 1, ...overrides };
+  return { ...initialInternalState, cloudId: TEST_CLOUD_ID, baseline: cleanBaseline(5), serverVersion: 1, ...overrides };
 }
 
 function makeCtx(overrides: Partial<FreshnessCheckContext> = {}): FreshnessCheckContext {
   return {
     internalRef: { current: makeInternalState() },
-    dataVersionRef: { current: 5 }, // matches lastSavedVersion => not dirty
+    dataVersionRef: { current: 5 }, // matches clean baseline => not dirty
     dispatch: vi.fn(),
     lastFreshnessCheckRef: { current: 0 }, // never checked before
     updateCloudMetadata: vi.fn(() => writeOk()),
@@ -57,13 +58,13 @@ function makeCtx(overrides: Partial<FreshnessCheckContext> = {}): FreshnessCheck
 
 /**
  * True when one of the setInternal dispatches requested a baseline capture
- * (REQUEST_BASELINE → awaitingBaselineCapture: true).
+ * (REQUEST_BASELINE → baseline:{untracked}, S14a).
  */
 function requestedBaselineCapture(setInternal: Mock): boolean {
   return setInternal.mock.calls.some((call) => {
     const updater = call[0];
     return typeof updater === 'function'
-      && updater(initialInternalState).awaitingBaselineCapture === true;
+      && updater(initialInternalState).baseline.kind === 'untracked';
   });
 }
 
@@ -162,7 +163,7 @@ describe('checkAndPullFreshVersion (effectful shim)', () => {
 
   it('skips when project is dirty (user has edited)', async () => {
     const ctx = makeCtx({
-      dataVersionRef: { current: 10 }, // different from lastSavedVersion (5)
+      dataVersionRef: { current: 10 }, // different from clean baseline (5)
     });
     const call = makeCall();
     (getProject as Mock).mockResolvedValue({

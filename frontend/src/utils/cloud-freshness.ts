@@ -2,6 +2,7 @@ import { parseProjectData } from './cloud-project-loader';
 import type { ImportResult } from './storage';
 import type { GetProjectResponse } from './api-client';
 import type { Visibility } from '../types/project';
+import type { Baseline } from '../types/cloud-sync';
 
 /**
  * Primitive inputs the pure freshness decision reads. The effectful shim
@@ -15,8 +16,21 @@ export interface FreshnessDecisionState {
   lastCheck: number;
   /** Current data generation counter (`dataVersionRef.current`). */
   dataVersion: number;
-  /** Baseline the data is compared against for dirtiness (`lastSavedVersion`). */
-  baseline: number;
+  /** Save baseline the data is compared against for dirtiness (S14a). */
+  baseline: Baseline;
+}
+
+/**
+ * Reproduces the former `dataVersion !== lastSavedVersion` freshness dirty check
+ * over the `baseline` union (S14a): a `clean` baseline is dirty iff the
+ * generation drifted; `dirty`/`untracked` baselines (former MAX_SAFE_INTEGER/-1
+ * sentinels) are always treated as dirty. NOTE: unlike the engine's `isDirty`,
+ * this has NO `cloudId` guard and counts `untracked` as dirty — preserving the
+ * freshness gate's original "block the pull whenever generations differ"
+ * semantics byte-for-byte.
+ */
+function baselineDirty(baseline: Baseline, dataVersion: number): boolean {
+  return baseline.kind !== 'clean' || dataVersion !== baseline.version;
 }
 
 /** Per-call parameters that vary on each invocation. */
@@ -87,7 +101,7 @@ export function decideFreshnessPull(
     if (!bypassThrottle && now - lastCheck < FRESHNESS_CHECK_INTERVAL) {
       return { kind: 'throttled' };
     }
-    if (!allowDirtyOverwrite && dataVersion !== baseline) {
+    if (!allowDirtyOverwrite && baselineDirty(baseline, dataVersion)) {
       return { kind: 'dirty' };
     }
     if (expectedDataVersion !== undefined && dataVersion !== expectedDataVersion) {
@@ -105,7 +119,7 @@ export function decideFreshnessPull(
   }
 
   // Re-check after the network round-trip so a new edit cannot be overwritten.
-  if (!allowDirtyOverwrite && dataVersion !== baseline) {
+  if (!allowDirtyOverwrite && baselineDirty(baseline, dataVersion)) {
     return { kind: 'dirty', serverVersion };
   }
   if (expectedDataVersion !== undefined && dataVersion !== expectedDataVersion) {

@@ -1,6 +1,7 @@
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import { useCloudSyncEngine, deriveSyncStatus, type UseCloudSyncEngineDeps } from './use-cloud-sync-engine';
+import { cleanBaseline, untrackedBaseline } from '../utils/cloud-sync-reducer';
 import { initialInternalState, type InternalCloudSyncState } from '../types/cloud-sync';
 
 vi.mock('../constants', () => ({
@@ -140,10 +141,10 @@ describe('useCloudSyncEngine - dirty tracking', () => {
       expect(result.current.isDirty).toBe(false);
     });
 
-    it('initializes isDirty as false when cloudId exists and lastSavedVersion matches', () => {
+    it('initializes isDirty as false when cloudId exists and the clean baseline matches', () => {
       const { result } = renderHook(() =>
         useCloudSyncEngine(makeDeps({
-          internal: makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 1 }),
+          internal: makeInternal({ cloudId: 'cloud-1', baseline: cleanBaseline(1) }),
           setInternal,
         })),
       );
@@ -165,7 +166,7 @@ describe('useCloudSyncEngine - dirty tracking', () => {
     it('becomes dirty when data deps change and cloud project exists', () => {
       const deps = makeDeps({
         dataDeps: makeDataDeps(),
-        internal: makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 1 }),
+        internal: makeInternal({ cloudId: 'cloud-1', baseline: cleanBaseline(1) }),
         setInternal,
       });
 
@@ -186,7 +187,7 @@ describe('useCloudSyncEngine - dirty tracking', () => {
     it('becomes dirty when registerValues change', () => {
       const deps = makeDeps({
         dataDeps: makeDataDeps(),
-        internal: makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 1 }),
+        internal: makeInternal({ cloudId: 'cloud-1', baseline: cleanBaseline(1) }),
         setInternal,
       });
 
@@ -206,7 +207,7 @@ describe('useCloudSyncEngine - dirty tracking', () => {
       const dataDeps = makeDataDeps({ project: { name: 'A' } });
       const deps = makeDeps({
         dataDeps,
-        internal: makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 1 }),
+        internal: makeInternal({ cloudId: 'cloud-1', baseline: cleanBaseline(1) }),
         setInternal,
       });
 
@@ -227,7 +228,7 @@ describe('useCloudSyncEngine - dirty tracking', () => {
       const dataDeps = makeDataDeps({ addressUnitBits: 8 });
       const deps = makeDeps({
         dataDeps,
-        internal: makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 1 }),
+        internal: makeInternal({ cloudId: 'cloud-1', baseline: cleanBaseline(1) }),
         setInternal,
       });
 
@@ -247,7 +248,7 @@ describe('useCloudSyncEngine - dirty tracking', () => {
     it('stays not dirty when cloudId is null even if versions differ', () => {
       const deps = makeDeps({
         dataDeps: makeDataDeps(),
-        internal: makeInternal({ cloudId: null, lastSavedVersion: 0 }),
+        internal: makeInternal({ cloudId: null, baseline: cleanBaseline(0) }),
         setInternal,
       });
 
@@ -263,10 +264,10 @@ describe('useCloudSyncEngine - dirty tracking', () => {
       expect(result.current.isDirty).toBe(false);
     });
 
-    it('stays not dirty when lastSavedVersion is negative', () => {
+    it('stays not dirty when the baseline is untracked', () => {
       const deps = makeDeps({
         dataDeps: makeDataDeps(),
-        internal: makeInternal({ cloudId: 'cloud-1', lastSavedVersion: -1 }),
+        internal: makeInternal({ cloudId: 'cloud-1', baseline: untrackedBaseline() }),
         setInternal,
       });
 
@@ -286,11 +287,11 @@ describe('useCloudSyncEngine - dirty tracking', () => {
   // ── Becomes clean when saved ─────────────────────────────────────
 
   describe('becomes clean when saved', () => {
-    it('becomes not dirty when lastSavedVersion matches dataVersion', () => {
+    it('becomes not dirty when the clean baseline matches dataVersion', () => {
       const dataDeps = makeDataDeps();
       const deps = makeDeps({
         dataDeps,
-        internal: makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 1 }),
+        internal: makeInternal({ cloudId: 'cloud-1', baseline: cleanBaseline(1) }),
         setInternal,
       });
 
@@ -302,14 +303,14 @@ describe('useCloudSyncEngine - dirty tracking', () => {
       const currentVersion = result.current.dataVersionRef.current;
       rerender({
         ...deps,
-        internal: makeInternal({ cloudId: 'cloud-1', lastSavedVersion: currentVersion }),
+        internal: makeInternal({ cloudId: 'cloud-1', baseline: cleanBaseline(currentVersion) }),
       });
       expect(result.current.isDirty).toBe(false);
     });
 
-    it('transitions dirty -> clean when lastSavedVersion catches up after data change', () => {
+    it('transitions dirty -> clean when the baseline catches up after data change', () => {
       const dataDeps = makeDataDeps();
-      const internal = makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 1 });
+      const internal = makeInternal({ cloudId: 'cloud-1', baseline: cleanBaseline(1) });
       const deps = makeDeps({ dataDeps, internal, setInternal });
 
       const { result, rerender } = renderHook(
@@ -323,11 +324,11 @@ describe('useCloudSyncEngine - dirty tracking', () => {
       expect(result.current.isDirty).toBe(true);
       expect(result.current.dataVersionRef.current).toBe(2);
 
-      // Catch up lastSavedVersion -> clean
+      // Catch up the clean baseline -> clean
       rerender({
         ...deps,
         dataDeps: newDataDeps,
-        internal: makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 2 }),
+        internal: makeInternal({ cloudId: 'cloud-1', baseline: cleanBaseline(2) }),
       });
       expect(result.current.isDirty).toBe(false);
     });
@@ -337,13 +338,14 @@ describe('useCloudSyncEngine - dirty tracking', () => {
 
   describe('baseline-capture handshake', () => {
     // The engine no longer owns a `needsVersionSyncRef`; the "awaiting capture"
-    // marker now lives on reducer state as `internal.awaitingBaselineCapture`,
-    // and the engine dispatches CAPTURE_BASELINE (via setInternal) on its next
-    // effect tick. These tests re-express the SAME capture behavior.
+    // marker now lives on reducer state as `baseline:{untracked}` (S14a) gated by
+    // `cloudId !== null`, and the engine dispatches CAPTURE_BASELINE (via
+    // setInternal) on its next effect tick. These tests re-express the SAME
+    // capture behavior against the baseline union.
 
     it('dispatches CAPTURE_BASELINE with the post-increment version when awaiting and data changed', () => {
       const dataDeps = makeDataDeps();
-      const internal = makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 0, awaitingBaselineCapture: true });
+      const internal = makeInternal({ cloudId: 'cloud-1', baseline: untrackedBaseline() });
       const deps = makeDeps({ dataDeps, internal, setInternal });
 
       const { result, rerender } = renderHook(
@@ -357,14 +359,14 @@ describe('useCloudSyncEngine - dirty tracking', () => {
       expect(setInternal).toHaveBeenCalled();
       const updater = setInternal.mock.calls[setInternal.mock.calls.length - 1][0] as (prev: InternalCloudSyncState) => InternalCloudSyncState;
       const updated = updater(internal);
-      // Captured at the post-increment generation (the off-by-one guard).
-      expect(updated.lastSavedVersion).toBe(result.current.dataVersionRef.current);
-      expect(updated.awaitingBaselineCapture).toBe(false);
+      // Captured at the post-increment generation (the off-by-one guard) as a
+      // clean baseline (clears the untracked awaiting marker).
+      expect(updated.baseline).toEqual(cleanBaseline(result.current.dataVersionRef.current));
     });
 
     it('captures current version without bump when data deps did not change', () => {
       const dataDeps = makeDataDeps();
-      const internal = makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 1, awaitingBaselineCapture: true });
+      const internal = makeInternal({ cloudId: 'cloud-1', baseline: untrackedBaseline() });
       const deps = makeDeps({ dataDeps, internal, setInternal });
 
       const { result, rerender } = renderHook(
@@ -377,19 +379,19 @@ describe('useCloudSyncEngine - dirty tracking', () => {
       // Rerender with same data deps but changed internal (still awaiting) to retrigger effect.
       rerender({
         ...deps,
-        internal: makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 0, awaitingBaselineCapture: true }),
+        internal: makeInternal({ cloudId: 'cloud-1', baseline: untrackedBaseline() }),
       });
 
       expect(setInternal).toHaveBeenCalled();
       const updater = setInternal.mock.calls[setInternal.mock.calls.length - 1][0] as (prev: InternalCloudSyncState) => InternalCloudSyncState;
-      const updated = updater(makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 0, awaitingBaselineCapture: true }));
+      const updated = updater(makeInternal({ cloudId: 'cloud-1', baseline: untrackedBaseline() }));
       // Version should not have bumped since data deps are same references
-      expect(updated.lastSavedVersion).toBe(versionBeforeSync);
+      expect(updated.baseline).toEqual(cleanBaseline(versionBeforeSync));
     });
 
     it('early-returns before isDirty update when awaiting baseline capture', () => {
       const dataDeps = makeDataDeps();
-      const internal = makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 1, awaitingBaselineCapture: true });
+      const internal = makeInternal({ cloudId: 'cloud-1', baseline: untrackedBaseline() });
       const deps = makeDeps({ dataDeps, internal, setInternal });
 
       const { result, rerender } = renderHook(
@@ -478,7 +480,7 @@ describe('useCloudSyncEngine - dirty tracking', () => {
       expect(result.current.dataVersionRef.current).toBe(1);
 
       // Rerender with same deps reference but different internal
-      rerender({ ...deps, internal: makeInternal({ cloudId: 'c1', lastSavedVersion: 1 }) });
+      rerender({ ...deps, internal: makeInternal({ cloudId: 'c1', baseline: cleanBaseline(1) }) });
       expect(result.current.dataVersionRef.current).toBe(1);
     });
 
@@ -486,7 +488,7 @@ describe('useCloudSyncEngine - dirty tracking', () => {
       const dataDeps = makeDataDeps();
       const deps = makeDeps({
         dataDeps,
-        internal: makeInternal({ cloudId: 'c1', lastSavedVersion: 1 }),
+        internal: makeInternal({ cloudId: 'c1', baseline: cleanBaseline(1) }),
         setInternal,
       });
 
@@ -498,7 +500,7 @@ describe('useCloudSyncEngine - dirty tracking', () => {
       expect(result.current.dataVersionRef.current).toBe(1);
 
       // Same deps object, new internal object with different values
-      rerender({ ...deps, internal: makeInternal({ cloudId: 'c1', lastSavedVersion: 2 }) });
+      rerender({ ...deps, internal: makeInternal({ cloudId: 'c1', baseline: cleanBaseline(2) }) });
       expect(result.current.dataVersionRef.current).toBe(1);
     });
   });
@@ -532,10 +534,10 @@ describe('useCloudSyncEngine - auto-sync', () => {
 
   it('schedules save after debounce when dirty', async () => {
     const saveToCloud = vi.fn(() => Promise.resolve('saved' as const));
-    const internal = makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 0 });
+    const internal = makeInternal({ cloudId: 'cloud-1', baseline: cleanBaseline(0) });
     const dataDeps = makeDataDeps();
 
-    // First render sets version to 1, lastSavedVersion is 0 -> dirty
+    // First render sets version to 1, clean baseline is 0 -> dirty
     const deps = makeDeps({
       dataDeps,
       internal,
@@ -548,7 +550,7 @@ describe('useCloudSyncEngine - auto-sync', () => {
       { initialProps: deps },
     );
 
-    // Make dirty by changing data (version bumps to 2, lastSavedVersion stays 0)
+    // Make dirty by changing data (version bumps to 2, clean baseline stays 0)
     rerender({ ...deps, dataDeps: makeDataDeps({ registers: [{ id: 'r2' }] }) });
     expect(result.current.isDirty).toBe(true);
 
@@ -569,7 +571,7 @@ describe('useCloudSyncEngine - auto-sync', () => {
     // Live internal so the dispatched SET_ASYNC_TRANSIENT('offline') flows back
     // into deriveSyncStatus's third input (the reducer field, not a useState).
     const { result, rerenderProps, getInternal } = renderEngineWithLiveInternal(
-      makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 0 }),
+      makeInternal({ cloudId: 'cloud-1', baseline: cleanBaseline(0) }),
       { dataDeps: makeDataDeps(), canAutoSync: true, saveToCloud },
     );
 
@@ -591,7 +593,7 @@ describe('useCloudSyncEngine - auto-sync', () => {
       callCount++;
       return Promise.resolve(callCount === 1 ? 'lock-held' as const : 'saved' as const);
     });
-    const internal = makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 0 });
+    const internal = makeInternal({ cloudId: 'cloud-1', baseline: cleanBaseline(0) });
     const dataDeps = makeDataDeps();
 
     const deps = makeDeps({
@@ -630,7 +632,7 @@ describe('useCloudSyncEngine - auto-sync', () => {
     const saveToCloud = vi.fn(async () => 'lock-held' as const);
     // Live internal so the terminal SET_ASYNC_TRANSIENT('offline') is observable.
     const { result, rerenderProps } = renderEngineWithLiveInternal(
-      makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 0 }),
+      makeInternal({ cloudId: 'cloud-1', baseline: cleanBaseline(0) }),
       { dataDeps: makeDataDeps(), canAutoSync: true, saveToCloud },
     );
 
@@ -649,7 +651,7 @@ describe('useCloudSyncEngine - auto-sync', () => {
 
   it('does not reschedule after a local-persist-failed outcome', async () => {
     const saveToCloud = vi.fn(async () => 'local-persist-failed' as const);
-    const internal = makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 0 });
+    const internal = makeInternal({ cloudId: 'cloud-1', baseline: cleanBaseline(0) });
     const dataDeps = makeDataDeps();
 
     const deps = makeDeps({
@@ -674,7 +676,7 @@ describe('useCloudSyncEngine - auto-sync', () => {
 
   it('skips save when no JWT available', async () => {
     const saveToCloud = vi.fn(() => Promise.resolve('saved' as const));
-    const internal = makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 0 });
+    const internal = makeInternal({ cloudId: 'cloud-1', baseline: cleanBaseline(0) });
     const dataDeps = makeDataDeps();
 
     const deps = makeDeps({
@@ -707,7 +709,7 @@ describe('useCloudSyncEngine - auto-sync', () => {
     // Live internal so the dispatched SET_ASYNC_TRANSIENT (set + microtask clear)
     // round-trips through the reducer field that deriveSyncStatus reads.
     const { result, rerenderProps, getInternal } = renderEngineWithLiveInternal(
-      makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 0 }),
+      makeInternal({ cloudId: 'cloud-1', baseline: cleanBaseline(0) }),
       { dataDeps: makeDataDeps(), canAutoSync: true, saveToCloud },
     );
 
@@ -735,7 +737,7 @@ describe('useCloudSyncEngine - auto-sync', () => {
     saveToCloud.mockResolvedValue('saved');
     await act(async () => {
       rerenderProps({
-        internal: makeInternal({ cloudId: 'cloud-1', lastSavedVersion: 2, asyncTransient: null }),
+        internal: makeInternal({ cloudId: 'cloud-1', baseline: cleanBaseline(2), asyncTransient: null }),
         canAutoSync: true,
       });
     });
@@ -748,7 +750,7 @@ describe('useCloudSyncEngine - auto-sync', () => {
       const internal = makeInternal({
         cloudId: 'cloud-abc',
         isOwner: true,
-        lastSavedVersion: 0,
+        baseline: cleanBaseline(0),
       });
 
       const deps = makeDeps({
@@ -777,7 +779,7 @@ describe('useCloudSyncEngine - auto-sync', () => {
       const internal = makeInternal({
         cloudId: 'cloud-abc',
         isOwner: true,
-        lastSavedVersion: 1, // will match dataVersionRef (1 after initial render)
+        baseline: cleanBaseline(1), // will match dataVersionRef (1 after initial render)
       });
 
       const deps = makeDeps({
@@ -800,7 +802,7 @@ describe('useCloudSyncEngine - auto-sync', () => {
       const internal = makeInternal({
         cloudId: 'cloud-abc',
         isOwner: true,
-        lastSavedVersion: 0,
+        baseline: cleanBaseline(0),
       });
 
       const deps = makeDeps({
@@ -844,7 +846,7 @@ describe('useCloudSyncEngine - auto-sync', () => {
       const internal = makeInternal({
         cloudId: 'cloud-abc',
         isOwner: false,
-        lastSavedVersion: 0,
+        baseline: cleanBaseline(0),
       });
 
       const deps = makeDeps({ internal, saveToCloud });

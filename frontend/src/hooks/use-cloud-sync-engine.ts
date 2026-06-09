@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import { CLOUD_SYNC_DEBOUNCE_MS } from '../constants';
-import { cloudSyncReducer } from '../utils/cloud-sync-reducer';
+import { cloudSyncReducer, isDirty as computeIsDirty } from '../utils/cloud-sync-reducer';
 import type { InternalCloudSyncState, SaveOutcome } from '../types/cloud-sync';
 
 const MAX_AUTO_SYNC_RETRIES = 4;
@@ -107,7 +107,7 @@ export function useCloudSyncEngine(deps: UseCloudSyncEngineDeps): UseCloudSyncEn
   // last-saved version (from state) and only re-render when dirty status
   // actually changes. This avoids re-rendering on every keystroke.
   useEffect(() => {
-    // Only bump version when actual data deps changed (not cloudId/lastSavedVersion)
+    // Only bump version when actual data deps changed (not cloudId/baseline)
     const prev = prevDataDepsRef.current;
     const dataChanged = prev.registers !== dataDeps.registers
       || prev.registerValues !== dataDeps.registerValues
@@ -119,22 +119,22 @@ export function useCloudSyncEngine(deps: UseCloudSyncEngineDeps): UseCloudSyncEn
       dataVersionRef.current++;
     }
 
-    // Baseline-capture handshake (S8): a writer adopted a new cloud baseline and
-    // set `awaitingBaselineCapture`. Snapshot the POST-increment generation into
-    // lastSavedVersion via CAPTURE_BASELINE (clears the marker). Must run after
-    // the dataVersionRef bump above so the captured tick matches the legacy
-    // needsVersionSyncRef behavior exactly.
-    if (internal.awaitingBaselineCapture) {
+    // Baseline-capture handshake (S8/S14a): a writer adopted a new cloud baseline
+    // via REQUEST_BASELINE, which set `baseline:{untracked}` as the awaiting
+    // marker. Capture the POST-increment generation into a `clean` baseline via
+    // CAPTURE_BASELINE. The `cloudId !== null` guard separates an awaiting CLOUD
+    // project from a fresh untracked LOCAL one. Must run after the dataVersionRef
+    // bump above so the captured tick matches the legacy needsVersionSyncRef
+    // behavior exactly.
+    if (internal.cloudId !== null && internal.baseline.kind === 'untracked') {
       const capturedVersion = dataVersionRef.current;
       setInternal((prev) => cloudSyncReducer(prev, { type: 'CAPTURE_BASELINE', version: capturedVersion }));
       return;
     }
 
-    setIsDirty(internal.cloudId !== null
-      && internal.lastSavedVersion >= 0
-      && dataVersionRef.current !== internal.lastSavedVersion);
+    setIsDirty(computeIsDirty(internal.baseline, internal.cloudId, dataVersionRef.current));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- dataDeps is accessed only via its individual properties (already in the dep array); the object reference is stored for next-render comparison only
-  }, [dataDeps.registers, dataDeps.registerValues, dataDeps.project, dataDeps.addressUnitBits, internal.cloudId, internal.lastSavedVersion, internal.awaitingBaselineCapture, setInternal]);
+  }, [dataDeps.registers, dataDeps.registerValues, dataDeps.project, dataDeps.addressUnitBits, internal.cloudId, internal.baseline, setInternal]);
 
   // ── Auto-sync effect ───────────────────────────────────────────────
   useEffect(() => {
@@ -210,8 +210,8 @@ export function useCloudSyncEngine(deps: UseCloudSyncEngineDeps): UseCloudSyncEn
     if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
     // Derive dirty status from refs so this callback is referentially stable
     // (isDirty in the dep array caused a stale-closure duplicate PUT).
-    const { cloudId, isOwner, lastSavedVersion } = internalRef.current;
-    if (!cloudId || !isOwner || dataVersionRef.current === lastSavedVersion) {
+    const { cloudId, isOwner, baseline } = internalRef.current;
+    if (!isOwner || !computeIsDirty(baseline, cloudId, dataVersionRef.current)) {
       return;
     }
     const jwt = getJwt();

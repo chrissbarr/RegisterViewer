@@ -2,6 +2,7 @@ import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { useActiveProjectCloudOps } from './use-active-project-cloud-ops';
 import { initialInternalState, type InternalCloudSyncState } from '../types/cloud-sync';
+import { cleanBaseline } from '../utils/cloud-sync-reducer';
 import type { AppState } from '../types/register';
 import type { ProjectStorageWriteResult } from '../utils/project-storage';
 import { makeState, makeRegister } from '../test/helpers';
@@ -96,7 +97,7 @@ const TEST_CLOUD_ID = 'cloud-abc';
 const TEST_JWT = 'mock-jwt-token';
 const TEST_TIMESTAMP = '2024-06-01T00:00:00Z';
 
-const INITIAL_INTERNAL_STATE: InternalCloudSyncState = { ...initialInternalState, lastSavedVersion: 0 };
+const INITIAL_INTERNAL_STATE: InternalCloudSyncState = { ...initialInternalState, baseline: cleanBaseline(0) };
 
 function makeRef<T>(value: T): { current: T } {
   return { current: value };
@@ -199,7 +200,7 @@ describe('useActiveProjectCloudOps', () => {
         cloudId: TEST_CLOUD_ID,
         isOwner: true,
         serverVersion: 2,
-        lastSavedVersion: 1,
+        baseline: cleanBaseline(1),
       };
       (saveProjectToCloudImpl as Mock).mockResolvedValue({
         kind: 'updated',
@@ -235,7 +236,7 @@ describe('useActiveProjectCloudOps', () => {
         cloudId: TEST_CLOUD_ID,
         isOwner: true,
         serverVersion: 2,
-        lastSavedVersion: 1,
+        baseline: cleanBaseline(1),
       };
       (saveProjectToCloudImpl as Mock).mockImplementation(async () => {
         deps.dataVersionRef.current = 2;
@@ -404,7 +405,7 @@ describe('useActiveProjectCloudOps', () => {
         cloudId: TEST_CLOUD_ID,
         isOwner: true,
         serverVersion: 2,
-        lastSavedVersion: 1,
+        baseline: cleanBaseline(1),
       };
       // dataVersionRef stays at 1 throughout (no local edits during save)
       deps.dataVersionRef.current = 1;
@@ -451,7 +452,7 @@ describe('useActiveProjectCloudOps', () => {
         cloudId: TEST_CLOUD_ID,
         isOwner: true,
         serverVersion: 2,
-        lastSavedVersion: 1,
+        baseline: cleanBaseline(1),
       };
       deps.dataVersionRef.current = 1;
 
@@ -487,7 +488,7 @@ describe('useActiveProjectCloudOps', () => {
         cloudId: TEST_CLOUD_ID,
         isOwner: true,
         serverVersion: 2,
-        lastSavedVersion: 0,
+        baseline: cleanBaseline(0),
       };
       deps.dataVersionRef.current = 1;
 
@@ -525,7 +526,7 @@ describe('useActiveProjectCloudOps', () => {
         cloudId: TEST_CLOUD_ID,
         isOwner: true,
         serverVersion: 2,
-        lastSavedVersion: 0,
+        baseline: cleanBaseline(0),
       };
       deps.dataVersionRef.current = 1;
 
@@ -559,7 +560,7 @@ describe('useActiveProjectCloudOps', () => {
         cloudId: TEST_CLOUD_ID,
         isOwner: true,
         serverVersion: 2,
-        lastSavedVersion: 1,
+        baseline: cleanBaseline(1),
       };
       deps.dataVersionRef.current = 1;
 
@@ -593,7 +594,7 @@ describe('useActiveProjectCloudOps', () => {
         cloudId: TEST_CLOUD_ID,
         isOwner: true,
         serverVersion: 2,
-        lastSavedVersion: 1,
+        baseline: cleanBaseline(1),
       };
       deps.dataVersionRef.current = 1;
 
@@ -629,7 +630,7 @@ describe('useActiveProjectCloudOps', () => {
         cloudId: TEST_CLOUD_ID,
         isOwner: true,
         serverVersion: 2,
-        lastSavedVersion: 1,
+        baseline: cleanBaseline(1),
       };
       deps.dataVersionRef.current = 1;
 
@@ -731,7 +732,7 @@ describe('useActiveProjectCloudOps', () => {
         cloudId: TEST_CLOUD_ID,
         isOwner: true,
         serverVersion: 2,
-        lastSavedVersion: 0,
+        baseline: cleanBaseline(0),
       };
       deps.dataVersionRef.current = 1;
       (saveProjectToCloudImpl as Mock).mockImplementation(async () => {
@@ -754,7 +755,7 @@ describe('useActiveProjectCloudOps', () => {
       const hasCapturedGenerationUpdate = setInternalCalls.some((call) => {
         const arg = call[0];
         const state = typeof arg === 'function' ? arg(deps.internalRef.current) : arg;
-        return state.serverVersion === 3 && state.lastSavedVersion === 1;
+        return state.serverVersion === 3 && state.baseline.kind === 'clean' && state.baseline.version === 1;
       });
       expect(hasCapturedGenerationUpdate).toBe(true);
     });
@@ -1008,10 +1009,11 @@ describe('useActiveProjectCloudOps', () => {
         addressUnitBits: 8,
       });
       // A baseline-capture request is dispatched (replaces needsVersionSyncRef)
-      // so the engine snapshots lastSavedVersion on its next effect tick.
+      // so the engine snapshots the baseline on its next effect tick. The marker
+      // is now `baseline:{untracked}` (S14a).
       const requestedBaseline = deps.setInternal.mock.calls.some((call) => {
         const arg = call[0];
-        return typeof arg === 'function' && arg(INITIAL_INTERNAL_STATE).awaitingBaselineCapture === true;
+        return typeof arg === 'function' && arg(INITIAL_INTERNAL_STATE).baseline.kind === 'untracked';
       });
       expect(requestedBaseline).toBe(true);
       // setInternal should reflect loaded state

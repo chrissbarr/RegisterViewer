@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { cloudSyncReducer, cloudStateForEntry, type CloudEntrySeed } from './cloud-sync-reducer';
+import {
+  cloudSyncReducer, cloudStateForEntry, isDirty, toInternalCloudSyncState,
+  cleanBaseline, dirtyBaseline, untrackedBaseline,
+  type CloudEntrySeed,
+} from './cloud-sync-reducer';
 import { initialInternalState, type InternalCloudSyncState } from '../types/cloud-sync';
 
 describe('cloudSyncReducer', () => {
@@ -64,7 +68,7 @@ describe('cloudSyncReducer', () => {
         isOwner: true,
         storage: 'cloud',
         shareUrl: 'https://example/p/cloud123',
-        lastSavedVersion: 4,
+        baseline: cleanBaseline(4),
         lastCloudSavedAt: '2026-01-01T00:00:00Z',
         visibility: 'unlisted',
         serverVersion: 7,
@@ -139,7 +143,7 @@ describe('cloudSyncReducer', () => {
         cloudId: 'abc',
         isOwner: false,
         storage: 'local',
-        lastSavedVersion: 2,
+        baseline: cleanBaseline(2),
       };
       const next = cloudSyncReducer(prev, {
         type: 'OWNERSHIP_CONFIRMED',
@@ -155,7 +159,7 @@ describe('cloudSyncReducer', () => {
       expect(next.visibility).toBe('unlisted');
       // Unrelated fields preserved.
       expect(next.cloudId).toBe('abc');
-      expect(next.lastSavedVersion).toBe(2);
+      expect(next.baseline).toEqual(cleanBaseline(2));
     });
 
     it('OWNERSHIP_CONFIRMED is a no-op (returns prev) when the ifCloudId guard does not match', () => {
@@ -192,7 +196,7 @@ describe('cloudSyncReducer', () => {
         cloudId: 'abc',
         status: 'saving',
         serverVersion: 2,
-        lastSavedVersion: 1,
+        baseline: cleanBaseline(1),
         conflict: { serverVersion: 9 },
       };
       const next = cloudSyncReducer(prev, {
@@ -205,7 +209,7 @@ describe('cloudSyncReducer', () => {
         ...prev,
         status: 'idle',
         lastCloudSavedAt: '2026-03-03T00:00:00Z',
-        lastSavedVersion: 4,
+        baseline: cleanBaseline(4),
         serverVersion: 3,
         conflict: null,
       });
@@ -216,7 +220,7 @@ describe('cloudSyncReducer', () => {
         ...initialInternalState,
         status: 'saving',
         storage: 'local',
-        lastSavedVersion: 2,
+        baseline: cleanBaseline(2),
       };
       const next = cloudSyncReducer(prev, {
         type: 'MARK_CREATED',
@@ -234,7 +238,7 @@ describe('cloudSyncReducer', () => {
         status: 'idle',
         shareUrl: 'https://example/p/cloud9',
         lastCloudSavedAt: '2026-04-04T00:00:00Z',
-        lastSavedVersion: 5,
+        baseline: cleanBaseline(5),
         serverVersion: 1,
         conflict: null,
       });
@@ -500,37 +504,36 @@ describe('cloudSyncReducer', () => {
     });
   });
 
-  // S8: the version-sync handshake — replaces needsVersionSyncRef.
+  // S8/S14a: the version-sync handshake — replaces needsVersionSyncRef. The
+  // "awaiting capture" marker is now `baseline:{untracked}`.
   describe('baseline-capture handshake (S8)', () => {
-    it('REQUEST_BASELINE sets the awaiting-capture marker, preserving other fields', () => {
+    it('REQUEST_BASELINE sets the untracked (awaiting-capture) baseline, preserving other fields', () => {
       const prev: InternalCloudSyncState = {
         ...initialInternalState,
         cloudId: 'abc',
         isOwner: true,
         storage: 'cloud',
-        lastSavedVersion: 7,
+        baseline: cleanBaseline(7),
         serverVersion: 3,
       };
       const next = cloudSyncReducer(prev, { type: 'REQUEST_BASELINE' });
-      expect(next.awaitingBaselineCapture).toBe(true);
-      // The marker does NOT itself touch lastSavedVersion — capture happens later.
-      expect(next.lastSavedVersion).toBe(7);
+      // `{untracked}` doubles as the awaiting-capture marker; the engine captures
+      // the post-increment generation into a clean baseline on its next tick.
+      expect(next.baseline).toEqual(untrackedBaseline());
       expect(next.cloudId).toBe('abc');
       expect(next.serverVersion).toBe(3);
     });
 
-    it('CAPTURE_BASELINE records the supplied version and clears the marker', () => {
+    it('CAPTURE_BASELINE records the supplied version as a clean baseline', () => {
       const prev: InternalCloudSyncState = {
         ...initialInternalState,
         cloudId: 'abc',
         isOwner: true,
         storage: 'cloud',
-        lastSavedVersion: -1,
-        awaitingBaselineCapture: true,
+        baseline: untrackedBaseline(),
       };
       const next = cloudSyncReducer(prev, { type: 'CAPTURE_BASELINE', version: 5 });
-      expect(next.lastSavedVersion).toBe(5);
-      expect(next.awaitingBaselineCapture).toBe(false);
+      expect(next.baseline).toEqual(cleanBaseline(5));
       expect(next.cloudId).toBe('abc');
     });
   });
@@ -564,7 +567,7 @@ describe('cloudSyncReducer', () => {
         isOwner: true,
         storage: 'cloud',
         shareUrl: 'https://example/p/cloud123',
-        lastSavedVersion: 4,
+        baseline: cleanBaseline(4),
         lastCloudSavedAt: '2026-01-01T00:00:00Z',
         error: null,
         visibility: 'unlisted',
@@ -575,14 +578,14 @@ describe('cloudSyncReducer', () => {
       expect(next.asyncTransient).toBe('syncing');
     });
 
-    it('seeds lastSavedVersion from dataVersion when there are no unsynced changes (untracked baseline)', () => {
+    it('seeds a clean baseline at the current generation when there are no unsynced changes', () => {
       const next = cloudStateForEntry({ ...base, hasUnsyncedChanges: false, dataVersion: 11 });
-      expect(next.lastSavedVersion).toBe(11);
+      expect(next.baseline).toEqual(cleanBaseline(11));
     });
 
-    it('seeds lastSavedVersion to the dirty sentinel when stored unsynced changes exist', () => {
+    it('seeds a dirty baseline when stored unsynced changes exist', () => {
       const next = cloudStateForEntry({ ...base, hasUnsyncedChanges: true, dataVersion: 11 });
-      expect(next.lastSavedVersion).toBe(Number.MAX_SAFE_INTEGER);
+      expect(next.baseline).toEqual(dirtyBaseline());
     });
 
     it('carries lastCloudSavedAt from the seed verbatim — Path A threads metadata.cloudSavedAt', () => {
@@ -657,6 +660,123 @@ describe('cloudSyncReducer', () => {
       expect(next.asyncTransient).toBeNull();
       // Clearing the overlay must NOT clobber the underlying op status.
       expect(next.status).toBe('saving');
+    });
+  });
+});
+
+// S14a: the pure dirtiness predicate. Byte-for-byte equal to the engine's former
+// `cloudId !== null && lastSavedVersion >= 0 && dataVersion !== lastSavedVersion`.
+describe('isDirty (S14a)', () => {
+  it('is false for any baseline when cloudId is null (local-only never auto-syncs)', () => {
+    expect(isDirty(untrackedBaseline(), null, 5)).toBe(false);
+    expect(isDirty(dirtyBaseline(), null, 5)).toBe(false);
+    expect(isDirty(cleanBaseline(5), null, 5)).toBe(false);
+    expect(isDirty(cleanBaseline(3), null, 5)).toBe(false);
+  });
+
+  it('is false for an untracked baseline (former lastSavedVersion >= 0 guard)', () => {
+    expect(isDirty(untrackedBaseline(), 'cloud-1', 0)).toBe(false);
+    expect(isDirty(untrackedBaseline(), 'cloud-1', 7)).toBe(false);
+  });
+
+  it('is true for a dirty baseline (former MAX_SAFE_INTEGER sentinel)', () => {
+    expect(isDirty(dirtyBaseline(), 'cloud-1', 0)).toBe(true);
+    expect(isDirty(dirtyBaseline(), 'cloud-1', 99)).toBe(true);
+  });
+
+  it('compares the generation for a clean baseline', () => {
+    expect(isDirty(cleanBaseline(5), 'cloud-1', 5)).toBe(false);
+    expect(isDirty(cleanBaseline(5), 'cloud-1', 6)).toBe(true);
+    expect(isDirty(cleanBaseline(5), 'cloud-1', 4)).toBe(true);
+  });
+});
+
+// S14a: equivalence oracle (DESIGN §9). Proves the `lastSavedVersion → baseline`
+// collapse is behavior-preserving by mapping the NEW state back to the LEGACY
+// flat shape after each action and comparing against the hand-written legacy
+// result. `status` and `asyncTransient` map identity — including the auto-sync
+// save window where both are simultaneously non-default, which the (rejected)
+// `Phase` merge could not encode. Oracle scaffolding is removed in S14b.
+describe('toInternalCloudSyncState equivalence oracle (S14a)', () => {
+  it('maps each baseline kind back to its legacy lastSavedVersion sentinel', () => {
+    expect(toInternalCloudSyncState({ ...initialInternalState, baseline: untrackedBaseline() }))
+      .toMatchObject({ lastSavedVersion: -1, awaitingBaselineCapture: false });
+    expect(toInternalCloudSyncState({ ...initialInternalState, baseline: dirtyBaseline() }))
+      .toMatchObject({ lastSavedVersion: Number.MAX_SAFE_INTEGER, awaitingBaselineCapture: false });
+    expect(toInternalCloudSyncState({ ...initialInternalState, baseline: cleanBaseline(3) }))
+      .toMatchObject({ lastSavedVersion: 3, awaitingBaselineCapture: false });
+  });
+
+  it('recovers the legacy awaitingBaselineCapture flag from an untracked CLOUD baseline', () => {
+    // untracked + cloudId set === the awaiting-capture window.
+    const awaiting = toInternalCloudSyncState({
+      ...initialInternalState, cloudId: 'cloud-1', baseline: untrackedBaseline(),
+    });
+    expect(awaiting.lastSavedVersion).toBe(-1);
+    expect(awaiting.awaitingBaselineCapture).toBe(true);
+  });
+
+  it('round-trips the clean-save sequence to the legacy flat state', () => {
+    // BEGIN_SAVE (status:saving) → MARK_SAVED (clean baseline). The legacy state
+    // is the hand-written flat equivalent.
+    let state: InternalCloudSyncState = {
+      ...initialInternalState, cloudId: 'cloud-1', isOwner: true, storage: 'cloud',
+      serverVersion: 2, baseline: cleanBaseline(1),
+    };
+    state = cloudSyncReducer(state, { type: 'BEGIN_SAVE' });
+    state = cloudSyncReducer(state, {
+      type: 'MARK_SAVED', cloudSavedAt: '2026-03-03T00:00:00Z', serverVersion: 3, baselineVersion: 4,
+    });
+    expect(toInternalCloudSyncState(state)).toEqual({
+      cloudId: 'cloud-1', isOwner: true, storage: 'cloud', status: 'idle', error: null,
+      shareUrl: null, lastCloudSavedAt: '2026-03-03T00:00:00Z', lastSavedVersion: 4,
+      awaitingBaselineCapture: false, visibility: 'private', serverVersion: 3, conflict: null,
+    });
+  });
+
+  it('round-trips the auto-sync save window (status + asyncTransient both non-default)', () => {
+    // BEGIN_SAVE sets status:'saving'; SET_ASYNC_TRANSIENT('syncing') overlays the
+    // async transient. Both must survive identity-mapped (the rejected Phase merge
+    // could not hold both at once).
+    let state: InternalCloudSyncState = {
+      ...initialInternalState, cloudId: 'cloud-1', isOwner: true, storage: 'cloud',
+      baseline: cleanBaseline(1),
+    };
+    state = cloudSyncReducer(state, { type: 'BEGIN_SAVE' });
+    state = cloudSyncReducer(state, { type: 'SET_ASYNC_TRANSIENT', value: 'syncing' });
+    const legacy = toInternalCloudSyncState(state);
+    expect(legacy.status).toBe('saving');
+    expect(legacy.asyncTransient).toBe('syncing');
+    expect(legacy.lastSavedVersion).toBe(1);
+  });
+
+  it('round-trips the baseline-capture handshake (REQUEST → CAPTURE)', () => {
+    let state: InternalCloudSyncState = {
+      ...initialInternalState, cloudId: 'cloud-1', isOwner: true, storage: 'cloud',
+      baseline: cleanBaseline(2),
+    };
+    state = cloudSyncReducer(state, { type: 'REQUEST_BASELINE' });
+    // Awaiting window: untracked + cloudId === legacy lastSavedVersion -1 + flag.
+    expect(toInternalCloudSyncState(state)).toMatchObject({
+      lastSavedVersion: -1, awaitingBaselineCapture: true,
+    });
+    state = cloudSyncReducer(state, { type: 'CAPTURE_BASELINE', version: 9 });
+    expect(toInternalCloudSyncState(state)).toMatchObject({
+      lastSavedVersion: 9, awaitingBaselineCapture: false,
+    });
+  });
+
+  it('round-trips the stored-unsynced cloud entry to the legacy dirty sentinel', () => {
+    const seed = cloudStateForEntry({
+      prev: initialInternalState,
+      cloudId: 'cloud-1', isOwner: true, storage: 'cloud',
+      shareUrl: 'https://example/p/cloud-1', lastCloudSavedAt: null,
+      visibility: 'private', serverVersion: 5, conflictVersion: null,
+      hasUnsyncedChanges: true, dataVersion: 4,
+    });
+    const state = cloudSyncReducer(initialInternalState, { type: 'INIT_CLOUD', seed });
+    expect(toInternalCloudSyncState(state)).toMatchObject({
+      lastSavedVersion: Number.MAX_SAFE_INTEGER, awaitingBaselineCapture: false,
     });
   });
 });

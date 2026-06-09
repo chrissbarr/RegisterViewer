@@ -4,6 +4,7 @@ import {
   type FreshnessDecisionState,
   type FreshnessCheckCall,
 } from './cloud-freshness';
+import { cleanBaseline } from './cloud-sync-reducer';
 import type { GetProjectResponse } from './api-client';
 
 // ── Mocks ────────────────────────────────────────────────────────────
@@ -35,7 +36,7 @@ function makeState(overrides: Partial<FreshnessDecisionState> = {}): FreshnessDe
     now: 1_000_000,
     lastCheck: 0,
     dataVersion: 5,
-    baseline: 5,
+    baseline: cleanBaseline(5),
     ...overrides,
   };
 }
@@ -86,25 +87,25 @@ describe('decideFreshnessPull — pre-fetch gate', () => {
   });
 
   it('reports dirty (phase 1) when dataVersion diverges from baseline', () => {
-    const state = makeState({ dataVersion: 10, baseline: 5 });
+    const state = makeState({ dataVersion: 10, baseline: cleanBaseline(5) });
     expect(decideFreshnessPull(state, makeCall())).toEqual({ kind: 'dirty' });
   });
 
   it('reports changed-during-pull (phase 1) when expectedDataVersion no longer matches', () => {
     // dataVersion === baseline (not dirty) but diverges from expectedDataVersion.
-    const state = makeState({ dataVersion: 6, baseline: 6 });
+    const state = makeState({ dataVersion: 6, baseline: cleanBaseline(6) });
     const call = makeCall({ expectedDataVersion: 5 });
     expect(decideFreshnessPull(state, call)).toEqual({ kind: 'changed-during-pull' });
   });
 
   it('replace-with-server bypasses throttle and the dirty gate pre-fetch', () => {
-    const state = makeState({ now: 1_001_000, lastCheck: 1_000_000, dataVersion: 10, baseline: 5 });
+    const state = makeState({ now: 1_001_000, lastCheck: 1_000_000, dataVersion: 10, baseline: cleanBaseline(5) });
     const call = makeCall({ mode: 'replace-with-server' });
     expect(decideFreshnessPull(state, call)).toBeNull();
   });
 
   it('pull-if-clean bypasses throttle but still refuses a dirty overwrite pre-fetch', () => {
-    const state = makeState({ now: 1_001_000, lastCheck: 1_000_000, dataVersion: 10, baseline: 5 });
+    const state = makeState({ now: 1_001_000, lastCheck: 1_000_000, dataVersion: 10, baseline: cleanBaseline(5) });
     const call = makeCall({ mode: 'pull-if-clean', expectedDataVersion: 5 });
     expect(decideFreshnessPull(state, call)).toEqual({ kind: 'dirty' });
   });
@@ -138,7 +139,7 @@ describe('decideFreshnessPull — post-fetch decision', () => {
 
   it('reports dirty (phase 2) when an edit landed during the fetch', () => {
     // Pre-fetch was clean; post-fetch dataVersion now diverges from baseline.
-    const state = makeState({ dataVersion: 6, baseline: 5 });
+    const state = makeState({ dataVersion: 6, baseline: cleanBaseline(5) });
     const decision = decideFreshnessPull(state, makeCall(), makeServerResponse({ version: 3 }));
     expect(decision).toEqual({ kind: 'dirty', serverVersion: 3 });
   });
@@ -146,7 +147,7 @@ describe('decideFreshnessPull — post-fetch decision', () => {
   it('reports changed-during-pull (phase 2) when expectedDataVersion drifted during the fetch', () => {
     // dataVersion === baseline (not dirty) but no longer matches expectedDataVersion,
     // so the dirty gate passes and the changed-during-pull gate fires.
-    const state = makeState({ dataVersion: 6, baseline: 6 });
+    const state = makeState({ dataVersion: 6, baseline: cleanBaseline(6) });
     const call = makeCall({ expectedDataVersion: 5, mode: 'pull-if-clean' });
     const decision = decideFreshnessPull(state, call, makeServerResponse({ version: 3 }));
     expect(decision).toEqual({ kind: 'changed-during-pull', serverVersion: 3 });
@@ -159,7 +160,7 @@ describe('decideFreshnessPull — post-fetch decision', () => {
   });
 
   it('replace-with-server pulls despite a stale server version and dirty state', () => {
-    const state = makeState({ dataVersion: 10, baseline: 5 });
+    const state = makeState({ dataVersion: 10, baseline: cleanBaseline(5) });
     const call = makeCall({ knownVersion: 5, mode: 'replace-with-server' });
     const decision = decideFreshnessPull(state, call, makeServerResponse({ version: 3 }));
     expect(decision).toMatchObject({ kind: 'pull', serverVersion: 3 });

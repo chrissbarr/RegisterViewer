@@ -52,7 +52,7 @@ import { useCloudSyncEngine, type SyncStatus } from '../hooks/use-cloud-sync-eng
 import { useAuthTransition } from '../hooks/use-auth-transition';
 import { useProjectSwitchInit } from '../hooks/use-project-switch-init';
 import { syncCloudProjectsFromServer, positiveVersion, normalizeServerVersion } from '../utils/cloud-sync';
-import { cloudSyncReducer, cloudStateForEntry, type CloudSyncAction } from '../utils/cloud-sync-reducer';
+import { cloudSyncReducer, cloudStateForEntry, selectWasDirty, type CloudSyncAction } from '../utils/cloud-sync-reducer';
 import { checkAndPullFreshVersion, type FreshnessCheckContext } from '../hooks/use-cloud-freshness';
 import { isOwnedCloudEntry } from '../utils/project-identity';
 import type { Visibility } from '../types/project';
@@ -424,9 +424,10 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       const current = internalRef.current;
       const isDepartingActiveProject = activeLocalIdRef.current === meta.localId
         && current.cloudId === meta.cloudId;
+      // selectWasDirty folds the former `cloudId !== null && dataVersion !==
+      // lastSavedVersion` dirty check onto the baseline union (DESIGN §5).
       const wasDirty = isDepartingActiveProject
-        && current.cloudId !== null
-        && dataVersionRef.current !== current.lastSavedVersion;
+        && selectWasDirty(current, dataVersionRef.current);
       return {
         wasDirty,
         serverVersion: positiveVersion(current.serverVersion) ?? meta.serverVersion,
@@ -488,8 +489,8 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
         //     initFromProject runs at startup where AppLoader already owns the
         //     URL, so it intentionally does not call setCloudUrl(cloudId).
         //   • baseline seeding — Path A does NOT dispatch REQUEST_BASELINE; the
-        //     untracked/dirty split is carried entirely by `lastSavedVersion`
-        //     (the dirty sentinel vs. the current generation in the seed).
+        //     clean/dirty split is carried entirely by the seed's `baseline`
+        //     (a `dirty` baseline vs. a `clean` snapshot of the generation).
         //   • freshness kickoff — Path A does NOT kick off a freshness check.
         const seed = cloudStateForEntry({
           prev: internalRef.current,
@@ -634,7 +635,12 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
           }
         }
 
-        const hasLocalEdits = dataVersionRef.current !== internalRef.current.lastSavedVersion;
+        // Reproduces the former `dataVersion !== lastSavedVersion`: a `clean`
+        // baseline has edits iff the generation drifted; `dirty`/`untracked`
+        // baselines (former MAX_SAFE_INTEGER/-1 sentinels) always count as edited.
+        const baseline = internalRef.current.baseline;
+        const hasLocalEdits = baseline.kind !== 'clean'
+          || dataVersionRef.current !== baseline.version;
         const confirmedCloudSavedAt = res.updatedAt ?? internalRef.current.lastCloudSavedAt;
         const confirmedVisibility = res.visibility ?? internalRef.current.visibility;
         if (promotedLocalId) {

@@ -62,7 +62,7 @@ export async function checkAndPullFreshVersion(
       now: Date.now(),
       lastCheck: lastFreshnessCheckRef.current,
       dataVersion: dataVersionRef.current,
-      baseline: internalRef.current.lastSavedVersion,
+      baseline: internalRef.current.baseline,
     },
     call,
   );
@@ -88,7 +88,7 @@ export async function checkAndPullFreshVersion(
       now: Date.now(),
       lastCheck: lastFreshnessCheckRef.current,
       dataVersion: dataVersionRef.current,
-      baseline: internalRef.current.lastSavedVersion,
+      baseline: internalRef.current.baseline,
     },
     call,
     serverResponse,
@@ -171,8 +171,9 @@ export async function checkAndPullFreshVersion(
     project: parsed.project,
     addressUnitBits: parsed.addressUnitBits,
   });
-  // Mark "awaiting baseline capture" so the engine snapshots the new generation
-  // into lastSavedVersion on its next effect tick (replaces needsVersionSyncRef).
+  // Mark "awaiting baseline capture" (baseline → {untracked}) so the engine
+  // snapshots the new generation into a clean baseline on its next effect tick
+  // (replaces needsVersionSyncRef).
   setInternal((prev) => cloudSyncReducer(prev, { type: 'REQUEST_BASELINE' }));
 
   setInternal((prev) => cloudSyncReducer(prev, {

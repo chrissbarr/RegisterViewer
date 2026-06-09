@@ -12,7 +12,7 @@ import { positiveVersion } from '../utils/cloud-sync';
 import { cloudSyncReducer } from '../utils/cloud-sync-reducer';
 import { DEFAULT_PROJECT_NAME, type Visibility } from '../types/project';
 import type { AppState } from '../types/register';
-import { type CloudSyncCore, type CloudMetadataUpdate, type InternalCloudSyncState, type SaveOutcome, initialInternalState } from '../types/cloud-sync';
+import { type Baseline, type CloudSyncCore, type CloudMetadataUpdate, type InternalCloudSyncState, type SaveOutcome, initialInternalState } from '../types/cloud-sync';
 import type { ImportStateAction } from '../context/app-context';
 
 interface ConflictHandlerParams {
@@ -33,7 +33,7 @@ interface ConflictHandlerParams {
 
 interface SaveAttemptSnapshot {
   dataVersion: number;
-  lastSavedVersion: number;
+  baseline: Baseline;
   serverVersion: number;
 }
 
@@ -170,7 +170,13 @@ async function handleConflictResult(params: ConflictHandlerParams): Promise<void
     updateCloudMetadata, appStateRef, setInternal, dispatch, getJwt,
   } = params;
 
-  const dirtyAtSaveStart = attempt.dataVersion !== attempt.lastSavedVersion;
+  // Reproduces the legacy `dataVersion !== lastSavedVersion` at save start: a
+  // `clean` baseline is dirty iff the generation drifted; `dirty`/`untracked`
+  // baselines are always dirty (their former -1/MAX_SAFE_INTEGER sentinels never
+  // equal a real non-negative generation). Save start always has an owned cloud
+  // project, so the baseline is `clean` or `dirty` in practice.
+  const dirtyAtSaveStart = attempt.baseline.kind !== 'clean'
+    || attempt.dataVersion !== attempt.baseline.version;
   const editedDuringSave = dataVersionRef.current !== attempt.dataVersion;
   const stillOnSameProject = isSameActiveSaveTarget(
     capturedLocalId,
@@ -362,13 +368,13 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
       const capturedLocalId = activeLocalIdRef.current;
       let existingCloudId: string | null = null;
       try {
-        const { cloudId, isOwner, serverVersion, lastSavedVersion } = internalRef.current;
+        const { cloudId, isOwner, serverVersion, baseline } = internalRef.current;
         existingCloudId = (cloudId && isOwner) ? cloudId : null;
 
         setInternal((prev) => cloudSyncReducer(prev, { type: 'BEGIN_SAVE' }));
         const attempt: SaveAttemptSnapshot = {
           dataVersion: dataVersionRef.current,
-          lastSavedVersion,
+          baseline,
           serverVersion,
         };
         const jsonPayload = exportToObject(appStateRef.current);
@@ -585,8 +591,9 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
           return;
         }
 
-        // Signal the engine to capture lastSavedVersion on its next effect tick
-        // (replaces needsVersionSyncRef). LOAD_SUCCEEDED merges over this, so the
+        // Signal the engine to capture the baseline on its next effect tick
+        // (REQUEST_BASELINE → baseline {untracked}; replaces needsVersionSyncRef).
+        // LOAD_SUCCEEDED merges over this, but does not touch `baseline`, so the
         // awaiting-capture marker survives until the engine clears it.
         setInternal((prev) => cloudSyncReducer(prev, { type: 'REQUEST_BASELINE' }));
 

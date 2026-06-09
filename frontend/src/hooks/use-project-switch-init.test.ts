@@ -2,6 +2,7 @@ import { renderHook } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { useProjectSwitchInit } from './use-project-switch-init';
 import { initialInternalState, type InternalCloudSyncState } from '../types/cloud-sync';
+import { cleanBaseline } from '../utils/cloud-sync-reducer';
 import type { ProjectListEntry } from '../types/project';
 import type { ProjectDepartureSnapshot } from '../context/project-storage-context';
 
@@ -156,12 +157,12 @@ describe('useProjectSwitchInit', () => {
     it('fires save when departing project is dirty and cloud-backed', async () => {
       const deps = buildDeps();
       // Set up: project A is cloud-backed, currently active
-      // lastSavedVersion differs from dataVersionRef (dirty)
+      // clean baseline differs from dataVersionRef (dirty)
       deps.internalRef.current = {
         ...initialInternalState,
         cloudId: PROJECT_A_CLOUD_ID,
         isOwner: true,
-        lastSavedVersion: 0, // differs from dataVersionRef.current (1) => dirty
+        baseline: cleanBaseline(0), // differs from dataVersionRef.current (1) => dirty
       };
       deps.lastDeparture = makeDeparture();
 
@@ -217,7 +218,7 @@ describe('useProjectSwitchInit', () => {
       });
       deps.projects = [localOnlyProject, deps.projects[1]];
       deps.projectsRef.current = deps.projects;
-      deps.internalRef.current = { ...initialInternalState, lastSavedVersion: 0 };
+      deps.internalRef.current = { ...initialInternalState, baseline: cleanBaseline(0) };
 
       const { rerender } = renderHook(
         (props: { activeLocalId: string | null }) =>
@@ -237,7 +238,7 @@ describe('useProjectSwitchInit', () => {
         ...initialInternalState,
         cloudId: PROJECT_A_CLOUD_ID,
         isOwner: true,
-        lastSavedVersion: 0,
+        baseline: cleanBaseline(0),
       };
       deps.lastDeparture = makeDeparture();
 
@@ -267,7 +268,7 @@ describe('useProjectSwitchInit', () => {
         ...initialInternalState,
         cloudId: PROJECT_A_CLOUD_ID,
         isOwner: true,
-        lastSavedVersion: 0, // differs from dataVersionRef.current (1) => dirty
+        baseline: cleanBaseline(0), // differs from dataVersionRef.current (1) => dirty
       };
       deps.lastDeparture = makeDeparture({ serverVersion: 0 });
       (loadProject as Mock).mockReturnValue({
@@ -306,7 +307,7 @@ describe('useProjectSwitchInit', () => {
         ...initialInternalState,
         cloudId: PROJECT_A_CLOUD_ID,
         isOwner: true,
-        lastSavedVersion: 0,
+        baseline: cleanBaseline(0),
       };
       deps.lastDeparture = makeDeparture();
 
@@ -579,10 +580,11 @@ describe('useProjectSwitchInit', () => {
 
       rerender({ activeLocalId: PROJECT_B_LOCAL_ID });
 
-      expect(deps.internalRef.current.lastSavedVersion).toBe(4);
       // A clean incoming cloud project requests a baseline capture so the engine
-      // snapshots the generation into lastSavedVersion (replaces needsVersionSync).
-      expect(deps.internalRef.current.awaitingBaselineCapture).toBe(true);
+      // snapshots the generation into a clean baseline (replaces needsVersionSync).
+      // The awaiting-capture marker is `baseline:{untracked}` (S14a); the engine
+      // would resolve it to clean(4) on its next tick.
+      expect(deps.internalRef.current.baseline.kind).toBe('untracked');
       expect(checkAndPullFreshVersion).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({ knownVersion: 9 }),
@@ -666,9 +668,9 @@ describe('useProjectSwitchInit', () => {
 
       rerender({ activeLocalId: PROJECT_B_LOCAL_ID });
 
-      expect(deps.internalRef.current.lastSavedVersion).not.toBe(deps.dataVersionRef.current);
-      // Stored unsynced changes stay dirty: no baseline-capture request is made.
-      expect(deps.internalRef.current.awaitingBaselineCapture).toBeFalsy();
+      // Stored unsynced changes stay dirty: the seed used a `dirty` baseline and
+      // no baseline-capture request (REQUEST_BASELINE → untracked) is made.
+      expect(deps.internalRef.current.baseline.kind).toBe('dirty');
       expect(checkAndPullFreshVersion).not.toHaveBeenCalled();
     });
 

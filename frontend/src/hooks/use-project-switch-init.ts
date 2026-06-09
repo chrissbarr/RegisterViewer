@@ -187,8 +187,9 @@ export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
       // (`initFromProject`) are explicit decisions here:
       //   • setCloudUrl — Path B explicitly sets the URL on switch (below).
       //   • lastCloudSavedAt — Path B hardcodes null (vs Path A's metadata value).
-      //   • baseline seeding — Path B dispatches REQUEST_BASELINE when there are
-      //     no stored unsynced changes (below); the dirty case keeps the sentinel.
+      //   • baseline seeding — Path B dispatches REQUEST_BASELINE (baseline →
+      //     {untracked}) when there are no stored unsynced changes (below); the
+      //     dirty case keeps the `dirty` baseline.
       //   • freshness kickoff — Path B kicks off a freshness check (below).
       setCloudUrl(cloudId);
       const next = cloudStateForEntry({
@@ -206,11 +207,12 @@ export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
       });
       internalRef.current = next;
       setInternal((prev) => cloudSyncReducer(prev, { type: 'INIT_CLOUD', seed: next }));
-      // Clean incoming cloud project: mark "awaiting baseline capture" so the
-      // engine snapshots the current generation into lastSavedVersion on its
-      // next effect tick (replaces `needsVersionSyncRef.current = true`). When
-      // stored unsynced changes exist we stay dirty (no capture) — the dirty
-      // sentinel `cloudStateForEntry` seeded above keeps it dirty.
+      // Clean incoming cloud project: mark "awaiting baseline capture" (baseline
+      // → {untracked}) so the engine snapshots the current generation into a
+      // clean baseline on its next effect tick (replaces
+      // `needsVersionSyncRef.current = true`). When stored unsynced changes exist
+      // we stay dirty (no capture) — the `dirty` baseline `cloudStateForEntry`
+      // seeded above keeps it dirty.
       if (!hasStoredUnsyncedChanges) {
         setInternal((prev) => cloudSyncReducer(prev, { type: 'REQUEST_BASELINE' }));
       }
