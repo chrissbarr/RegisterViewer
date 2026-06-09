@@ -51,6 +51,14 @@ import type { Visibility } from '../types/project';
  * - `BEGIN_LOAD { cloudId }`     → `{ status:'loading', error:null, cloudId }`
  * - `LOAD_SUCCEEDED { seed }`    → merge the import-result seed over prev
  * - `LOAD_FAILED { error, clearCloudId? }` → `{ status:'idle', error }` (+ cloudId clear)
+ *
+ * S7 named actions (auth-transition + freshness writers; OP_FAILED mop-up):
+ * - `APPLY_PULL { serverVersion, cloudSavedAt, visibility }`
+ *   → `{ ...prev, serverVersion, lastCloudSavedAt, visibility, conflict:null }`
+ *   (the freshness-pull apply at `cloud-freshness.ts` `checkAndPullFreshVersion`)
+ * - `OP_FAILED { error }` → `{ ...prev, status:'idle', error }` (the flat-shape
+ *   "operation failed → idle + error" transition; converts the active-ops
+ *   save/fork/delete/load failure arms that today write that shape raw)
  */
 export type CloudSyncAction =
   | {
@@ -102,7 +110,14 @@ export type CloudSyncAction =
         | 'lastCloudSavedAt' | 'serverVersion' | 'visibility'
       >;
     }
-  | { type: 'LOAD_FAILED'; error: string; clearCloudId?: boolean };
+  | { type: 'LOAD_FAILED'; error: string; clearCloudId?: boolean }
+  | {
+      type: 'APPLY_PULL';
+      serverVersion: number;
+      cloudSavedAt: string | null;
+      visibility: Visibility;
+    }
+  | { type: 'OP_FAILED'; error: string };
 
 export function cloudSyncReducer(
   state: InternalCloudSyncState,
@@ -204,6 +219,16 @@ export function cloudSyncReducer(
       return action.clearCloudId
         ? { ...state, status: 'idle', error: action.error, cloudId: null }
         : { ...state, status: 'idle', error: action.error };
+    case 'APPLY_PULL':
+      return {
+        ...state,
+        serverVersion: action.serverVersion,
+        lastCloudSavedAt: action.cloudSavedAt,
+        visibility: action.visibility,
+        conflict: null,
+      };
+    case 'OP_FAILED':
+      return { ...state, status: 'idle', error: action.error };
     default: {
       // Exhaustiveness guard: a later slice that adds an action without a case
       // here gets a compile error. Returns `state` unchanged at runtime.

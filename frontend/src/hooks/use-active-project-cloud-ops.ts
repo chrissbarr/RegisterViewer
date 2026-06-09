@@ -78,9 +78,8 @@ function handleNotFoundResultImpl(params: NotFoundHandlerParams): SaveOutcome {
     const metadataResult = updateCloudMetadata(capturedLocalId, CLEARED_CLOUD_METADATA);
     if (!metadataResult.ok) {
       if (stillOnSameProject) {
-        setInternal((prev) => ({
-          ...prev,
-          status: 'idle',
+        setInternal((prev) => cloudSyncReducer(prev, {
+          type: 'OP_FAILED',
           error: 'Cloud project was deleted on the server, but local cloud metadata could not be updated.',
         }));
       }
@@ -144,7 +143,7 @@ function handleUpdatedResultImpl(params: UpdatedHandlerParams): SaveOutcome {
 
     if (persistError !== null) {
       if (stillOnSameProject) {
-        setInternal((prev) => ({ ...prev, status: 'idle', error: persistError }));
+        setInternal((prev) => cloudSyncReducer(prev, { type: 'OP_FAILED', error: persistError }));
       }
       // Best-effort: persist the confirmed server version to the manifest so
       // later readers (e.g. the departure save) can't re-PUT a stale version
@@ -300,9 +299,8 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
       const name = appStateRef.current.project?.title ?? DEFAULT_PROJECT_NAME;
       currentLocalId = createNewProject(name, serialized);
       if (!currentLocalId) {
-        setInternal((prev) => ({
-          ...prev,
-          status: 'idle',
+        setInternal((prev) => cloudSyncReducer(prev, {
+          type: 'OP_FAILED',
           error: 'Project was saved to cloud, but local project metadata could not be persisted.',
         }));
         return 'local-persist-failed';
@@ -312,9 +310,8 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
         protectedLocalIds: [activeLocalIdRef.current],
       });
       if (!stateResult.ok) {
-        setInternal((prev) => ({
-          ...prev,
-          status: 'idle',
+        setInternal((prev) => cloudSyncReducer(prev, {
+          type: 'OP_FAILED',
           error: 'Project was saved to cloud, but the local copy could not be updated.',
         }));
         return 'local-persist-failed';
@@ -330,9 +327,8 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
       hasUnsyncedChanges,
     });
     if (!metadataResult.ok) {
-      setInternal((prev) => ({
-        ...prev,
-        status: 'idle',
+      setInternal((prev) => cloudSyncReducer(prev, {
+        type: 'OP_FAILED',
         error: 'Project was saved to cloud, but local cloud metadata could not be persisted.',
       }));
       return 'local-persist-failed';
@@ -447,7 +443,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
         if (result.kind !== 'created') throw new Error('Failed to save copy.');
         applyCreatedResult(result, attemptDataVersion, dataVersionRef.current !== attemptDataVersion);
       } catch (err) {
-        setInternal((prev) => ({ ...prev, status: 'idle', error: friendlyErrorMessage(err, 'Failed to save copy.') }));
+        setInternal((prev) => cloudSyncReducer(prev, { type: 'OP_FAILED', error: friendlyErrorMessage(err, 'Failed to save copy.') }));
       }
     });
   }, [applyCreatedResult, mutationLockRef, dataVersionRef, getJwt, appStateRef, setInternal]);
@@ -465,9 +461,8 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
         if (currentLocalId) {
           const metadataResult = updateCloudMetadata(currentLocalId, CLEARED_CLOUD_METADATA);
           if (!metadataResult.ok) {
-            setInternal((prev) => ({
-              ...prev,
-              status: 'idle',
+            setInternal((prev) => cloudSyncReducer(prev, {
+              type: 'OP_FAILED',
               error: 'Cloud project was deleted, but local cloud metadata could not be updated.',
             }));
             return;
@@ -477,7 +472,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
         clearCloudUrl();
         setInternal(initialInternalState);
       } catch (err) {
-        setInternal((prev) => ({ ...prev, status: 'idle', error: friendlyErrorMessage(err, 'Failed to delete project.') }));
+        setInternal((prev) => cloudSyncReducer(prev, { type: 'OP_FAILED', error: friendlyErrorMessage(err, 'Failed to delete project.') }));
       }
     });
   }, [updateCloudMetadata, mutationLockRef, getJwt, internalRef, activeLocalIdRef, setInternal]);
@@ -530,9 +525,8 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
         if (isOwner) {
           const localId = createNewProject(name, serializeImportResult(importResult));
           if (!localId) {
-            setInternal((prev) => ({
-              ...prev,
-              status: 'idle',
+            setInternal((prev) => cloudSyncReducer(prev, {
+              type: 'OP_FAILED',
               error: 'Cloud project loaded, but the local workspace could not be created.',
             }));
             return;
@@ -548,9 +542,8 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
             hasUnsyncedChanges: false,
           });
           if (!metadataResult.ok) {
-            setInternal((prev) => ({
-              ...prev,
-              status: 'idle',
+            setInternal((prev) => cloudSyncReducer(prev, {
+              type: 'OP_FAILED',
               error: 'Cloud project loaded, but local cloud metadata could not be persisted.',
             }));
             return;
@@ -563,9 +556,8 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
             addressUnitBits: importResult.addressUnitBits,
           });
         } else if (!loadAsUnsaved(importResult, name, 'cloud')) {
-          setInternal((prev) => ({
-            ...prev,
-            status: 'idle',
+          setInternal((prev) => cloudSyncReducer(prev, {
+            type: 'OP_FAILED',
             error: 'Cloud project loaded, but the unsaved workspace could not be created.',
           }));
           return;

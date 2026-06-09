@@ -95,7 +95,13 @@ export function useAuthTransition(deps: UseAuthTransitionDeps): void {
         }
       }
 
-      // Reset cloud sync state
+      // Reset cloud sync state.
+      // Left as a value-form raw reset (NOT a LIFECYCLE_RESET functional updater):
+      // the auth-transition sign-out test pins `setInternal` being called with the
+      // reset OBJECT (`toHaveBeenCalledWith(initialInternalState)`), so a functional
+      // updater would change that assertion. Matches the S5/S6 deferred-reset
+      // precedent (active-ops deleteFromCloud, by-localId resets); folds into the
+      // shim removal at S14.
       if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
       setInternal(initialInternalState);
       clearCloudUrl();

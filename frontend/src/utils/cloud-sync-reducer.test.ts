@@ -438,4 +438,65 @@ describe('cloudSyncReducer', () => {
       expect(next).toEqual({ ...prev, status: 'idle', error: 'not found', cloudId: null });
     });
   });
+
+  describe('named actions (S7)', () => {
+    it('APPLY_PULL applies the freshness pull result and clears any conflict', () => {
+      const prev: InternalCloudSyncState = {
+        ...initialInternalState,
+        cloudId: 'abc',
+        isOwner: true,
+        storage: 'cloud',
+        serverVersion: 1,
+        lastCloudSavedAt: '2026-06-01T00:00:00Z',
+        visibility: 'private',
+        conflict: { serverVersion: 4 },
+      };
+      const next = cloudSyncReducer(prev, {
+        type: 'APPLY_PULL',
+        serverVersion: 3,
+        cloudSavedAt: '2026-06-06T00:00:00Z',
+        visibility: 'unlisted',
+      });
+      expect(next).toEqual({
+        ...prev,
+        serverVersion: 3,
+        lastCloudSavedAt: '2026-06-06T00:00:00Z',
+        visibility: 'unlisted',
+        conflict: null,
+      });
+    });
+
+    it('APPLY_PULL accepts a null cloudSavedAt', () => {
+      const prev: InternalCloudSyncState = {
+        ...initialInternalState,
+        cloudId: 'abc',
+        serverVersion: 1,
+      };
+      const next = cloudSyncReducer(prev, {
+        type: 'APPLY_PULL',
+        serverVersion: 2,
+        cloudSavedAt: null,
+        visibility: 'unlisted',
+      });
+      expect(next.lastCloudSavedAt).toBeNull();
+      expect(next.serverVersion).toBe(2);
+      expect(next.visibility).toBe('unlisted');
+      expect(next.conflict).toBeNull();
+    });
+
+    it('OP_FAILED sets status idle and the error message, preserving other fields', () => {
+      const prev: InternalCloudSyncState = {
+        ...initialInternalState,
+        cloudId: 'abc',
+        isOwner: true,
+        storage: 'cloud',
+        status: 'saving',
+        serverVersion: 7,
+      };
+      const next = cloudSyncReducer(prev, { type: 'OP_FAILED', error: 'Failed to save copy.' });
+      expect(next).toEqual({ ...prev, status: 'idle', error: 'Failed to save copy.' });
+      expect(next.cloudId).toBe('abc');
+      expect(next.serverVersion).toBe(7);
+    });
+  });
 });

@@ -2,6 +2,7 @@ import type { MutableRefObject } from 'react';
 import { getProject } from './api-client';
 import { parseProjectData } from './cloud-project-loader';
 import { patchProjectState, loadProject } from './project-storage';
+import { cloudSyncReducer } from './cloud-sync-reducer';
 import { serializeState, deserializeState } from './storage';
 import type { ImportStateAction } from '../context/app-context';
 import type { InternalCloudSyncState, CloudMetadataUpdate } from '../types/cloud-sync';
@@ -149,12 +150,11 @@ export async function checkAndPullFreshVersion(
   });
   needsVersionSyncRef.current = true;
 
-  setInternal((prev) => ({
-    ...prev,
+  setInternal((prev) => cloudSyncReducer(prev, {
+    type: 'APPLY_PULL',
     serverVersion,
-    lastCloudSavedAt: serverResponse.updatedAt,
+    cloudSavedAt: serverResponse.updatedAt,
     visibility: serverResponse.visibility,
-    conflict: null,
   }));
 
   return { applied: true, serverVersion };
