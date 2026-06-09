@@ -25,6 +25,27 @@ export function isConfirmedNonOwner(result: Pick<CloudProjectLoadResult, 'isOwne
 }
 
 /**
+ * The single ownership policy for persisting a freshly-fetched cloud project.
+ *
+ * Conservative: only demote to `'local'` (a full unlink) on POSITIVE evidence
+ * of non-ownership (`isConfirmedNonOwner`). When ownership is unknown
+ * (anonymous / expired-JWT / old-API / stale-cached response), keep the
+ * manifest's storage class rather than silently unlinking an owned project.
+ *
+ * Consumed by P1 (`persistDownloadedCloudProject`) and the AppLoader
+ * `treatAsShared` decision — both already branched on `isConfirmedNonOwner`, so
+ * routing them through this helper is behavior-identical. P5
+ * (`loadCloudProject`) intentionally stays on raw `importResult.isOwner` pending
+ * its own behavior-changing slice.
+ */
+export function decideStorageForFetched(
+  result: Pick<CloudProjectLoadResult, 'isOwner' | 'authenticated'>,
+  manifestStorage: 'local' | 'cloud',
+): 'local' | 'cloud' {
+  return isConfirmedNonOwner(result) ? 'local' : manifestStorage;
+}
+
+/**
  * Parse raw project data (from API response) into app state.
  * Extracted from fetchAndParseCloudProject for reuse in freshness checks
  * to avoid double-fetching.

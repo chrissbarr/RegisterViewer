@@ -1,8 +1,9 @@
 import { useCallback, useMemo, useRef, useState, type Dispatch, type MutableRefObject } from 'react';
-import { exportToObject, serializeImportResult, serializeState } from '../utils/storage';
+import { exportToObject, serializeState } from '../utils/storage';
 import { isCloudEnabled, ApiError } from '../utils/api-client';
 import { fetchAndParseCloudProject } from '../utils/cloud-project-loader';
 import { checkAndPullFreshVersion, type FreshnessCheckContext } from '../utils/cloud-freshness';
+import { materializeCloudProject } from '../utils/cloud-materialize';
 import { friendlyErrorMessage } from '../utils/friendly-error';
 import { buildProjectUrl, patchProjectState, type ProjectStorageWriteResult } from '../utils/project-storage';
 import { setCloudUrl, clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock, requireJwt } from '../utils/cloud-utils';
@@ -521,7 +522,23 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
         const shareUrl = buildProjectUrl(cloudId);
 
         if (isOwner) {
-          const localId = createNewProject(name, serializeImportResult(importResult));
+          // P5 — `create`: create a new local record from the import result,
+          // dropping local-only UI fields. Ownership branch stays raw `isOwner`
+          // (the ownership-policy unification is a separate slice).
+          let localId: string | null = null;
+          materializeCloudProject({
+            writeMode: 'create',
+            localId: null,
+            cloudId,
+            importResult,
+            callbacks: {
+              persist: (serialized) => {
+                localId = createNewProject(name, serialized);
+                return localId !== null;
+              },
+              loadExistingState: () => null,
+            },
+          });
           if (!localId) {
             setInternal((prev) => cloudSyncReducer(prev, {
               type: 'OP_FAILED',

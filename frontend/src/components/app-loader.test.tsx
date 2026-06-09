@@ -482,6 +482,74 @@ describe('AppLoader', () => {
       }), { protectedLocalIds: ['existing-cloud-local'] });
     });
 
+    it('P1 (replace) drops diverged UI fields when hydrating a clean owned cloud entry', async () => {
+      // Regression pin for the materializeCloudProject unification (S10b):
+      // P1 runs only on fresh hydration, so `replace` mode must NOT preserve a
+      // cached project's diverged UI fields (mapTableWidth/mapShowGaps/
+      // mapSortDescending/activeRegisterId). It serializes straight from the
+      // import result (serializeImportResult), which omits the map UI fields and
+      // defaults activeRegisterId to the first register. P4 (merge) is the only
+      // path that preserves them; unifying P1 onto the helper is only safe while
+      // `replace` keeps dropping them.
+      const importResult = makeImportResult({
+        isOwner: true,
+        version: 8,
+        visibility: 'unlisted',
+      });
+      const cachedProjectWithDivergedUi = makeStoredProject({
+        localId: 'existing-cloud-local',
+        cloudId: 'owned-cloud',
+        storage: 'cloud',
+        serverVersion: 7,
+        hasUnsyncedChanges: false,
+        // Diverged local UI state that P1 must NOT carry into the persisted record.
+        state: {
+          registers: [TEST_REGISTER],
+          activeRegisterId: 'diverged-reg',
+          registerValues: { 'reg-1': '0xff' },
+          mapTableWidth: 64,
+          mapShowGaps: false,
+          mapSortDescending: true,
+          addressUnitBits: 8,
+        },
+      });
+      const manifestEntry = {
+        localId: 'existing-cloud-local',
+        cloudId: 'owned-cloud',
+        name: 'Existing Cloud',
+        visibility: 'private',
+        createdAt: '2024-01-01T00:00:00Z',
+        localSavedAt: '2024-05-01T00:00:00Z',
+        cloudSavedAt: '2024-05-01T00:00:00Z',
+        serverVersion: 7,
+        storage: 'cloud',
+        hasUnsyncedChanges: false,
+      };
+      (loadManifest as Mock).mockReturnValue({ version: 1, projects: [manifestEntry] });
+      (resolveInitialProject as Mock).mockReturnValue({ type: 'cloud', cloudId: 'owned-cloud' });
+      (fetchAndParseCloudProject as Mock).mockResolvedValue(importResult);
+      (loadProject as Mock).mockReturnValue(cachedProjectWithDivergedUi);
+
+      render(<AppLoader />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('app-shell')).toBeInTheDocument();
+      });
+
+      // The persisted record carries the import-result shape, NOT the cached
+      // diverged UI fields: activeRegisterId is the first register and the map
+      // UI fields are absent (they fall back to storage defaults on read).
+      const savedCall = (saveProject as Mock).mock.calls.find(
+        ([record]) => record?.localId === 'existing-cloud-local',
+      );
+      expect(savedCall).toBeDefined();
+      const savedState = savedCall![0].state;
+      expect(savedState.activeRegisterId).toBe('reg-1');
+      expect(savedState).not.toHaveProperty('mapTableWidth');
+      expect(savedState).not.toHaveProperty('mapShowGaps');
+      expect(savedState).not.toHaveProperty('mapSortDescending');
+    });
+
     it('does not overwrite an existing dirty owned cloud cache from a direct URL fetch', async () => {
       const importResult = makeImportResult({
         isOwner: true,

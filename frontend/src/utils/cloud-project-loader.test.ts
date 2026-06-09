@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { fetchAndParseCloudProject, isConfirmedNonOwner } from './cloud-project-loader';
+import { fetchAndParseCloudProject, isConfirmedNonOwner, decideStorageForFetched } from './cloud-project-loader';
 import * as apiClient from './api-client';
 import * as storage from './storage';
 
@@ -184,5 +184,24 @@ describe('isConfirmedNonOwner', () => {
     expect(isConfirmedNonOwner({ isOwner: false, authenticated: false })).toBe(false);
     expect(isConfirmedNonOwner({ isOwner: false, authenticated: undefined })).toBe(false);
     expect(isConfirmedNonOwner({ isOwner: false })).toBe(false);
+  });
+});
+
+describe('decideStorageForFetched', () => {
+  it('demotes to local only on confirmed non-ownership (authenticated:true, isOwner:false)', () => {
+    expect(decideStorageForFetched({ isOwner: false, authenticated: true }, 'cloud')).toBe('local');
+    expect(decideStorageForFetched({ isOwner: false, authenticated: true }, 'local')).toBe('local');
+  });
+
+  it('keeps the manifest storage class when ownership is confirmed (isOwner:true)', () => {
+    expect(decideStorageForFetched({ isOwner: true, authenticated: true }, 'cloud')).toBe('cloud');
+    expect(decideStorageForFetched({ isOwner: true, authenticated: true }, 'local')).toBe('local');
+  });
+
+  it('keeps the manifest storage class when ownership is unknown (authenticated missing/false)', () => {
+    expect(decideStorageForFetched({ isOwner: false, authenticated: false }, 'cloud')).toBe('cloud');
+    expect(decideStorageForFetched({ isOwner: false, authenticated: undefined }, 'cloud')).toBe('cloud');
+    expect(decideStorageForFetched({ isOwner: false }, 'cloud')).toBe('cloud');
+    expect(decideStorageForFetched({ isOwner: false }, 'local')).toBe('local');
   });
 });

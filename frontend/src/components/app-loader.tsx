@@ -4,13 +4,14 @@ import { Loader2 } from 'lucide-react';
 import { AppProvider } from '../context/app-context';
 import { ErrorScreen } from './common/error-screen';
 import { AppShell } from './layout/app-shell';
-import { importFromJson, deserializeState, serializeState, serializeImportResult } from '../utils/storage';
+import { importFromJson, deserializeState, serializeState } from '../utils/storage';
 import { createSeedRegisters } from '../utils/seed-data';
 import { ADDRESS_UNIT_BITS_DEFAULT, type AppState } from '../types/register';
 import { decompressSnapshot } from '../utils/snapshot-url';
 import { isCloudEnabled } from '../utils/api-client';
 import { friendlyErrorMessage } from '../utils/friendly-error';
-import { fetchAndParseCloudProject, isConfirmedNonOwner } from '../utils/cloud-project-loader';
+import { fetchAndParseCloudProject, decideStorageForFetched } from '../utils/cloud-project-loader';
+import { materializeCloudProject } from '../utils/cloud-materialize';
 import { JWT_STORAGE_KEY } from '../context/auth-context';
 import { resolveInitialProject } from '../utils/project-resolution';
 import { DEFAULT_PROJECT_NAME, type ProjectManifest, type ProjectManifestEntry, type StoredLocalProject, type UnsavedProjectSource } from '../types/project';
@@ -161,23 +162,39 @@ function persistDownloadedCloudProject(
   // request, an old API during a non-atomic deploy, or a stale cached
   // anonymous response (unlisted GETs are cached for 60s) — so keep the
   // manifest's storage class rather than silently unlinking an owned project.
-  storage: 'local' | 'cloud' = isConfirmedNonOwner(importResult) ? 'local' : entry.storage,
+  storage: 'local' | 'cloud' = decideStorageForFetched(importResult, entry.storage),
 ): 'local' | 'cloud' {
-  const result = saveProject({
+  // P1 — `replace`: overwrite the local record straight from the import result,
+  // dropping local-only UI fields (fresh hydration, no diverged UI fields).
+  let writeStatus = '';
+  const { persisted } = materializeCloudProject({
+    writeMode: 'replace',
     localId,
     cloudId: entry.cloudId,
-    name: entry.name,
-    visibility: importResult.visibility,
-    createdAt: entry.createdAt,
-    localSavedAt: new Date().toISOString(),
-    cloudSavedAt: importResult.updatedAt,
-    serverVersion: importResult.version,
-    cloudConflictVersion: null,
-    hasUnsyncedChanges: false,
-    storage,
-    state: serializeImportResult(importResult),
-  }, { protectedLocalIds: [localId] });
-  if (!result.ok) throw new Error(`Failed to persist downloaded project: ${result.status}`);
+    importResult,
+    callbacks: {
+      persist: (serialized) => {
+        const result = saveProject({
+          localId,
+          cloudId: entry.cloudId,
+          name: entry.name,
+          visibility: importResult.visibility,
+          createdAt: entry.createdAt,
+          localSavedAt: new Date().toISOString(),
+          cloudSavedAt: importResult.updatedAt,
+          serverVersion: importResult.version,
+          cloudConflictVersion: null,
+          hasUnsyncedChanges: false,
+          storage,
+          state: serialized,
+        }, { protectedLocalIds: [localId] });
+        writeStatus = result.status;
+        return result.ok;
+      },
+      loadExistingState: () => null,
+    },
+  });
+  if (!persisted) throw new Error(`Failed to persist downloaded project: ${writeStatus}`);
   return storage;
 }
 
@@ -225,19 +242,35 @@ function findCachedCloudProject(manifest: ProjectManifest, cloudId: string): { e
 }
 
 function createOwnedCloudProject(importResult: CloudProjectLoadResult, cloudId: string): string {
-  return createProject(
-    serializeImportResult(importResult),
-    getImportDisplayName(importResult),
-    {
-      cloudId,
-      visibility: importResult.visibility,
-      cloudSavedAt: importResult.updatedAt,
-      serverVersion: importResult.version,
-      hasUnsyncedChanges: false,
-      storage: 'cloud',
+  // P2 — `create`: create a new local record from the import result, dropping
+  // local-only UI fields.
+  let newLocalId = '';
+  materializeCloudProject({
+    writeMode: 'create',
+    localId: null,
+    cloudId,
+    importResult,
+    callbacks: {
+      persist: (serialized) => {
+        newLocalId = createProject(
+          serialized,
+          getImportDisplayName(importResult),
+          {
+            cloudId,
+            visibility: importResult.visibility,
+            cloudSavedAt: importResult.updatedAt,
+            serverVersion: importResult.version,
+            hasUnsyncedChanges: false,
+            storage: 'cloud',
+          },
+          { protectedLocalIds: [getSessionActiveId()] },
+        );
+        return true;
+      },
+      loadExistingState: () => null,
     },
-    { protectedLocalIds: [getSessionActiveId()] },
-  );
+  });
+  return newLocalId;
 }
 
 function hydrateOrLoadOwnedCloudProject(
@@ -250,6 +283,15 @@ function hydrateOrLoadOwnedCloudProject(
   if (reusableEntry) {
     const cachedProject = loadProject(reusableEntry.localId);
     if (cachedProject && isCloudCacheDirtyOrConflicted(reusableEntry, cachedProject)) {
+      // P3 — `skip`: the local cache is dirty/conflicted; do NOT overwrite it,
+      // keep the user's in-progress edits. Non-writing guard before materialize.
+      materializeCloudProject({
+        writeMode: 'skip',
+        localId: reusableEntry.localId,
+        cloudId,
+        importResult,
+        callbacks: { persist: () => false, loadExistingState: () => null },
+      });
       const cachedState = cachedProject ? deserializeState(cachedProject.state) : buildCloudAppState(importResult);
       return {
         state: cachedState,
@@ -362,7 +404,7 @@ export function AppLoader() {
               // ownership AND an owned entry, trust the manifest: opening your
               // own share link while signed out must not fork a shared copy.
               const treatAsShared = !importResult.isOwner
-                && (isConfirmedNonOwner(importResult)
+                && (decideStorageForFetched(importResult, 'cloud') === 'local'
                   || !findReusableOwnedCloudEntry(manifest, resolution.cloudId));
 
               if (treatAsShared) {

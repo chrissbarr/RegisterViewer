@@ -3,7 +3,8 @@ import { getProject } from './api-client';
 import { parseProjectData } from './cloud-project-loader';
 import { patchProjectState, loadProject } from './project-storage';
 import { cloudSyncReducer } from './cloud-sync-reducer';
-import { serializeState, deserializeState } from './storage';
+import { deserializeState } from './storage';
+import { materializeCloudProject } from './cloud-materialize';
 import type { ImportStateAction } from '../context/app-context';
 import type { InternalCloudSyncState, CloudMetadataUpdate } from '../types/cloud-sync';
 import type { ProjectStorageWriteResult } from './project-storage';
@@ -103,25 +104,34 @@ export async function checkAndPullFreshVersion(
   if (!parsed) return { applied: false, reason: 'parse-failed', serverVersion };
 
   if (localId) {
-    // Update localStorage with fresh data, preserving local-only UI fields
-    // (activeRegisterId, mapTableWidth, mapShowGaps, mapSortDescending).
-    // These fields are not synced to the server, so overwriting them with
-    // defaults would reset the user's view preferences.
-    const existingProject = loadProject(localId);
-    const existingState = existingProject ? deserializeState(existingProject.state) : null;
-    const persistResult = patchProjectState(localId, serializeState({
-      registers: parsed.registers,
-      registerValues: parsed.values,
-      activeRegisterId: existingState?.activeRegisterId ?? parsed.registers[0]?.id ?? '',
-      project: parsed.project,
-      addressUnitBits: parsed.addressUnitBits ?? 8,
-      mapTableWidth: existingState?.mapTableWidth ?? 32,
-      mapShowGaps: existingState?.mapShowGaps ?? true,
-      mapSortDescending: existingState?.mapSortDescending ?? false,
-    }));
-    if (!persistResult.ok) {
+    // P4 — `merge`: update localStorage with fresh server data while preserving
+    // local-only UI fields (activeRegisterId, mapTableWidth, mapShowGaps,
+    // mapSortDescending). These fields are not synced to the server, so
+    // overwriting them with defaults would reset the user's view preferences.
+    // This is the ONLY persist path that preserves UI fields.
+    let persistStatus = '';
+    let persistError: unknown;
+    const { persisted } = materializeCloudProject({
+      writeMode: 'merge',
+      localId,
+      cloudId,
+      importResult: parsed,
+      callbacks: {
+        loadExistingState: (id) => {
+          const existingProject = loadProject(id);
+          return existingProject ? deserializeState(existingProject.state) : null;
+        },
+        persist: (serialized) => {
+          const persistResult = patchProjectState(localId, serialized);
+          persistStatus = persistResult.status;
+          persistError = persistResult.error;
+          return persistResult.ok;
+        },
+      },
+    });
+    if (!persisted) {
       if (import.meta.env.DEV) {
-        console.warn('[cloud-freshness] Failed to persist pulled project:', localId, persistResult.status, persistResult.error);
+        console.warn('[cloud-freshness] Failed to persist pulled project:', localId, persistStatus, persistError);
       }
       return { applied: false, reason: 'local-persist-failed', serverVersion };
     }
