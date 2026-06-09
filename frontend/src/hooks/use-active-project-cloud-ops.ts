@@ -63,6 +63,114 @@ function isSameActiveSaveTarget(
     && internalRef.current.cloudId === expectedCloudId;
 }
 
+interface NotFoundHandlerParams {
+  capturedLocalId: string | null;
+  stillOnSameProject: boolean;
+  updateCloudMetadata: (localId: string, updates: CloudMetadataUpdate) => ProjectStorageWriteResult;
+  setInternal: (updater: (prev: InternalCloudSyncState) => InternalCloudSyncState) => void;
+}
+
+function handleNotFoundResultImpl(params: NotFoundHandlerParams): SaveOutcome {
+  const { capturedLocalId, stillOnSameProject, updateCloudMetadata, setInternal } = params;
+
+  if (capturedLocalId) {
+    const metadataResult = updateCloudMetadata(capturedLocalId, CLEARED_CLOUD_METADATA);
+    if (!metadataResult.ok) {
+      if (stillOnSameProject) {
+        setInternal((prev) => ({
+          ...prev,
+          status: 'idle',
+          error: 'Cloud project was deleted on the server, but local cloud metadata could not be updated.',
+        }));
+      }
+      return 'not-found';
+    }
+  }
+  if (stillOnSameProject) {
+    clearCloudUrl();
+    setInternal((prev) => ({
+      ...prev,
+      cloudId: null,
+      isOwner: false,
+      status: 'idle',
+      shareUrl: null,
+      lastCloudSavedAt: null,
+      visibility: 'private',
+      error: 'Cloud project not found. It may have been deleted. Use "Save to Cloud" to create a new copy.',
+    }));
+  }
+  return 'not-found';
+}
+
+interface UpdatedHandlerParams {
+  result: { kind: 'updated'; version: number; timestamp: string };
+  attempt: SaveAttemptSnapshot;
+  capturedLocalId: string | null;
+  stillOnSameProject: boolean;
+  editedDuringSave: boolean;
+  activeLocalIdRef: MutableRefObject<string | null>;
+  internalRef: MutableRefObject<InternalCloudSyncState>;
+  updateCloudMetadata: (localId: string, updates: CloudMetadataUpdate) => ProjectStorageWriteResult;
+  appStateRef: MutableRefObject<AppState>;
+  setInternal: (updater: (prev: InternalCloudSyncState) => InternalCloudSyncState) => void;
+}
+
+function handleUpdatedResultImpl(params: UpdatedHandlerParams): SaveOutcome {
+  const {
+    result, attempt, capturedLocalId, stillOnSameProject, editedDuringSave,
+    activeLocalIdRef, internalRef, updateCloudMetadata, appStateRef, setInternal,
+  } = params;
+
+  // Record the new server version immediately so a later retry reads the
+  // confirmed version and cannot re-PUT a stale version.
+  if (stillOnSameProject) {
+    internalRef.current = { ...internalRef.current, serverVersion: result.version };
+    setInternal((prev) => ({ ...prev, serverVersion: result.version }));
+  }
+  if (capturedLocalId) {
+    let persistError: string | null = null;
+
+    const stateResult = patchProjectState(capturedLocalId, serializeState(appStateRef.current), {
+      protectedLocalIds: [activeLocalIdRef.current],
+    });
+    if (!stateResult.ok) {
+      persistError = 'Project was saved to cloud, but the local copy could not be updated.';
+    } else {
+      const metadataResult = updateCloudMetadata(capturedLocalId, {
+        cloudSavedAt: result.timestamp,
+        serverVersion: result.version,
+        cloudConflictVersion: null,
+        hasUnsyncedChanges: editedDuringSave,
+      });
+      if (!metadataResult.ok) {
+        persistError = 'Project was saved to cloud, but local cloud metadata could not be persisted.';
+      }
+    }
+
+    if (persistError !== null) {
+      if (stillOnSameProject) {
+        setInternal((prev) => ({ ...prev, status: 'idle', error: persistError }));
+      }
+      // Best-effort: persist the confirmed server version to the manifest so
+      // later readers (e.g. the departure save) can't re-PUT a stale version
+      // and manufacture a 409. Ignore the result — we're already failing.
+      updateCloudMetadata(capturedLocalId, { serverVersion: result.version });
+      return 'local-persist-failed';
+    }
+  }
+  if (stillOnSameProject) {
+    setInternal((prev) => ({
+      ...prev,
+      status: 'idle',
+      lastCloudSavedAt: result.timestamp,
+      lastSavedVersion: attempt.dataVersion,
+      serverVersion: result.version,
+      conflict: null,
+    }));
+  }
+  return 'saved';
+}
+
 async function handleConflictResult(params: ConflictHandlerParams): Promise<void> {
   const {
     result, attempt, dataVersionRef, capturedLocalId, existingCloudId,
@@ -310,33 +418,9 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
         );
 
         if (result.kind === 'not-found') {
-          if (capturedLocalId) {
-            const metadataResult = updateCloudMetadata(capturedLocalId, CLEARED_CLOUD_METADATA);
-            if (!metadataResult.ok) {
-              if (stillOnSameProject) {
-                setInternal((prev) => ({
-                  ...prev,
-                  status: 'idle',
-                  error: 'Cloud project was deleted on the server, but local cloud metadata could not be updated.',
-                }));
-              }
-              return 'not-found';
-            }
-          }
-          if (stillOnSameProject) {
-            clearCloudUrl();
-            setInternal((prev) => ({
-              ...prev,
-              cloudId: null,
-              isOwner: false,
-              status: 'idle',
-              shareUrl: null,
-              lastCloudSavedAt: null,
-              visibility: 'private',
-              error: 'Cloud project not found. It may have been deleted. Use "Save to Cloud" to create a new copy.',
-            }));
-          }
-          return 'not-found';
+          return handleNotFoundResultImpl({
+            capturedLocalId, stillOnSameProject, updateCloudMetadata, setInternal,
+          });
         }
 
         if (result.kind === 'conflict') {
@@ -354,62 +438,10 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
           }
           return 'created';
         } else {
-          // Record the new server version immediately so a later retry reads the
-          // confirmed version and cannot re-PUT a stale version.
-          if (stillOnSameProject) {
-            internalRef.current = { ...internalRef.current, serverVersion: result.version };
-            setInternal((prev) => ({ ...prev, serverVersion: result.version }));
-          }
-          if (capturedLocalId) {
-            const stateResult = patchProjectState(capturedLocalId, serializeState(appStateRef.current), {
-              protectedLocalIds: [activeLocalIdRef.current],
-            });
-            if (!stateResult.ok) {
-              if (stillOnSameProject) {
-                setInternal((prev) => ({
-                  ...prev,
-                  status: 'idle',
-                  error: 'Project was saved to cloud, but the local copy could not be updated.',
-                }));
-              }
-              // Best-effort: persist the confirmed server version to the manifest so
-              // later readers (e.g. the departure save) can't re-PUT a stale version
-              // and manufacture a 409. Ignore the result — we're already failing.
-              updateCloudMetadata(capturedLocalId, { serverVersion: result.version });
-              return 'local-persist-failed';
-            }
-            const metadataResult = updateCloudMetadata(capturedLocalId, {
-              cloudSavedAt: result.timestamp,
-              serverVersion: result.version,
-              cloudConflictVersion: null,
-              hasUnsyncedChanges: editedDuringSave,
-            });
-            if (!metadataResult.ok) {
-              if (stillOnSameProject) {
-                setInternal((prev) => ({
-                  ...prev,
-                  status: 'idle',
-                  error: 'Project was saved to cloud, but local cloud metadata could not be persisted.',
-                }));
-              }
-              // Best-effort: persist the confirmed server version to the manifest so
-              // later readers (e.g. the departure save) can't re-PUT a stale version
-              // and manufacture a 409. Ignore the result — we're already failing.
-              updateCloudMetadata(capturedLocalId, { serverVersion: result.version });
-              return 'local-persist-failed';
-            }
-          }
-          if (stillOnSameProject) {
-            setInternal((prev) => ({
-              ...prev,
-              status: 'idle',
-              lastCloudSavedAt: result.timestamp,
-              lastSavedVersion: attempt.dataVersion,
-              serverVersion: result.version,
-              conflict: null,
-            }));
-          }
-          return 'saved';
+          return handleUpdatedResultImpl({
+            result, attempt, capturedLocalId, stillOnSameProject, editedDuringSave,
+            activeLocalIdRef, internalRef, updateCloudMetadata, appStateRef, setInternal,
+          });
         }
       } catch (err) {
         if (isSameActiveSaveTarget(capturedLocalId, existingCloudId, activeLocalIdRef, internalRef)) {
