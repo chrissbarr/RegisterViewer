@@ -2,6 +2,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAuthTransition } from './use-auth-transition';
 import { initialInternalState, type SyncResult } from '../types/cloud-sync';
+import { cloudSyncReducer } from '../utils/cloud-sync-reducer';
 
 // ── Mocks ────────────────────────────────────────────────────────────
 
@@ -35,17 +36,17 @@ function makeSyncResult(overrides: Partial<SyncResult> = {}): SyncResult {
 
 function makeDeps(overrides: Partial<Parameters<typeof useAuthTransition>[0]> = {}) {
   const activeLocalIdRef = { current: 'local-1' };
-  const setInternal = vi.fn();
+  const cloudDispatch = vi.fn();
   const core = overrides.core ?? {
     internalRef: { current: { ...INITIAL_INTERNAL_STATE } },
     activeLocalIdRef,
-    setInternal,
+    dispatch: cloudDispatch,
   };
   return {
     core,
     // Expose refs at top level for test assertions
     activeLocalIdRef: core.activeLocalIdRef,
-    setInternal: core.setInternal,
+    cloudDispatch: core.dispatch,
     authUser: null as { email: string } | null,
     pendingOpRef: { current: null as 'save' | 'fork' | null },
     saveToCloud: vi.fn(() => Promise.resolve('saved' as const)),
@@ -160,7 +161,9 @@ describe('useAuthTransition', () => {
 
     expect(purgeCloudProjects).toHaveBeenCalledTimes(1);
     expect(deps.refreshProjectList).toHaveBeenCalledTimes(1);
-    expect(deps.setInternal).toHaveBeenCalledWith(initialInternalState);
+    // LIFECYCLE_RESET reduces to the frozen initialInternalState by reference.
+    expect(deps.cloudDispatch).toHaveBeenCalledWith({ type: 'LIFECYCLE_RESET' });
+    expect(cloudSyncReducer(deps.core.internalRef.current, { type: 'LIFECYCLE_RESET' })).toBe(initialInternalState);
     expect(clearCloudUrl).toHaveBeenCalledTimes(1);
   });
 
@@ -210,8 +213,8 @@ describe('useAuthTransition', () => {
     rerender({ authUser: null });
 
     // Timer should have been cleared (we can't directly check clearTimeout,
-    // but setInternal being called confirms the sign-out path ran)
-    expect(deps.setInternal).toHaveBeenCalled();
+    // but the cloud reset dispatch confirms the sign-out path ran)
+    expect(deps.cloudDispatch).toHaveBeenCalledWith({ type: 'LIFECYCLE_RESET' });
   });
 
   it('triggers sync on first mount with existing auth', () => {

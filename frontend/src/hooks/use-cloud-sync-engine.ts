@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
+import { useCallback, useEffect, useRef, useState, type Dispatch, type MutableRefObject } from 'react';
 import { CLOUD_SYNC_DEBOUNCE_MS } from '../constants';
-import { cloudSyncReducer, isDirty as computeIsDirty } from '../utils/cloud-sync-reducer';
+import { isDirty as computeIsDirty, type CloudSyncAction } from '../utils/cloud-sync-reducer';
 import type { InternalCloudSyncState, SaveOutcome } from '../types/cloud-sync';
 
 const MAX_AUTO_SYNC_RETRIES = 4;
@@ -26,7 +26,7 @@ interface DataDeps {
 export interface UseCloudSyncEngineDeps {
   dataDeps: DataDeps;
   internal: InternalCloudSyncState;
-  setInternal: Dispatch<SetStateAction<InternalCloudSyncState>>;
+  dispatch: Dispatch<CloudSyncAction>;
   canAutoSync: boolean;
   getJwt: () => string | null;
   saveToCloud: () => Promise<SaveOutcome>;
@@ -76,7 +76,7 @@ export function deriveSyncStatus(canAutoSync: boolean, isDirty: boolean, asyncOv
  * auto-sync effect, eliminating a render cycle between the two.
  */
 export function useCloudSyncEngine(deps: UseCloudSyncEngineDeps): UseCloudSyncEngineResult {
-  const { dataDeps, internal, setInternal, canAutoSync, getJwt, saveToCloud } = deps;
+  const { dataDeps, internal, dispatch, canAutoSync, getJwt, saveToCloud } = deps;
 
   // ── Dirty tracking refs and state ──────────────────────────────────
   const mutationLockRef = useRef(false);
@@ -96,9 +96,9 @@ export function useCloudSyncEngine(deps: UseCloudSyncEngineDeps): UseCloudSyncEn
   // handled by deriveSyncStatus priority (e.g., !isDirty overrides 'offline').
   const setAsyncOverride = useCallback(
     (value: 'syncing' | 'offline' | null) => {
-      setInternal((prev) => cloudSyncReducer(prev, { type: 'SET_ASYNC_TRANSIENT', value }));
+      dispatch({ type: 'SET_ASYNC_TRANSIENT', value });
     },
-    [setInternal],
+    [dispatch],
   );
 
   // ── Dirty tracking effect ──────────────────────────────────────────
@@ -122,19 +122,19 @@ export function useCloudSyncEngine(deps: UseCloudSyncEngineDeps): UseCloudSyncEn
     // Baseline-capture handshake (S8/S14a): a writer adopted a new cloud baseline
     // via REQUEST_BASELINE, which set `baseline:{untracked}` as the awaiting
     // marker. Capture the POST-increment generation into a `clean` baseline via
-    // CAPTURE_BASELINE. The `cloudId !== null` guard separates an awaiting CLOUD
+    // CAPTURE_BASELINE (dispatched directly). The `cloudId !== null` guard separates an awaiting CLOUD
     // project from a fresh untracked LOCAL one. Must run after the dataVersionRef
     // bump above so the captured tick matches the legacy needsVersionSyncRef
     // behavior exactly.
     if (internal.cloudId !== null && internal.baseline.kind === 'untracked') {
       const capturedVersion = dataVersionRef.current;
-      setInternal((prev) => cloudSyncReducer(prev, { type: 'CAPTURE_BASELINE', version: capturedVersion }));
+      dispatch({ type: 'CAPTURE_BASELINE', version: capturedVersion });
       return;
     }
 
     setIsDirty(computeIsDirty(internal.baseline, internal.cloudId, dataVersionRef.current));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- dataDeps is accessed only via its individual properties (already in the dep array); the object reference is stored for next-render comparison only
-  }, [dataDeps.registers, dataDeps.registerValues, dataDeps.project, dataDeps.addressUnitBits, internal.cloudId, internal.baseline, setInternal]);
+  }, [dataDeps.registers, dataDeps.registerValues, dataDeps.project, dataDeps.addressUnitBits, internal.cloudId, internal.baseline, dispatch]);
 
   // ── Auto-sync effect ───────────────────────────────────────────────
   useEffect(() => {

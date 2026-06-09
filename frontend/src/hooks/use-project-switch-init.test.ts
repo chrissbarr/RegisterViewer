@@ -2,7 +2,7 @@ import { renderHook } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { useProjectSwitchInit } from './use-project-switch-init';
 import { initialInternalState, type InternalCloudSyncState } from '../types/cloud-sync';
-import { cleanBaseline } from '../utils/cloud-sync-reducer';
+import { cleanBaseline, type CloudSyncAction } from '../utils/cloud-sync-reducer';
 import type { ProjectListEntry } from '../types/project';
 import type { ProjectDepartureSnapshot } from '../context/project-storage-context';
 
@@ -102,12 +102,10 @@ function buildDeps(overrides: Partial<ReturnType<typeof buildDefaultDeps>> = {})
 function buildDefaultDeps() {
   const internalRef = makeRef<InternalCloudSyncState>({ ...initialInternalState });
   const activeLocalIdRef = makeRef<string | null>(PROJECT_A_LOCAL_ID);
-  const setInternal = vi.fn((updater) => {
-    if (typeof updater === 'function') {
-      const newState = updater(internalRef.current);
-      internalRef.current = newState;
-    }
-  });
+  // Cloud-sync reducer dispatch. The source itself writes `internalRef.current`
+  // synchronously for INIT_CLOUD (the same-commit guard device); REQUEST_BASELINE
+  // does NOT write the ref, so its effect is asserted via the dispatched action.
+  const cloudDispatch = vi.fn<(action: CloudSyncAction) => void>();
 
   const projectA = makeProjectEntry({
     localId: PROJECT_A_LOCAL_ID,
@@ -125,10 +123,10 @@ function buildDefaultDeps() {
   const projects: ProjectListEntry[] = [projectA, projectB];
 
   return {
-    core: { internalRef, activeLocalIdRef, setInternal },
+    core: { internalRef, activeLocalIdRef, dispatch: cloudDispatch },
     internalRef,
     activeLocalIdRef,
-    setInternal,
+    cloudDispatch,
     activeLocalId: PROJECT_A_LOCAL_ID as string | null,
     projects,
     projectsRef: makeRef<ProjectListEntry[]>(projects),
@@ -582,9 +580,9 @@ describe('useProjectSwitchInit', () => {
 
       // A clean incoming cloud project requests a baseline capture so the engine
       // snapshots the generation into a clean baseline (replaces needsVersionSync).
-      // The awaiting-capture marker is `baseline:{untracked}` (S14a); the engine
-      // would resolve it to clean(4) on its next tick.
-      expect(deps.internalRef.current.baseline.kind).toBe('untracked');
+      // The awaiting-capture marker is `baseline:{untracked}` (S14a); REQUEST_BASELINE
+      // is dispatched (the engine resolves it to clean(4) on its next tick).
+      expect(deps.cloudDispatch).toHaveBeenCalledWith({ type: 'REQUEST_BASELINE' });
       expect(checkAndPullFreshVersion).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({ knownVersion: 9 }),
@@ -668,9 +666,11 @@ describe('useProjectSwitchInit', () => {
 
       rerender({ activeLocalId: PROJECT_B_LOCAL_ID });
 
-      // Stored unsynced changes stay dirty: the seed used a `dirty` baseline and
-      // no baseline-capture request (REQUEST_BASELINE → untracked) is made.
+      // Stored unsynced changes stay dirty: the seed used a `dirty` baseline
+      // (written to internalRef by the source's INIT_CLOUD ref write) and no
+      // baseline-capture request (REQUEST_BASELINE → untracked) is made.
       expect(deps.internalRef.current.baseline.kind).toBe('dirty');
+      expect(deps.cloudDispatch).not.toHaveBeenCalledWith({ type: 'REQUEST_BASELINE' });
       expect(checkAndPullFreshVersion).not.toHaveBeenCalled();
     });
 

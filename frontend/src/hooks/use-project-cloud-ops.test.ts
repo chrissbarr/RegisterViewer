@@ -47,6 +47,7 @@ import { setCloudUrl, clearCloudUrl } from '../utils/cloud-utils';
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
 import type { ProjectListEntry } from '../types/project';
 import { initialInternalState } from '../types/cloud-sync';
+import { cloudSyncReducer, type CloudSyncAction } from '../utils/cloud-sync-reducer';
 
 function makeInitialState() {
   return { ...initialInternalState };
@@ -70,14 +71,14 @@ function makeDeps(overrides: Record<string, unknown> = {}) {
   const initial = makeInitialState();
   const internalRef = { current: overrides.internalState as typeof initial ?? initial };
   const activeLocalIdRef = { current: (overrides.activeLocalId as string) ?? 'local-1' };
-  const setInternal = vi.fn() as Mock;
+  const cloudDispatch = vi.fn<(action: CloudSyncAction) => void>();
   const projects = (overrides.projects as ProjectListEntry[]) ?? makeProjectList([{ localId: 'local-1', cloudId: 'cloud-1' }]);
   return {
-    core: { internalRef, activeLocalIdRef, setInternal },
+    core: { internalRef, activeLocalIdRef, dispatch: cloudDispatch },
     // Expose core fields at top level for test assertions
     internalRef,
     activeLocalIdRef,
-    setInternal,
+    cloudDispatch,
     updateCloudMetadata: vi.fn(() => ({ ok: true, status: 'ok', evictedLocalIds: [] })) as Mock,
     projectsRef: { current: projects },
     mutationLockRef: { current: false },
@@ -162,7 +163,7 @@ describe('useProjectCloudOps', () => {
       });
       // Should NOT update active project cloud state
       expect(setCloudUrl).not.toHaveBeenCalled();
-      expect(deps.setInternal).not.toHaveBeenCalled();
+      expect(deps.cloudDispatch).not.toHaveBeenCalled();
     });
 
     it('updates an existing non-active cloud project', async () => {
@@ -373,13 +374,10 @@ describe('useProjectCloudOps', () => {
       });
 
       expect(clearCloudUrl).toHaveBeenCalled();
-      expect(deps.setInternal).toHaveBeenCalledWith(
-        expect.objectContaining({
-          cloudId: null,
-          isOwner: false,
-          storage: 'local',
-        }),
-      );
+      // LIFECYCLE_RESET resets to the frozen initial state (cloudId null, local).
+      expect(deps.cloudDispatch).toHaveBeenCalledWith({ type: 'LIFECYCLE_RESET' });
+      const resetState = cloudSyncReducer(deps.internalRef.current, deps.cloudDispatch.mock.calls.at(-1)![0]);
+      expect(resetState).toMatchObject({ cloudId: null, isOwner: false, storage: 'local' });
     });
 
     it('does not clear cloud state when deleting non-active project', async () => {
@@ -487,11 +485,15 @@ describe('useProjectCloudOps', () => {
         await result.current.setProjectVisibility('local-1', 'unlisted');
       });
 
-      // setInternal is called with an updater function that sets visibility and
-      // advances lastCloudSavedAt (active mirror parity with the by-localId write).
-      expect(deps.setInternal).toHaveBeenCalledWith(expect.any(Function));
-      const updater = (deps.setInternal as Mock).mock.calls[0][0] as (prev: Record<string, unknown>) => Record<string, unknown>;
-      expect(updater({ visibility: 'private' })).toEqual({
+      // SET_VISIBILITY is dispatched with the advanced cloudSavedAt (active mirror
+      // parity with the by-localId write).
+      expect(deps.cloudDispatch).toHaveBeenCalledWith({
+        type: 'SET_VISIBILITY',
+        visibility: 'unlisted',
+        cloudSavedAt: PATCH_UPDATED_AT,
+      });
+      const next = cloudSyncReducer(makeInitialState(), deps.cloudDispatch.mock.calls[0][0]);
+      expect(next).toMatchObject({
         visibility: 'unlisted',
         lastCloudSavedAt: PATCH_UPDATED_AT,
       });
@@ -560,13 +562,9 @@ describe('useProjectCloudOps', () => {
       });
 
       expect(clearCloudUrl).toHaveBeenCalled();
-      expect(deps.setInternal).toHaveBeenCalledWith(
-        expect.objectContaining({
-          cloudId: null,
-          isOwner: false,
-          storage: 'local',
-        }),
-      );
+      expect(deps.cloudDispatch).toHaveBeenCalledWith({ type: 'LIFECYCLE_RESET' });
+      const resetState = cloudSyncReducer(deps.internalRef.current, deps.cloudDispatch.mock.calls.at(-1)![0]);
+      expect(resetState).toMatchObject({ cloudId: null, isOwner: false, storage: 'local' });
     });
 
     it('does nothing when project has no cloudId', () => {

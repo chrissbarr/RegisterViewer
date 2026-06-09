@@ -6,7 +6,7 @@ import { saveProjectToCloudImpl } from '../utils/cloud-operations';
 import { checkAndPullFreshVersion, type FreshnessCheckContext } from './use-cloud-freshness';
 import { isOwnedCloudEntry } from '../utils/project-identity';
 import { positiveVersion, normalizeServerVersion } from '../utils/cloud-sync';
-import { cloudSyncReducer, cloudStateForEntry } from '../utils/cloud-sync-reducer';
+import { cloudStateForEntry } from '../utils/cloud-sync-reducer';
 import { type CloudSyncCore } from '../types/cloud-sync';
 import type { CloudMetadataUpdate } from '../types/cloud-sync';
 import type { ProjectListEntry } from '../types/project';
@@ -49,7 +49,7 @@ const MAX_DEPARTURE_SAVE_RETRIES = 8;
  */
 export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
   const {
-    core: { internalRef, setInternal },
+    core: { internalRef, dispatch: cloudDispatch },
     activeLocalId, projects,
     projectsRef, syncTimerRef,
     dataVersionRef, mutationLockRef, getJwt, lastFreshnessCheckRef, updateCloudMetadata, dispatch,
@@ -160,7 +160,7 @@ export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
     if (!activeLocalId) {
       if (prevLocalId) {
         if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
-        setInternal((prev) => cloudSyncReducer(prev, { type: 'LIFECYCLE_RESET' }));
+        cloudDispatch({ type: 'LIFECYCLE_RESET' });
         clearCloudUrl();
       }
       return;
@@ -176,7 +176,7 @@ export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
     const storage: 'cloud' | 'local' = cloudId ? 'cloud' : 'local';
     const isOwner = storage === 'cloud';
     if (cloudId === null) {
-      setInternal((prev) => cloudSyncReducer(prev, { type: 'INIT_LOCAL', storage }));
+      cloudDispatch({ type: 'INIT_LOCAL', storage });
       clearCloudUrl();
     } else {
       const conflictVersion = ownedEntry?.cloudConflictVersion ?? ownedProject?.cloudConflictVersion ?? null;
@@ -205,8 +205,10 @@ export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
         hasUnsyncedChanges: hasStoredUnsyncedChanges,
         dataVersion: dataVersionRef.current,
       });
+      // Synchronous ref write precedes the dispatch (DESIGN §5): the switch-init
+      // same-commit guard `cloudId === internalRef.current.cloudId` must see this seed.
       internalRef.current = next;
-      setInternal((prev) => cloudSyncReducer(prev, { type: 'INIT_CLOUD', seed: next }));
+      cloudDispatch({ type: 'INIT_CLOUD', seed: next });
       // Clean incoming cloud project: mark "awaiting baseline capture" (baseline
       // → {untracked}) so the engine snapshots the current generation into a
       // clean baseline on its next effect tick (replaces
@@ -214,7 +216,7 @@ export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
       // we stay dirty (no capture) — the `dirty` baseline `cloudStateForEntry`
       // seeded above keeps it dirty.
       if (!hasStoredUnsyncedChanges) {
-        setInternal((prev) => cloudSyncReducer(prev, { type: 'REQUEST_BASELINE' }));
+        cloudDispatch({ type: 'REQUEST_BASELINE' });
       }
 
       // Freshness check for incoming project
@@ -222,7 +224,7 @@ export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
       if (jwt && isOwner && !conflictVersion && !hasStoredUnsyncedChanges) {
         const freshnessCtx: FreshnessCheckContext = {
           internalRef, dataVersionRef, dispatch,
-          lastFreshnessCheckRef, updateCloudMetadata, setInternal,
+          lastFreshnessCheckRef, updateCloudMetadata, cloudDispatch,
         };
         checkAndPullFreshVersion(freshnessCtx, {
           cloudId,

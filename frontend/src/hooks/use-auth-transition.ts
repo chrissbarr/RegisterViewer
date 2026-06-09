@@ -1,7 +1,7 @@
 import { useEffect, useRef, type MutableRefObject } from 'react';
 import { purgeCloudProjects, getMostRecentProjectId, ACTIVE_PROJECT_SESSION_KEY } from '../utils/project-storage';
 import { clearCloudUrl } from '../utils/cloud-utils';
-import { type CloudSyncCore, type SaveOutcome, type SyncResult, initialInternalState } from '../types/cloud-sync';
+import { type CloudSyncCore, type SaveOutcome, type SyncResult } from '../types/cloud-sync';
 
 interface UseAuthTransitionDeps {
   core: CloudSyncCore;
@@ -33,7 +33,7 @@ interface UseAuthTransitionDeps {
  */
 export function useAuthTransition(deps: UseAuthTransitionDeps): void {
   const {
-    core: { activeLocalIdRef, setInternal },
+    core: { activeLocalIdRef, dispatch: cloudDispatch },
     authUser, pendingOpRef, saveToCloud, fork, dismissLogin,
     syncCloudProjectsRef, syncTimerRef,
     refreshProjectList, switchProject, createNewProject,
@@ -95,17 +95,13 @@ export function useAuthTransition(deps: UseAuthTransitionDeps): void {
         }
       }
 
-      // Reset cloud sync state.
-      // Left as a value-form raw reset (NOT a LIFECYCLE_RESET functional updater):
-      // the auth-transition sign-out test pins `setInternal` being called with the
-      // reset OBJECT (`toHaveBeenCalledWith(initialInternalState)`), so a functional
-      // updater would change that assertion. Matches the S5/S6 deferred-reset
-      // precedent (active-ops deleteFromCloud, by-localId resets); folds into the
-      // shim removal at S14.
+      // Reset cloud sync state. LIFECYCLE_RESET returns the frozen
+      // initialInternalState by reference (same Object.is bail-out as the former
+      // value-form `setInternal(initialInternalState)` reset).
       if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
-      setInternal(initialInternalState);
+      cloudDispatch({ type: 'LIFECYCLE_RESET' });
       clearCloudUrl();
       sessionStorage.removeItem(ACTIVE_PROJECT_SESSION_KEY);
     }
-  }, [authUser, saveToCloud, fork, pendingOpRef, dismissLogin, syncCloudProjectsRef, syncTimerRef, activeLocalIdRef, setInternal, refreshProjectList, switchProject, createNewProject]);
+  }, [authUser, saveToCloud, fork, pendingOpRef, dismissLogin, syncCloudProjectsRef, syncTimerRef, activeLocalIdRef, cloudDispatch, refreshProjectList, switchProject, createNewProject]);
 }

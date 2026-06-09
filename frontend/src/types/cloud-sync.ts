@@ -1,5 +1,6 @@
-import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
+import type { Dispatch, MutableRefObject } from 'react';
 import type { Visibility } from './project';
+import type { CloudSyncAction } from '../utils/cloud-sync-reducer';
 
 /**
  * The save baseline a cloud project's data generation is compared against to
@@ -68,10 +69,10 @@ export interface CloudInit {
 /**
  * Default cloud sync state. Object.freeze prevents accidental mutation.
  *
- * React's useState setter uses Object.is comparison — passing this frozen
- * object to setInternal(initialInternalState) will bail out of re-render if
- * the state is already the initial state (same reference). This is intentional
- * and desirable for the sign-out reset path.
+ * React's useReducer uses Object.is comparison — the LIFECYCLE_RESET action
+ * returns this frozen object by reference, so a reset to the already-initial
+ * state bails out of re-render (same reference). This is intentional and
+ * desirable for the sign-out reset path.
  */
 export const initialInternalState: InternalCloudSyncState = Object.freeze({
   cloudId: null,
@@ -88,16 +89,19 @@ export const initialInternalState: InternalCloudSyncState = Object.freeze({
 });
 
 /**
- * Shared refs and state setters passed to all cloud sync hooks (AR-1).
+ * Shared refs and the reducer dispatch passed to all cloud sync hooks (AR-1).
  *
- * Groups the four dependencies that every cloud sync hook needs,
- * reducing per-hook parameter counts and centralising changes when
- * the internal state shape evolves.
+ * Groups the dependencies that every cloud sync hook needs, reducing per-hook
+ * parameter counts and centralising changes when the internal state shape
+ * evolves. S14b replaced the former `setInternal` shim with the reducer
+ * `dispatch`: every lifecycle write is now a direct `dispatch(action)`. Sites
+ * that need same-commit `internalRef.current` visibility compute `next`
+ * explicitly and write the ref before dispatching (DESIGN §5).
  */
 export interface CloudSyncCore {
   internalRef: MutableRefObject<InternalCloudSyncState>;
   activeLocalIdRef: MutableRefObject<string | null>;
-  setInternal: Dispatch<SetStateAction<InternalCloudSyncState>>;
+  dispatch: Dispatch<CloudSyncAction>;
 }
 
 /** Partial cloud metadata payload accepted by `updateCloudMetadata`. */
@@ -123,7 +127,7 @@ export interface CloudMetadataWriteOptions {
  * - `saved`/`created`/`noop` — terminal success (or nothing to do).
  * - `login-required` — deferred to the login dialog.
  * - `lock-held` — mutation lock busy; safe to retry.
- * - `not-found`/`conflict` — server-side state handled via setInternal (no retry).
+ * - `not-found`/`conflict` — server-side state handled via dispatch (no retry).
  * - `local-persist-failed` — server write succeeded but the local write failed.
  */
 export type SaveOutcome =

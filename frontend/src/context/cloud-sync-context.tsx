@@ -25,7 +25,7 @@
  *   without needing the state in their dependency arrays.
  * - **Mutation lock**: `withMutationLock` prevents concurrent cloud operations.
  */
-import { createContext, useContext, useCallback, useReducer, useMemo, useRef, useEffect, type ReactNode, type MutableRefObject, type Dispatch, type SetStateAction } from 'react';
+import { createContext, useContext, useCallback, useReducer, useMemo, useRef, useEffect, type ReactNode, type MutableRefObject, type Dispatch } from 'react';
 import { useAppState, useAppDispatch } from './app-context';
 import type { AppState } from '../types/register';
 import { useProjectStorage, useProjectStorageActions } from './project-storage-context';
@@ -307,7 +307,7 @@ const CloudSyncActionsContext = createContext<CloudSyncActions | null>(null);
  * stable callbacks access to latest values without appearing in
  * dependency arrays — this keeps the actions object referentially
  * stable across renders. `initFromProject` additionally updates
- * `internalRef` synchronously (before `setInternal`) so that the
+ * `internalRef` synchronously (before the dispatch) so that the
  * `activeLocalId` effect's guard sees the cloudId immediately and
  * skips, preventing a race where both effects fire in the same commit.
  *
@@ -316,7 +316,7 @@ const CloudSyncActionsContext = createContext<CloudSyncActions | null>(null);
  * useProjectCloudOps for use by the My Projects dialog.
  *
  * PERF-1: Decomposed hooks may trigger 2-4 extra renders per project switch
- * via cascading setInternal calls. This is inherent to the hook-based architecture
+ * via cascading dispatches. This is inherent to the hook-based architecture
  * and is not user-visible (no layout thrashing). If profiling reveals jank,
  * consolidate to useReducer. See .full-review/05-final-report.md.
  */
@@ -336,24 +336,10 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   const { user: authUser } = useAuth();
   const { getJwt, registerPreLogout } = useAuthActions();
 
-  // S3: state now lives behind a reducer (`cloudSyncReducer`) so later slices can
-  // convert writers to named actions. For this slice the reducer has a single
-  // `__RAW` action that applies its updater verbatim, and `setInternal` is a
-  // behavior-identical shim preserving both `setState` overloads (value form and
-  // functional-updater form). Every existing caller is unchanged.
+  // S14b: cloud-sync state lives behind a reducer (`cloudSyncReducer`). Every
+  // writer dispatches a named action directly; the temporary `__RAW` passthrough
+  // and the `setInternal` shim were removed at cleanup.
   const [internal, dispatch__internal] = useReducer(cloudSyncReducer, initialInternalState);
-  const setInternal = useCallback<Dispatch<SetStateAction<InternalCloudSyncState>>>(
-    (u) => {
-      const action: CloudSyncAction = {
-        type: '__RAW',
-        updater: typeof u === 'function'
-          ? (u as (prev: InternalCloudSyncState) => InternalCloudSyncState)
-          : () => u,
-      };
-      dispatch__internal(action);
-    },
-    [],
-  );
 
   const activeLocalIdRef = useRef(activeLocalId);
   useEffect(() => {
@@ -377,17 +363,18 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   // initFromProject race described in the CloudSyncProvider docstring.
   // S3 landmine: the useState→useReducer swap does NOT change same-commit
   // `.current` visibility. This render-time mirror, and the inline synchronous
-  // `internalRef.current = next` writes that precede a state write below, are
-  // correctness devices that MUST be retained — dispatching a `__RAW` action does
+  // `internalRef.current = next` writes that precede a dispatch below, are
+  // correctness devices that MUST be retained — dispatching an action does
   // not make the next state visible to refs within the same commit either.
   const internalRef = useRef(internal);
   internalRef.current = internal; // intentional render-time sync; see docstring above
 
-  // Shared refs passed to all cloud sync hooks (AR-1: reduces per-hook param count).
-  // All items are stable across renders (refs, the stable setInternal shim).
+  // Shared refs + reducer dispatch passed to all cloud sync hooks (AR-1: reduces
+  // per-hook param count). All items are stable across renders (refs, and the
+  // reducer dispatch is referentially stable).
   const core: CloudSyncCore = useMemo(
-    () => ({ internalRef, activeLocalIdRef, setInternal }),
-    [setInternal],
+    () => ({ internalRef, activeLocalIdRef, dispatch: dispatch__internal }),
+    [],
   );
 
   // Ref to avoid stale closures in save/fork callbacks.
@@ -413,7 +400,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   const { isDirty, syncStatus, flushCloudSync, syncTimerRef, dataVersionRef, mutationLockRef } = useCloudSyncEngine({
     dataDeps: appState,
     internal,
-    setInternal,
+    dispatch: dispatch__internal,
     canAutoSync,
     getJwt,
     saveToCloud: saveToCloudStable,
@@ -441,7 +428,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   const freshnessCtx: FreshnessCheckContext = useMemo(
     () => ({
       internalRef, dataVersionRef, dispatch,
-      lastFreshnessCheckRef, updateCloudMetadata, setInternal,
+      lastFreshnessCheckRef, updateCloudMetadata, cloudDispatch: dispatch__internal,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
@@ -720,9 +707,9 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     });
 
     if (pullResult.applied) {
-      setInternal((prev) => ({ ...prev, conflict: null }));
+      dispatch__internal({ type: 'CLEAR_CONFLICT' });
     }
-  }, [freshnessCtx, getJwt, setInternal]);
+  }, [freshnessCtx, getJwt]);
 
   const actions = useMemo(
     () => ({

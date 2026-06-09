@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { checkAndPullFreshVersion, type FreshnessCheckContext } from './use-cloud-freshness';
 import type { FreshnessCheckCall } from '../utils/cloud-freshness';
 import { initialInternalState, type InternalCloudSyncState } from '../types/cloud-sync';
-import { cleanBaseline } from '../utils/cloud-sync-reducer';
+import { cleanBaseline, type CloudSyncAction } from '../utils/cloud-sync-reducer';
 import type { ProjectStorageWriteResult } from '../utils/project-storage';
 
 // ── Mocks ────────────────────────────────────────────────────────────
@@ -51,21 +51,17 @@ function makeCtx(overrides: Partial<FreshnessCheckContext> = {}): FreshnessCheck
     dispatch: vi.fn(),
     lastFreshnessCheckRef: { current: 0 }, // never checked before
     updateCloudMetadata: vi.fn(() => writeOk()),
-    setInternal: vi.fn(),
+    cloudDispatch: vi.fn(),
     ...overrides,
   };
 }
 
 /**
- * True when one of the setInternal dispatches requested a baseline capture
- * (REQUEST_BASELINE → baseline:{untracked}, S14a).
+ * True when one of the cloud dispatches requested a baseline capture
+ * (REQUEST_BASELINE, S14a).
  */
-function requestedBaselineCapture(setInternal: Mock): boolean {
-  return setInternal.mock.calls.some((call) => {
-    const updater = call[0];
-    return typeof updater === 'function'
-      && updater(initialInternalState).baseline.kind === 'untracked';
-  });
+function requestedBaselineCapture(cloudDispatch: Mock): boolean {
+  return cloudDispatch.mock.calls.some((call) => (call[0] as CloudSyncAction).type === 'REQUEST_BASELINE');
 }
 
 function makeCall(overrides: Partial<FreshnessCheckCall> = {}): FreshnessCheckCall {
@@ -118,8 +114,8 @@ describe('checkAndPullFreshVersion (effectful shim)', () => {
       addressUnitBits: PARSED_DATA.addressUnitBits,
     });
     expect(patchProjectState).toHaveBeenCalledWith(TEST_LOCAL_ID, expect.anything());
-    expect(requestedBaselineCapture(ctx.setInternal as Mock)).toBe(true);
-    expect(ctx.setInternal).toHaveBeenCalled();
+    expect(requestedBaselineCapture(ctx.cloudDispatch as Mock)).toBe(true);
+    expect(ctx.cloudDispatch).toHaveBeenCalled();
     expect(ctx.updateCloudMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, {
       cloudSavedAt: '2024-06-01T00:00:00Z',
       visibility: 'private',
@@ -288,7 +284,7 @@ describe('checkAndPullFreshVersion (effectful shim)', () => {
     });
     expect(patchProjectState).not.toHaveBeenCalled();
     expect(ctx.updateCloudMetadata).not.toHaveBeenCalled();
-    expect(requestedBaselineCapture(ctx.setInternal as Mock)).toBe(true);
+    expect(requestedBaselineCapture(ctx.cloudDispatch as Mock)).toBe(true);
   });
 
   it('calls getProject exactly once (single-fetch pattern)', async () => {
@@ -345,8 +341,8 @@ describe('checkAndPullFreshVersion (effectful shim)', () => {
 
     expect(result).toEqual({ applied: false, reason: 'local-persist-failed', serverVersion: 3 });
     expect(ctx.dispatch).not.toHaveBeenCalled();
-    expect(requestedBaselineCapture(ctx.setInternal as Mock)).toBe(false);
-    expect(ctx.setInternal).not.toHaveBeenCalled();
+    expect(requestedBaselineCapture(ctx.cloudDispatch as Mock)).toBe(false);
+    expect(ctx.cloudDispatch).not.toHaveBeenCalled();
     expect(ctx.updateCloudMetadata).not.toHaveBeenCalled();
   });
 
@@ -372,8 +368,8 @@ describe('checkAndPullFreshVersion (effectful shim)', () => {
     expect(result).toEqual({ applied: false, reason: 'local-persist-failed', serverVersion: 3 });
     expect(patchProjectState).toHaveBeenCalled();
     expect(ctx.dispatch).not.toHaveBeenCalled();
-    expect(requestedBaselineCapture(ctx.setInternal as Mock)).toBe(false);
-    expect(ctx.setInternal).not.toHaveBeenCalled();
+    expect(requestedBaselineCapture(ctx.cloudDispatch as Mock)).toBe(false);
+    expect(ctx.cloudDispatch).not.toHaveBeenCalled();
   });
 
   it('preserves existing UI fields (mapTableWidth, mapShowGaps, etc.) during pull', async () => {

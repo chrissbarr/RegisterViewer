@@ -5,9 +5,8 @@ import { loadProject, type ProjectStorageWriteResult } from '../utils/project-st
 import { clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock, requireJwt, applyVisibilityWrite } from '../utils/cloud-utils';
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
 import { positiveVersion } from '../utils/cloud-sync';
-import { cloudSyncReducer } from '../utils/cloud-sync-reducer';
 import type { Visibility, ProjectListEntry } from '../types/project';
-import { type CloudSyncCore, type CloudMetadataUpdate, type SaveOutcome, isSaveSuccess, initialInternalState } from '../types/cloud-sync';
+import { type CloudSyncCore, type CloudMetadataUpdate, type SaveOutcome, isSaveSuccess } from '../types/cloud-sync';
 import { isOwnedCloudEntry } from '../utils/project-identity';
 
 interface ProjectCloudOpsDeps {
@@ -33,7 +32,7 @@ interface ProjectCloudOps {
  * Used primarily by the My Projects dialog.
  */
 export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
-  const { core: { internalRef, activeLocalIdRef, setInternal }, updateCloudMetadata, projectsRef, mutationLockRef, getJwt, activeProjectSave } = deps;
+  const { core: { internalRef, activeLocalIdRef, dispatch: cloudDispatch }, updateCloudMetadata, projectsRef, mutationLockRef, getJwt, activeProjectSave } = deps;
 
   const saveProjectToCloud = useCallback(async (localId: string) => {
     if (!isCloudEnabled()) return;
@@ -117,19 +116,18 @@ export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
       const metadataResult = updateCloudMetadata(localId, CLEARED_CLOUD_METADATA);
       if (!metadataResult.ok) throw new Error('Deleted cloud project, but failed to persist local metadata.');
 
-      // If the currently active cloud project is this one, clear cloud state.
-      // Left as a value-form raw reset (NOT a LIFECYCLE_RESET functional updater):
-      // the by-localId tests pin `setInternal` being called with the reset OBJECT,
-      // matching the S5 precedent at use-active-project-cloud-ops.ts (deleteFromCloud).
+      // If the currently active cloud project is this one, clear cloud state
+      // (LIFECYCLE_RESET returns the frozen initial state, same as the former
+      // value-form reset).
       if (internalRef.current.cloudId === cloudId) {
         clearCloudUrl();
-        setInternal(initialInternalState);
+        cloudDispatch({ type: 'LIFECYCLE_RESET' });
       }
     });
     if (!lockResult.executed) {
       throw new Error('Another cloud operation is in progress. Please try again.');
     }
-  }, [updateCloudMetadata, projectsRef, mutationLockRef, internalRef, setInternal, getJwt]);
+  }, [updateCloudMetadata, projectsRef, mutationLockRef, internalRef, cloudDispatch, getJwt]);
 
   const setProjectVisibility = useCallback(async (localId: string, v: Visibility) => {
     const entry = projectsRef.current.find(p => p.localId === localId);
@@ -147,9 +145,9 @@ export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
     // If this is the active project, update cloud state too (mirror the advanced
     // cloudSavedAt so the active state tracks it).
     if (localId === activeLocalIdRef.current) {
-      setInternal((prev) => cloudSyncReducer(prev, { type: 'SET_VISIBILITY', visibility: v, cloudSavedAt: updatedAt }));
+      cloudDispatch({ type: 'SET_VISIBILITY', visibility: v, cloudSavedAt: updatedAt });
     }
-  }, [updateCloudMetadata, projectsRef, activeLocalIdRef, setInternal, getJwt]);
+  }, [updateCloudMetadata, projectsRef, activeLocalIdRef, cloudDispatch, getJwt]);
 
   const unlinkCloudProject = useCallback((localId: string) => {
     const entry = projectsRef.current.find(p => p.localId === localId);
@@ -159,15 +157,14 @@ export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
     const metadataResult = updateCloudMetadata(localId, CLEARED_CLOUD_METADATA);
     if (!metadataResult.ok) return;
 
-    // If the currently active cloud project is this one, clear cloud state.
-    // Value-form raw reset (see deleteProjectFromCloud above): the by-localId test
-    // pins `setInternal` being called with the reset OBJECT, so a LIFECYCLE_RESET
-    // functional updater would change the assertion. Matches the S5 active-ops precedent.
+    // If the currently active cloud project is this one, clear cloud state
+    // (LIFECYCLE_RESET returns the frozen initial state, same as the former
+    // value-form reset).
     if (internalRef.current.cloudId === cloudId) {
       clearCloudUrl();
-      setInternal(initialInternalState);
+      cloudDispatch({ type: 'LIFECYCLE_RESET' });
     }
-  }, [updateCloudMetadata, projectsRef, internalRef, setInternal]);
+  }, [updateCloudMetadata, projectsRef, internalRef, cloudDispatch]);
 
   return useMemo(
     () => ({ saveProjectToCloud, deleteProjectFromCloud, setProjectVisibility, unlinkCloudProject }),

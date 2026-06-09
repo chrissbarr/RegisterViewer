@@ -2,7 +2,7 @@ import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { useActiveProjectCloudOps } from './use-active-project-cloud-ops';
 import { initialInternalState, type InternalCloudSyncState } from '../types/cloud-sync';
-import { cleanBaseline } from '../utils/cloud-sync-reducer';
+import { cleanBaseline, cloudSyncReducer, type CloudSyncAction } from '../utils/cloud-sync-reducer';
 import type { AppState } from '../types/register';
 import type { ProjectStorageWriteResult } from '../utils/project-storage';
 import { makeState, makeRegister } from '../test/helpers';
@@ -111,6 +111,17 @@ function makeDefaultDeps(overrides: Partial<ReturnType<typeof buildDeps>> = {}) 
   return { ...buildDeps(), ...overrides };
 }
 
+/** The state produced by reducing a single dispatched action over `base`. */
+function dispatchedState(deps: ReturnType<typeof makeDefaultDeps>, base: InternalCloudSyncState, callIndex: number): InternalCloudSyncState {
+  const action = deps.cloudDispatch.mock.calls[callIndex][0] as CloudSyncAction;
+  return cloudSyncReducer(base, action);
+}
+
+/** The states produced by reducing each dispatched action independently over `base`. */
+function dispatchedStates(deps: ReturnType<typeof makeDefaultDeps>, base: InternalCloudSyncState): InternalCloudSyncState[] {
+  return deps.cloudDispatch.mock.calls.map((call) => cloudSyncReducer(base, call[0] as CloudSyncAction));
+}
+
 function buildDeps() {
   const appState = makeState({
     registers: [makeRegister({ id: 'reg-1' })],
@@ -120,19 +131,17 @@ function buildDeps() {
 
   const internalRef = makeRef<InternalCloudSyncState>({ ...INITIAL_INTERNAL_STATE });
   const activeLocalIdRef = makeRef<string | null>(TEST_LOCAL_ID);
-  const setInternal = vi.fn((updater) => {
-    // Support both direct value and updater function
-    if (typeof updater === 'function') {
-      updater(INITIAL_INTERNAL_STATE);
-    }
-  });
+  // Cloud-sync reducer dispatch (replaces the former setInternal shim). The mock
+  // does not mutate internalRef — assertions reduce the dispatched action against
+  // a chosen base state via `dispatchedState`/`dispatchedStates` below.
+  const cloudDispatch = vi.fn<(action: CloudSyncAction) => void>();
 
   return {
-    core: { internalRef, activeLocalIdRef, setInternal },
+    core: { internalRef, activeLocalIdRef, dispatch: cloudDispatch },
     // Expose refs at top level for test assertions
     internalRef,
     activeLocalIdRef,
-    setInternal,
+    cloudDispatch,
     appStateRef: makeRef<AppState>(appState),
     dataVersionRef: makeRef(1),
     mutationLockRef: makeRef(false),
@@ -189,8 +198,9 @@ describe('useActiveProjectCloudOps', () => {
         hasUnsyncedChanges: false,
       });
       expect(setCloudUrl).toHaveBeenCalledWith(TEST_CLOUD_ID);
-      // setInternal should have been called with status 'saving' then with the created result
-      expect(deps.setInternal).toHaveBeenCalled();
+      // Dispatched BEGIN_SAVE then MARK_CREATED.
+      expect(deps.cloudDispatch).toHaveBeenCalledWith({ type: 'BEGIN_SAVE' });
+      expect(deps.cloudDispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'MARK_CREATED', cloudId: TEST_CLOUD_ID }));
     });
 
     it('updates an existing cloud project', async () => {
@@ -289,9 +299,8 @@ describe('useActiveProjectCloudOps', () => {
         storage: 'local',
       });
       expect(clearCloudUrl).toHaveBeenCalled();
-      // setInternal should reset cloud state
-      const lastCall = deps.setInternal.mock.calls.at(-1)![0];
-      const stateUpdate = typeof lastCall === 'function' ? lastCall(deps.internalRef.current) : lastCall;
+      // The last dispatched action (NOT_FOUND_CLEARED) resets cloud identity.
+      const stateUpdate = dispatchedState(deps, deps.internalRef.current, deps.cloudDispatch.mock.calls.length - 1);
       expect(stateUpdate).toMatchObject({
         cloudId: null,
         isOwner: false,
@@ -343,14 +352,12 @@ describe('useActiveProjectCloudOps', () => {
         cloudConflictVersion: null,
         hasUnsyncedChanges: false,
       });
-      // setInternal should NOT have been called with the timestamp update
-      // because the active project changed (only the 'saving' status update runs)
-      const setInternalCalls = deps.setInternal.mock.calls;
-      const hasTimestampUpdate = setInternalCalls.some((call) => {
-        const arg = call[0];
-        const state = typeof arg === 'function' ? arg(deps.internalRef.current) : arg;
-        return state.lastCloudSavedAt === TEST_TIMESTAMP && state.status === 'idle';
-      });
+      // No MARK_SAVED was dispatched because the active project changed (only the
+      // 'saving' status update runs) — the resulting state never reaches the
+      // idle+timestamp combination.
+      const hasTimestampUpdate = dispatchedStates(deps, deps.internalRef.current).some(
+        (state) => state.lastCloudSavedAt === TEST_TIMESTAMP && state.status === 'idle',
+      );
       expect(hasTimestampUpdate).toBe(false);
     });
 
@@ -385,17 +392,15 @@ describe('useActiveProjectCloudOps', () => {
         }),
       ).rejects.toThrow('Network error');
 
-      // The hook writes error to internalRef and calls setInternal
+      // The hook writes error to internalRef (synchronous ref write) and dispatches OP_FAILED.
       expect(deps.internalRef.current).toMatchObject({
         status: 'idle',
         error: 'Failed to save project.',
       });
-      expect(deps.setInternal).toHaveBeenCalledWith(
-        expect.objectContaining({
-          status: 'idle',
-          error: 'Failed to save project.',
-        }),
-      );
+      expect(deps.cloudDispatch).toHaveBeenCalledWith({
+        type: 'OP_FAILED',
+        error: 'Failed to save project.',
+      });
     });
 
     it('clean 409 (no local edits during save) auto-pulls server version', async () => {
@@ -423,12 +428,9 @@ describe('useActiveProjectCloudOps', () => {
       });
 
       // serverVersion should be updated to 5 from the 409 response
-      const setInternalCalls = deps.setInternal.mock.calls;
-      const hasServerVersionUpdate = setInternalCalls.some((call) => {
-        const arg = call[0];
-        const state = typeof arg === 'function' ? arg(deps.internalRef.current) : arg;
-        return state.serverVersion === 5;
-      });
+      const hasServerVersionUpdate = dispatchedStates(deps, deps.internalRef.current).some(
+        (state) => state.serverVersion === 5,
+      );
       expect(hasServerVersionUpdate).toBe(true);
 
       // checkAndPullFreshVersion should have been called with (ctx, call) two-arg signature
@@ -503,12 +505,9 @@ describe('useActiveProjectCloudOps', () => {
         await result.current.saveToCloud();
       });
 
-      const setInternalCalls = deps.setInternal.mock.calls;
-      const hasConflict = setInternalCalls.some((call) => {
-        const arg = call[0];
-        const state = typeof arg === 'function' ? arg(deps.internalRef.current) : arg;
-        return state.conflict?.serverVersion === 5;
-      });
+      const hasConflict = dispatchedStates(deps, deps.internalRef.current).some(
+        (state) => state.conflict?.serverVersion === 5,
+      );
       expect(hasConflict).toBe(true);
       expect(checkAndPullFreshVersion).not.toHaveBeenCalled();
       expect(deps.updateCloudMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, {
@@ -541,12 +540,9 @@ describe('useActiveProjectCloudOps', () => {
         await result.current.saveToCloud();
       });
 
-      const setInternalCalls = deps.setInternal.mock.calls;
-      const hasConflict = setInternalCalls.some((call) => {
-        const arg = call[0];
-        const state = typeof arg === 'function' ? arg(deps.internalRef.current) : arg;
-        return state.conflict?.serverVersion === 5 && state.serverVersion === 5;
-      });
+      const hasConflict = dispatchedStates(deps, deps.internalRef.current).some(
+        (state) => state.conflict?.serverVersion === 5 && state.serverVersion === 5,
+      );
       expect(hasConflict).toBe(true);
       expect(checkAndPullFreshVersion).not.toHaveBeenCalled();
       expect(deps.updateCloudMetadata).not.toHaveBeenCalled();
@@ -611,12 +607,9 @@ describe('useActiveProjectCloudOps', () => {
       });
 
       // conflict should be set in internal state
-      const setInternalCalls = deps.setInternal.mock.calls;
-      const hasConflict = setInternalCalls.some((call) => {
-        const arg = call[0];
-        const state = typeof arg === 'function' ? arg(deps.internalRef.current) : arg;
-        return state.conflict?.serverVersion === 5;
-      });
+      const hasConflict = dispatchedStates(deps, deps.internalRef.current).some(
+        (state) => state.conflict?.serverVersion === 5,
+      );
       expect(hasConflict).toBe(true);
 
       // checkAndPullFreshVersion should NOT be called (dirty path skips pull)
@@ -647,22 +640,12 @@ describe('useActiveProjectCloudOps', () => {
         await result.current.saveToCloud();
       });
 
-      // serverVersion should still be updated to 5 (from the first setInternal call)
-      const setInternalCalls = deps.setInternal.mock.calls;
-      const hasServerVersionUpdate = setInternalCalls.some((call) => {
-        const arg = call[0];
-        const state = typeof arg === 'function' ? arg(deps.internalRef.current) : arg;
-        return state.serverVersion === 5;
-      });
-      expect(hasServerVersionUpdate).toBe(true);
+      // serverVersion should still be updated to 5 (from the first dispatch: CONFLICT_CLEAN)
+      const states = dispatchedStates(deps, deps.internalRef.current);
+      expect(states.some((state) => state.serverVersion === 5)).toBe(true);
 
-      // Conflict UX should be shown as fallback after pull failure
-      const hasConflictFallback = setInternalCalls.some((call) => {
-        const arg = call[0];
-        const state = typeof arg === 'function' ? arg(deps.internalRef.current) : arg;
-        return state.conflict?.serverVersion === 5;
-      });
-      expect(hasConflictFallback).toBe(true);
+      // Conflict UX should be shown as fallback after pull failure (SET_CONFLICT)
+      expect(states.some((state) => state.conflict?.serverVersion === 5)).toBe(true);
     });
 
     it('passes undefined (not 0) when serverVersion is 0 (falsy coercion guard)', async () => {
@@ -715,13 +698,10 @@ describe('useActiveProjectCloudOps', () => {
         await result.current.saveToCloud();
       });
 
-      // setInternal should have been called with serverVersion: 3
-      const setInternalCalls = deps.setInternal.mock.calls;
-      const hasVersionUpdate = setInternalCalls.some((call) => {
-        const arg = call[0];
-        const state = typeof arg === 'function' ? arg(deps.internalRef.current) : arg;
-        return state.serverVersion === 3 && state.status === 'idle';
-      });
+      // A dispatched action (MARK_SAVED) records serverVersion: 3 at idle status.
+      const hasVersionUpdate = dispatchedStates(deps, deps.internalRef.current).some(
+        (state) => state.serverVersion === 3 && state.status === 'idle',
+      );
       expect(hasVersionUpdate).toBe(true);
     });
 
@@ -751,12 +731,9 @@ describe('useActiveProjectCloudOps', () => {
         await result.current.saveToCloud();
       });
 
-      const setInternalCalls = deps.setInternal.mock.calls;
-      const hasCapturedGenerationUpdate = setInternalCalls.some((call) => {
-        const arg = call[0];
-        const state = typeof arg === 'function' ? arg(deps.internalRef.current) : arg;
-        return state.serverVersion === 3 && state.baseline.kind === 'clean' && state.baseline.version === 1;
-      });
+      const hasCapturedGenerationUpdate = dispatchedStates(deps, deps.internalRef.current).some(
+        (state) => state.serverVersion === 3 && state.baseline.kind === 'clean' && state.baseline.version === 1,
+      );
       expect(hasCapturedGenerationUpdate).toBe(true);
     });
   });
@@ -850,12 +827,10 @@ describe('useActiveProjectCloudOps', () => {
         storage: 'local',
       });
       expect(clearCloudUrl).toHaveBeenCalled();
-      // setInternal called with initial state (reset)
-      expect(deps.setInternal).toHaveBeenCalledWith(expect.objectContaining({
-        cloudId: null,
-        isOwner: false,
-        status: 'idle',
-      }));
+      // Dispatched LIFECYCLE_RESET, which resets to the frozen initial state.
+      expect(deps.cloudDispatch).toHaveBeenCalledWith({ type: 'LIFECYCLE_RESET' });
+      const resetState = dispatchedState(deps, deps.internalRef.current, deps.cloudDispatch.mock.calls.length - 1);
+      expect(resetState).toMatchObject({ cloudId: null, isOwner: false, status: 'idle' });
     });
 
     it('does nothing when no cloudId exists', async () => {
@@ -917,8 +892,8 @@ describe('useActiveProjectCloudOps', () => {
         visibility: 'unlisted',
         cloudSavedAt: PATCH_UPDATED_AT,
       });
-      // Optimistic update — setInternal is called with the new visibility
-      expect(deps.setInternal).toHaveBeenCalled();
+      // Optimistic update — SET_VISIBILITY is dispatched with the new visibility.
+      expect(deps.cloudDispatch).toHaveBeenCalledWith({ type: 'SET_VISIBILITY', visibility: 'unlisted' });
     });
 
     it('reverts visibility on failure', async () => {
@@ -937,15 +912,11 @@ describe('useActiveProjectCloudOps', () => {
         await result.current.setVisibility('unlisted');
       });
 
-      // First call is the optimistic update to 'unlisted'
-      const firstCall = deps.setInternal.mock.calls[0][0];
-      const optimisticState = typeof firstCall === 'function' ? firstCall(INITIAL_INTERNAL_STATE) : firstCall;
-      expect(optimisticState).toMatchObject({ visibility: 'unlisted' });
+      // First dispatch is the optimistic update to 'unlisted'.
+      expect(dispatchedState(deps, INITIAL_INTERNAL_STATE, 0)).toMatchObject({ visibility: 'unlisted' });
 
-      // Second call reverts to 'private' and sets error
-      const revertCall = deps.setInternal.mock.calls[1][0];
-      const revertedState = typeof revertCall === 'function' ? revertCall(INITIAL_INTERNAL_STATE) : revertCall;
-      expect(revertedState).toMatchObject({
+      // Second dispatch reverts to 'private' and sets error.
+      expect(dispatchedState(deps, INITIAL_INTERNAL_STATE, 1)).toMatchObject({
         visibility: 'private',
         error: 'Failed to update visibility.',
       });
@@ -971,8 +942,7 @@ describe('useActiveProjectCloudOps', () => {
 
       // The revert must restore the previous visibility (no half-applied state
       // where visibility is reverted but cloudSavedAt advanced).
-      const lastCall = deps.setInternal.mock.calls.at(-1)![0];
-      const revertedState = typeof lastCall === 'function' ? lastCall(INITIAL_INTERNAL_STATE) : lastCall;
+      const revertedState = dispatchedState(deps, INITIAL_INTERNAL_STATE, deps.cloudDispatch.mock.calls.length - 1);
       expect(revertedState).toMatchObject({
         visibility: 'private',
         error: 'Visibility changed on server, but local metadata could not be updated.',
@@ -1011,14 +981,9 @@ describe('useActiveProjectCloudOps', () => {
       // A baseline-capture request is dispatched (replaces needsVersionSyncRef)
       // so the engine snapshots the baseline on its next effect tick. The marker
       // is now `baseline:{untracked}` (S14a).
-      const requestedBaseline = deps.setInternal.mock.calls.some((call) => {
-        const arg = call[0];
-        return typeof arg === 'function' && arg(INITIAL_INTERNAL_STATE).baseline.kind === 'untracked';
-      });
-      expect(requestedBaseline).toBe(true);
-      // setInternal should reflect loaded state
-      const lastSetCall = deps.setInternal.mock.calls.at(-1)![0];
-      const loadedState = typeof lastSetCall === 'function' ? lastSetCall(INITIAL_INTERNAL_STATE) : lastSetCall;
+      expect(deps.cloudDispatch).toHaveBeenCalledWith({ type: 'REQUEST_BASELINE' });
+      // The last dispatch (LOAD_SUCCEEDED) reflects the loaded state.
+      const loadedState = dispatchedState(deps, INITIAL_INTERNAL_STATE, deps.cloudDispatch.mock.calls.length - 1);
       expect(loadedState).toMatchObject({
         cloudId: TEST_CLOUD_ID,
         isOwner: true,
@@ -1040,9 +1005,8 @@ describe('useActiveProjectCloudOps', () => {
       });
 
       expect(deps.dispatch).not.toHaveBeenCalled();
-      // setInternal should set error and clear cloudId
-      const lastSetCall = deps.setInternal.mock.calls.at(-1)![0];
-      const errorState = typeof lastSetCall === 'function' ? lastSetCall(INITIAL_INTERNAL_STATE) : lastSetCall;
+      // The last dispatch (LOAD_FAILED) sets error and clears cloudId.
+      const errorState = dispatchedState(deps, INITIAL_INTERNAL_STATE, deps.cloudDispatch.mock.calls.length - 1);
       expect(errorState).toMatchObject({
         status: 'idle',
         cloudId: null,
@@ -1068,9 +1032,8 @@ describe('useActiveProjectCloudOps', () => {
         await result.current.loadCloudProject(TEST_CLOUD_ID);
       });
 
-      // setInternal should include serverVersion: 5
-      const lastSetCall = deps.setInternal.mock.calls.at(-1)![0];
-      const loadedState = typeof lastSetCall === 'function' ? lastSetCall(INITIAL_INTERNAL_STATE) : lastSetCall;
+      // The last dispatch (LOAD_SUCCEEDED) includes serverVersion: 5.
+      const loadedState = dispatchedState(deps, INITIAL_INTERNAL_STATE, deps.cloudDispatch.mock.calls.length - 1);
       expect(loadedState).toMatchObject({
         serverVersion: 5,
       });
@@ -1095,8 +1058,7 @@ describe('useActiveProjectCloudOps', () => {
       }
 
       function lastSeed(deps: ReturnType<typeof makeDefaultDeps>) {
-        const lastSetCall = deps.setInternal.mock.calls.at(-1)![0];
-        return typeof lastSetCall === 'function' ? lastSetCall(INITIAL_INTERNAL_STATE) : lastSetCall;
+        return dispatchedState(deps, INITIAL_INTERNAL_STATE, deps.cloudDispatch.mock.calls.length - 1);
       }
 
       it('authenticated owner → cloud storage (owned branch)', async () => {
@@ -1210,15 +1172,12 @@ describe('useActiveProjectCloudOps', () => {
       ).rejects.toThrow('Unauthorized');
 
       // isSameActiveSaveTarget now checks cloudId: null !== TEST_CLOUD_ID,
-      // so the catch block must NOT have written error state to internalRef.
-      // The initial reset sets cloudId=null and error=null — an error write would
-      // set error to a non-null string.
-      const errorCalls = deps.setInternal.mock.calls.filter((call) => {
-        const arg = call[0];
-        const state = typeof arg === 'function' ? arg(INITIAL_INTERNAL_STATE) : arg;
-        return state?.error !== null && state?.error !== undefined;
-      });
-      expect(errorCalls).toHaveLength(0);
+      // so the catch block must NOT have dispatched an error-setting action.
+      // No OP_FAILED is dispatched (only BEGIN_SAVE, which leaves error null).
+      const errorDispatches = dispatchedStates(deps, INITIAL_INTERNAL_STATE).filter(
+        (state) => state.error !== null && state.error !== undefined,
+      );
+      expect(errorDispatches).toHaveLength(0);
     });
   });
 
@@ -1239,17 +1198,17 @@ describe('useActiveProjectCloudOps', () => {
 
       // The serverVersion must be recorded BEFORE patchProjectState runs, so a
       // departure save reading from localStorage sees the confirmed version.
-      const setInternalCallWithVersion = (deps.setInternal as Mock).mock.invocationCallOrder.findIndex(
-        (_order, i) => {
-          const arg = (deps.setInternal as Mock).mock.calls[i][0];
-          const state = typeof arg === 'function' ? arg(deps.internalRef.current) : arg;
-          return state?.serverVersion === 3;
+      // RECORD_SERVER_VERSION{serverVersion:3} is the version-recording dispatch.
+      const dispatchIndexWithVersion = (deps.cloudDispatch as Mock).mock.calls.findIndex(
+        (call) => {
+          const action = call[0] as CloudSyncAction;
+          return action.type === 'RECORD_SERVER_VERSION' && action.serverVersion === 3;
         },
       );
-      expect(setInternalCallWithVersion).toBeGreaterThanOrEqual(0);
-      const setInternalOrder = (deps.setInternal as Mock).mock.invocationCallOrder[setInternalCallWithVersion];
+      expect(dispatchIndexWithVersion).toBeGreaterThanOrEqual(0);
+      const dispatchOrder = (deps.cloudDispatch as Mock).mock.invocationCallOrder[dispatchIndexWithVersion];
       const patchProjectStateOrder = (patchProjectState as Mock).mock.invocationCallOrder[0];
-      expect(setInternalOrder).toBeLessThan(patchProjectStateOrder);
+      expect(dispatchOrder).toBeLessThan(patchProjectStateOrder);
 
       // Best-effort manifest write: the confirmed server version must be persisted
       // so the departure save can't re-PUT a stale version and manufacture a 409.

@@ -1,7 +1,7 @@
-import type { MutableRefObject } from 'react';
+import type { Dispatch, MutableRefObject } from 'react';
 import { getProject } from '../utils/api-client';
 import { patchProjectState, loadProject, type ProjectStorageWriteResult } from '../utils/project-storage';
-import { cloudSyncReducer } from '../utils/cloud-sync-reducer';
+import type { CloudSyncAction } from '../utils/cloud-sync-reducer';
 import { deserializeState } from '../utils/storage';
 import { materializeCloudProject } from '../utils/cloud-materialize';
 import { decideFreshnessPull, type FreshnessCheckCall } from '../utils/cloud-freshness';
@@ -12,10 +12,12 @@ import type { InternalCloudSyncState, CloudMetadataUpdate } from '../types/cloud
 export interface FreshnessCheckContext {
   internalRef: MutableRefObject<InternalCloudSyncState>;
   dataVersionRef: MutableRefObject<number>;
+  /** App-context dispatch (IMPORT_STATE). */
   dispatch: (action: ImportStateAction) => void;
   lastFreshnessCheckRef: MutableRefObject<number>;
   updateCloudMetadata: (localId: string, updates: CloudMetadataUpdate) => ProjectStorageWriteResult;
-  setInternal: (updater: (prev: InternalCloudSyncState) => InternalCloudSyncState) => void;
+  /** Cloud-sync reducer dispatch (REQUEST_BASELINE / APPLY_PULL). */
+  cloudDispatch: Dispatch<CloudSyncAction>;
 }
 
 type FreshnessCheckResult =
@@ -52,7 +54,7 @@ export async function checkAndPullFreshVersion(
   const {
     internalRef, dataVersionRef, dispatch,
     lastFreshnessCheckRef,
-    updateCloudMetadata, setInternal,
+    updateCloudMetadata, cloudDispatch,
   } = ctx;
   const { cloudId, localId, jwt } = call;
 
@@ -174,14 +176,14 @@ export async function checkAndPullFreshVersion(
   // Mark "awaiting baseline capture" (baseline → {untracked}) so the engine
   // snapshots the new generation into a clean baseline on its next effect tick
   // (replaces needsVersionSyncRef).
-  setInternal((prev) => cloudSyncReducer(prev, { type: 'REQUEST_BASELINE' }));
+  cloudDispatch({ type: 'REQUEST_BASELINE' });
 
-  setInternal((prev) => cloudSyncReducer(prev, {
+  cloudDispatch({
     type: 'APPLY_PULL',
     serverVersion,
     cloudSavedAt,
     visibility,
-  }));
+  });
 
   return { applied: true, serverVersion };
 }

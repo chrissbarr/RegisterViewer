@@ -1,42 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import {
-  cloudSyncReducer, cloudStateForEntry, isDirty, toInternalCloudSyncState,
+  cloudSyncReducer, cloudStateForEntry, isDirty,
   cleanBaseline, dirtyBaseline, untrackedBaseline,
   type CloudEntrySeed,
 } from './cloud-sync-reducer';
 import { initialInternalState, type InternalCloudSyncState } from '../types/cloud-sync';
 
 describe('cloudSyncReducer', () => {
-  it('applies a functional updater verbatim', () => {
-    const next = cloudSyncReducer(initialInternalState, {
-      type: '__RAW',
-      updater: (prev) => ({ ...prev, cloudId: 'abc123' }),
-    });
-    expect(next.cloudId).toBe('abc123');
-    // Untouched fields are preserved
-    expect(next.storage).toBe(initialInternalState.storage);
-  });
-
-  it('applies a value updater (returns the supplied value verbatim)', () => {
-    const replacement: InternalCloudSyncState = {
-      ...initialInternalState,
-      cloudId: 'xyz',
-      isOwner: true,
-      storage: 'cloud',
-    };
-    const next = cloudSyncReducer(initialInternalState, {
-      type: '__RAW',
-      updater: () => replacement,
-    });
-    expect(next).toBe(replacement);
-  });
-
   it('returns a new state object (does not mutate prev) for object spreads', () => {
     const prev: InternalCloudSyncState = { ...initialInternalState };
-    const next = cloudSyncReducer(prev, {
-      type: '__RAW',
-      updater: (p) => ({ ...p, error: 'boom' }),
-    });
+    const next = cloudSyncReducer(prev, { type: 'SET_ERROR', error: 'boom' });
     expect(next).not.toBe(prev);
     expect(next.error).toBe('boom');
     expect(prev.error).toBeNull();
@@ -87,6 +60,19 @@ describe('cloudSyncReducer', () => {
       expect(next.error).toBeNull();
       expect(next.cloudId).toBe('abc');
       expect(prev.error).toBe('boom');
+    });
+
+    it('CLEAR_CONFLICT clears the conflict marker and preserves other fields', () => {
+      const prev: InternalCloudSyncState = {
+        ...initialInternalState,
+        cloudId: 'abc',
+        serverVersion: 5,
+        conflict: { serverVersion: 9 },
+      };
+      const next = cloudSyncReducer(prev, { type: 'CLEAR_CONFLICT' });
+      expect(next.conflict).toBeNull();
+      expect(next.cloudId).toBe('abc');
+      expect(next.serverVersion).toBe(5);
     });
 
     it('RESET_WITH_ERROR returns initial state carrying only the error', () => {
@@ -688,95 +674,5 @@ describe('isDirty (S14a)', () => {
     expect(isDirty(cleanBaseline(5), 'cloud-1', 5)).toBe(false);
     expect(isDirty(cleanBaseline(5), 'cloud-1', 6)).toBe(true);
     expect(isDirty(cleanBaseline(5), 'cloud-1', 4)).toBe(true);
-  });
-});
-
-// S14a: equivalence oracle (DESIGN §9). Proves the `lastSavedVersion → baseline`
-// collapse is behavior-preserving by mapping the NEW state back to the LEGACY
-// flat shape after each action and comparing against the hand-written legacy
-// result. `status` and `asyncTransient` map identity — including the auto-sync
-// save window where both are simultaneously non-default, which the (rejected)
-// `Phase` merge could not encode. Oracle scaffolding is removed in S14b.
-describe('toInternalCloudSyncState equivalence oracle (S14a)', () => {
-  it('maps each baseline kind back to its legacy lastSavedVersion sentinel', () => {
-    expect(toInternalCloudSyncState({ ...initialInternalState, baseline: untrackedBaseline() }))
-      .toMatchObject({ lastSavedVersion: -1, awaitingBaselineCapture: false });
-    expect(toInternalCloudSyncState({ ...initialInternalState, baseline: dirtyBaseline() }))
-      .toMatchObject({ lastSavedVersion: Number.MAX_SAFE_INTEGER, awaitingBaselineCapture: false });
-    expect(toInternalCloudSyncState({ ...initialInternalState, baseline: cleanBaseline(3) }))
-      .toMatchObject({ lastSavedVersion: 3, awaitingBaselineCapture: false });
-  });
-
-  it('recovers the legacy awaitingBaselineCapture flag from an untracked CLOUD baseline', () => {
-    // untracked + cloudId set === the awaiting-capture window.
-    const awaiting = toInternalCloudSyncState({
-      ...initialInternalState, cloudId: 'cloud-1', baseline: untrackedBaseline(),
-    });
-    expect(awaiting.lastSavedVersion).toBe(-1);
-    expect(awaiting.awaitingBaselineCapture).toBe(true);
-  });
-
-  it('round-trips the clean-save sequence to the legacy flat state', () => {
-    // BEGIN_SAVE (status:saving) → MARK_SAVED (clean baseline). The legacy state
-    // is the hand-written flat equivalent.
-    let state: InternalCloudSyncState = {
-      ...initialInternalState, cloudId: 'cloud-1', isOwner: true, storage: 'cloud',
-      serverVersion: 2, baseline: cleanBaseline(1),
-    };
-    state = cloudSyncReducer(state, { type: 'BEGIN_SAVE' });
-    state = cloudSyncReducer(state, {
-      type: 'MARK_SAVED', cloudSavedAt: '2026-03-03T00:00:00Z', serverVersion: 3, baselineVersion: 4,
-    });
-    expect(toInternalCloudSyncState(state)).toEqual({
-      cloudId: 'cloud-1', isOwner: true, storage: 'cloud', status: 'idle', error: null,
-      shareUrl: null, lastCloudSavedAt: '2026-03-03T00:00:00Z', lastSavedVersion: 4,
-      awaitingBaselineCapture: false, visibility: 'private', serverVersion: 3, conflict: null,
-    });
-  });
-
-  it('round-trips the auto-sync save window (status + asyncTransient both non-default)', () => {
-    // BEGIN_SAVE sets status:'saving'; SET_ASYNC_TRANSIENT('syncing') overlays the
-    // async transient. Both must survive identity-mapped (the rejected Phase merge
-    // could not hold both at once).
-    let state: InternalCloudSyncState = {
-      ...initialInternalState, cloudId: 'cloud-1', isOwner: true, storage: 'cloud',
-      baseline: cleanBaseline(1),
-    };
-    state = cloudSyncReducer(state, { type: 'BEGIN_SAVE' });
-    state = cloudSyncReducer(state, { type: 'SET_ASYNC_TRANSIENT', value: 'syncing' });
-    const legacy = toInternalCloudSyncState(state);
-    expect(legacy.status).toBe('saving');
-    expect(legacy.asyncTransient).toBe('syncing');
-    expect(legacy.lastSavedVersion).toBe(1);
-  });
-
-  it('round-trips the baseline-capture handshake (REQUEST → CAPTURE)', () => {
-    let state: InternalCloudSyncState = {
-      ...initialInternalState, cloudId: 'cloud-1', isOwner: true, storage: 'cloud',
-      baseline: cleanBaseline(2),
-    };
-    state = cloudSyncReducer(state, { type: 'REQUEST_BASELINE' });
-    // Awaiting window: untracked + cloudId === legacy lastSavedVersion -1 + flag.
-    expect(toInternalCloudSyncState(state)).toMatchObject({
-      lastSavedVersion: -1, awaitingBaselineCapture: true,
-    });
-    state = cloudSyncReducer(state, { type: 'CAPTURE_BASELINE', version: 9 });
-    expect(toInternalCloudSyncState(state)).toMatchObject({
-      lastSavedVersion: 9, awaitingBaselineCapture: false,
-    });
-  });
-
-  it('round-trips the stored-unsynced cloud entry to the legacy dirty sentinel', () => {
-    const seed = cloudStateForEntry({
-      prev: initialInternalState,
-      cloudId: 'cloud-1', isOwner: true, storage: 'cloud',
-      shareUrl: 'https://example/p/cloud-1', lastCloudSavedAt: null,
-      visibility: 'private', serverVersion: 5, conflictVersion: null,
-      hasUnsyncedChanges: true, dataVersion: 4,
-    });
-    const state = cloudSyncReducer(initialInternalState, { type: 'INIT_CLOUD', seed });
-    expect(toInternalCloudSyncState(state)).toMatchObject({
-      lastSavedVersion: Number.MAX_SAFE_INTEGER, awaitingBaselineCapture: false,
-    });
   });
 });

@@ -9,10 +9,10 @@ import { buildProjectUrl, patchProjectState, type ProjectStorageWriteResult } fr
 import { setCloudUrl, clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock, requireJwt, applyVisibilityWrite } from '../utils/cloud-utils';
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl, type SaveConflictResult } from '../utils/cloud-operations';
 import { positiveVersion } from '../utils/cloud-sync';
-import { cloudSyncReducer } from '../utils/cloud-sync-reducer';
+import { cloudSyncReducer, type CloudSyncAction } from '../utils/cloud-sync-reducer';
 import { DEFAULT_PROJECT_NAME, type Visibility } from '../types/project';
 import type { AppState } from '../types/register';
-import { type Baseline, type CloudSyncCore, type CloudMetadataUpdate, type InternalCloudSyncState, type SaveOutcome, initialInternalState } from '../types/cloud-sync';
+import { type Baseline, type CloudSyncCore, type CloudMetadataUpdate, type InternalCloudSyncState, type SaveOutcome } from '../types/cloud-sync';
 import type { ImportStateAction } from '../context/app-context';
 
 interface ConflictHandlerParams {
@@ -26,7 +26,7 @@ interface ConflictHandlerParams {
   lastFreshnessCheckRef: MutableRefObject<number>;
   updateCloudMetadata: (localId: string, updates: CloudMetadataUpdate) => ProjectStorageWriteResult;
   appStateRef: MutableRefObject<AppState>;
-  setInternal: (updater: (prev: InternalCloudSyncState) => InternalCloudSyncState) => void;
+  cloudDispatch: Dispatch<CloudSyncAction>;
   dispatch: (action: ImportStateAction) => void;
   getJwt: () => string | null;
 }
@@ -43,7 +43,7 @@ interface SaveAttemptSnapshot {
  *
  * After sign-out (or delete/unlink/switch) resets cloud state,
  * `internalRef.current.cloudId` no longer matches the save's captured cloudId,
- * so late completions (401/409/success) skip their `setInternal` writes and
+ * so late completions (401/409/success) skip their reducer dispatches and
  * cannot paint stale errors/conflicts onto the reset cloud state.
  *
  * For a save that CREATES a new cloud project, both `expectedCloudId` and
@@ -68,30 +68,30 @@ interface NotFoundHandlerParams {
   capturedLocalId: string | null;
   stillOnSameProject: boolean;
   updateCloudMetadata: (localId: string, updates: CloudMetadataUpdate) => ProjectStorageWriteResult;
-  setInternal: (updater: (prev: InternalCloudSyncState) => InternalCloudSyncState) => void;
+  cloudDispatch: Dispatch<CloudSyncAction>;
 }
 
 function handleNotFoundResultImpl(params: NotFoundHandlerParams): SaveOutcome {
-  const { capturedLocalId, stillOnSameProject, updateCloudMetadata, setInternal } = params;
+  const { capturedLocalId, stillOnSameProject, updateCloudMetadata, cloudDispatch } = params;
 
   if (capturedLocalId) {
     const metadataResult = updateCloudMetadata(capturedLocalId, CLEARED_CLOUD_METADATA);
     if (!metadataResult.ok) {
       if (stillOnSameProject) {
-        setInternal((prev) => cloudSyncReducer(prev, {
+        cloudDispatch({
           type: 'OP_FAILED',
           error: 'Cloud project was deleted on the server, but local cloud metadata could not be updated.',
-        }));
+        });
       }
       return 'not-found';
     }
   }
   if (stillOnSameProject) {
     clearCloudUrl();
-    setInternal((prev) => cloudSyncReducer(prev, {
+    cloudDispatch({
       type: 'NOT_FOUND_CLEARED',
       error: 'Cloud project not found. It may have been deleted. Use "Save to Cloud" to create a new copy.',
-    }));
+    });
   }
   return 'not-found';
 }
@@ -106,20 +106,22 @@ interface UpdatedHandlerParams {
   internalRef: MutableRefObject<InternalCloudSyncState>;
   updateCloudMetadata: (localId: string, updates: CloudMetadataUpdate) => ProjectStorageWriteResult;
   appStateRef: MutableRefObject<AppState>;
-  setInternal: (updater: (prev: InternalCloudSyncState) => InternalCloudSyncState) => void;
+  cloudDispatch: Dispatch<CloudSyncAction>;
 }
 
 function handleUpdatedResultImpl(params: UpdatedHandlerParams): SaveOutcome {
   const {
     result, attempt, capturedLocalId, stillOnSameProject, editedDuringSave,
-    activeLocalIdRef, internalRef, updateCloudMetadata, appStateRef, setInternal,
+    activeLocalIdRef, internalRef, updateCloudMetadata, appStateRef, cloudDispatch,
   } = params;
 
   // Record the new server version immediately so a later retry reads the
-  // confirmed version and cannot re-PUT a stale version.
+  // confirmed version and cannot re-PUT a stale version. Synchronous ref write
+  // precedes the dispatch (DESIGN §5 same-commit visibility device).
   if (stillOnSameProject) {
-    internalRef.current = { ...internalRef.current, serverVersion: result.version };
-    setInternal((prev) => cloudSyncReducer(prev, { type: 'RECORD_SERVER_VERSION', serverVersion: result.version }));
+    const action: CloudSyncAction = { type: 'RECORD_SERVER_VERSION', serverVersion: result.version };
+    internalRef.current = cloudSyncReducer(internalRef.current, action);
+    cloudDispatch(action);
   }
   if (capturedLocalId) {
     let persistError: string | null = null;
@@ -143,7 +145,7 @@ function handleUpdatedResultImpl(params: UpdatedHandlerParams): SaveOutcome {
 
     if (persistError !== null) {
       if (stillOnSameProject) {
-        setInternal((prev) => cloudSyncReducer(prev, { type: 'OP_FAILED', error: persistError }));
+        cloudDispatch({ type: 'OP_FAILED', error: persistError });
       }
       // Best-effort: persist the confirmed server version to the manifest so
       // later readers (e.g. the departure save) can't re-PUT a stale version
@@ -153,12 +155,12 @@ function handleUpdatedResultImpl(params: UpdatedHandlerParams): SaveOutcome {
     }
   }
   if (stillOnSameProject) {
-    setInternal((prev) => cloudSyncReducer(prev, {
+    cloudDispatch({
       type: 'MARK_SAVED',
       cloudSavedAt: result.timestamp,
       serverVersion: result.version,
       baselineVersion: attempt.dataVersion,
-    }));
+    });
   }
   return 'saved';
 }
@@ -167,7 +169,7 @@ async function handleConflictResult(params: ConflictHandlerParams): Promise<void
   const {
     result, attempt, dataVersionRef, capturedLocalId, existingCloudId,
     activeLocalIdRef, internalRef, lastFreshnessCheckRef,
-    updateCloudMetadata, appStateRef, setInternal, dispatch, getJwt,
+    updateCloudMetadata, appStateRef, cloudDispatch, dispatch, getJwt,
   } = params;
 
   // Reproduces the legacy `dataVersion !== lastSavedVersion` at save start: a
@@ -200,25 +202,25 @@ async function handleConflictResult(params: ConflictHandlerParams): Promise<void
     }
     if (!stillOnSameProject) return;
     // Dirty 409: preserve local edits and wait for explicit user action.
-    setInternal((prev) => cloudSyncReducer(prev, { type: 'CONFLICT_DIRTY', serverVersion: result.serverVersion }));
+    cloudDispatch({ type: 'CONFLICT_DIRTY', serverVersion: result.serverVersion });
     return;
   }
 
   if (!stillOnSameProject) return;
 
   // Clean 409: no local edits; pull server version silently unless a new edit appears.
-  setInternal((prev) => cloudSyncReducer(prev, { type: 'CONFLICT_CLEAN', serverVersion: result.serverVersion }));
+  cloudDispatch({ type: 'CONFLICT_CLEAN', serverVersion: result.serverVersion });
 
   try {
     const freshJwt = getJwt();
     if (!freshJwt || !existingCloudId) {
-      setInternal((prev) => cloudSyncReducer(prev, { type: 'SET_CONFLICT', serverVersion: result.serverVersion }));
+      cloudDispatch({ type: 'SET_CONFLICT', serverVersion: result.serverVersion });
       return;
     }
 
     const freshnessCtx: FreshnessCheckContext = {
       internalRef, dataVersionRef, dispatch,
-      lastFreshnessCheckRef, updateCloudMetadata, setInternal,
+      lastFreshnessCheckRef, updateCloudMetadata, cloudDispatch,
     };
     const pullResult = await checkAndPullFreshVersion(freshnessCtx, {
       cloudId: existingCloudId,
@@ -229,12 +231,12 @@ async function handleConflictResult(params: ConflictHandlerParams): Promise<void
       expectedDataVersion: attempt.dataVersion,
     });
     if (!pullResult.applied) {
-      setInternal((prev) => cloudSyncReducer(prev, { type: 'SET_CONFLICT', serverVersion: result.serverVersion }));
+      cloudDispatch({ type: 'SET_CONFLICT', serverVersion: result.serverVersion });
     }
   } catch {
     // Pull failed — show conflict UX as fallback
     if (isSameActiveSaveTarget(capturedLocalId, existingCloudId, activeLocalIdRef, internalRef)) {
-      setInternal((prev) => cloudSyncReducer(prev, { type: 'SET_CONFLICT', serverVersion: result.serverVersion }));
+      cloudDispatch({ type: 'SET_CONFLICT', serverVersion: result.serverVersion });
     }
   }
 }
@@ -277,7 +279,7 @@ interface ActiveProjectCloudOps {
  */
 export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): ActiveProjectCloudOps {
   const {
-    core: { internalRef, activeLocalIdRef, setInternal },
+    core: { internalRef, activeLocalIdRef, dispatch: cloudDispatch },
     appStateRef, dataVersionRef, mutationLockRef, lastFreshnessCheckRef,
     updateCloudMetadata, createNewProject, loadAsUnsaved, getJwt, dispatch,
   } = deps;
@@ -304,10 +306,10 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
       const name = appStateRef.current.project?.title ?? DEFAULT_PROJECT_NAME;
       currentLocalId = createNewProject(name, serialized);
       if (!currentLocalId) {
-        setInternal((prev) => cloudSyncReducer(prev, {
+        cloudDispatch({
           type: 'OP_FAILED',
           error: 'Project was saved to cloud, but local project metadata could not be persisted.',
-        }));
+        });
         return 'local-persist-failed';
       }
     } else {
@@ -315,10 +317,10 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
         protectedLocalIds: [activeLocalIdRef.current],
       });
       if (!stateResult.ok) {
-        setInternal((prev) => cloudSyncReducer(prev, {
+        cloudDispatch({
           type: 'OP_FAILED',
           error: 'Project was saved to cloud, but the local copy could not be updated.',
-        }));
+        });
         return 'local-persist-failed';
       }
     }
@@ -332,26 +334,26 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
       hasUnsyncedChanges,
     });
     if (!metadataResult.ok) {
-      setInternal((prev) => cloudSyncReducer(prev, {
+      cloudDispatch({
         type: 'OP_FAILED',
         error: 'Project was saved to cloud, but local cloud metadata could not be persisted.',
-      }));
+      });
       return 'local-persist-failed';
     }
 
     const shareUrl = buildProjectUrl(result.cloudId);
     setCloudUrl(result.cloudId);
 
-    setInternal((prev) => cloudSyncReducer(prev, {
+    cloudDispatch({
       type: 'MARK_CREATED',
       cloudId: result.cloudId,
       shareUrl,
       cloudSavedAt: result.timestamp,
       serverVersion: result.version,
       baselineVersion: savedDataVersion,
-    }));
+    });
     return 'created';
-  }, [updateCloudMetadata, createNewProject, activeLocalIdRef, appStateRef, setInternal]);
+  }, [updateCloudMetadata, createNewProject, activeLocalIdRef, appStateRef, cloudDispatch]);
 
   const saveToCloud = useCallback(async (): Promise<SaveOutcome> => {
     if (!isCloudEnabled()) return 'noop';
@@ -371,7 +373,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
         const { cloudId, isOwner, serverVersion, baseline } = internalRef.current;
         existingCloudId = (cloudId && isOwner) ? cloudId : null;
 
-        setInternal((prev) => cloudSyncReducer(prev, { type: 'BEGIN_SAVE' }));
+        cloudDispatch({ type: 'BEGIN_SAVE' });
         const attempt: SaveAttemptSnapshot = {
           dataVersion: dataVersionRef.current,
           baseline,
@@ -391,7 +393,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
 
         if (result.kind === 'not-found') {
           return handleNotFoundResultImpl({
-            capturedLocalId, stillOnSameProject, updateCloudMetadata, setInternal,
+            capturedLocalId, stillOnSameProject, updateCloudMetadata, cloudDispatch,
           });
         }
 
@@ -399,7 +401,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
           await handleConflictResult({
             result, attempt, dataVersionRef, capturedLocalId, existingCloudId,
             activeLocalIdRef, internalRef, lastFreshnessCheckRef,
-            updateCloudMetadata, appStateRef, setInternal, dispatch, getJwt,
+            updateCloudMetadata, appStateRef, cloudDispatch, dispatch, getJwt,
           });
           return 'conflict';
         }
@@ -412,20 +414,22 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
         } else {
           return handleUpdatedResultImpl({
             result, attempt, capturedLocalId, stillOnSameProject, editedDuringSave,
-            activeLocalIdRef, internalRef, updateCloudMetadata, appStateRef, setInternal,
+            activeLocalIdRef, internalRef, updateCloudMetadata, appStateRef, cloudDispatch,
           });
         }
       } catch (err) {
         if (isSameActiveSaveTarget(capturedLocalId, existingCloudId, activeLocalIdRef, internalRef)) {
-          const next = { ...internalRef.current, status: 'idle' as const, error: friendlyErrorMessage(err, 'Failed to save project.') };
-          internalRef.current = next;
-          setInternal(next);
+          // Synchronous ref write precedes the dispatch (DESIGN §5): the value-form
+          // `{...prev, status:'idle', error}` reset is the OP_FAILED transition.
+          const action: CloudSyncAction = { type: 'OP_FAILED', error: friendlyErrorMessage(err, 'Failed to save project.') };
+          internalRef.current = cloudSyncReducer(internalRef.current, action);
+          cloudDispatch(action);
         }
         throw err;
       }
     });
     return lockResult.executed ? lockResult.result : 'lock-held';
-  }, [updateCloudMetadata, applyCreatedResult, mutationLockRef, dataVersionRef, getJwt, internalRef, appStateRef, activeLocalIdRef, setInternal, dispatch, lastFreshnessCheckRef]);
+  }, [updateCloudMetadata, applyCreatedResult, mutationLockRef, dataVersionRef, getJwt, internalRef, appStateRef, activeLocalIdRef, cloudDispatch, dispatch, lastFreshnessCheckRef]);
 
   const fork = useCallback(async () => {
     if (!isCloudEnabled()) return;
@@ -439,7 +443,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
     }
 
     await withMutationLock(mutationLockRef, async () => {
-      setInternal((prev) => cloudSyncReducer(prev, { type: 'BEGIN_SAVE' }));
+      cloudDispatch({ type: 'BEGIN_SAVE' });
       try {
         const attemptDataVersion = dataVersionRef.current;
         const jsonPayload = exportToObject(appStateRef.current);
@@ -448,16 +452,16 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
         if (result.kind !== 'created') throw new Error('Failed to save copy.');
         applyCreatedResult(result, attemptDataVersion, dataVersionRef.current !== attemptDataVersion);
       } catch (err) {
-        setInternal((prev) => cloudSyncReducer(prev, { type: 'OP_FAILED', error: friendlyErrorMessage(err, 'Failed to save copy.') }));
+        cloudDispatch({ type: 'OP_FAILED', error: friendlyErrorMessage(err, 'Failed to save copy.') });
       }
     });
-  }, [applyCreatedResult, mutationLockRef, dataVersionRef, getJwt, appStateRef, setInternal]);
+  }, [applyCreatedResult, mutationLockRef, dataVersionRef, getJwt, appStateRef, cloudDispatch]);
 
   const deleteFromCloud = useCallback(async () => {
     const { cloudId, isOwner, storage } = internalRef.current;
     if (!cloudId || !isOwner || storage !== 'cloud') return;
     await withMutationLock(mutationLockRef, async () => {
-      setInternal((prev) => cloudSyncReducer(prev, { type: 'BEGIN_DELETE' }));
+      cloudDispatch({ type: 'BEGIN_DELETE' });
       try {
         const jwt = requireJwt(getJwt);
         await deleteProjectFromCloudImpl(cloudId, jwt);
@@ -466,25 +470,25 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
         if (currentLocalId) {
           const metadataResult = updateCloudMetadata(currentLocalId, CLEARED_CLOUD_METADATA);
           if (!metadataResult.ok) {
-            setInternal((prev) => cloudSyncReducer(prev, {
+            cloudDispatch({
               type: 'OP_FAILED',
               error: 'Cloud project was deleted, but local cloud metadata could not be updated.',
-            }));
+            });
             return;
           }
         }
 
         clearCloudUrl();
-        setInternal(initialInternalState);
+        cloudDispatch({ type: 'LIFECYCLE_RESET' });
       } catch (err) {
-        setInternal((prev) => cloudSyncReducer(prev, { type: 'OP_FAILED', error: friendlyErrorMessage(err, 'Failed to delete project.') }));
+        cloudDispatch({ type: 'OP_FAILED', error: friendlyErrorMessage(err, 'Failed to delete project.') });
       }
     });
-  }, [updateCloudMetadata, mutationLockRef, getJwt, internalRef, activeLocalIdRef, setInternal]);
+  }, [updateCloudMetadata, mutationLockRef, getJwt, internalRef, activeLocalIdRef, cloudDispatch]);
 
   const setVisibility = useCallback(async (v: Visibility) => {
     const { cloudId, isOwner, visibility: previousVisibility } = internalRef.current;
-    setInternal((prev) => cloudSyncReducer(prev, { type: 'SET_VISIBILITY', visibility: v }));
+    cloudDispatch({ type: 'SET_VISIBILITY', visibility: v });
 
     if (cloudId && isOwner) {
       try {
@@ -498,27 +502,27 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
         if (currentLocalId) {
           const metadataResult = applyVisibilityWrite(updateCloudMetadata, currentLocalId, v, updatedAt);
           if (!metadataResult.ok) {
-            setInternal((prev) => cloudSyncReducer(prev, {
+            cloudDispatch({
               type: 'REVERT_VISIBILITY',
               visibility: previousVisibility,
               error: 'Visibility changed on server, but local metadata could not be updated.',
-            }));
+            });
           }
         }
       } catch (err) {
         // Revert on failure and show error
-        setInternal((prev) => cloudSyncReducer(prev, {
+        cloudDispatch({
           type: 'REVERT_VISIBILITY',
           visibility: previousVisibility,
           error: friendlyErrorMessage(err, 'Failed to update visibility.'),
-        }));
+        });
       }
     }
-  }, [updateCloudMetadata, getJwt, internalRef, activeLocalIdRef, setInternal]);
+  }, [updateCloudMetadata, getJwt, internalRef, activeLocalIdRef, cloudDispatch]);
 
   const loadCloudProject = useCallback(
     async (cloudId: string) => {
-      setInternal((prev) => cloudSyncReducer(prev, { type: 'BEGIN_LOAD', cloudId }));
+      cloudDispatch({ type: 'BEGIN_LOAD', cloudId });
       try {
         // JWT is intentionally optional — unauthenticated users can load public/unlisted projects
         const jwt = getJwt();
@@ -553,10 +557,10 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
             },
           });
           if (!localId) {
-            setInternal((prev) => cloudSyncReducer(prev, {
+            cloudDispatch({
               type: 'OP_FAILED',
               error: 'Cloud project loaded, but the local workspace could not be created.',
-            }));
+            });
             return;
           }
           activeLocalIdRef.current = localId;
@@ -570,10 +574,10 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
             hasUnsyncedChanges: false,
           });
           if (!metadataResult.ok) {
-            setInternal((prev) => cloudSyncReducer(prev, {
+            cloudDispatch({
               type: 'OP_FAILED',
               error: 'Cloud project loaded, but local cloud metadata could not be persisted.',
-            }));
+            });
             return;
           }
           dispatch({
@@ -584,10 +588,10 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
             addressUnitBits: importResult.addressUnitBits,
           });
         } else if (!loadAsUnsaved(importResult, name, 'cloud')) {
-          setInternal((prev) => cloudSyncReducer(prev, {
+          cloudDispatch({
             type: 'OP_FAILED',
             error: 'Cloud project loaded, but the unsaved workspace could not be created.',
-          }));
+          });
           return;
         }
 
@@ -595,9 +599,9 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
         // (REQUEST_BASELINE → baseline {untracked}; replaces needsVersionSyncRef).
         // LOAD_SUCCEEDED merges over this, but does not touch `baseline`, so the
         // awaiting-capture marker survives until the engine clears it.
-        setInternal((prev) => cloudSyncReducer(prev, { type: 'REQUEST_BASELINE' }));
+        cloudDispatch({ type: 'REQUEST_BASELINE' });
 
-        setInternal((prev) => cloudSyncReducer(prev, {
+        cloudDispatch({
           type: 'LOAD_SUCCEEDED',
           seed: {
             cloudId,
@@ -609,23 +613,23 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
             serverVersion: importResult.version,
             visibility: importResult.visibility,
           },
-        }));
+        });
       } catch (err) {
         if (err instanceof ApiError && err.status === 404) {
-          setInternal((prev) => cloudSyncReducer(prev, {
+          cloudDispatch({
             type: 'LOAD_FAILED',
             error: 'Project not found \u2014 it may have been deleted.',
             clearCloudId: true,
-          }));
+          });
           return;
         }
-        setInternal((prev) => cloudSyncReducer(prev, {
+        cloudDispatch({
           type: 'LOAD_FAILED',
           error: friendlyErrorMessage(err, 'Failed to load project.'),
-        }));
+        });
       }
     },
-    [activeLocalIdRef, createNewProject, dispatch, loadAsUnsaved, getJwt, setInternal, updateCloudMetadata],
+    [activeLocalIdRef, createNewProject, dispatch, loadAsUnsaved, getJwt, cloudDispatch, updateCloudMetadata],
   );
 
   const ops = useMemo(

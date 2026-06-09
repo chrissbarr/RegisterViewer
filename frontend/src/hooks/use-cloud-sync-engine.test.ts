@@ -1,7 +1,7 @@
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import { useCloudSyncEngine, deriveSyncStatus, type UseCloudSyncEngineDeps } from './use-cloud-sync-engine';
-import { cleanBaseline, untrackedBaseline } from '../utils/cloud-sync-reducer';
+import { cleanBaseline, untrackedBaseline, cloudSyncReducer, type CloudSyncAction } from '../utils/cloud-sync-reducer';
 import { initialInternalState, type InternalCloudSyncState } from '../types/cloud-sync';
 
 vi.mock('../constants', () => ({
@@ -31,7 +31,7 @@ function makeDeps(overrides: Record<string, any> = {}): UseCloudSyncEngineDeps {
   return {
     dataDeps: overrides.dataDeps ?? makeDataDeps(),
     internal: overrides.internal ?? makeInternal(),
-    setInternal: overrides.setInternal ?? vi.fn(),
+    dispatch: overrides.dispatch ?? vi.fn(),
     canAutoSync: overrides.canAutoSync ?? false,
     getJwt: overrides.getJwt ?? vi.fn(() => 'mock-jwt'),
     saveToCloud: overrides.saveToCloud ?? vi.fn(() => Promise.resolve('saved' as const)),
@@ -39,25 +39,23 @@ function makeDeps(overrides: Record<string, any> = {}): UseCloudSyncEngineDeps {
 }
 
 /**
- * Render the engine with a LIVE reducer-backed `internal`: every `setInternal`
- * dispatch (functional updater) is applied to a mutable internal object and the
- * hook is rerendered. This lets the S9 `asyncTransient` overlay (and the S8
- * baseline-capture handshake) flow back into the rendered state so `syncStatus`
- * derivations observe the dispatched transient — replacing the former white-box
+ * Render the engine with a LIVE reducer-backed `internal`: every dispatched
+ * action is reduced into a mutable internal object and the hook is rerendered.
+ * This lets the S9 `asyncTransient` overlay (and the S8 baseline-capture
+ * handshake) flow back into the rendered state so `syncStatus` derivations
+ * observe the dispatched transient — replacing the former white-box
  * `asyncOverride` useState that the engine owned directly.
  */
 function renderEngineWithLiveInternal(initial: InternalCloudSyncState, overrides: Record<string, unknown> = {}) {
   let internal = initial;
   let mounted = true;
-  const setInternal = vi.fn((updater: unknown) => {
-    internal = typeof updater === 'function'
-      ? (updater as (prev: InternalCloudSyncState) => InternalCloudSyncState)(internal)
-      : (updater as InternalCloudSyncState);
+  const dispatch = vi.fn((action: CloudSyncAction) => {
+    internal = cloudSyncReducer(internal, action);
     rerenderInternal();
   });
   let rerenderInternal = () => {};
 
-  const baseDeps = makeDeps({ ...overrides, internal, setInternal });
+  const baseDeps = makeDeps({ ...overrides, internal, dispatch });
   const utils = renderHook(
     (props: UseCloudSyncEngineDeps) => useCloudSyncEngine(props),
     { initialProps: baseDeps },
@@ -83,7 +81,7 @@ function renderEngineWithLiveInternal(initial: InternalCloudSyncState, overrides
 
   return {
     ...utils,
-    setInternal,
+    dispatch,
     getInternal: () => internal,
     unmount: () => {
       mounted = false;
@@ -125,10 +123,10 @@ describe('deriveSyncStatus', () => {
 
 describe('useCloudSyncEngine - dirty tracking', () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let setInternal: Mock<any>;
+  let dispatch: Mock<any>;
 
   beforeEach(() => {
-    setInternal = vi.fn();
+    dispatch = vi.fn();
   });
 
   // ── Initial state ────────────────────────────────────────────────
@@ -136,7 +134,7 @@ describe('useCloudSyncEngine - dirty tracking', () => {
   describe('initial state', () => {
     it('initializes isDirty as false when there is no cloudId', () => {
       const { result } = renderHook(() =>
-        useCloudSyncEngine(makeDeps({ setInternal })),
+        useCloudSyncEngine(makeDeps({ dispatch })),
       );
       expect(result.current.isDirty).toBe(false);
     });
@@ -145,7 +143,7 @@ describe('useCloudSyncEngine - dirty tracking', () => {
       const { result } = renderHook(() =>
         useCloudSyncEngine(makeDeps({
           internal: makeInternal({ cloudId: 'cloud-1', baseline: cleanBaseline(1) }),
-          setInternal,
+          dispatch,
         })),
       );
       expect(result.current.isDirty).toBe(false);
@@ -153,7 +151,7 @@ describe('useCloudSyncEngine - dirty tracking', () => {
 
     it('returns ref objects for dataVersion and mutationLock', () => {
       const { result } = renderHook(() =>
-        useCloudSyncEngine(makeDeps({ setInternal })),
+        useCloudSyncEngine(makeDeps({ dispatch })),
       );
       expect(result.current.dataVersionRef).toHaveProperty('current');
       expect(result.current.mutationLockRef).toHaveProperty('current');
@@ -167,7 +165,7 @@ describe('useCloudSyncEngine - dirty tracking', () => {
       const deps = makeDeps({
         dataDeps: makeDataDeps(),
         internal: makeInternal({ cloudId: 'cloud-1', baseline: cleanBaseline(1) }),
-        setInternal,
+        dispatch,
       });
 
       const { result, rerender } = renderHook(
@@ -188,7 +186,7 @@ describe('useCloudSyncEngine - dirty tracking', () => {
       const deps = makeDeps({
         dataDeps: makeDataDeps(),
         internal: makeInternal({ cloudId: 'cloud-1', baseline: cleanBaseline(1) }),
-        setInternal,
+        dispatch,
       });
 
       const { result, rerender } = renderHook(
@@ -208,7 +206,7 @@ describe('useCloudSyncEngine - dirty tracking', () => {
       const deps = makeDeps({
         dataDeps,
         internal: makeInternal({ cloudId: 'cloud-1', baseline: cleanBaseline(1) }),
-        setInternal,
+        dispatch,
       });
 
       const { result, rerender } = renderHook(
@@ -229,7 +227,7 @@ describe('useCloudSyncEngine - dirty tracking', () => {
       const deps = makeDeps({
         dataDeps,
         internal: makeInternal({ cloudId: 'cloud-1', baseline: cleanBaseline(1) }),
-        setInternal,
+        dispatch,
       });
 
       const { result, rerender } = renderHook(
@@ -249,7 +247,7 @@ describe('useCloudSyncEngine - dirty tracking', () => {
       const deps = makeDeps({
         dataDeps: makeDataDeps(),
         internal: makeInternal({ cloudId: null, baseline: cleanBaseline(0) }),
-        setInternal,
+        dispatch,
       });
 
       const { result, rerender } = renderHook(
@@ -268,7 +266,7 @@ describe('useCloudSyncEngine - dirty tracking', () => {
       const deps = makeDeps({
         dataDeps: makeDataDeps(),
         internal: makeInternal({ cloudId: 'cloud-1', baseline: untrackedBaseline() }),
-        setInternal,
+        dispatch,
       });
 
       const { result, rerender } = renderHook(
@@ -292,7 +290,7 @@ describe('useCloudSyncEngine - dirty tracking', () => {
       const deps = makeDeps({
         dataDeps,
         internal: makeInternal({ cloudId: 'cloud-1', baseline: cleanBaseline(1) }),
-        setInternal,
+        dispatch,
       });
 
       const { result, rerender } = renderHook(
@@ -311,7 +309,7 @@ describe('useCloudSyncEngine - dirty tracking', () => {
     it('transitions dirty -> clean when the baseline catches up after data change', () => {
       const dataDeps = makeDataDeps();
       const internal = makeInternal({ cloudId: 'cloud-1', baseline: cleanBaseline(1) });
-      const deps = makeDeps({ dataDeps, internal, setInternal });
+      const deps = makeDeps({ dataDeps, internal, dispatch });
 
       const { result, rerender } = renderHook(
         (props: UseCloudSyncEngineDeps) => useCloudSyncEngine(props),
@@ -339,14 +337,14 @@ describe('useCloudSyncEngine - dirty tracking', () => {
   describe('baseline-capture handshake', () => {
     // The engine no longer owns a `needsVersionSyncRef`; the "awaiting capture"
     // marker now lives on reducer state as `baseline:{untracked}` (S14a) gated by
-    // `cloudId !== null`, and the engine dispatches CAPTURE_BASELINE (via
-    // setInternal) on its next effect tick. These tests re-express the SAME
-    // capture behavior against the baseline union.
+    // `cloudId !== null`, and the engine dispatches CAPTURE_BASELINE on its next
+    // effect tick. These tests re-express the SAME capture behavior against the
+    // baseline union.
 
     it('dispatches CAPTURE_BASELINE with the post-increment version when awaiting and data changed', () => {
       const dataDeps = makeDataDeps();
       const internal = makeInternal({ cloudId: 'cloud-1', baseline: untrackedBaseline() });
-      const deps = makeDeps({ dataDeps, internal, setInternal });
+      const deps = makeDeps({ dataDeps, internal, dispatch });
 
       const { result, rerender } = renderHook(
         (props: UseCloudSyncEngineDeps) => useCloudSyncEngine(props),
@@ -356,9 +354,9 @@ describe('useCloudSyncEngine - dirty tracking', () => {
       // Trigger a data change to fire the effect (capture is post-increment).
       rerender({ ...deps, internal, dataDeps: makeDataDeps({ registers: [{ id: 'r3' }] }) });
 
-      expect(setInternal).toHaveBeenCalled();
-      const updater = setInternal.mock.calls[setInternal.mock.calls.length - 1][0] as (prev: InternalCloudSyncState) => InternalCloudSyncState;
-      const updated = updater(internal);
+      expect(dispatch).toHaveBeenCalled();
+      const action = dispatch.mock.calls[dispatch.mock.calls.length - 1][0] as CloudSyncAction;
+      const updated = cloudSyncReducer(internal, action);
       // Captured at the post-increment generation (the off-by-one guard) as a
       // clean baseline (clears the untracked awaiting marker).
       expect(updated.baseline).toEqual(cleanBaseline(result.current.dataVersionRef.current));
@@ -367,7 +365,7 @@ describe('useCloudSyncEngine - dirty tracking', () => {
     it('captures current version without bump when data deps did not change', () => {
       const dataDeps = makeDataDeps();
       const internal = makeInternal({ cloudId: 'cloud-1', baseline: untrackedBaseline() });
-      const deps = makeDeps({ dataDeps, internal, setInternal });
+      const deps = makeDeps({ dataDeps, internal, dispatch });
 
       const { result, rerender } = renderHook(
         (props: UseCloudSyncEngineDeps) => useCloudSyncEngine(props),
@@ -382,9 +380,9 @@ describe('useCloudSyncEngine - dirty tracking', () => {
         internal: makeInternal({ cloudId: 'cloud-1', baseline: untrackedBaseline() }),
       });
 
-      expect(setInternal).toHaveBeenCalled();
-      const updater = setInternal.mock.calls[setInternal.mock.calls.length - 1][0] as (prev: InternalCloudSyncState) => InternalCloudSyncState;
-      const updated = updater(makeInternal({ cloudId: 'cloud-1', baseline: untrackedBaseline() }));
+      expect(dispatch).toHaveBeenCalled();
+      const action = dispatch.mock.calls[dispatch.mock.calls.length - 1][0] as CloudSyncAction;
+      const updated = cloudSyncReducer(makeInternal({ cloudId: 'cloud-1', baseline: untrackedBaseline() }), action);
       // Version should not have bumped since data deps are same references
       expect(updated.baseline).toEqual(cleanBaseline(versionBeforeSync));
     });
@@ -392,7 +390,7 @@ describe('useCloudSyncEngine - dirty tracking', () => {
     it('early-returns before isDirty update when awaiting baseline capture', () => {
       const dataDeps = makeDataDeps();
       const internal = makeInternal({ cloudId: 'cloud-1', baseline: untrackedBaseline() });
-      const deps = makeDeps({ dataDeps, internal, setInternal });
+      const deps = makeDeps({ dataDeps, internal, dispatch });
 
       const { result, rerender } = renderHook(
         (props: UseCloudSyncEngineDeps) => useCloudSyncEngine(props),
@@ -412,7 +410,7 @@ describe('useCloudSyncEngine - dirty tracking', () => {
   describe('mutationLockRef', () => {
     it('is initialized to false', () => {
       const { result } = renderHook(() =>
-        useCloudSyncEngine(makeDeps({ setInternal })),
+        useCloudSyncEngine(makeDeps({ dispatch })),
       );
       expect(result.current.mutationLockRef.current).toBe(false);
     });
@@ -420,7 +418,7 @@ describe('useCloudSyncEngine - dirty tracking', () => {
     it('can be set externally and retains its value across rerenders', () => {
       const dataDeps = makeDataDeps();
       const internal = makeInternal();
-      const deps = makeDeps({ dataDeps, internal, setInternal });
+      const deps = makeDeps({ dataDeps, internal, dispatch });
 
       const { result, rerender } = renderHook(
         (props: UseCloudSyncEngineDeps) => useCloudSyncEngine(props),
@@ -441,7 +439,7 @@ describe('useCloudSyncEngine - dirty tracking', () => {
   describe('dataVersionRef increments', () => {
     it('starts at 1 after initial render (sentinel -> real data)', () => {
       const { result } = renderHook(() =>
-        useCloudSyncEngine(makeDeps({ setInternal })),
+        useCloudSyncEngine(makeDeps({ dispatch })),
       );
       expect(result.current.dataVersionRef.current).toBe(1);
     });
@@ -449,7 +447,7 @@ describe('useCloudSyncEngine - dirty tracking', () => {
     it('increments on each data dep change', () => {
       const dataDeps = makeDataDeps();
       const internal = makeInternal();
-      const deps = makeDeps({ dataDeps, internal, setInternal });
+      const deps = makeDeps({ dataDeps, internal, dispatch });
 
       const { result, rerender } = renderHook(
         (props: UseCloudSyncEngineDeps) => useCloudSyncEngine(props),
@@ -470,7 +468,7 @@ describe('useCloudSyncEngine - dirty tracking', () => {
 
     it('does not increment when data deps are the same reference', () => {
       const dataDeps = makeDataDeps();
-      const deps = makeDeps({ dataDeps, internal: makeInternal(), setInternal });
+      const deps = makeDeps({ dataDeps, internal: makeInternal(), dispatch });
 
       const { result, rerender } = renderHook(
         (props: UseCloudSyncEngineDeps) => useCloudSyncEngine(props),
@@ -489,7 +487,7 @@ describe('useCloudSyncEngine - dirty tracking', () => {
       const deps = makeDeps({
         dataDeps,
         internal: makeInternal({ cloudId: 'c1', baseline: cleanBaseline(1) }),
-        setInternal,
+        dispatch,
       });
 
       const { result, rerender } = renderHook(
