@@ -174,4 +174,268 @@ describe('cloudSyncReducer', () => {
       expect(next).toBe(prev);
     });
   });
+
+  describe('active-ops named actions (S5)', () => {
+    it('BEGIN_SAVE sets saving status and clears error', () => {
+      const prev: InternalCloudSyncState = {
+        ...initialInternalState,
+        cloudId: 'abc',
+        error: 'old',
+      };
+      const next = cloudSyncReducer(prev, { type: 'BEGIN_SAVE' });
+      expect(next).toEqual({ ...prev, status: 'saving', error: null });
+    });
+
+    it('MARK_SAVED records the updated arm fields and clears conflict', () => {
+      const prev: InternalCloudSyncState = {
+        ...initialInternalState,
+        cloudId: 'abc',
+        status: 'saving',
+        serverVersion: 2,
+        lastSavedVersion: 1,
+        conflict: { serverVersion: 9 },
+      };
+      const next = cloudSyncReducer(prev, {
+        type: 'MARK_SAVED',
+        cloudSavedAt: '2026-03-03T00:00:00Z',
+        serverVersion: 3,
+        baselineVersion: 4,
+      });
+      expect(next).toEqual({
+        ...prev,
+        status: 'idle',
+        lastCloudSavedAt: '2026-03-03T00:00:00Z',
+        lastSavedVersion: 4,
+        serverVersion: 3,
+        conflict: null,
+      });
+    });
+
+    it('MARK_CREATED performs the local→cloud transition', () => {
+      const prev: InternalCloudSyncState = {
+        ...initialInternalState,
+        status: 'saving',
+        storage: 'local',
+        lastSavedVersion: 2,
+      };
+      const next = cloudSyncReducer(prev, {
+        type: 'MARK_CREATED',
+        cloudId: 'cloud9',
+        shareUrl: 'https://example/p/cloud9',
+        cloudSavedAt: '2026-04-04T00:00:00Z',
+        serverVersion: 1,
+        baselineVersion: 5,
+      });
+      expect(next).toEqual({
+        ...prev,
+        cloudId: 'cloud9',
+        isOwner: true,
+        storage: 'cloud',
+        status: 'idle',
+        shareUrl: 'https://example/p/cloud9',
+        lastCloudSavedAt: '2026-04-04T00:00:00Z',
+        lastSavedVersion: 5,
+        serverVersion: 1,
+        conflict: null,
+      });
+    });
+
+    it('RECORD_SERVER_VERSION sets only serverVersion', () => {
+      const prev: InternalCloudSyncState = {
+        ...initialInternalState,
+        cloudId: 'abc',
+        status: 'saving',
+        serverVersion: 2,
+      };
+      const next = cloudSyncReducer(prev, { type: 'RECORD_SERVER_VERSION', serverVersion: 7 });
+      expect(next).toEqual({ ...prev, serverVersion: 7 });
+    });
+
+    it('NOT_FOUND_CLEARED clears cloud identity and sets the error', () => {
+      const prev: InternalCloudSyncState = {
+        ...initialInternalState,
+        cloudId: 'abc',
+        isOwner: true,
+        status: 'saving',
+        shareUrl: 'https://example/p/abc',
+        lastCloudSavedAt: '2026-01-01T00:00:00Z',
+        visibility: 'unlisted',
+      };
+      const next = cloudSyncReducer(prev, { type: 'NOT_FOUND_CLEARED', error: 'gone' });
+      expect(next).toEqual({
+        ...prev,
+        cloudId: null,
+        isOwner: false,
+        status: 'idle',
+        shareUrl: null,
+        lastCloudSavedAt: null,
+        visibility: 'private',
+        error: 'gone',
+      });
+    });
+
+    it('CONFLICT_DIRTY sets idle, serverVersion, and the conflict marker', () => {
+      const prev: InternalCloudSyncState = {
+        ...initialInternalState,
+        cloudId: 'abc',
+        status: 'saving',
+        serverVersion: 2,
+      };
+      const next = cloudSyncReducer(prev, { type: 'CONFLICT_DIRTY', serverVersion: 5 });
+      expect(next).toEqual({
+        ...prev,
+        status: 'idle',
+        serverVersion: 5,
+        conflict: { serverVersion: 5 },
+      });
+    });
+
+    it('CONFLICT_CLEAN sets idle and serverVersion but no conflict yet', () => {
+      const prev: InternalCloudSyncState = {
+        ...initialInternalState,
+        cloudId: 'abc',
+        status: 'saving',
+        serverVersion: 2,
+      };
+      const next = cloudSyncReducer(prev, { type: 'CONFLICT_CLEAN', serverVersion: 5 });
+      expect(next).toEqual({ ...prev, status: 'idle', serverVersion: 5 });
+      expect(next.conflict).toBeNull();
+    });
+
+    it('SET_CONFLICT sets only the conflict marker', () => {
+      const prev: InternalCloudSyncState = {
+        ...initialInternalState,
+        cloudId: 'abc',
+        serverVersion: 5,
+      };
+      const next = cloudSyncReducer(prev, { type: 'SET_CONFLICT', serverVersion: 5 });
+      expect(next).toEqual({ ...prev, conflict: { serverVersion: 5 } });
+    });
+
+    it('BEGIN_DELETE sets deleting status and clears error', () => {
+      const prev: InternalCloudSyncState = {
+        ...initialInternalState,
+        cloudId: 'abc',
+        error: 'old',
+      };
+      const next = cloudSyncReducer(prev, { type: 'BEGIN_DELETE' });
+      expect(next).toEqual({ ...prev, status: 'deleting', error: null });
+    });
+
+    it('SET_VISIBILITY sets only visibility when no cloudSavedAt is given', () => {
+      const prev: InternalCloudSyncState = {
+        ...initialInternalState,
+        cloudId: 'abc',
+        visibility: 'private',
+        lastCloudSavedAt: '2026-01-01T00:00:00Z',
+      };
+      const next = cloudSyncReducer(prev, { type: 'SET_VISIBILITY', visibility: 'unlisted' });
+      expect(next).toEqual({ ...prev, visibility: 'unlisted' });
+      // cloudSavedAt is untouched when not supplied
+      expect(next.lastCloudSavedAt).toBe('2026-01-01T00:00:00Z');
+    });
+
+    it('SET_VISIBILITY advances cloudSavedAt when supplied (A-9 active path)', () => {
+      const prev: InternalCloudSyncState = {
+        ...initialInternalState,
+        cloudId: 'abc',
+        visibility: 'private',
+        lastCloudSavedAt: '2026-01-01T00:00:00Z',
+      };
+      const next = cloudSyncReducer(prev, {
+        type: 'SET_VISIBILITY',
+        visibility: 'unlisted',
+        cloudSavedAt: '2026-05-05T00:00:00Z',
+      });
+      expect(next).toEqual({
+        ...prev,
+        visibility: 'unlisted',
+        lastCloudSavedAt: '2026-05-05T00:00:00Z',
+      });
+    });
+
+    it('REVERT_VISIBILITY restores visibility and sets the error', () => {
+      const prev: InternalCloudSyncState = {
+        ...initialInternalState,
+        cloudId: 'abc',
+        visibility: 'unlisted',
+      };
+      const next = cloudSyncReducer(prev, {
+        type: 'REVERT_VISIBILITY',
+        visibility: 'private',
+        error: 'Failed to update visibility.',
+      });
+      expect(next).toEqual({
+        ...prev,
+        visibility: 'private',
+        error: 'Failed to update visibility.',
+      });
+    });
+
+    it('BEGIN_LOAD sets loading status, clears error, and seeds cloudId', () => {
+      const prev: InternalCloudSyncState = {
+        ...initialInternalState,
+        error: 'old',
+      };
+      const next = cloudSyncReducer(prev, { type: 'BEGIN_LOAD', cloudId: 'abc' });
+      expect(next).toEqual({ ...prev, status: 'loading', error: null, cloudId: 'abc' });
+    });
+
+    it('LOAD_SUCCEEDED merges the import-result seed over prev', () => {
+      const prev: InternalCloudSyncState = {
+        ...initialInternalState,
+        status: 'loading',
+        cloudId: 'abc',
+      };
+      const next = cloudSyncReducer(prev, {
+        type: 'LOAD_SUCCEEDED',
+        seed: {
+          cloudId: 'abc',
+          isOwner: true,
+          storage: 'cloud',
+          status: 'idle',
+          shareUrl: 'https://example/p/abc',
+          lastCloudSavedAt: '2026-06-06T00:00:00Z',
+          serverVersion: 5,
+          visibility: 'unlisted',
+        },
+      });
+      expect(next).toEqual({
+        ...prev,
+        cloudId: 'abc',
+        isOwner: true,
+        storage: 'cloud',
+        status: 'idle',
+        shareUrl: 'https://example/p/abc',
+        lastCloudSavedAt: '2026-06-06T00:00:00Z',
+        serverVersion: 5,
+        visibility: 'unlisted',
+      });
+    });
+
+    it('LOAD_FAILED sets idle and error without clearing cloudId by default', () => {
+      const prev: InternalCloudSyncState = {
+        ...initialInternalState,
+        status: 'loading',
+        cloudId: 'abc',
+      };
+      const next = cloudSyncReducer(prev, { type: 'LOAD_FAILED', error: 'boom' });
+      expect(next).toEqual({ ...prev, status: 'idle', error: 'boom' });
+      expect(next.cloudId).toBe('abc');
+    });
+
+    it('LOAD_FAILED clears cloudId when clearCloudId is set', () => {
+      const prev: InternalCloudSyncState = {
+        ...initialInternalState,
+        status: 'loading',
+        cloudId: 'abc',
+      };
+      const next = cloudSyncReducer(prev, {
+        type: 'LOAD_FAILED',
+        error: 'not found',
+        clearCloudId: true,
+      });
+      expect(next).toEqual({ ...prev, status: 'idle', error: 'not found', cloudId: null });
+    });
+  });
 });
