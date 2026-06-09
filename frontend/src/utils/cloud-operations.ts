@@ -1,6 +1,7 @@
 import {
   createProject as apiCreateProject,
   updateProject as apiUpdateProject,
+  getProject as apiGetProject,
   patchProjectVisibility as apiPatchVisibility,
   deleteProject as apiDeleteProject,
   ApiError,
@@ -42,9 +43,10 @@ type SaveResult = SaveCreatedResult | SaveUpdatedResult | SaveNotFoundResult | S
  * - `not-found` — 404 on update (project deleted server-side)
  * - `conflict` — 409 on update (version mismatch)
  *
- * @param serverVersion - Last known server version. Defaults to 1 when omitted
- *   (first save for a project that predates version tracking). Callers should
- *   pass `undefined` explicitly when the version is unknown (serverVersion: 0).
+ * @param serverVersion - Last known server version. When `undefined` (the
+ *   version is unknown — e.g. `serverVersion: 0` not yet fetched), the current
+ *   server version is fetched via GET first and that value is used for the PUT.
+ *   When a known number is passed, the PUT uses it directly with no extra GET.
  */
 export async function saveProjectToCloudImpl(
   jsonPayload: unknown,
@@ -54,13 +56,14 @@ export async function saveProjectToCloudImpl(
 ): Promise<SaveResult> {
   if (existingCloudId) {
     try {
-      const result = await apiUpdateProject(
-        existingCloudId,
-        jsonPayload,
-        jwt,
-        // Default to version 1 for projects created before version tracking existed.
-        serverVersion ?? 1,
-      );
+      // Unknown version: GET the current server version first, then PUT with it.
+      // A known version PUTs directly — no extra round-trip.
+      let putVersion = serverVersion;
+      if (putVersion === undefined) {
+        const current = await apiGetProject(existingCloudId, jwt);
+        putVersion = current.version;
+      }
+      const result = await apiUpdateProject(existingCloudId, jsonPayload, jwt, putVersion);
       return {
         kind: 'updated',
         cloudId: existingCloudId,
