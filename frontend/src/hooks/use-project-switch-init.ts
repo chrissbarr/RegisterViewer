@@ -6,7 +6,8 @@ import { saveProjectToCloudImpl } from '../utils/cloud-operations';
 import { checkAndPullFreshVersion, type FreshnessCheckContext } from '../utils/cloud-freshness';
 import { isOwnedCloudEntry } from '../utils/project-identity';
 import { positiveVersion, normalizeServerVersion } from '../utils/cloud-sync';
-import { type CloudSyncCore, initialInternalState } from '../types/cloud-sync';
+import { cloudSyncReducer } from '../utils/cloud-sync-reducer';
+import { type CloudSyncCore } from '../types/cloud-sync';
 import type { CloudMetadataUpdate } from '../types/cloud-sync';
 import type { ProjectListEntry } from '../types/project';
 import type { ImportStateAction } from '../context/app-context';
@@ -164,7 +165,7 @@ export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
     if (!activeLocalId) {
       if (prevLocalId) {
         if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
-        setInternal(initialInternalState);
+        setInternal((prev) => cloudSyncReducer(prev, { type: 'LIFECYCLE_RESET' }));
         clearCloudUrl();
       }
       return;
@@ -180,7 +181,7 @@ export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
     const storage: 'cloud' | 'local' = cloudId ? 'cloud' : 'local';
     const isOwner = storage === 'cloud';
     if (cloudId === null) {
-      setInternal(initialInternalState);
+      setInternal((prev) => cloudSyncReducer(prev, { type: 'INIT_LOCAL', storage }));
       clearCloudUrl();
     } else {
       const conflictVersion = ownedEntry?.cloudConflictVersion ?? ownedProject?.cloudConflictVersion ?? null;
@@ -205,7 +206,7 @@ export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
         conflict: conflictVersion ? { serverVersion: conflictVersion } : null,
       };
       internalRef.current = next;
-      setInternal(next);
+      setInternal((prev) => cloudSyncReducer(prev, { type: 'INIT_CLOUD', seed: next }));
 
       // Freshness check for incoming project
       const jwt = getJwt();

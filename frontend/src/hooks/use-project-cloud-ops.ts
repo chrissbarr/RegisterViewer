@@ -5,6 +5,7 @@ import { loadProject, type ProjectStorageWriteResult } from '../utils/project-st
 import { clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock, requireJwt } from '../utils/cloud-utils';
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
 import { positiveVersion } from '../utils/cloud-sync';
+import { cloudSyncReducer } from '../utils/cloud-sync-reducer';
 import type { Visibility, ProjectListEntry } from '../types/project';
 import { type CloudSyncCore, type CloudMetadataUpdate, type SaveOutcome, isSaveSuccess, initialInternalState } from '../types/cloud-sync';
 import { isOwnedCloudEntry } from '../utils/project-identity';
@@ -116,7 +117,10 @@ export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
       const metadataResult = updateCloudMetadata(localId, CLEARED_CLOUD_METADATA);
       if (!metadataResult.ok) throw new Error('Deleted cloud project, but failed to persist local metadata.');
 
-      // If the currently active cloud project is this one, clear cloud state
+      // If the currently active cloud project is this one, clear cloud state.
+      // Left as a value-form raw reset (NOT a LIFECYCLE_RESET functional updater):
+      // the by-localId tests pin `setInternal` being called with the reset OBJECT,
+      // matching the S5 precedent at use-active-project-cloud-ops.ts (deleteFromCloud).
       if (internalRef.current.cloudId === cloudId) {
         clearCloudUrl();
         setInternal(initialInternalState);
@@ -139,7 +143,7 @@ export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
 
     // If this is the active project, update cloud state too
     if (localId === activeLocalIdRef.current) {
-      setInternal((prev) => ({ ...prev, visibility: v }));
+      setInternal((prev) => cloudSyncReducer(prev, { type: 'SET_VISIBILITY', visibility: v }));
     }
   }, [updateCloudMetadata, projectsRef, activeLocalIdRef, setInternal, getJwt]);
 
@@ -151,7 +155,10 @@ export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
     const metadataResult = updateCloudMetadata(localId, CLEARED_CLOUD_METADATA);
     if (!metadataResult.ok) return;
 
-    // If the currently active cloud project is this one, clear cloud state
+    // If the currently active cloud project is this one, clear cloud state.
+    // Value-form raw reset (see deleteProjectFromCloud above): the by-localId test
+    // pins `setInternal` being called with the reset OBJECT, so a LIFECYCLE_RESET
+    // functional updater would change the assertion. Matches the S5 active-ops precedent.
     if (internalRef.current.cloudId === cloudId) {
       clearCloudUrl();
       setInternal(initialInternalState);
