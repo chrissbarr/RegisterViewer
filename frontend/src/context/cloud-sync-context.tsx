@@ -25,7 +25,7 @@
  *   without needing the state in their dependency arrays.
  * - **Mutation lock**: `withMutationLock` prevents concurrent cloud operations.
  */
-import { createContext, useContext, useCallback, useState, useMemo, useRef, useEffect, type ReactNode, type MutableRefObject, type Dispatch, type SetStateAction } from 'react';
+import { createContext, useContext, useCallback, useReducer, useMemo, useRef, useEffect, type ReactNode, type MutableRefObject, type Dispatch, type SetStateAction } from 'react';
 import { useAppState, useAppDispatch } from './app-context';
 import type { AppState } from '../types/register';
 import { useProjectStorage, useProjectStorageActions } from './project-storage-context';
@@ -52,6 +52,7 @@ import { useCloudSyncEngine, type SyncStatus } from '../hooks/use-cloud-sync-eng
 import { useAuthTransition } from '../hooks/use-auth-transition';
 import { useProjectSwitchInit } from '../hooks/use-project-switch-init';
 import { syncCloudProjectsFromServer, positiveVersion, normalizeServerVersion } from '../utils/cloud-sync';
+import { cloudSyncReducer, type CloudSyncAction } from '../utils/cloud-sync-reducer';
 import { checkAndPullFreshVersion, type FreshnessCheckContext } from '../utils/cloud-freshness';
 import { isOwnedCloudEntry } from '../utils/project-identity';
 import type { Visibility } from '../types/project';
@@ -330,7 +331,24 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   const { user: authUser } = useAuth();
   const { getJwt, registerPreLogout } = useAuthActions();
 
-  const [internal, setInternal] = useState<InternalCloudSyncState>(initialInternalState);
+  // S3: state now lives behind a reducer (`cloudSyncReducer`) so later slices can
+  // convert writers to named actions. For this slice the reducer has a single
+  // `__RAW` action that applies its updater verbatim, and `setInternal` is a
+  // behavior-identical shim preserving both `setState` overloads (value form and
+  // functional-updater form). Every existing caller is unchanged.
+  const [internal, dispatch__internal] = useReducer(cloudSyncReducer, initialInternalState);
+  const setInternal = useCallback<Dispatch<SetStateAction<InternalCloudSyncState>>>(
+    (u) => {
+      const action: CloudSyncAction = {
+        type: '__RAW',
+        updater: typeof u === 'function'
+          ? (u as (prev: InternalCloudSyncState) => InternalCloudSyncState)
+          : () => u,
+      };
+      dispatch__internal(action);
+    },
+    [],
+  );
 
   const activeLocalIdRef = useRef(activeLocalId);
   useEffect(() => {
@@ -352,14 +370,19 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   // running later in the same commit — which also breaks under React StrictMode's
   // double-invocation of effects. Do not move to useEffect without verifying the
   // initFromProject race described in the CloudSyncProvider docstring.
+  // S3 landmine: the useState→useReducer swap does NOT change same-commit
+  // `.current` visibility. This render-time mirror, and the inline synchronous
+  // `internalRef.current = next` writes that precede a state write below, are
+  // correctness devices that MUST be retained — dispatching a `__RAW` action does
+  // not make the next state visible to refs within the same commit either.
   const internalRef = useRef(internal);
   internalRef.current = internal; // intentional render-time sync; see docstring above
 
   // Shared refs passed to all cloud sync hooks (AR-1: reduces per-hook param count).
-  // All items are stable across renders (refs, useState setter, module-level const).
+  // All items are stable across renders (refs, the stable setInternal shim).
   const core: CloudSyncCore = useMemo(
     () => ({ internalRef, activeLocalIdRef, setInternal }),
-    [],
+    [setInternal],
   );
 
   // Ref to avoid stale closures in save/fork callbacks.
@@ -470,12 +493,12 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
         setInternal(next);
       }
     },
-    [dataVersionRef],
+    [dataVersionRef, setInternal],
   );
 
   const dismissError = useCallback(() => {
     setInternal((prev) => ({ ...prev, error: null }));
-  }, []);
+  }, [setInternal]);
 
   const syncCloudProjects = useCallback(async (): Promise<SyncResult> => {
     const emptyResult: SyncResult = {
@@ -503,7 +526,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       createPlaceholder: (data, options) =>
         createPlaceholderImpl(reconcileDeps, data, options),
     });
-  }, [appStateRef, mutationLockRef, syncTimerRef, updateCloudMetadata, getJwt]);
+  }, [appStateRef, mutationLockRef, syncTimerRef, updateCloudMetadata, getJwt, setInternal]);
 
   // Callback ref: nullable because the callback references state/hooks defined below.
   // Direct assignment in render (not useEffect) ensures it's fresh by the time
@@ -626,7 +649,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       })
       .catch(() => { /* best-effort; ownership stays false */ });
     return () => { cancelled = true; };
-  }, [authUser, getJwt, internal.cloudId, internal.isOwner, saveCurrentProject, updateCloudMetadata, dataVersionRef]);
+  }, [authUser, getJwt, internal.cloudId, internal.isOwner, saveCurrentProject, updateCloudMetadata, dataVersionRef, setInternal]);
 
   // By-localId cloud operations (used by My Projects dialog)
   const projectOps = useProjectCloudOps({
@@ -675,7 +698,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     if (pullResult.applied) {
       setInternal((prev) => ({ ...prev, conflict: null }));
     }
-  }, [freshnessCtx, getJwt]);
+  }, [freshnessCtx, getJwt, setInternal]);
 
   const actions = useMemo(
     () => ({
