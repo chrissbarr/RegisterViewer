@@ -69,9 +69,13 @@ function handleAuthSendCode(
         error_log("DEV OTP for $email: $code");
     }
 
-    // Send email after response is flushed (PERF-05: avoid blocking the PHP
-    // worker for up to 10s while the Resend API completes).  The shutdown
-    // function runs after exit(), so the client gets the response immediately.
+    // Send email after response is flushed (PERF-05: avoid blocking the
+    // client for up to ~5s while the Resend API completes — CURLOPT_TIMEOUT=5
+    // is the total-operation cap).  The shutdown function runs after exit(),
+    // so the client gets the response immediately.  Early worker release
+    // requires fastcgi_finish_request (PHP-FPM) or litespeed_finish_request
+    // (LiteSpeed); on other SAPIs the response is sent but the worker is
+    // held until the send completes.
     register_shutdown_function(function () use ($config, $email, $code): void {
         sendLoginCode($config, $email, $code);
     });

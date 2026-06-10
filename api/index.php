@@ -15,6 +15,7 @@ if (file_exists($prodConfigPath)) {
 require __DIR__ . '/vendor/autoload.php';
 
 require __DIR__ . '/src/api-response.php';
+require __DIR__ . '/src/flush.php';
 require __DIR__ . '/src/time.php';
 require __DIR__ . '/src/database.php';
 require __DIR__ . '/src/cors.php';
@@ -99,10 +100,10 @@ function emitResponse(ApiResponse $response): never
     }
 
     // Flush response to client before shutdown functions run (PERF-05).
-    // On PHP-FPM this is required; on mod_php/CLI it is a harmless no-op.
-    if (function_exists('fastcgi_finish_request')) {
-        fastcgi_finish_request();
-    }
+    // Uses fastcgi_finish_request() on PHP-FPM or litespeed_finish_request()
+    // on LiteSpeed; on mod_php/CLI neither exists and it is a harmless no-op
+    // (the response is still sent at exit, but the worker is held).
+    flushResponseToClient();
 
     exit;
 }
@@ -232,9 +233,15 @@ if ($path === '/api/health' && ($method === 'GET' || $method === 'HEAD')) {
     }
 }
 
-// Email health check: verifies email provider is configured and reachable (DEV-04)
+// Email health check: verifies email provider is configured and reachable (DEV-04).
+// The result is TTL-cached — failures included — so anonymous traffic cannot pin
+// workers on the blocking Resend call or burn provider quota (S-1).
 if ($path === '/api/health/email' && ($method === 'GET' || $method === 'HEAD')) {
-    $result = checkEmailHealth($config);
+    $result = checkEmailHealthCached(
+        $config,
+        __DIR__ . '/database/.email-health-cache.json',
+        EMAIL_HEALTH_CACHE_TTL_SECONDS,
+    );
     if ($result['ok']) {
         emitResponse(new ApiResponse(['status' => 'ok', 'timestamp' => utcIsoTimestamp()]));
     } else {

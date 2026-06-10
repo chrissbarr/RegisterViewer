@@ -430,7 +430,7 @@ Two unauthenticated health endpoints are available for uptime monitoring:
 | Endpoint | Checks | Methods |
 |----------|--------|---------|
 | `GET /api/health` | Database connectivity, required auth secrets, all numbered migrations applied, and required schema shape including `projects.version`, `login_codes.code_verifier`, and auth rate-limit schema | GET, HEAD |
-| `GET /api/health/email` | Resend API key configured + API reachable | GET, HEAD |
+| `GET /api/health/email` | Resend API key configured + API reachable (result cached server-side for 5 minutes) | GET, HEAD |
 
 Both return **200** when healthy and **503** when unhealthy. HEAD requests return only status codes (no body), making them compatible with UptimeRobot free tier.
 Normal API routes use the same migration/schema readiness gate. If readiness cannot be established, they return `503` before route handling.
@@ -444,7 +444,17 @@ Normal API routes use the same migration/schema readiness gate. If readiness can
 3. Set monitoring interval to 5 minutes
 4. Configure email alerts for downtime notifications
 
-The email health endpoint calls `GET https://api.resend.com/api-keys` with a 3-second timeout. It does not send any email - it only verifies the API key is valid and Resend is reachable.
+The email health endpoint calls `GET https://api.resend.com/api-keys` with a 3-second timeout. It does not send any email - it only verifies the API key is valid and Resend is reachable. The result (healthy or not) is cached server-side for 5 minutes in `api/database/.email-health-cache.json`, so at most one live Resend API call is made per 5-minute window regardless of probe traffic — a 5-minute monitoring interval is fine and does not burn Resend quota. The tradeoff: a health-state change (e.g. a revoked API key) can be reported up to 5 minutes late. If the cache file is not writable, the endpoint falls back to one live check per request.
+
+### PHP SAPI and Worker Release
+
+`POST /api/auth/send-code` defers the actual Resend email call via `register_shutdown_function`, so the client gets its response immediately. Whether the PHP *worker* is also released early depends on the SAPI:
+
+- **PHP-FPM:** yes — the API calls `fastcgi_finish_request()` before shutdown functions run.
+- **LiteSpeed (common on cPanel):** yes — the API calls `litespeed_finish_request()` (LSAPI 7.3.1 removed the `fastcgi_finish_request` alias).
+- **mod_php / other SAPIs:** the response is sent, but the worker stays occupied until the Resend call completes — up to ~5s worst case (`CURLOPT_TIMEOUT=5` is the total-operation cap).
+
+After deploying to a new host, a quick `time curl -X POST .../api/auth/send-code` check confirms early release: the response should return in well under a second even when Resend is slow.
 
 ### Email Delivery Logs
 

@@ -79,7 +79,7 @@ GET /api/health/email
 HEAD /api/health/email
 ```
 
-Checks that the Resend API key is configured and the provider API is reachable. This endpoint is also behind the API schema readiness gate.
+Checks that the Resend API key is configured and the provider API is reachable. This endpoint is also behind the API schema readiness gate. The result is cached server-side for 5 minutes (failures included), so at most one live Resend API call is made per window; a health-state change can therefore be reported up to 5 minutes late.
 
 ## Authentication
 

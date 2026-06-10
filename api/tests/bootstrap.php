@@ -19,6 +19,7 @@ $_SERVER['REQUEST_URI'] = '/';
 require __DIR__ . '/../vendor/autoload.php';
 
 require __DIR__ . '/../src/api-response.php';
+require __DIR__ . '/../src/flush.php';
 require __DIR__ . '/../src/time.php';
 // Require source files (order matters: validation.php defines LIMITS constant)
 require __DIR__ . '/../src/validation.php';
