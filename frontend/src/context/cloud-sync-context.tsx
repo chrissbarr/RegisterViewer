@@ -437,12 +437,12 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   // Active-project cloud operations (save, fork, delete, visibility, load)
   // Login guard state (loginRequired, pendingOpRef, dismissLogin) is now
   // absorbed into useActiveProjectCloudOps.
-  const { loginRequired, pendingOpRef, dismissLogin, ...rawActiveOps } = useActiveProjectCloudOps({
+  const { ops: activeOps, loginRequired, pendingOpRef, dismissLogin } = useActiveProjectCloudOps({
     core, appStateRef,
     dataVersionRef, mutationLockRef, lastFreshnessCheckRef,
     updateCloudMetadata, createNewProject, loadAsUnsaved, getJwt, dispatch,
   });
-  saveToCloudRef.current = rawActiveOps.saveToCloud;
+  saveToCloudRef.current = activeOps.saveToCloud;
 
   /**
    * Initialize cloud state for a newly-switched project.
@@ -544,8 +544,8 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   useAuthTransition({
     core, authUser,
     pendingOpRef,
-    saveToCloud: rawActiveOps.saveToCloud,
-    fork: rawActiveOps.fork,
+    saveToCloud: activeOps.saveToCloud,
+    fork: activeOps.fork,
     dismissLogin,
     syncCloudProjectsRef, syncTimerRef,
     refreshProjectList, switchProject, createNewProject,
@@ -666,7 +666,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   const projectOps = useProjectCloudOps({
     core, updateCloudMetadata, projectsRef,
     mutationLockRef, getJwt,
-    activeProjectSave: rawActiveOps.saveToCloud,
+    activeProjectSave: activeOps.saveToCloud,
   });
 
   // Pre-logout flush: while the JWT is still valid, push the active project's
@@ -713,13 +713,13 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
 
   const actions = useMemo(
     () => ({
-      ...rawActiveOps,
+      ...activeOps,
       dismissError, dismissLogin, initFromProject, syncCloudProjects,
       loadServerVersion,
       flushCloudSync,
       ...projectOps,
     }),
-    [rawActiveOps, dismissError, dismissLogin, initFromProject, syncCloudProjects, loadServerVersion, flushCloudSync, projectOps],
+    [activeOps, dismissError, dismissLogin, initFromProject, syncCloudProjects, loadServerVersion, flushCloudSync, projectOps],
   );
 
   const providedState: CloudSyncState = useMemo(

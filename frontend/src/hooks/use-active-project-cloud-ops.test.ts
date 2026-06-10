@@ -175,7 +175,7 @@ describe('useActiveProjectCloudOps', () => {
         version: 1,
       });
 
-      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
 
       let returned: string | undefined;
       await act(async () => {
@@ -219,7 +219,7 @@ describe('useActiveProjectCloudOps', () => {
         version: 3,
       });
 
-      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
 
       await act(async () => {
         await result.current.saveToCloud();
@@ -258,7 +258,7 @@ describe('useActiveProjectCloudOps', () => {
         };
       });
 
-      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
 
       await act(async () => {
         await result.current.saveToCloud();
@@ -283,7 +283,7 @@ describe('useActiveProjectCloudOps', () => {
       };
       (saveProjectToCloudImpl as Mock).mockResolvedValue({ kind: 'not-found' });
 
-      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
 
       await act(async () => {
         await result.current.saveToCloud();
@@ -314,7 +314,7 @@ describe('useActiveProjectCloudOps', () => {
       const deps = makeDefaultDeps();
       deps.mutationLockRef.current = true; // lock is already held
 
-      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
 
       let returned: string | undefined;
       await act(async () => {
@@ -339,7 +339,7 @@ describe('useActiveProjectCloudOps', () => {
         return { kind: 'updated', cloudId: TEST_CLOUD_ID, timestamp: TEST_TIMESTAMP, version: 2 };
       });
 
-      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
 
       await act(async () => {
         await result.current.saveToCloud();
@@ -368,7 +368,7 @@ describe('useActiveProjectCloudOps', () => {
         throw new Error('Network error');
       });
 
-      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
 
       await expect(
         act(async () => {
@@ -384,7 +384,7 @@ describe('useActiveProjectCloudOps', () => {
       const deps = makeDefaultDeps();
       (saveProjectToCloudImpl as Mock).mockRejectedValue(new Error('Network error'));
 
-      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
 
       await expect(
         act(async () => {
@@ -421,7 +421,7 @@ describe('useActiveProjectCloudOps', () => {
       });
       (checkAndPullFreshVersion as Mock).mockResolvedValue({ applied: true, serverVersion: 5 });
 
-      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
 
       await act(async () => {
         await result.current.saveToCloud();
@@ -464,7 +464,7 @@ describe('useActiveProjectCloudOps', () => {
       });
       (checkAndPullFreshVersion as Mock).mockResolvedValue({ applied: true, serverVersion: 5 });
 
-      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
 
       await act(async () => {
         await result.current.saveToCloud();
@@ -499,7 +499,7 @@ describe('useActiveProjectCloudOps', () => {
         serverVersion: 5,
       });
 
-      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
 
       await act(async () => {
         await result.current.saveToCloud();
@@ -534,7 +534,7 @@ describe('useActiveProjectCloudOps', () => {
         serverVersion: 5,
       });
 
-      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
 
       await act(async () => {
         await result.current.saveToCloud();
@@ -566,7 +566,7 @@ describe('useActiveProjectCloudOps', () => {
       });
       (checkAndPullFreshVersion as Mock).mockResolvedValue({ applied: true, serverVersion: 5 });
 
-      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
 
       await act(async () => {
         await result.current.saveToCloud();
@@ -600,7 +600,7 @@ describe('useActiveProjectCloudOps', () => {
         return { kind: 'conflict', serverVersion: 5 };
       });
 
-      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
 
       await act(async () => {
         await result.current.saveToCloud();
@@ -634,7 +634,7 @@ describe('useActiveProjectCloudOps', () => {
       // Pull fails
       (checkAndPullFreshVersion as Mock).mockRejectedValue(new Error('Network error'));
 
-      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
 
       await act(async () => {
         await result.current.saveToCloud();
@@ -663,7 +663,7 @@ describe('useActiveProjectCloudOps', () => {
         version: 1,
       });
 
-      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
 
       await act(async () => {
         await result.current.saveToCloud();
@@ -692,7 +692,7 @@ describe('useActiveProjectCloudOps', () => {
         version: 3,
       });
 
-      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
 
       await act(async () => {
         await result.current.saveToCloud();
@@ -725,7 +725,7 @@ describe('useActiveProjectCloudOps', () => {
         };
       });
 
-      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
 
       await act(async () => {
         await result.current.saveToCloud();
@@ -748,7 +748,7 @@ describe('useActiveProjectCloudOps', () => {
         version: 1,
       });
 
-      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
 
       await act(async () => {
         await result.current.fork();
@@ -781,7 +781,7 @@ describe('useActiveProjectCloudOps', () => {
         version: 1,
       });
 
-      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
 
       await act(async () => {
         await result.current.fork();
@@ -810,7 +810,7 @@ describe('useActiveProjectCloudOps', () => {
       };
       (deleteProjectFromCloudImpl as Mock).mockResolvedValue(undefined);
 
-      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
 
       await act(async () => {
         await result.current.deleteFromCloud();
@@ -836,7 +836,7 @@ describe('useActiveProjectCloudOps', () => {
     it('does nothing when no cloudId exists', async () => {
       const deps = makeDefaultDeps();
 
-      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
 
       await act(async () => {
         await result.current.deleteFromCloud();
@@ -854,7 +854,7 @@ describe('useActiveProjectCloudOps', () => {
         storage: 'local',
       };
 
-      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
 
       await act(async () => {
         await result.current.deleteFromCloud();
@@ -881,7 +881,7 @@ describe('useActiveProjectCloudOps', () => {
       // updated_at without bumping version).
       (patchVisibilityImpl as Mock).mockResolvedValue(PATCH_UPDATED_AT);
 
-      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
 
       await act(async () => {
         await result.current.setVisibility('unlisted');
@@ -906,7 +906,7 @@ describe('useActiveProjectCloudOps', () => {
       };
       (patchVisibilityImpl as Mock).mockRejectedValue(new Error('Server error'));
 
-      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
 
       await act(async () => {
         await result.current.setVisibility('unlisted');
@@ -934,7 +934,7 @@ describe('useActiveProjectCloudOps', () => {
       // Local metadata write fails after a successful server PATCH.
       deps.updateCloudMetadata.mockReturnValue({ ok: false, status: 'unknown-error', evictedLocalIds: [] });
 
-      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
 
       await act(async () => {
         await result.current.setVisibility('unlisted');
@@ -964,7 +964,7 @@ describe('useActiveProjectCloudOps', () => {
         updatedAt: TEST_TIMESTAMP,
       });
 
-      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
 
       await act(async () => {
         await result.current.loadCloudProject(TEST_CLOUD_ID);
@@ -998,7 +998,7 @@ describe('useActiveProjectCloudOps', () => {
         new ApiError(404, { error: 'Not found' }),
       );
 
-      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
 
       await act(async () => {
         await result.current.loadCloudProject(TEST_CLOUD_ID);
@@ -1026,7 +1026,7 @@ describe('useActiveProjectCloudOps', () => {
         version: 5,
       });
 
-      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
 
       await act(async () => {
         await result.current.loadCloudProject(TEST_CLOUD_ID);
@@ -1067,7 +1067,7 @@ describe('useActiveProjectCloudOps', () => {
           makeLoadResult({ isOwner: true, authenticated: true }),
         );
 
-        const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+        const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
         await act(async () => { await result.current.loadCloudProject(TEST_CLOUD_ID); });
 
         // Owned branch: a new local record is created and IMPORT_STATE dispatched.
@@ -1087,7 +1087,7 @@ describe('useActiveProjectCloudOps', () => {
           makeLoadResult({ isOwner: false, authenticated: true }),
         );
 
-        const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+        const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
         await act(async () => { await result.current.loadCloudProject(TEST_CLOUD_ID); });
 
         // Shared branch: opened as an unsaved workspace, no owned local record.
@@ -1107,7 +1107,7 @@ describe('useActiveProjectCloudOps', () => {
           makeLoadResult({ isOwner: false }),
         );
 
-        const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+        const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
         await act(async () => { await result.current.loadCloudProject(TEST_CLOUD_ID); });
 
         // NEW behavior: owned branch is taken — a cloud-backed local record is
@@ -1134,7 +1134,7 @@ describe('useActiveProjectCloudOps', () => {
         updatedAt: TEST_TIMESTAMP,
       });
 
-      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
 
       await act(async () => {
         await result.current.loadCloudProject(TEST_CLOUD_ID);
@@ -1163,7 +1163,7 @@ describe('useActiveProjectCloudOps', () => {
         throw new Error('Unauthorized');
       });
 
-      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
 
       await expect(
         act(async () => {
@@ -1188,7 +1188,7 @@ describe('useActiveProjectCloudOps', () => {
       (saveProjectToCloudImpl as Mock).mockResolvedValue({ kind: 'updated', cloudId: TEST_CLOUD_ID, timestamp: TEST_TIMESTAMP, version: 3 });
       (patchProjectState as Mock).mockReturnValueOnce({ ok: false, status: 'quota-exceeded', evictedLocalIds: [] });
 
-      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
       let outcome: string | undefined;
       await act(async () => { outcome = await result.current.saveToCloud(); });
 
@@ -1219,7 +1219,7 @@ describe('useActiveProjectCloudOps', () => {
       const deps = makeDefaultDeps();
       deps.internalRef.current = { ...INITIAL_INTERNAL_STATE, cloudId: TEST_CLOUD_ID, isOwner: true, storage: 'cloud', serverVersion: 2 };
       (saveProjectToCloudImpl as Mock).mockResolvedValue({ kind: 'updated', cloudId: TEST_CLOUD_ID, timestamp: TEST_TIMESTAMP, version: 3 });
-      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
 
       let outcome: string | undefined;
       await act(async () => { outcome = await result.current.saveToCloud(); });
@@ -1236,7 +1236,7 @@ describe('useActiveProjectCloudOps', () => {
       (isCloudEnabled as Mock).mockReturnValue(false);
       const deps = makeDefaultDeps();
 
-      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
 
       let returned: string | undefined;
       await act(async () => {
@@ -1251,7 +1251,7 @@ describe('useActiveProjectCloudOps', () => {
       (isCloudEnabled as Mock).mockReturnValue(false);
       const deps = makeDefaultDeps();
 
-      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
 
       await act(async () => {
         await result.current.fork();

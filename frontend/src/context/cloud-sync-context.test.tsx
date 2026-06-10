@@ -333,6 +333,27 @@ describe('CloudSyncProvider', () => {
     });
   });
 
+  describe('actions referential stability (L1-T)', () => {
+    it('keeps the actions context value stable across a data-only state change', () => {
+      const { result } = renderCloudSyncWithDispatch();
+
+      const actionsBefore = result.current.actions;
+
+      // A data-only mutation re-renders the provider (it reads useAppState) but
+      // must not change the actions context value — the split-context invariant.
+      act(() => {
+        result.current.dispatch({
+          type: 'SET_REGISTER_VALUE',
+          registerId: 'reg-1',
+          value: 0x42n,
+        });
+      });
+
+      const actionsAfter = result.current.actions;
+      expect(Object.is(actionsBefore, actionsAfter)).toBe(true);
+    });
+  });
+
   describe('hooks outside provider', () => {
     it('useCloudSync throws without provider', () => {
       expect(() => renderHook(() => useCloudSync())).toThrow(
@@ -1885,7 +1906,7 @@ describe('CloudSyncProvider', () => {
         state: makeState(),
       });
 
-      // Make the cloud save fail (flushSync calls rawActiveOps.saveToCloud → update)
+      // Make the cloud save fail (flushSync calls activeOps.saveToCloud → update)
       (apiUpdateProject as Mock).mockRejectedValue(new Error('Network error'));
 
       // Suppress getProject (ownership re-evaluation)

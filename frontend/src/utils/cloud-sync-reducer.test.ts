@@ -544,7 +544,9 @@ describe('cloudSyncReducer', () => {
       const prev: InternalCloudSyncState = {
         ...initialInternalState,
         // A field not overwritten by the seed should survive (proves the spread).
-        asyncTransient: 'syncing',
+        // `status`/`asyncTransient` are now explicitly reset (M6), so probe the
+        // spread with an unrelated untouched field instead.
+        serverVersion: 7,
       };
       const next = cloudStateForEntry({ ...base, prev });
       expect(next).toEqual({
@@ -552,16 +554,28 @@ describe('cloudSyncReducer', () => {
         cloudId: 'cloud123',
         isOwner: true,
         storage: 'cloud',
+        status: 'idle',
         shareUrl: 'https://example/p/cloud123',
         baseline: cleanBaseline(4),
         lastCloudSavedAt: '2026-01-01T00:00:00Z',
         error: null,
+        asyncTransient: null,
         visibility: 'unlisted',
         serverVersion: 7,
         conflict: null,
       });
-      // Untouched prev field carries through.
-      expect(next.asyncTransient).toBe('syncing');
+    });
+
+    it('resets a stale status to idle regardless of seed.prev (M6)', () => {
+      const prev: InternalCloudSyncState = { ...initialInternalState, status: 'saving' };
+      const next = cloudStateForEntry({ ...base, prev });
+      expect(next.status).toBe('idle');
+    });
+
+    it('clears a stale asyncTransient overlay regardless of seed.prev (M6)', () => {
+      const prev: InternalCloudSyncState = { ...initialInternalState, asyncTransient: 'syncing' };
+      const next = cloudStateForEntry({ ...base, prev });
+      expect(next.asyncTransient).toBeNull();
     });
 
     it('seeds a clean baseline at the current generation when there are no unsynced changes', () => {

@@ -186,7 +186,8 @@ export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
       // via the shared pure `cloudStateForEntry`. The four divergences from Path A
       // (`initFromProject`) are explicit decisions here:
       //   • setCloudUrl — Path B explicitly sets the URL on switch (below).
-      //   • lastCloudSavedAt — Path B hardcodes null (vs Path A's metadata value).
+      //   • lastCloudSavedAt — both paths now thread the manifest's cloudSavedAt
+      //     (owned entry, falling back to the stored project).
       //   • baseline seeding — Path B dispatches REQUEST_BASELINE (baseline →
       //     {untracked}) when there are no stored unsynced changes (below); the
       //     dirty case keeps the `dirty` baseline.
@@ -198,7 +199,7 @@ export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
         isOwner,
         storage,
         shareUrl: buildProjectUrl(cloudId),
-        lastCloudSavedAt: null,
+        lastCloudSavedAt: ownedEntry?.cloudSavedAt ?? ownedProject?.cloudSavedAt ?? null,
         visibility: ownedEntry?.visibility ?? ownedProject?.visibility ?? 'private',
         serverVersion,
         conflictVersion,

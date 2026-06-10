@@ -254,12 +254,22 @@ interface ActiveProjectCloudOpsDeps {
   dispatch: Dispatch<ImportStateAction>;
 }
 
-interface ActiveProjectCloudOps {
+/** The memoized per-project cloud operations (stable reference across renders). */
+interface ActiveProjectOps {
   saveToCloud: () => Promise<SaveOutcome>;
   fork: () => Promise<void>;
   deleteFromCloud: () => Promise<void>;
   setVisibility: (v: Visibility) => Promise<void>;
   loadCloudProject: (cloudId: string) => Promise<void>;
+}
+
+interface ActiveProjectCloudOps {
+  /**
+   * Memoized operations object — returned as a NAMED property (not spread) so the
+   * stable reference survives to the provider, keeping the actions context value
+   * referentially stable (the split-context invariant).
+   */
+  ops: ActiveProjectOps;
   loginRequired: boolean;
   pendingOpRef: MutableRefObject<'save' | 'fork' | null>;
   dismissLogin: () => void;
@@ -637,5 +647,5 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
     [saveToCloud, fork, deleteFromCloud, setVisibility, loadCloudProject],
   );
 
-  return { ...ops, loginRequired, pendingOpRef, dismissLogin };
+  return { ops, loginRequired, pendingOpRef, dismissLogin };
 }

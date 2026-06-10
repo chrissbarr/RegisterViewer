@@ -674,6 +674,65 @@ describe('useProjectSwitchInit', () => {
       expect(checkAndPullFreshVersion).not.toHaveBeenCalled();
     });
 
+    it('resets stale transient state and threads cloudSavedAt when switching into a cloud project (M6)', () => {
+      const deps = buildDeps();
+      deps.dataVersionRef.current = 4;
+      // Seed a stale op lifecycle from the departing project: a hung 'saving'
+      // status and a 'syncing' async overlay must NOT leak into the new project.
+      deps.internalRef.current = {
+        ...initialInternalState,
+        status: 'saving',
+        asyncTransient: 'syncing',
+      };
+      const localProject = makeProjectEntry({
+        localId: PROJECT_A_LOCAL_ID,
+        cloudId: null,
+        storage: 'local',
+      });
+      const incomingProject = makeProjectEntry({
+        localId: PROJECT_B_LOCAL_ID,
+        cloudId: PROJECT_A_CLOUD_ID,
+        storage: 'cloud',
+        serverVersion: 9,
+        cloudSavedAt: '2026-03-03T00:00:00Z',
+      });
+      deps.projects = [localProject, incomingProject];
+      deps.projectsRef.current = deps.projects;
+      (loadProject as Mock).mockImplementation((id: string) => id === PROJECT_B_LOCAL_ID
+        ? {
+            localId: PROJECT_B_LOCAL_ID,
+            cloudId: PROJECT_A_CLOUD_ID,
+            storage: 'cloud',
+            serverVersion: 9,
+            visibility: 'private',
+            cloudSavedAt: '2026-03-03T00:00:00Z',
+            state: { registers: [], activeRegisterId: null, registerValues: {} },
+          }
+        : null);
+
+      const { rerender } = renderHook(
+        (props: { activeLocalId: string | null }) =>
+          useProjectSwitchInit({ ...deps, activeLocalId: props.activeLocalId }),
+        { initialProps: { activeLocalId: PROJECT_A_LOCAL_ID } },
+      );
+
+      rerender({ activeLocalId: PROJECT_B_LOCAL_ID });
+
+      // The source writes the INIT_CLOUD seed to internalRef synchronously.
+      expect(deps.internalRef.current.status).toBe('idle');
+      expect(deps.internalRef.current.asyncTransient).toBeNull();
+      // The dispatched INIT_CLOUD seed carries the reset transients too.
+      const initCloud = deps.cloudDispatch.mock.calls
+        .map((call) => call[0])
+        .find((action): action is Extract<CloudSyncAction, { type: 'INIT_CLOUD' }> => action.type === 'INIT_CLOUD');
+      expect(initCloud).toBeDefined();
+      expect(initCloud?.seed.status).toBe('idle');
+      expect(initCloud?.seed.asyncTransient).toBeNull();
+      // lastCloudSavedAt is threaded from the manifest entry (not hardcoded null).
+      expect(deps.internalRef.current.lastCloudSavedAt).toBe('2026-03-03T00:00:00Z');
+      expect(initCloud?.seed.lastCloudSavedAt).toBe('2026-03-03T00:00:00Z');
+    });
+
     it('restores stored conflict state and skips freshness pull', () => {
       const deps = buildDeps();
       const localProject = makeProjectEntry({

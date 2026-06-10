@@ -183,8 +183,9 @@ export interface CloudEntrySeed {
   storage: 'local' | 'cloud';
   shareUrl: string;
   /**
-   * The A-9 divergence made visible: Path A threads `metadata.cloudSavedAt`,
-   * Path B hardcodes `null`. Carried in the seed instead of inside the builder.
+   * Carried in the seed instead of inside the builder. Both paths thread the
+   * manifest's `cloudSavedAt` (Path A from `metadata.cloudSavedAt`, Path B from
+   * the owned manifest entry / stored project).
    */
   lastCloudSavedAt: string | null;
   visibility: Visibility;
@@ -224,6 +225,12 @@ export function cloudStateForEntry(seed: CloudEntrySeed): InternalCloudSyncState
     // engine tick — see DESIGN §3a).
     baseline: seed.hasUnsyncedChanges ? dirtyBaseline() : cleanBaseline(seed.dataVersion),
     lastCloudSavedAt: seed.lastCloudSavedAt,
+    // Reset the op lifecycle so a stale `status:'saving'` (or `'deleting'` etc.)
+    // AND a stale `asyncTransient:'syncing'|'offline'` overlay from the departing
+    // project never leak into the freshly-entered cloud project — both INIT_CLOUD
+    // callers (Path A startup + Path B switch) flow through this builder.
+    status: 'idle',
+    asyncTransient: null,
     error: null,
     visibility: seed.visibility,
     serverVersion: seed.serverVersion,
