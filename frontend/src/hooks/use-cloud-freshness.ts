@@ -1,10 +1,10 @@
 import type { Dispatch, MutableRefObject } from 'react';
-import { getProject } from '../utils/api-client';
+import { getProject, getProjectMeta, ApiError } from '../utils/api-client';
 import { patchProjectState, loadProject, type ProjectStorageWriteResult } from '../utils/project-storage';
 import type { CloudSyncAction } from '../utils/cloud-sync-reducer';
 import { deserializeState } from '../utils/storage';
 import { materializeCloudProject } from '../utils/cloud-materialize';
-import { decideFreshnessPull, type FreshnessCheckCall } from '../utils/cloud-freshness';
+import { decideFreshnessPull, probeIndicatesFresh, type FreshnessCheckCall } from '../utils/cloud-freshness';
 import type { ImportStateAction } from '../context/app-context';
 import type { InternalCloudSyncState, CloudMetadataUpdate } from '../types/cloud-sync';
 
@@ -41,11 +41,17 @@ type FreshnessCheckResult =
  * but still refuses to overwrite local edits. `replace-with-server` is for
  * explicit user action from the conflict UI.
  *
- * Uses a single fetch; the full project data from getProject() is parsed
- * directly via parseProjectData() (inside the pure core) to avoid a double-fetch.
+ * Probe-first design (P6): in `'normal'` mode a lightweight getProjectMeta()
+ * probe runs after the pre-fetch gate; when the server version has not
+ * advanced (the common case) the full payload fetch is skipped entirely. Only
+ * a genuinely-stale project pays the second round trip — the full getProject()
+ * whose data is parsed via parseProjectData() (inside the pure core).
+ * `pull-if-clean` / `replace-with-server` intend to pull, so they skip the
+ * probe and keep the single full fetch.
  *
  * The pure core is called twice — once for the pre-fetch gate and once
- * post-fetch — so the two-phase dirty re-check timing is preserved exactly.
+ * post-fetch — so the two-phase dirty re-check timing is preserved exactly
+ * (it now also covers the probe window).
  */
 export async function checkAndPullFreshVersion(
   ctx: FreshnessCheckContext,
@@ -79,6 +85,26 @@ export async function checkAndPullFreshVersion(
   }
   if (preDecision && preDecision.kind === 'changed-during-pull') {
     return { applied: false, reason: 'changed-during-pull' };
+  }
+
+  // Lightweight /meta probe ('normal' mode only): skip the full payload fetch
+  // when the server version has not advanced. Non-normal modes intend to pull,
+  // so a probe would only add a round trip to their optimal single fetch.
+  if ((call.mode ?? 'normal') === 'normal') {
+    let probeVersion: number | null = null;
+    try {
+      const meta = await getProjectMeta(cloudId, jwt);
+      probeVersion = meta.version;
+    } catch (err) {
+      // PERMANENT old-API/genuine-404 funnel: an API deployed without the
+      // /meta endpoint 404s the probe, as does a genuinely deleted project.
+      // Fall through once to the full GET (today's behavior) — genuine 404s
+      // still surface through its existing handling.
+      if (!(err instanceof ApiError && err.status === 404)) throw err;
+    }
+    if (probeVersion !== null && probeIndicatesFresh(probeVersion, call.knownVersion)) {
+      return { applied: false, reason: 'fresh', serverVersion: probeVersion };
+    }
   }
 
   const serverResponse = await getProject(cloudId, jwt);

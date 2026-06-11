@@ -4,16 +4,10 @@ declare(strict_types=1);
 
 function handleGetProject(PDO $db, string $id, array $auth): ApiResponse
 {
-    $project = dbGetProject($db, $id);
-    if ($project === null) {
-        return new ApiResponse(['error' => 'Project not found'], 404);
-    }
-
-    // Private projects require ownership
-    if ($project['visibility'] === 'private') {
-        if (!isProjectOwner($auth, $project)) {
-            return new ApiResponse(['error' => 'Project not found'], 404);
-        }
+    // Shared uniform-404 ownership/visibility gate (also used by the /meta probe).
+    $project = requireReadableProject($db, $id, $auth, withData: true);
+    if ($project instanceof ApiResponse) {
+        return $project;
     }
 
     // Touch last_accessed_at (throttled to once per 24h at the DB level)

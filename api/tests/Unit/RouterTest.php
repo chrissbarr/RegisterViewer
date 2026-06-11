@@ -25,6 +25,7 @@ final class RouterTest extends TestCase
             'create project' => ['POST', '/api/projects', 'projects.create', API_BODY_JSON, null],
             'list projects' => ['GET', '/api/projects', 'projects.list', API_BODY_NONE, null],
             'get project' => ['GET', '/api/projects/AbCdEfGhIjKl', 'projects.get', API_BODY_NONE, 'AbCdEfGhIjKl'],
+            'get project meta' => ['GET', '/api/projects/AbCdEfGhIjKl/meta', 'projects.meta', API_BODY_NONE, 'AbCdEfGhIjKl'],
             'update project' => ['PUT', '/api/projects/AbCdEfGhIjKl', 'projects.update', API_BODY_JSON, 'AbCdEfGhIjKl'],
             'patch project' => ['PATCH', '/api/projects/AbCdEfGhIjKl', 'projects.patch', API_BODY_JSON, 'AbCdEfGhIjKl'],
             'delete project' => ['DELETE', '/api/projects/AbCdEfGhIjKl', 'projects.delete', API_BODY_NONE, 'AbCdEfGhIjKl'],
@@ -57,6 +58,20 @@ final class RouterTest extends TestCase
         $this->assertSame(API_BODY_NONE, $route['bodyPolicy']);
         $this->assertInstanceOf(ApiResponse::class, $route['response']);
         $this->assertSame(404, $route['response']->status);
+    }
+
+    #[Test]
+    public function resolvesProjectMetaMethodNotAllowedWithoutJsonBodyPolicy(): void
+    {
+        foreach (['POST', 'PUT', 'PATCH', 'DELETE'] as $method) {
+            $route = resolveApiRoute($method, '/api/projects/AbCdEfGhIjKl/meta');
+
+            $this->assertSame('error', $route['name']);
+            $this->assertSame(API_BODY_NONE, $route['bodyPolicy']);
+            $this->assertInstanceOf(ApiResponse::class, $route['response']);
+            $this->assertSame(405, $route['response']->status);
+            $this->assertSame('GET, OPTIONS', $route['response']->headers['Allow']);
+        }
     }
 
     #[Test]

@@ -27,6 +27,27 @@ function dbGetProject(PDO $db, string $id): ?array
 }
 
 /**
+ * Get a project's metadata by its public_id — same row shape as dbGetProject
+ * but WITHOUT the data column, so the /meta freshness probe never transfers
+ * the payload blob. Returns timestamps in ISO 8601 format for API compatibility.
+ */
+function dbGetProjectMeta(PDO $db, string $id): ?array
+{
+    $stmt = $db->prepare(
+        "SELECT public_id, visibility, title, user_id, version,
+                DATE_FORMAT(created_at, '%Y-%m-%dT%H:%i:%sZ') AS created_at_iso,
+                DATE_FORMAT(updated_at, '%Y-%m-%dT%H:%i:%sZ') AS updated_at_iso,
+                DATE_FORMAT(last_accessed_at, '%Y-%m-%dT%H:%i:%sZ') AS last_accessed_at_iso
+         FROM projects
+         WHERE public_id = :id
+         LIMIT 1"
+    );
+    $stmt->execute(['id' => $id]);
+    $row = $stmt->fetch();
+    return $row ?: null;
+}
+
+/**
  * Get a project for auth/ownership verification only (no data column).
  */
 function dbGetProjectForAuth(PDO $db, string $id): ?array

@@ -36,6 +36,7 @@ vi.mock('../utils/api-client', () => {
     updateProject: vi.fn(),
     patchProjectVisibility: vi.fn(),
     getProject: vi.fn(),
+    getProjectMeta: vi.fn(),
     deleteProject: vi.fn(),
     listProjects: vi.fn(),
   };
@@ -117,6 +118,7 @@ import {
   isCloudEnabled,
   createProject as apiCreateProject,
   getProject as apiGetProject,
+  getProjectMeta as apiGetProjectMeta,
   updateProject as apiUpdateProject,
   patchProjectVisibility as apiPatchVisibility,
   deleteProject as apiDeleteProject,
@@ -250,6 +252,9 @@ beforeEach(() => {
   (exportToObject as Mock).mockReturnValue({ version: 1, registers: [], values: {} });
   // getProject is called by the ownership re-evaluation effect; default to a resolved promise
   (apiGetProject as Mock).mockResolvedValue({ id: 'test', data: '{}', createdAt: '', updatedAt: '', isOwner: false, version: 1 });
+  // getProjectMeta is the lightweight probe used by the freshness check and the
+  // unknown-version GET-then-PUT save path; default mirrors getProject minus data
+  (apiGetProjectMeta as Mock).mockResolvedValue({ id: 'test', createdAt: '', updatedAt: '', isOwner: false, version: 1 });
   // listProjects is called by syncCloudProjects on mount/sign-in; default to empty list
   (apiListProjects as Mock).mockResolvedValue({ projects: [] });
 });

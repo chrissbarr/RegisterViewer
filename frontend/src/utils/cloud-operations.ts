@@ -2,6 +2,7 @@ import {
   createProject as apiCreateProject,
   updateProject as apiUpdateProject,
   getProject as apiGetProject,
+  getProjectMeta as apiGetProjectMeta,
   patchProjectVisibility as apiPatchVisibility,
   deleteProject as apiDeleteProject,
   ApiError,
@@ -45,8 +46,9 @@ type SaveResult = SaveCreatedResult | SaveUpdatedResult | SaveNotFoundResult | S
  *
  * @param serverVersion - Last known server version. When `undefined` (the
  *   version is unknown — e.g. `serverVersion: 0` not yet fetched), the current
- *   server version is fetched via GET first and that value is used for the PUT.
- *   When a known number is passed, the PUT uses it directly with no extra GET.
+ *   server version is fetched via the lightweight /meta probe first and that
+ *   value is used for the PUT. When a known number is passed, the PUT uses it
+ *   directly with no extra round trip.
  */
 export async function saveProjectToCloudImpl(
   jsonPayload: unknown,
@@ -56,12 +58,22 @@ export async function saveProjectToCloudImpl(
 ): Promise<SaveResult> {
   if (existingCloudId) {
     try {
-      // Unknown version: GET the current server version first, then PUT with it.
-      // A known version PUTs directly — no extra round-trip.
+      // Unknown version: probe the current server version via /meta first,
+      // then PUT with it. A known version PUTs directly — no extra round-trip.
       let putVersion = serverVersion;
       if (putVersion === undefined) {
-        const current = await apiGetProject(existingCloudId, jwt);
-        putVersion = current.version;
+        try {
+          const currentMeta = await apiGetProjectMeta(existingCloudId, jwt);
+          putVersion = currentMeta.version;
+        } catch (err) {
+          // PERMANENT old-API/genuine-404 funnel: an API deployed without the
+          // /meta endpoint 404s the probe. Fall back once to the full GET; a
+          // genuinely deleted project then 404s again and surfaces through the
+          // outer catch as `not-found`, exactly as before.
+          if (!(err instanceof ApiError && err.status === 404)) throw err;
+          const current = await apiGetProject(existingCloudId, jwt);
+          putVersion = current.version;
+        }
       }
       const result = await apiUpdateProject(existingCloudId, jsonPayload, jwt, putVersion);
       return {

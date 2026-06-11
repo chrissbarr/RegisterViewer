@@ -30,6 +30,7 @@ require __DIR__ . '/src/router.php';
 require __DIR__ . '/src/id.php';
 require __DIR__ . '/src/handlers/create-project.php';
 require __DIR__ . '/src/handlers/get-project.php';
+require __DIR__ . '/src/handlers/get-project-meta.php';
 require __DIR__ . '/src/handlers/update-project.php';
 require __DIR__ . '/src/handlers/patch-project.php';
 require __DIR__ . '/src/handlers/delete-project.php';

@@ -65,6 +65,32 @@ function isProjectOwner(array $auth, array $project): bool
 }
 
 /**
+ * Resolve a project the requester may read, enforcing the uniform-404
+ * ownership/visibility gate shared by the full GET and the /meta probe so
+ * IDOR semantics cannot diverge: a missing project and a private project the
+ * requester does not own return byte-identical 404s (no existence leak).
+ *
+ * $withData selects the fetch: the full row (data included) for the full GET,
+ * or the metadata-only row for the /meta probe.
+ *
+ * @return array|ApiResponse
+ */
+function requireReadableProject(PDO $db, string $id, array $auth, bool $withData): array|ApiResponse
+{
+    $project = $withData ? dbGetProject($db, $id) : dbGetProjectMeta($db, $id);
+    if ($project === null) {
+        return new ApiResponse(['error' => 'Project not found'], 404);
+    }
+
+    // Private projects require ownership
+    if ($project['visibility'] === 'private' && !isProjectOwner($auth, $project)) {
+        return new ApiResponse(['error' => 'Project not found'], 404);
+    }
+
+    return $project;
+}
+
+/**
  * Verify auth and project ownership. Returns the project row on success,
  * or an ApiResponse error on failure.
  *

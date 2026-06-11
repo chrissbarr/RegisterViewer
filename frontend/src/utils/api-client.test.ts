@@ -4,6 +4,7 @@ import {
   ApiError,
   createProject,
   getProject,
+  getProjectMeta,
   updateProject,
   patchProjectVisibility,
   deleteProject,
@@ -270,6 +271,86 @@ describe('getProject', () => {
     }
   });
 
+});
+
+describe('getProjectMeta', () => {
+  beforeEach(() => {
+    mockFetch.mockClear();
+    import.meta.env.VITE_API_URL = 'https://api.example.com';
+  });
+
+  it('makes GET request to the /meta endpoint and returns metadata', async () => {
+    const responseData = {
+      id: 'ABC123DEF456',
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-02T00:00:00Z',
+      visibility: 'unlisted',
+      isOwner: true,
+      authenticated: true,
+      version: 4,
+    };
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => responseData,
+    });
+
+    const result = await getProjectMeta('ABC123DEF456');
+
+    expect(mockFetch).toHaveBeenCalledOnce();
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://api.example.com/api/projects/ABC123DEF456/meta',
+      {
+        signal: expect.any(AbortSignal),
+        headers: {},
+      },
+    );
+    expect(result).toEqual(responseData);
+  });
+
+  it('sends Authorization header when jwt provided', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => ({
+        id: 'ABC123DEF456',
+        createdAt: '2024-01-01T00:00:00Z',
+        updatedAt: '2024-01-01T00:00:00Z',
+        visibility: 'private',
+        isOwner: true,
+        version: 1,
+      }),
+    });
+
+    const jwt = 'a'.repeat(64);
+    await getProjectMeta('ABC123DEF456', jwt);
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://api.example.com/api/projects/ABC123DEF456/meta',
+      {
+        signal: expect.any(AbortSignal),
+        headers: {
+          Authorization: `Bearer ${jwt}`,
+        },
+      },
+    );
+  });
+
+  it('throws ApiError on 404 (old API without /meta, or missing project)', async () => {
+    mockFetch.mockResolvedValue(mockErrorResponse(404, { error: 'Project not found' }));
+
+    await expect(getProjectMeta('NONEXISTENT12')).rejects.toThrow(ApiError);
+
+    try {
+      await getProjectMeta('NONEXISTENT12');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as ApiError).status).toBe(404);
+    }
+  });
 });
 
 describe('updateProject', () => {

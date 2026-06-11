@@ -115,6 +115,23 @@ export async function getProject(id: string, jwt?: string): Promise<GetProjectRe
   });
 }
 
+/**
+ * Lightweight metadata probe (P6): the full GET response minus the `data`
+ * payload. Used where only the version (plus metadata) is needed — the
+ * freshness check and the unknown-version GET-then-PUT save path — so the
+ * potentially large data blob is never transferred. Throws ApiError 404 on
+ * an old API without the /meta endpoint (callers fall back to getProject).
+ */
+export async function getProjectMeta(id: string, jwt?: string): Promise<Omit<GetProjectResponse, 'data'>> {
+  const headers: Record<string, string> = {};
+  if (jwt) {
+    headers['Authorization'] = `Bearer ${jwt}`;
+  }
+  return apiFetch<Omit<GetProjectResponse, 'data'>>(`/api/projects/${encodeURIComponent(id)}/meta`, {
+    headers,
+  });
+}
+
 interface UpdateProjectResponse {
   id: string;
   updatedAt: string;

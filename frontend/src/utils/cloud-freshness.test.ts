@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import {
   decideFreshnessPull,
+  probeIndicatesFresh,
   type FreshnessDecisionState,
   type FreshnessCheckCall,
 } from './cloud-freshness';
@@ -170,5 +171,21 @@ describe('decideFreshnessPull — post-fetch decision', () => {
     const call = makeCall({ knownVersion: 5, mode: 'pull-if-clean', expectedDataVersion: 5 });
     const decision = decideFreshnessPull(makeState(), call, makeServerResponse({ version: 3 }));
     expect(decision).toMatchObject({ kind: 'pull', serverVersion: 3 });
+  });
+});
+
+// ── Probe decision (P6 /meta probe) ──────────────────────────────────
+
+describe('probeIndicatesFresh', () => {
+  it('reports fresh when the probe version equals the known version', () => {
+    expect(probeIndicatesFresh(2, 2)).toBe(true);
+  });
+
+  it('reports fresh when the probe version is older than the known version', () => {
+    expect(probeIndicatesFresh(1, 5)).toBe(true);
+  });
+
+  it('reports stale (full fetch needed) when the probe version is newer', () => {
+    expect(probeIndicatesFresh(3, 1)).toBe(false);
   });
 });

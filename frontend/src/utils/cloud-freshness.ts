@@ -66,6 +66,16 @@ type FreshnessDecision =
 const FRESHNESS_CHECK_INTERVAL = 30_000; // 30 seconds
 
 /**
+ * Pure decision for the lightweight `/meta` probe (P6, `'normal'` mode only):
+ * the cache is fresh — the shim skips the full payload fetch — when the
+ * server version has not advanced past the known version. Mirrors the
+ * post-fetch `serverVersion <= knownVersion` compare in `decideFreshnessPull`.
+ */
+export function probeIndicatesFresh(probeVersion: number, knownVersion: number): boolean {
+  return probeVersion <= knownVersion;
+}
+
+/**
  * Pure freshness decision. Mirrors the `cloud-sync.ts` pure-core pattern: no
  * React/context imports, fed entirely by primitive inputs.
  *

@@ -20,11 +20,12 @@ vi.mock('./api-client', () => ({
   createProject: vi.fn(),
   updateProject: vi.fn(),
   getProject: vi.fn(),
+  getProjectMeta: vi.fn(),
   patchProjectVisibility: vi.fn(),
   deleteProject: vi.fn(),
 }));
 
-import { ApiError, createProject, updateProject, getProject, patchProjectVisibility, deleteProject } from './api-client';
+import { ApiError, createProject, updateProject, getProject, getProjectMeta, patchProjectVisibility, deleteProject } from './api-client';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -52,7 +53,59 @@ describe('saveProjectToCloudImpl', () => {
     expect(createProject).toHaveBeenCalledWith(payload, jwt);
   });
 
-  it('GETs the current server version then PUTs with it when version is unknown', async () => {
+  it('GETs the current server version via /meta then PUTs with it when version is unknown', async () => {
+    (getProjectMeta as Mock).mockResolvedValue({
+      id: 'cloud-abc',
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+      isOwner: true,
+      visibility: 'private',
+      version: 9,
+    });
+    (updateProject as Mock).mockResolvedValue({
+      id: 'cloud-abc',
+      updatedAt: '2024-01-02T00:00:00Z',
+      version: 10,
+    });
+
+    const result = await saveProjectToCloudImpl(payload, 'cloud-abc', jwt);
+
+    expect(result).toEqual({
+      kind: 'updated',
+      cloudId: 'cloud-abc',
+      timestamp: '2024-01-02T00:00:00Z',
+      version: 10,
+    });
+    expect(getProjectMeta).toHaveBeenCalledWith('cloud-abc', jwt);
+    // The lightweight probe replaces the full GET — the payload is never fetched.
+    expect(getProject).not.toHaveBeenCalled();
+    // The version fetched via the probe is what gets PUT — not a manufactured `1`.
+    expect(updateProject).toHaveBeenCalledWith('cloud-abc', payload, jwt, 9);
+  });
+
+  it('probes-then-PUTs on explicit undefined serverVersion (no manufactured version 1)', async () => {
+    (getProjectMeta as Mock).mockResolvedValue({
+      id: 'cloud-abc',
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+      isOwner: true,
+      visibility: 'private',
+      version: 4,
+    });
+    (updateProject as Mock).mockResolvedValue({
+      id: 'cloud-abc',
+      updatedAt: '2024-01-02T00:00:00Z',
+      version: 5,
+    });
+
+    await saveProjectToCloudImpl(payload, 'cloud-abc', jwt, undefined);
+
+    expect(getProjectMeta).toHaveBeenCalledWith('cloud-abc', jwt);
+    expect(updateProject).toHaveBeenCalledWith('cloud-abc', payload, jwt, 4);
+  });
+
+  it('falls back to the full GET when the probe 404s (deploy-skew funnel)', async () => {
+    (getProjectMeta as Mock).mockRejectedValue(new ApiError(404, { error: 'Not found' }));
     (getProject as Mock).mockResolvedValue({
       id: 'cloud-abc',
       data: {},
@@ -77,33 +130,11 @@ describe('saveProjectToCloudImpl', () => {
       version: 10,
     });
     expect(getProject).toHaveBeenCalledWith('cloud-abc', jwt);
-    // The version fetched via GET is what gets PUT — not a manufactured `1`.
     expect(updateProject).toHaveBeenCalledWith('cloud-abc', payload, jwt, 9);
   });
 
-  it('GETs-then-PUTs on explicit undefined serverVersion (no manufactured version 1)', async () => {
-    (getProject as Mock).mockResolvedValue({
-      id: 'cloud-abc',
-      data: {},
-      createdAt: '2024-01-01T00:00:00Z',
-      updatedAt: '2024-01-01T00:00:00Z',
-      isOwner: true,
-      visibility: 'private',
-      version: 4,
-    });
-    (updateProject as Mock).mockResolvedValue({
-      id: 'cloud-abc',
-      updatedAt: '2024-01-02T00:00:00Z',
-      version: 5,
-    });
-
-    await saveProjectToCloudImpl(payload, 'cloud-abc', jwt, undefined);
-
-    expect(getProject).toHaveBeenCalledWith('cloud-abc', jwt);
-    expect(updateProject).toHaveBeenCalledWith('cloud-abc', payload, jwt, 4);
-  });
-
-  it('returns not-found when the pre-PUT GET reports 404', async () => {
+  it('returns not-found when both the probe and the fallback GET report 404', async () => {
+    (getProjectMeta as Mock).mockRejectedValue(new ApiError(404, { error: 'Not found' }));
     (getProject as Mock).mockRejectedValue(new ApiError(404, { error: 'Not found' }));
 
     const result = await saveProjectToCloudImpl(payload, 'cloud-gone', jwt);
@@ -112,10 +143,11 @@ describe('saveProjectToCloudImpl', () => {
     expect(updateProject).not.toHaveBeenCalled();
   });
 
-  it('propagates a non-404 failure from the pre-PUT GET', async () => {
-    (getProject as Mock).mockRejectedValue(new Error('Network error'));
+  it('propagates a non-404 failure from the pre-PUT probe', async () => {
+    (getProjectMeta as Mock).mockRejectedValue(new Error('Network error'));
 
     await expect(saveProjectToCloudImpl(payload, 'cloud-abc', jwt)).rejects.toThrow('Network error');
+    expect(getProject).not.toHaveBeenCalled();
     expect(updateProject).not.toHaveBeenCalled();
   });
 

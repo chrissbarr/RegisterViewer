@@ -62,6 +62,15 @@ function resolveApiRoute(string $method, string $path): array
                 ['Allow' => 'GET, POST, OPTIONS']
             )),
 
+        preg_match('#^/api/projects/([A-Za-z0-9]{12})/meta$#', $path, $matches) === 1 && $method === 'GET'
+            => apiRoute('projects.meta', API_BODY_NONE, $matches[1]),
+        preg_match('#^/api/projects/([A-Za-z0-9]{12})/meta$#', $path) === 1
+            => apiRoute('error', API_BODY_NONE, null, new ApiResponse(
+                ['error' => 'Method not allowed'],
+                405,
+                ['Allow' => 'GET, OPTIONS']
+            )),
+
         preg_match('#^/api/projects/([A-Za-z0-9]{12})$#', $path, $matches) === 1 && $method === 'GET'
             => apiRoute('projects.get', API_BODY_NONE, $matches[1]),
         preg_match('#^/api/projects/([A-Za-z0-9]{12})$#', $path, $matches) === 1 && $method === 'PUT'
@@ -128,6 +137,7 @@ function dispatchApiRoute(
         'projects.create' => handleCreateProject($db, $config, $auth, $getParsedBody),
         'projects.list' => handleListProjects($db, $auth),
         'projects.get' => handleGetProject($db, (string) $projectId, $auth),
+        'projects.meta' => handleGetProjectMeta($db, (string) $projectId, $auth),
         'projects.update' => handleUpdateProject($db, (string) $projectId, $auth, $getParsedBody),
         'projects.patch' => handlePatchProject($db, (string) $projectId, $auth, $getParsedBody),
         'projects.delete' => handleDeleteProject($db, (string) $projectId, $auth),
