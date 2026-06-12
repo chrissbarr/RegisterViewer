@@ -211,7 +211,7 @@ final class ProjectMetaApiTest extends TestCase
         $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => 'meta-cache@example.com'];
         $privateResponse = handleGetProjectMeta(self::$db, $privateId, $auth);
         // A freshness probe must never be served stale — even for non-private
-        // projects (the full GET serves unlisted with max-age=60; the probe must not).
+        // projects (since BR-5 no API response is cacheable, the full GET included).
         $unlistedResponse = handleGetProjectMeta(self::$db, $unlistedId, ['kind' => 'none']);
 
         $this->assertSame('private, no-store', $privateResponse->headers['Cache-Control']);

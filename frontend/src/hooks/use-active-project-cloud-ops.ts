@@ -624,7 +624,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
         // Conservative ownership policy (unified with the A-2 startup and
         // My-Projects paths): demote to 'local' ONLY on POSITIVE evidence of
         // non-ownership (`authenticated:true && !isOwner`). When ownership is
-        // unknown (missing/expired JWT, old API, stale cached response), trust
+        // unknown (missing/expired JWT, old API), trust
         // the manifest — 'cloud' here, matching the AppLoader `treatAsShared`
         // default for a freshly-opened share link with no clear local entry —
         // rather than silently unlinking an owned cloud project.

@@ -12,7 +12,7 @@ All API timestamps are UTC and use ISO 8601 second precision: `YYYY-MM-DDTHH:mm:
 
 ## Caching
 
-Every API response is `Cache-Control: no-store` unless documented otherwise. The default is applied at the response exit point, so it covers error responses and the health endpoints too; handlers that set an explicit `Cache-Control` pass through untouched. The sole cacheable response is `GET /api/projects/{id}` for unlisted projects (`private, max-age=60`, with `Vary: Origin, Authorization` so caches key on the requester).
+Every API response is `Cache-Control: no-store`, no exceptions. The default is applied at the response exit point, so it covers error responses and the health endpoints too; handlers that set an explicit `Cache-Control` pass through untouched, but every explicit value is also `no-store`. Responses whose body varies by requester additionally send `Vary: Origin, Authorization`.
 
 ## Health Endpoints
 
@@ -382,9 +382,7 @@ Retrieves a project by its 12-character base62 ID.
 
 `isOwner` is `true` when the requesting user owns this project via JWT user ID, `false` otherwise.
 
-**Cache-Control:**
-- Private projects: `private, no-store`
-- Unlisted projects: `private, max-age=60`
+**Cache-Control:** `private, no-store` (regardless of visibility — clients consume the `version` field for optimistic concurrency, so the response must never be served from a cache)
 
 **Side effect:** Updates `lastAccessedAt` if stale >24 hours.
 

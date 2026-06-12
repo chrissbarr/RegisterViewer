@@ -37,8 +37,8 @@ function handleGetProjectMeta(PDO $db, string $id, array $auth): ApiResponse
         'visibility'    => $project['visibility'],
         'version'       => (int) $project['version'],
     ], 200, [
-        // A freshness probe must never be served stale, so unlike the full GET
-        // (max-age=60 for non-private) this is always private, no-store.
+        // A freshness probe must never be served stale; like the full GET
+        // (since BR-5) this is always private, no-store.
         'Cache-Control' => 'private, no-store',
         // The body varies by Authorization (isOwner/authenticated), so caches
         // must key on it. Origin is included to keep the CORS layer's Vary

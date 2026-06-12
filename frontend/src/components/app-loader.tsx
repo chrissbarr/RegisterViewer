@@ -159,8 +159,7 @@ function persistDownloadedCloudProject(
   // Demote to 'local' (a full unlink via sanitizeStoredProject) ONLY on
   // positive evidence of confirmed non-ownership. A missing/false
   // `authenticated` flag means "ownership unknown" — anonymous/expired-JWT
-  // request, an old API during a non-atomic deploy, or a stale cached
-  // anonymous response (unlisted GETs are cached for 60s) — so keep the
+  // request, or an old API during a non-atomic deploy — so keep the
   // manifest's storage class rather than silently unlinking an owned project.
   storage: 'local' | 'cloud' = decideStorageForFetched(importResult, entry.storage),
 ): 'local' | 'cloud' {

@@ -386,6 +386,25 @@ final class ProjectApiTest extends TestCase
     }
 
     #[Test]
+    public function handleGetProjectAlwaysSendsPrivateNoStoreCacheControl(): void
+    {
+        $userId = $this->createTestUser('get-cache@example.com');
+        $privateId = generatePublicId();
+        $unlistedId = generatePublicId();
+        dbCreateProject(self::$db, $privateId, 'private', self::validDataJson(), null, $userId);
+        dbCreateProject(self::$db, $unlistedId, 'unlisted', self::validDataJson(), null, $userId);
+
+        $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => 'get-cache@example.com'];
+        $privateResponse = handleGetProject(self::$db, $privateId, $auth);
+        // No API response is cacheable — including the unlisted GET, which
+        // previously sent max-age=60 and let clients act on a stale version (BR-5).
+        $unlistedResponse = handleGetProject(self::$db, $unlistedId, ['kind' => 'none']);
+
+        $this->assertSame('private, no-store', $privateResponse->headers['Cache-Control']);
+        $this->assertSame('private, no-store', $unlistedResponse->headers['Cache-Control']);
+    }
+
+    #[Test]
     public function handleGetProjectVaryHeaderIncludesOriginAndAuthorization(): void
     {
         $userId = $this->createTestUser('get-vary@example.com');

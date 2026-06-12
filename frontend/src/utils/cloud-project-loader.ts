@@ -15,10 +15,9 @@ interface CloudProjectLoadResult extends ImportResult {
  * request's JWT (`authenticated:true`) AND the user is not the owner.
  *
  * A missing/false `authenticated` flag means "ownership unknown" — the request
- * was anonymous (signed out, expired JWT), hit an old API during a non-atomic
- * deploy, or got a stale cached anonymous response (unlisted GETs are cached
- * for 60s). Never treat unknown ownership as non-ownership: doing so silently
- * unlinks owned cloud projects.
+ * was anonymous (signed out, expired JWT) or hit an old API during a
+ * non-atomic deploy. Never treat unknown ownership as non-ownership: doing so
+ * silently unlinks owned cloud projects.
  */
 export function isConfirmedNonOwner(result: Pick<CloudProjectLoadResult, 'isOwner' | 'authenticated'>): boolean {
   return result.authenticated === true && !result.isOwner;
@@ -29,8 +28,8 @@ export function isConfirmedNonOwner(result: Pick<CloudProjectLoadResult, 'isOwne
  *
  * Conservative: only demote to `'local'` (a full unlink) on POSITIVE evidence
  * of non-ownership (`isConfirmedNonOwner`). When ownership is unknown
- * (anonymous / expired-JWT / old-API / stale-cached response), keep the
- * manifest's storage class rather than silently unlinking an owned project.
+ * (anonymous / expired-JWT / old-API), keep the manifest's storage class
+ * rather than silently unlinking an owned project.
  *
  * Consumed by P1 (`persistDownloadedCloudProject`), the AppLoader
  * `treatAsShared` decision, and P5 (`loadCloudProject`) — so all fetch paths

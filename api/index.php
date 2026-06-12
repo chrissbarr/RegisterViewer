@@ -73,7 +73,9 @@ function getAuthConfigReadiness(array $config): array
 function emitResponse(ApiResponse $response): never
 {
     // Caching default (A-8): every response leaves here as `no-store` unless
-    // the handler set an explicit Cache-Control (e.g. project GET max-age=60).
+    // the handler set an explicit Cache-Control — and every explicit value is
+    // also no-store (BR-5 removed the last cacheable response); the pass-through
+    // exists only so handlers can add `private` and control their own headers.
     $headers = withDefaultCacheControl($response->headers);
 
     if ($response->body === null && $response->rawJson === null) {

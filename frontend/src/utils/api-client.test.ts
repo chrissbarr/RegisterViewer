@@ -111,6 +111,7 @@ describe('createProject', () => {
     expect(mockFetch).toHaveBeenCalledWith('https://api.example.com/api/projects', {
       method: 'POST',
       signal: expect.any(AbortSignal),
+      cache: 'no-store',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${'a'.repeat(64)}`,
@@ -205,6 +206,7 @@ describe('getProject', () => {
       'https://api.example.com/api/projects/ABC123DEF456',
       {
         signal: expect.any(AbortSignal),
+        cache: 'no-store',
         headers: {},
       },
     );
@@ -231,6 +233,7 @@ describe('getProject', () => {
       'https://api.example.com/api/projects/ABC123DEF456',
       {
         signal: expect.any(AbortSignal),
+        cache: 'no-store',
         headers: {
           Authorization: `Bearer ${jwt}`,
         },
@@ -271,6 +274,25 @@ describe('getProject', () => {
     }
   });
 
+  it('bypasses the browser HTTP cache with cache: no-store', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => ({
+        id: 'ABC123DEF456',
+        data: '{}',
+        createdAt: '2024-01-01T00:00:00Z',
+        updatedAt: '2024-01-01T00:00:00Z',
+      }),
+    });
+
+    await getProject('ABC123DEF456');
+
+    const callArgs = mockFetch.mock.calls[0];
+    expect(callArgs[1].cache).toBe('no-store');
+  });
+
 });
 
 describe('getProjectMeta', () => {
@@ -304,6 +326,7 @@ describe('getProjectMeta', () => {
       'https://api.example.com/api/projects/ABC123DEF456/meta',
       {
         signal: expect.any(AbortSignal),
+        cache: 'no-store',
         headers: {},
       },
     );
@@ -332,6 +355,7 @@ describe('getProjectMeta', () => {
       'https://api.example.com/api/projects/ABC123DEF456/meta',
       {
         signal: expect.any(AbortSignal),
+        cache: 'no-store',
         headers: {
           Authorization: `Bearer ${jwt}`,
         },
@@ -350,6 +374,27 @@ describe('getProjectMeta', () => {
       expect(error).toBeInstanceOf(ApiError);
       expect((error as ApiError).status).toBe(404);
     }
+  });
+
+  it('bypasses the browser HTTP cache with cache: no-store', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => ({
+        id: 'ABC123DEF456',
+        createdAt: '2024-01-01T00:00:00Z',
+        updatedAt: '2024-01-01T00:00:00Z',
+        visibility: 'unlisted',
+        isOwner: true,
+        version: 1,
+      }),
+    });
+
+    await getProjectMeta('ABC123DEF456');
+
+    const callArgs = mockFetch.mock.calls[0];
+    expect(callArgs[1].cache).toBe('no-store');
   });
 });
 
@@ -384,6 +429,7 @@ describe('updateProject', () => {
       {
         method: 'PUT',
         signal: expect.any(AbortSignal),
+        cache: 'no-store',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${'a'.repeat(64)}`,
@@ -491,6 +537,22 @@ describe('updateProject', () => {
     const callArgs = mockFetch.mock.calls[0];
     expect(callArgs[1].headers.Authorization).toBe('Bearer my-jwt');
   });
+
+  // Pins the GLOBAL no-store guarantee in apiRequest (not just the GET
+  // helpers): a refactor moving the option onto getProject alone fails here.
+  it('bypasses the browser HTTP cache with cache: no-store', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => ({ id: 'TEST', updatedAt: '2024-01-01T00:00:00Z', version: 2 }),
+    });
+
+    await updateProject('TEST', { version: 1 }, 'a'.repeat(64), 1);
+
+    const callArgs = mockFetch.mock.calls[0];
+    expect(callArgs[1].cache).toBe('no-store');
+  });
 });
 
 describe('deleteProject', () => {
@@ -518,6 +580,7 @@ describe('deleteProject', () => {
       {
         method: 'DELETE',
         signal: expect.any(AbortSignal),
+        cache: 'no-store',
         headers: {
           Authorization: `Bearer ${'a'.repeat(64)}`,
         },
@@ -656,6 +719,7 @@ describe('patchProjectVisibility', () => {
       {
         method: 'PATCH',
         signal: expect.any(AbortSignal),
+        cache: 'no-store',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${'a'.repeat(64)}`,
@@ -707,6 +771,7 @@ describe('listProjects', () => {
       'https://api.example.com/api/projects',
       {
         signal: expect.any(AbortSignal),
+        cache: 'no-store',
         headers: {
           Authorization: `Bearer ${jwt}`,
         },
@@ -871,6 +936,7 @@ describe('sendLoginCode', () => {
       {
         method: 'POST',
         signal: expect.any(AbortSignal),
+        cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: 'user@example.com' }),
       },
@@ -919,6 +985,7 @@ describe('verifyLoginCode', () => {
       {
         method: 'POST',
         signal: expect.any(AbortSignal),
+        cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: 'user@example.com', code: '123456' }),
       },
@@ -958,6 +1025,7 @@ describe('getAuthMe', () => {
       'https://api.example.com/api/auth/me',
       {
         signal: expect.any(AbortSignal),
+        cache: 'no-store',
         headers: { Authorization: 'Bearer my-jwt-token' },
       },
     );
@@ -995,6 +1063,7 @@ describe('postAuthLogout', () => {
       {
         method: 'POST',
         signal: expect.any(AbortSignal),
+        cache: 'no-store',
         headers: { Authorization: 'Bearer my-jwt-token' },
       },
     );

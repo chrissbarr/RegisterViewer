@@ -42,6 +42,9 @@ async function apiRequest(path: string, options?: RequestInit): Promise<Response
       ...options,
       signal: controller.signal,
       headers,
+      // Placed after the spread so no caller can re-enable HTTP caching: a
+      // cached GET body once fed stale `version`s into the sync layer (BR-5).
+      cache: 'no-store',
     });
 
     if (!res.ok) {

@@ -13,10 +13,6 @@ function handleGetProject(PDO $db, string $id, array $auth): ApiResponse
     // Touch last_accessed_at (throttled to once per 24h at the DB level)
     dbTouchLastAccessed($db, $id);
 
-    $cacheControl = $project['visibility'] === 'private'
-        ? 'private, no-store'
-        : 'private, max-age=60';
-
     // Validate data integrity before raw concatenation (defense-in-depth against
     // stored injection if data is ever corrupted via migration bug or direct DB edit).
     $dataJson = $project['data'];
@@ -47,7 +43,10 @@ function handleGetProject(PDO $db, string $id, array $auth): ApiResponse
         . '}';
 
     return new ApiResponse(null, 200, [
-        'Cache-Control' => $cacheControl,
+        // Never cacheable, regardless of visibility: clients consume the
+        // `version` field for optimistic concurrency, so serving a stale
+        // cached body would poison conflict-resolution decisions (BR-5).
+        'Cache-Control' => 'private, no-store',
         // The body varies by Authorization (isOwner/authenticated), so caches
         // must key on it. emitResponse() uses PHP's default header() replace
         // semantics, so this supersedes the `Vary: Origin` emitted by the CORS
