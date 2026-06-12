@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-function handleCreateProject(PDO $db, array $config, array $auth, array|\Closure $bodySource): ApiResponse
+function handleCreateProject(PDO $db, array $config, array $auth, \stdClass|\Closure $bodySource): ApiResponse
 {
     if ($auth['kind'] !== 'jwt') {
         return new ApiResponse(['error' => 'Authentication required'], 401);
@@ -16,38 +16,32 @@ function handleCreateProject(PDO $db, array $config, array $auth, array|\Closure
         return new ApiResponse(['error' => 'Project limit reached. Delete existing projects before creating new ones.'], 429);
     }
 
-    $parsed = resolveParsedBody($bodySource);
-    if ($parsed instanceof ApiResponse) {
-        return $parsed;
-    }
-    $body = $parsed['assoc'];
-
-    $shapeValidation = validateProjectDataJsonShape($parsed['object']->data ?? null);
-    if (!$shapeValidation['valid']) {
-        return new ApiResponse(['error' => $shapeValidation['error']], 400);
+    $body = resolveParsedBody($bodySource);
+    if ($body instanceof ApiResponse) {
+        return $body;
     }
 
-    $validation = validateProjectData($body['data'] ?? null);
+    $validation = validateProjectData($body->data ?? null);
     if (!$validation['valid']) {
         return new ApiResponse(['error' => $validation['error']], 400);
     }
 
     // Visibility (optional, defaults to 'private')
     $visibility = 'private';
-    if (isset($body['visibility'])) {
-        if (!isValidVisibility($body['visibility'])) {
+    if (isset($body->visibility)) {
+        if (!isValidVisibility($body->visibility)) {
             return new ApiResponse(['error' => 'visibility must be "private" or "unlisted"'], 400);
         }
-        $visibility = $body['visibility'];
+        $visibility = $body->visibility;
     }
 
     // Extract title from project metadata for the denormalized column
-    $title = $body['data']['project']['title'] ?? null;
+    $title = $body->data->project->title ?? null;
     if ($title !== null) {
         $title = mb_substr($title, 0, 500);
     }
 
-    $dataJson = extractDataJson($parsed['object']);
+    $dataJson = extractDataJson($body);
     if ($dataJson instanceof ApiResponse) {
         return $dataJson;
     }

@@ -433,13 +433,7 @@ final class ProjectApiTest extends TestCase
         }
 
         $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => 'limittest@example.com'];
-        $body = [
-            'data' => json_decode(self::validDataJson(), true),
-        ];
-        $parsed = [
-            'assoc'  => $body,
-            'object' => json_decode(json_encode($body)),
-        ];
+        $parsed = (object) ['data' => json_decode(self::validDataJson())];
         $config = ['app_url' => 'http://localhost'];
 
         $response = handleCreateProject(self::$db, $config, $auth, $parsed);
@@ -454,11 +448,7 @@ final class ProjectApiTest extends TestCase
     public function handleCreateProjectReturns401WhenAuthKindIsNone(): void
     {
         $auth = ['kind' => 'none'];
-        $body = ['data' => json_decode(self::validDataJson(), true)];
-        $parsed = [
-            'assoc'  => $body,
-            'object' => json_decode(json_encode($body)),
-        ];
+        $parsed = (object) ['data' => json_decode(self::validDataJson())];
         $config = ['app_url' => 'http://localhost'];
 
         $response = handleCreateProject(self::$db, $config, $auth, $parsed);
@@ -541,7 +531,7 @@ final class ProjectApiTest extends TestCase
         ?string $visibility = null,
         mixed $version = 1,
         bool $includeVersion = true,
-    ): array
+    ): \stdClass
     {
         $body = ['data' => $data];
         if ($visibility !== null) {
@@ -551,10 +541,7 @@ final class ProjectApiTest extends TestCase
             $body['version'] = $version;
         }
         $json = json_encode($body, JSON_UNESCAPED_SLASHES);
-        return [
-            'assoc'  => json_decode($json, true),
-            'object' => json_decode($json),
-        ];
+        return json_decode($json);
     }
 
     private function updateDataWithRegister(string $name): array
@@ -705,10 +692,7 @@ final class ProjectApiTest extends TestCase
             'version'    => 1,
         ];
         $json = json_encode($body, JSON_UNESCAPED_SLASHES);
-        $parsed = [
-            'assoc'  => json_decode($json, true),
-            'object' => json_decode($json),
-        ];
+        $parsed = json_decode($json);
 
         $response = handleUpdateProject(self::$db, $id, $auth, $parsed);
 
@@ -832,7 +816,7 @@ final class ProjectApiTest extends TestCase
         );
         $this->assertSame(200, $firstResponse->status);
 
-        $patchResponse = handlePatchProject(self::$db, $id, $auth, ['visibility' => 'unlisted']);
+        $patchResponse = handlePatchProject(self::$db, $id, $auth, (object) ['visibility' => 'unlisted']);
         $this->assertSame(200, $patchResponse->status);
 
         $afterVisibilityPatch = dbGetProject(self::$db, $id);
@@ -917,7 +901,7 @@ final class ProjectApiTest extends TestCase
 
         $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => 'jwt-patch@example.com'];
 
-        $response = handlePatchProject(self::$db, $id, $auth, ['visibility' => 'unlisted']);
+        $response = handlePatchProject(self::$db, $id, $auth, (object) ['visibility' => 'unlisted']);
 
         $this->assertSame(200, $response->status);
         $this->assertSame($id, $response->body['id']);
@@ -944,14 +928,14 @@ final class ProjectApiTest extends TestCase
         $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => 'patch-version-invariant@example.com'];
 
         // PATCH visibility: version must NOT change.
-        $patchResponse = handlePatchProject(self::$db, $id, $auth, ['visibility' => 'unlisted']);
+        $patchResponse = handlePatchProject(self::$db, $id, $auth, (object) ['visibility' => 'unlisted']);
         $this->assertSame(200, $patchResponse->status);
         $afterPatch = dbGetProject(self::$db, $id);
         $this->assertSame('unlisted', $afterPatch['visibility']);
         $this->assertSame(1, (int) $afterPatch['version']);
 
         // A second PATCH is still version-neutral.
-        $secondPatch = handlePatchProject(self::$db, $id, $auth, ['visibility' => 'private']);
+        $secondPatch = handlePatchProject(self::$db, $id, $auth, (object) ['visibility' => 'private']);
         $this->assertSame(200, $secondPatch->status);
         $this->assertSame(1, (int) dbGetProject(self::$db, $id)['version']);
 
@@ -976,7 +960,7 @@ final class ProjectApiTest extends TestCase
 
         $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => 'patch-then-put@example.com'];
 
-        $patchResponse = handlePatchProject(self::$db, $id, $auth, ['visibility' => 'unlisted']);
+        $patchResponse = handlePatchProject(self::$db, $id, $auth, (object) ['visibility' => 'unlisted']);
         $this->assertSame(200, $patchResponse->status);
 
         $afterPatch = dbGetProject(self::$db, $id);
@@ -1001,6 +985,23 @@ final class ProjectApiTest extends TestCase
     }
 
     #[Test]
+    public function handlePatchProjectRejectsExplicitNullVisibility(): void
+    {
+        $userId = $this->createTestUser('jwt-patch-null@example.com');
+        $id = generatePublicId();
+        dbCreateProject(self::$db, $id, 'private', self::validDataJson(), null, $userId);
+
+        $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => 'jwt-patch-null@example.com'];
+
+        // Explicit null is treated as absent (isset semantics).
+        $response = handlePatchProject(self::$db, $id, $auth, json_decode('{"visibility":null}'));
+
+        $this->assertSame(400, $response->status);
+        $this->assertSame('PATCH requires a visibility field', $response->body['error']);
+        $this->assertSame('private', dbGetProjectForAuth(self::$db, $id)['visibility']);
+    }
+
+    #[Test]
     public function handlePatchProjectRejects404ForWrongJwtUser(): void
     {
         $ownerId = $this->createTestUser('patchowner@example.com');
@@ -1010,7 +1011,7 @@ final class ProjectApiTest extends TestCase
 
         $auth = ['kind' => 'jwt', 'userId' => $otherId, 'email' => 'patchother@example.com'];
 
-        $response = handlePatchProject(self::$db, $id, $auth, ['visibility' => 'unlisted']);
+        $response = handlePatchProject(self::$db, $id, $auth, (object) ['visibility' => 'unlisted']);
 
         $this->assertSame(404, $response->status);
         // Visibility should remain unchanged

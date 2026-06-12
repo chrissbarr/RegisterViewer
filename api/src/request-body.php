@@ -41,11 +41,14 @@ function readBody(array $server, ?callable $bodyReader = null): string|ApiRespon
 }
 
 /**
- * Parse a raw JSON string into both associative-array and stdClass views.
+ * Parse a raw JSON string into the stdClass tree from json_decode().
  *
- * @return array{assoc: array, object: object}|ApiResponse
+ * The object tree is the single body representation: it preserves the
+ * {} vs [] distinction that associative arrays lose.
+ *
+ * @return \stdClass|ApiResponse
  */
-function parseBody(string $text): array|ApiResponse
+function parseBody(string $text): \stdClass|ApiResponse
 {
     if ($text === '') {
         return new ApiResponse(['error' => 'Invalid JSON body'], 400);
@@ -56,15 +59,15 @@ function parseBody(string $text): array|ApiResponse
         return new ApiResponse(['error' => 'Invalid JSON body'], 400);
     }
 
-    return ['assoc' => objectToAssoc($object), 'object' => $object];
+    return $object;
 }
 
 /**
  * Read and parse a required JSON object request body.
  *
- * @return array{assoc: array, object: object}|ApiResponse
+ * @return \stdClass|ApiResponse
  */
-function readJsonObjectBody(array $server, ?callable $bodyReader = null): array|ApiResponse
+function readJsonObjectBody(array $server, ?callable $bodyReader = null): \stdClass|ApiResponse
 {
     $raw = readBody($server, $bodyReader);
     if ($raw instanceof ApiResponse) {
@@ -76,51 +79,11 @@ function readJsonObjectBody(array $server, ?callable $bodyReader = null): array|
 /**
  * Resolve an already parsed body or lazy body provider.
  *
- * @return array{assoc: array, object: object}|ApiResponse
+ * @return \stdClass|ApiResponse
  */
-function resolveParsedBody(array|\Closure $bodySource): array|ApiResponse
+function resolveParsedBody(\stdClass|\Closure $bodySource): \stdClass|ApiResponse
 {
-    $parsed = $bodySource instanceof \Closure ? $bodySource() : $bodySource;
-    if ($parsed instanceof ApiResponse) {
-        return $parsed;
-    }
-    return $parsed;
-}
-
-/**
- * Resolve a body source to an associative request body.
- *
- * @return array|ApiResponse
- */
-function resolveAssocBody(array|\Closure $bodySource): array|ApiResponse
-{
-    $body = resolveParsedBody($bodySource);
-    if ($body instanceof ApiResponse) {
-        return $body;
-    }
-    if (array_key_exists('assoc', $body) && is_array($body['assoc'])) {
-        return $body['assoc'];
-    }
-    return $body;
-}
-
-/**
- * Recursively convert a stdClass tree to associative arrays.
- * Arrays are preserved as arrays; stdClass objects become associative arrays.
- */
-function objectToAssoc(mixed $value): mixed
-{
-    if ($value instanceof \stdClass) {
-        $result = [];
-        foreach ($value as $k => $v) {
-            $result[$k] = objectToAssoc($v);
-        }
-        return $result;
-    }
-    if (is_array($value)) {
-        return array_map('objectToAssoc', $value);
-    }
-    return $value;
+    return $bodySource instanceof \Closure ? $bodySource() : $bodySource;
 }
 
 /**

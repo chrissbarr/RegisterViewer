@@ -19,8 +19,14 @@ final class ValidationTest extends TestCase
                     'fields' => [],
                 ],
             ],
-            'registerValues' => [],
+            'registerValues' => new \stdClass(),
         ];
+    }
+
+    /** Convert an assoc-array fixture to the stdClass tree json_decode() produces. */
+    private static function toStd(mixed $data): mixed
+    {
+        return json_decode(json_encode($data));
     }
 
     private static function dataWithFields(array $fields, int $registerWidth = 8): array
@@ -34,7 +40,7 @@ final class ValidationTest extends TestCase
     #[Test]
     public function validMinimalProjectData(): void
     {
-        $result = validateProjectData(self::validData());
+        $result = validateProjectData(self::toStd(self::validData()));
         $this->assertTrue($result['valid']);
     }
 
@@ -46,7 +52,7 @@ final class ValidationTest extends TestCase
             ['name' => 'EN', 'msb' => 0, 'lsb' => 0, 'type' => 'flag'],
             ['name' => 'MODE', 'msb' => 2, 'lsb' => 1, 'type' => 'integer'],
         ];
-        $result = validateProjectData($data);
+        $result = validateProjectData(self::toStd($data));
         $this->assertTrue($result['valid']);
     }
 
@@ -58,7 +64,7 @@ final class ValidationTest extends TestCase
             'title' => 'My Project',
             'description' => 'A test project',
         ];
-        $result = validateProjectData($data);
+        $result = validateProjectData(self::toStd($data));
         $this->assertTrue($result['valid']);
     }
 
@@ -67,17 +73,17 @@ final class ValidationTest extends TestCase
     {
         $data = self::validData();
         $data['addressUnitBits'] = 8;
-        $result = validateProjectData($data);
+        $result = validateProjectData(self::toStd($data));
         $this->assertTrue($result['valid']);
     }
 
     #[Test]
     public function rejectsNonObject(): void
     {
-        $result = validateProjectData('string');
+        $result = validateProjectData(self::toStd('string'));
         $this->assertFalse($result['valid']);
 
-        $result = validateProjectData([1, 2, 3]);
+        $result = validateProjectData(self::toStd([1, 2, 3]));
         $this->assertFalse($result['valid']);
         $this->assertSame('Request body must be a JSON object', $result['error']);
     }
@@ -87,7 +93,7 @@ final class ValidationTest extends TestCase
     {
         $data = self::validData();
         unset($data['version']);
-        $result = validateProjectData($data);
+        $result = validateProjectData(self::toStd($data));
         $this->assertFalse($result['valid']);
         $this->assertSame('version must be 1', $result['error']);
     }
@@ -97,7 +103,7 @@ final class ValidationTest extends TestCase
     {
         $data = self::validData();
         $data['version'] = 2;
-        $result = validateProjectData($data);
+        $result = validateProjectData(self::toStd($data));
         $this->assertFalse($result['valid']);
         $this->assertSame('version must be 1', $result['error']);
     }
@@ -107,7 +113,7 @@ final class ValidationTest extends TestCase
     {
         $data = self::validData();
         unset($data['registers']);
-        $result = validateProjectData($data);
+        $result = validateProjectData(self::toStd($data));
         $this->assertFalse($result['valid']);
         $this->assertSame('registers must be an array', $result['error']);
     }
@@ -117,7 +123,7 @@ final class ValidationTest extends TestCase
     {
         $data = self::validData();
         $data['registers'] = [];
-        $result = validateProjectData($data);
+        $result = validateProjectData(self::toStd($data));
         $this->assertFalse($result['valid']);
         $this->assertSame('registers must contain at least 1 register', $result['error']);
     }
@@ -127,7 +133,7 @@ final class ValidationTest extends TestCase
     {
         $data = self::validData();
         $data['registers'] = array_fill(0, 257, ['name' => 'R', 'width' => 8, 'fields' => []]);
-        $result = validateProjectData($data);
+        $result = validateProjectData(self::toStd($data));
         $this->assertFalse($result['valid']);
         $this->assertStringContainsString('at most 256', $result['error']);
     }
@@ -137,7 +143,7 @@ final class ValidationTest extends TestCase
     {
         $data = self::validData();
         $data['registers'][0] = ['width' => 8, 'fields' => []];
-        $result = validateProjectData($data);
+        $result = validateProjectData(self::toStd($data));
         $this->assertFalse($result['valid']);
         $this->assertStringContainsString('registers[0].name', $result['error']);
     }
@@ -147,7 +153,7 @@ final class ValidationTest extends TestCase
     {
         $data = self::validData();
         $data['registers'][0]['name'] = '   ';
-        $result = validateProjectData($data);
+        $result = validateProjectData(self::toStd($data));
         $this->assertFalse($result['valid']);
         $this->assertStringContainsString('registers[0].name', $result['error']);
     }
@@ -157,7 +163,7 @@ final class ValidationTest extends TestCase
     {
         $data = self::validData();
         $data['registers'][0]['name'] = "\u{00A0}";
-        $result = validateProjectData($data);
+        $result = validateProjectData(self::toStd($data));
         $this->assertFalse($result['valid']);
         $this->assertStringContainsString('registers[0].name', $result['error']);
     }
@@ -167,7 +173,7 @@ final class ValidationTest extends TestCase
     {
         $data = self::validData();
         $data['registers'][0]['width'] = 0;
-        $result = validateProjectData($data);
+        $result = validateProjectData(self::toStd($data));
         $this->assertFalse($result['valid']);
         $this->assertStringContainsString('registers[0].width', $result['error']);
     }
@@ -177,7 +183,7 @@ final class ValidationTest extends TestCase
     {
         $data = self::validData();
         $data['registers'][0]['width'] = 128;
-        $result = validateProjectData($data);
+        $result = validateProjectData(self::toStd($data));
         $this->assertTrue($result['valid']);
     }
 
@@ -186,7 +192,7 @@ final class ValidationTest extends TestCase
     {
         $data = self::validData();
         $data['registers'][0]['width'] = 129;
-        $result = validateProjectData($data);
+        $result = validateProjectData(self::toStd($data));
         $this->assertFalse($result['valid']);
         $this->assertStringContainsString('registers[0].width', $result['error']);
     }
@@ -198,7 +204,7 @@ final class ValidationTest extends TestCase
         $data['registers'][0]['fields'] = [
             ['name' => 'F', 'msb' => 0, 'lsb' => 0, 'type' => 'unknown'],
         ];
-        $result = validateProjectData($data);
+        $result = validateProjectData(self::toStd($data));
         $this->assertFalse($result['valid']);
         $this->assertStringContainsString('type must be one of', $result['error']);
     }
@@ -210,7 +216,7 @@ final class ValidationTest extends TestCase
         $data['registers'][0]['fields'] = [
             ['name' => 'F', 'lsb' => 0, 'type' => 'flag'],
         ];
-        $result = validateProjectData($data);
+        $result = validateProjectData(self::toStd($data));
         $this->assertFalse($result['valid']);
         $this->assertStringContainsString('msb', $result['error']);
     }
@@ -221,7 +227,7 @@ final class ValidationTest extends TestCase
         $data = self::dataWithFields([
             ['name' => '   ', 'msb' => 0, 'lsb' => 0, 'type' => 'flag'],
         ]);
-        $result = validateProjectData($data);
+        $result = validateProjectData(self::toStd($data));
         $this->assertFalse($result['valid']);
         $this->assertStringContainsString('fields[0].name', $result['error']);
     }
@@ -232,7 +238,7 @@ final class ValidationTest extends TestCase
         $data = self::dataWithFields([
             ['name' => "\u{00A0}", 'msb' => 0, 'lsb' => 0, 'type' => 'flag'],
         ]);
-        $result = validateProjectData($data);
+        $result = validateProjectData(self::toStd($data));
         $this->assertFalse($result['valid']);
         $this->assertStringContainsString('fields[0].name', $result['error']);
     }
@@ -243,7 +249,7 @@ final class ValidationTest extends TestCase
         $data = self::dataWithFields([
             ['name' => 'BAD', 'msb' => 0, 'lsb' => 1, 'type' => 'integer'],
         ]);
-        $result = validateProjectData($data);
+        $result = validateProjectData(self::toStd($data));
         $this->assertFalse($result['valid']);
         $this->assertStringContainsString('must be greater than or equal to lsb', $result['error']);
     }
@@ -254,7 +260,7 @@ final class ValidationTest extends TestCase
         $data = self::dataWithFields([
             ['name' => 'TOO_WIDE', 'msb' => 128, 'lsb' => 0, 'type' => 'integer'],
         ], 128);
-        $result = validateProjectData($data);
+        $result = validateProjectData(self::toStd($data));
         $this->assertFalse($result['valid']);
         $this->assertStringContainsString('between 0 and 127', $result['error']);
     }
@@ -265,7 +271,7 @@ final class ValidationTest extends TestCase
         $data = self::dataWithFields([
             ['name' => 'BAD_FLAG', 'msb' => 1, 'lsb' => 0, 'type' => 'flag'],
         ]);
-        $result = validateProjectData($data);
+        $result = validateProjectData(self::toStd($data));
         $this->assertFalse($result['valid']);
         $this->assertStringContainsString('1 bit wide', $result['error']);
     }
@@ -282,10 +288,10 @@ final class ValidationTest extends TestCase
                 'flagLabels' => ['clear' => 'Unlocked', 'set' => 'Locked'],
             ],
         ]);
-        $this->assertTrue(validateProjectData($data)['valid']);
+        $this->assertTrue(validateProjectData(self::toStd($data))['valid']);
 
         $data['registers'][0]['fields'][0]['flagLabels'] = ['clear' => 'Unlocked'];
-        $result = validateProjectData($data);
+        $result = validateProjectData(self::toStd($data));
         $this->assertFalse($result['valid']);
         $this->assertStringContainsString('flagLabels.set', $result['error']);
     }
@@ -296,7 +302,7 @@ final class ValidationTest extends TestCase
         $data = self::dataWithFields([
             ['name' => 'SIGNED', 'msb' => 3, 'lsb' => 0, 'type' => 'integer', 'signedness' => 'signed'],
         ]);
-        $result = validateProjectData($data);
+        $result = validateProjectData(self::toStd($data));
         $this->assertFalse($result['valid']);
         $this->assertStringContainsString('signedness must be one of', $result['error']);
     }
@@ -307,7 +313,7 @@ final class ValidationTest extends TestCase
         $data = self::dataWithFields([
             ['name' => 'GAIN', 'msb' => 31, 'lsb' => 0, 'type' => 'float'],
         ], 32);
-        $result = validateProjectData($data);
+        $result = validateProjectData(self::toStd($data));
         $this->assertFalse($result['valid']);
         $this->assertStringContainsString('floatType must be one of', $result['error']);
     }
@@ -318,7 +324,7 @@ final class ValidationTest extends TestCase
         $data = self::dataWithFields([
             ['name' => 'GAIN', 'msb' => 15, 'lsb' => 0, 'type' => 'float', 'floatType' => 'single'],
         ], 16);
-        $result = validateProjectData($data);
+        $result = validateProjectData(self::toStd($data));
         $this->assertFalse($result['valid']);
         $this->assertStringContainsString('single float requires 32 bits', $result['error']);
     }
@@ -329,7 +335,7 @@ final class ValidationTest extends TestCase
         $data = self::dataWithFields([
             ['name' => 'GAIN', 'msb' => 7, 'lsb' => 0, 'type' => 'fixed-point'],
         ]);
-        $result = validateProjectData($data);
+        $result = validateProjectData(self::toStd($data));
         $this->assertFalse($result['valid']);
         $this->assertStringContainsString('qFormat must be an object', $result['error']);
     }
@@ -346,7 +352,7 @@ final class ValidationTest extends TestCase
                 'qFormat' => ['m' => 4, 'n' => 2],
             ],
         ]);
-        $result = validateProjectData($data);
+        $result = validateProjectData(self::toStd($data));
         $this->assertFalse($result['valid']);
         $this->assertStringContainsString('qFormat requires 6 bits', $result['error']);
     }
@@ -357,7 +363,7 @@ final class ValidationTest extends TestCase
         $data = self::dataWithFields([
             ['name' => 'RAW16', 'msb' => 15, 'lsb' => 0, 'type' => 'integer'],
         ]);
-        $this->assertTrue(validateProjectData($data)['valid']);
+        $this->assertTrue(validateProjectData(self::toStd($data))['valid']);
     }
 
     #[Test]
@@ -367,7 +373,7 @@ final class ValidationTest extends TestCase
             ['name' => 'RAW', 'msb' => 7, 'lsb' => 0, 'type' => 'integer'],
             ['name' => 'EN', 'msb' => 0, 'lsb' => 0, 'type' => 'flag'],
         ]);
-        $this->assertTrue(validateProjectData($data)['valid']);
+        $this->assertTrue(validateProjectData(self::toStd($data))['valid']);
     }
 
     #[Test]
@@ -379,7 +385,7 @@ final class ValidationTest extends TestCase
             ['name' => 'STATUS', 'width' => 16, 'offset' => 0, 'fields' => []],
         ];
 
-        $this->assertTrue(validateProjectData($data)['valid']);
+        $this->assertTrue(validateProjectData(self::toStd($data))['valid']);
     }
 
     #[Test]
@@ -389,7 +395,7 @@ final class ValidationTest extends TestCase
         $data['registers'][0]['fields'] = [
             ['name' => 'F', 'msb' => 1, 'lsb' => 0, 'type' => 'enum'],
         ];
-        $result = validateProjectData($data);
+        $result = validateProjectData(self::toStd($data));
         $this->assertFalse($result['valid']);
         $this->assertStringContainsString('enumEntries must be an array', $result['error']);
     }
@@ -400,7 +406,7 @@ final class ValidationTest extends TestCase
         $data = self::dataWithFields([
             ['name' => 'MODE', 'msb' => 1, 'lsb' => 0, 'type' => 'enum', 'enumEntries' => []],
         ]);
-        $result = validateProjectData($data);
+        $result = validateProjectData(self::toStd($data));
         $this->assertTrue($result['valid']);
     }
 
@@ -420,7 +426,7 @@ final class ValidationTest extends TestCase
                 ],
             ],
         ];
-        $result = validateProjectData($data);
+        $result = validateProjectData(self::toStd($data));
         $this->assertTrue($result['valid']);
     }
 
@@ -429,7 +435,7 @@ final class ValidationTest extends TestCase
     {
         $data = self::validData();
         $data['registerValues'] = ['reg1' => 42];
-        $result = validateProjectData($data);
+        $result = validateProjectData(self::toStd($data));
         $this->assertFalse($result['valid']);
         $this->assertStringContainsString('must be a string', $result['error']);
     }
@@ -439,7 +445,7 @@ final class ValidationTest extends TestCase
     {
         $data = self::validData();
         $data['registerValues'] = ['reg1' => 'not-hex'];
-        $result = validateProjectData($data);
+        $result = validateProjectData(self::toStd($data));
         $this->assertFalse($result['valid']);
         $this->assertStringContainsString('hex string', $result['error']);
     }
@@ -449,7 +455,7 @@ final class ValidationTest extends TestCase
     {
         $data = self::validData();
         $data['registerValues'] = ['reg1' => '0xFF', 'reg2' => '0x0'];
-        $result = validateProjectData($data);
+        $result = validateProjectData(self::toStd($data));
         $this->assertTrue($result['valid']);
     }
 
@@ -458,7 +464,7 @@ final class ValidationTest extends TestCase
     {
         $data = self::validData();
         $data['project'] = ['title' => str_repeat('a', 501)];
-        $result = validateProjectData($data);
+        $result = validateProjectData(self::toStd($data));
         $this->assertFalse($result['valid']);
         $this->assertStringContainsString('project.title', $result['error']);
     }
@@ -468,7 +474,7 @@ final class ValidationTest extends TestCase
     {
         $data = self::validData();
         $data['project'] = null;
-        $result = validateProjectData($data);
+        $result = validateProjectData(self::toStd($data));
         $this->assertFalse($result['valid']);
         $this->assertSame('project metadata must be an object', $result['error']);
     }
@@ -479,7 +485,7 @@ final class ValidationTest extends TestCase
         $data = self::dataWithFields([
             ['name' => 'F', 'msb' => 0, 'lsb' => 0, 'type' => 'flag', 'description' => null],
         ]);
-        $result = validateProjectData($data);
+        $result = validateProjectData(self::toStd($data));
         $this->assertFalse($result['valid']);
         $this->assertStringContainsString('description must be a string', $result['error']);
     }
@@ -490,7 +496,7 @@ final class ValidationTest extends TestCase
         $data = self::dataWithFields([
             ['name' => 'F', 'msb' => 0, 'lsb' => 0, 'type' => 'flag', 'flagLabels' => null],
         ]);
-        $result = validateProjectData($data);
+        $result = validateProjectData(self::toStd($data));
         $this->assertFalse($result['valid']);
         $this->assertStringContainsString('flagLabels must be an object', $result['error']);
     }
@@ -500,7 +506,7 @@ final class ValidationTest extends TestCase
     {
         $data = self::validData();
         $data['addressUnitBits'] = 7;
-        $result = validateProjectData($data);
+        $result = validateProjectData(self::toStd($data));
         $this->assertFalse($result['valid']);
         $this->assertStringContainsString('addressUnitBits', $result['error']);
     }
@@ -521,14 +527,196 @@ final class ValidationTest extends TestCase
         $this->assertFalse(isValidVisibility(42));
     }
 
-    #[Test]
-    public function isSequentialArrayBehavior(): void
+    // ---- JSON shape rules ({} vs []) at the handler boundary ----
+    //
+    // These payloads are built from raw JSON so the {}-vs-[] distinction is
+    // exact. The helper mirrors the create/update handler pipeline; every
+    // case asserts the exact 400 error string the API emits today.
+
+    /** Run a raw data-JSON payload through the handler's validation pipeline. */
+    private static function validateAtHandlerBoundary(string $dataJson): array
     {
-        $this->assertTrue(isSequentialArray([]));
-        $this->assertTrue(isSequentialArray([1, 2, 3]));
-        $this->assertFalse(isSequentialArray(['a' => 1]));
-        $this->assertFalse(isSequentialArray('string'));
-        $this->assertFalse(isSequentialArray(null));
+        $object = json_decode('{"data":' . $dataJson . '}');
+        return validateProjectData($object->data ?? null);
+    }
+
+    private static function baseDataJson(string $fieldsJson = '[]', string $extraJson = ''): string
+    {
+        return '{"version":1,"registers":[{"name":"CTRL","width":8,"fields":' . $fieldsJson . '}],'
+            . '"registerValues":{}' . $extraJson . '}';
+    }
+
+    #[Test]
+    public function boundaryAcceptsValidRawJson(): void
+    {
+        $this->assertTrue(self::validateAtHandlerBoundary(self::baseDataJson())['valid']);
+    }
+
+    #[Test]
+    public function boundaryRejectsRegisterValuesEmptyArray(): void
+    {
+        $result = self::validateAtHandlerBoundary(
+            '{"version":1,"registers":[{"name":"CTRL","width":8,"fields":[]}],"registerValues":[]}'
+        );
+        $this->assertFalse($result['valid']);
+        $this->assertSame('registerValues must be an object', $result['error']);
+    }
+
+    #[Test]
+    public function boundaryRejectsProjectEmptyArray(): void
+    {
+        $result = self::validateAtHandlerBoundary(self::baseDataJson('[]', ',"project":[]'));
+        $this->assertFalse($result['valid']);
+        $this->assertSame('project metadata must be an object', $result['error']);
+    }
+
+    #[Test]
+    public function boundaryRejectsRegisterEmptyArray(): void
+    {
+        $result = self::validateAtHandlerBoundary(
+            '{"version":1,"registers":[[]],"registerValues":{}}'
+        );
+        $this->assertFalse($result['valid']);
+        $this->assertSame('registers[0] must be an object', $result['error']);
+    }
+
+    #[Test]
+    public function boundaryRejectsFieldEmptyArray(): void
+    {
+        $result = self::validateAtHandlerBoundary(self::baseDataJson('[[]]'));
+        $this->assertFalse($result['valid']);
+        $this->assertSame('registers[0].fields[0] must be an object', $result['error']);
+    }
+
+    #[Test]
+    public function boundaryRejectsFlagLabelsEmptyArray(): void
+    {
+        $result = self::validateAtHandlerBoundary(self::baseDataJson(
+            '[{"name":"F","msb":0,"lsb":0,"type":"flag","flagLabels":[]}]'
+        ));
+        $this->assertFalse($result['valid']);
+        $this->assertSame('registers[0].fields[0].flagLabels must be an object', $result['error']);
+    }
+
+    #[Test]
+    public function boundaryRejectsFlagLabelsEmptyArrayOnNonFlagField(): void
+    {
+        // The shape rule applies to every field type, not just flags.
+        $result = self::validateAtHandlerBoundary(self::baseDataJson(
+            '[{"name":"F","msb":3,"lsb":0,"type":"integer","flagLabels":[]}]'
+        ));
+        $this->assertFalse($result['valid']);
+        $this->assertSame('registers[0].fields[0].flagLabels must be an object', $result['error']);
+    }
+
+    #[Test]
+    public function boundaryRejectsQFormatEmptyArray(): void
+    {
+        $result = self::validateAtHandlerBoundary(self::baseDataJson(
+            '[{"name":"G","msb":7,"lsb":0,"type":"fixed-point","qFormat":[]}]'
+        ));
+        $this->assertFalse($result['valid']);
+        $this->assertSame(
+            'registers[0].fields[0].qFormat must be an object with non-negative integer m and n',
+            $result['error']
+        );
+    }
+
+    #[Test]
+    public function boundaryRejectsEnumEntryEmptyArray(): void
+    {
+        $result = self::validateAtHandlerBoundary(self::baseDataJson(
+            '[{"name":"M","msb":1,"lsb":0,"type":"enum","enumEntries":[[]]}]'
+        ));
+        $this->assertFalse($result['valid']);
+        $this->assertSame('registers[0].fields[0].enumEntries[0] must be an object', $result['error']);
+    }
+
+    #[Test]
+    public function boundaryRejectsNonArrayEnumEntriesOnNonEnumField(): void
+    {
+        // The shape rule applies to every field type, not just enums.
+        $result = self::validateAtHandlerBoundary(self::baseDataJson(
+            '[{"name":"F","msb":3,"lsb":0,"type":"integer","enumEntries":"nope"}]'
+        ));
+        $this->assertFalse($result['valid']);
+        $this->assertSame('registers[0].fields[0].enumEntries must be an array for enum fields', $result['error']);
+    }
+
+    // ---- Differential edge cases (explicit null, key types, {} leniency) ----
+
+    #[Test]
+    public function boundaryRejectsExplicitNullVersion(): void
+    {
+        $result = self::validateAtHandlerBoundary(
+            '{"version":null,"registers":[{"name":"CTRL","width":8,"fields":[]}],"registerValues":{}}'
+        );
+        $this->assertFalse($result['valid']);
+        $this->assertSame('version must be 1', $result['error']);
+    }
+
+    #[Test]
+    public function boundaryRejectsExplicitNullRegisterName(): void
+    {
+        $result = self::validateAtHandlerBoundary(
+            '{"version":1,"registers":[{"name":null,"width":8,"fields":[]}],"registerValues":{}}'
+        );
+        $this->assertFalse($result['valid']);
+        $this->assertSame('registers[0].name must be a non-empty string', $result['error']);
+    }
+
+    #[Test]
+    public function boundaryRejectsExplicitNullFieldName(): void
+    {
+        $result = self::validateAtHandlerBoundary(self::baseDataJson(
+            '[{"name":null,"msb":0,"lsb":0,"type":"flag"}]'
+        ));
+        $this->assertFalse($result['valid']);
+        $this->assertSame('registers[0].fields[0].name must be a non-empty string', $result['error']);
+    }
+
+    #[Test]
+    public function boundaryAcceptsNumericStringRegisterValueKeys(): void
+    {
+        $result = self::validateAtHandlerBoundary(
+            '{"version":1,"registers":[{"name":"CTRL","width":8,"fields":[]}],"registerValues":{"123":"0xFF"}}'
+        );
+        $this->assertTrue($result['valid']);
+    }
+
+    #[Test]
+    public function boundaryRejectsNumericStringRegisterValueKeyWithExactMessage(): void
+    {
+        $result = self::validateAtHandlerBoundary(
+            '{"version":1,"registers":[{"name":"CTRL","width":8,"fields":[]}],"registerValues":{"123":42}}'
+        );
+        $this->assertFalse($result['valid']);
+        $this->assertSame('registerValues["123"] must be a string', $result['error']);
+    }
+
+    #[Test]
+    public function boundaryRejectsEmptyObjectFlagLabelsWithMissingClearMessage(): void
+    {
+        // {} passes the object-shape rule, then fails the clear/set checks.
+        $result = self::validateAtHandlerBoundary(self::baseDataJson(
+            '[{"name":"F","msb":0,"lsb":0,"type":"flag","flagLabels":{}}]'
+        ));
+        $this->assertFalse($result['valid']);
+        $this->assertSame('registers[0].fields[0].flagLabels.clear must be a string', $result['error']);
+    }
+
+    #[Test]
+    public function boundaryRejectsEmptyObjectQFormatWithMissingMNMessage(): void
+    {
+        // {} passes the object-shape rule, then fails the m/n checks.
+        $result = self::validateAtHandlerBoundary(self::baseDataJson(
+            '[{"name":"G","msb":7,"lsb":0,"type":"fixed-point","qFormat":{}}]'
+        ));
+        $this->assertFalse($result['valid']);
+        $this->assertSame(
+            'registers[0].fields[0].qFormat must be an object with non-negative integer m and n',
+            $result['error']
+        );
     }
 
     #[Test]
@@ -557,7 +745,7 @@ final class ValidationTest extends TestCase
         foreach ($fieldsByType as $type => $field) {
             $data = self::validData();
             $data['registers'][0]['fields'] = [$field];
-            $result = validateProjectData($data);
+            $result = validateProjectData(self::toStd($data));
             $this->assertTrue($result['valid'], "Field type '$type' should be valid");
         }
     }

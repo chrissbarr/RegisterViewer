@@ -110,7 +110,7 @@ function dispatchApiRoute(
 
     $bodyLoaded = false;
     $parsedBody = null;
-    $getParsedBody = function () use (&$bodyLoaded, &$parsedBody, $server, $bodyReader, $route): array|ApiResponse {
+    $getParsedBody = function () use (&$bodyLoaded, &$parsedBody, $server, $bodyReader, $route): stdClass|ApiResponse {
         if ($route['bodyPolicy'] !== API_BODY_JSON) {
             return new ApiResponse(['error' => 'Internal server error'], 500);
         }
@@ -125,11 +125,11 @@ function dispatchApiRoute(
     $projectId = $route['projectId'];
 
     return match ($route['name']) {
-        'auth.send-code' => dispatchJsonBody($getParsedBody, fn (array $parsed): ApiResponse =>
-            handleAuthSendCode($db, $config, $parsed['assoc'], $server)
+        'auth.send-code' => dispatchJsonBody($getParsedBody, fn (stdClass $parsed): ApiResponse =>
+            handleAuthSendCode($db, $config, get_object_vars($parsed), $server)
         ),
-        'auth.verify-code' => dispatchJsonBody($getParsedBody, fn (array $parsed): ApiResponse =>
-            handleAuthVerifyCode($db, $config, $parsed['assoc'], $server)
+        'auth.verify-code' => dispatchJsonBody($getParsedBody, fn (stdClass $parsed): ApiResponse =>
+            handleAuthVerifyCode($db, $config, get_object_vars($parsed), $server)
         ),
         'auth.me' => handleAuthMe($db, $config, $auth),
         'auth.logout' => handleAuthLogout($db, $auth),

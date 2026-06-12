@@ -38,14 +38,15 @@ final class RequestBodyTest extends TestCase
     }
 
     #[Test]
-    public function parseBodyReturnsAssociativeAndObjectViews(): void
+    public function parseBodyReturnsObjectTree(): void
     {
-        $parsed = parseBody('{"data":{"registerValues":{}}}');
+        $parsed = parseBody('{"data":{"registerValues":{},"project":{}}}');
 
-        $this->assertIsArray($parsed);
-        $this->assertSame([], $parsed['assoc']['data']['registerValues']);
-        $this->assertInstanceOf(stdClass::class, $parsed['object']->data->registerValues);
-        $this->assertSame('{"registerValues":{}}', extractDataJson($parsed['object']));
+        $this->assertInstanceOf(stdClass::class, $parsed);
+        $this->assertInstanceOf(stdClass::class, $parsed->data->registerValues);
+        $this->assertInstanceOf(stdClass::class, $parsed->data->project);
+        // extractDataJson must re-encode empty JSON objects as {} (never [])
+        $this->assertSame('{"registerValues":{},"project":{}}', extractDataJson($parsed));
     }
 
     #[Test]

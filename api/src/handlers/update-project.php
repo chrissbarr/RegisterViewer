@@ -2,45 +2,39 @@
 
 declare(strict_types=1);
 
-function handleUpdateProject(PDO $db, string $id, array $auth, array|\Closure $bodySource): ApiResponse
+function handleUpdateProject(PDO $db, string $id, array $auth, \stdClass|\Closure $bodySource): ApiResponse
 {
     $existing = requireOwnership($db, $id, $auth);
     if ($existing instanceof ApiResponse) {
         return $existing;
     }
 
-    $parsed = resolveParsedBody($bodySource);
-    if ($parsed instanceof ApiResponse) {
-        return $parsed;
+    $body = resolveParsedBody($bodySource);
+    if ($body instanceof ApiResponse) {
+        return $body;
     }
-    $body = $parsed['assoc'];
 
-    if (array_key_exists('visibility', $body)) {
+    if (property_exists($body, 'visibility')) {
         return new ApiResponse(['error' => 'visibility cannot be updated via PUT; use PATCH /api/projects/{id}'], 400);
     }
 
     // Validate the required top-level version field for optimistic concurrency.
-    $clientVersion = $body['version'] ?? null;
+    $clientVersion = $body->version ?? null;
     if (!is_int($clientVersion) || $clientVersion < 1) {
         return new ApiResponse(['error' => 'version must be a positive integer'], 400);
     }
 
-    $shapeValidation = validateProjectDataJsonShape($parsed['object']->data ?? null);
-    if (!$shapeValidation['valid']) {
-        return new ApiResponse(['error' => $shapeValidation['error']], 400);
-    }
-
-    $validation = validateProjectData($body['data'] ?? null);
+    $validation = validateProjectData($body->data ?? null);
     if (!$validation['valid']) {
         return new ApiResponse(['error' => $validation['error']], 400);
     }
 
-    $title = $body['data']['project']['title'] ?? null;
+    $title = $body->data->project->title ?? null;
     if ($title !== null) {
         $title = mb_substr($title, 0, 500);
     }
 
-    $dataJson = extractDataJson($parsed['object']);
+    $dataJson = extractDataJson($body);
     if ($dataJson instanceof ApiResponse) {
         return $dataJson;
     }
