@@ -183,14 +183,15 @@ export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
       const serverVersion = normalizeServerVersion(ownedEntry?.serverVersion ?? ownedProject?.serverVersion);
       const hasStoredUnsyncedChanges = (ownedEntry?.hasUnsyncedChanges ?? ownedProject?.hasUnsyncedChanges) === true;
       // Path B of the unified init (S10a / DESIGN §3a): build the flat INIT state
-      // via the shared pure `cloudStateForEntry`. The four divergences from Path A
-      // (`initFromProject`) are explicit decisions here:
+      // via the shared pure `cloudStateForEntry`. Baseline seeding is NOT a
+      // divergence (BR-4): both paths carry the clean/dirty split in the seed —
+      // `dirty` for stored unsynced changes, otherwise `untracked` (awaiting
+      // capture), so no follow-up REQUEST_BASELINE dispatch is needed. The
+      // three divergences from Path A (`initFromProject`) are explicit
+      // decisions here:
       //   • setCloudUrl — Path B explicitly sets the URL on switch (below).
       //   • lastCloudSavedAt — both paths now thread the manifest's cloudSavedAt
       //     (owned entry, falling back to the stored project).
-      //   • baseline seeding — Path B dispatches REQUEST_BASELINE (baseline →
-      //     {untracked}) when there are no stored unsynced changes (below); the
-      //     dirty case keeps the `dirty` baseline.
       //   • freshness kickoff — Path B kicks off a freshness check (below).
       setCloudUrl(cloudId);
       const next = cloudStateForEntry({
@@ -204,21 +205,16 @@ export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
         serverVersion,
         conflictVersion,
         hasUnsyncedChanges: hasStoredUnsyncedChanges,
-        dataVersion: dataVersionRef.current,
       });
       // Synchronous ref write precedes the dispatch (DESIGN §5): the switch-init
       // same-commit guard `cloudId === internalRef.current.cloudId` must see this seed.
+      // A clean incoming cloud project is seeded directly as "awaiting baseline
+      // capture" (baseline → {untracked}, BR-4): the engine snapshots the
+      // current generation into a clean baseline on its next effect tick
+      // (replaces `needsVersionSyncRef.current = true`). When stored unsynced
+      // changes exist the seed's `dirty` baseline keeps it dirty (no capture).
       internalRef.current = next;
       cloudDispatch({ type: 'INIT_CLOUD', seed: next });
-      // Clean incoming cloud project: mark "awaiting baseline capture" (baseline
-      // → {untracked}) so the engine snapshots the current generation into a
-      // clean baseline on its next effect tick (replaces
-      // `needsVersionSyncRef.current = true`). When stored unsynced changes exist
-      // we stay dirty (no capture) — the `dirty` baseline `cloudStateForEntry`
-      // seeded above keeps it dirty.
-      if (!hasStoredUnsyncedChanges) {
-        cloudDispatch({ type: 'REQUEST_BASELINE' });
-      }
 
       // Freshness check for incoming project
       const jwt = getJwt();

@@ -1,6 +1,7 @@
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
+import { CLOUD_SYNC_DEBOUNCE_MS } from '../constants';
 import { CloudSyncProvider, useCloudSync, useCloudSyncActions } from './cloud-sync-context';
 import { AppProvider } from './app-context';
 import { EditProvider } from './edit-context';
@@ -9,7 +10,7 @@ import { useAppDispatch } from './app-context';
 import { makeState, makeRegister } from '../test/helpers';
 import type { ProjectManifestEntry, StoredLocalProject } from '../types/project';
 import type { SerializedAppState } from '../types/register';
-import type { SyncResult } from '../types/cloud-sync';
+import type { CloudInit, SyncResult } from '../types/cloud-sync';
 // ApiError import resolves to the mocked class — needed for instanceof checks in source
 import { ApiError } from '../utils/api-client';
 
@@ -2923,6 +2924,220 @@ describe('CloudSyncProvider', () => {
       );
       expect(result.current.state.isOwner).toBe(false);
       expect(result.current.state.error).toContain('could not be saved locally');
+    });
+  });
+
+  describe('BR-4 regression: startup init must not trigger a no-op auto-sync PUT', () => {
+    /**
+     * Mirrors AppShellInner's REAL mount ordering: the consumer's mount effect
+     * calls initFromProject BEFORE the provider's engine effect runs its first
+     * tick (which bumps the generation 0 → 1 via the Symbol sentinels). The
+     * untracked seed awaits the engine's CAPTURE_BASELINE instead of
+     * snapshotting the pre-tick generation, so a clean owned cloud project
+     * loads clean — every pre-BR-4 test seeded AFTER mount and missed this.
+     */
+    function renderWithMountInit(
+      cloudId: string,
+      isOwner: boolean,
+      storage: 'local' | 'cloud',
+      metadata: Pick<CloudInit, 'serverVersion' | 'cloudSavedAt' | 'visibility' | 'cloudConflictVersion' | 'hasUnsyncedChanges'>,
+      renderWrapper: typeof wrapper = wrapper,
+    ) {
+      return renderHook(
+        () => {
+          const state = useCloudSync();
+          const actions = useCloudSyncActions();
+          const dispatch = useAppDispatch();
+          useEffect(() => {
+            actions.initFromProject(cloudId, isOwner, storage, metadata);
+            // Mount-only init, mirroring AppShellInner.
+            // eslint-disable-next-line react-hooks/exhaustive-deps
+          }, []);
+          return { state, actions, dispatch };
+        },
+        { wrapper: renderWrapper },
+      );
+    }
+
+    /** Owned clean cloud project: manifest entry + matching server list (no sync patches). */
+    function mockOwnedCleanCloudProject() {
+      (loadManifest as Mock).mockReturnValue({
+        version: 1,
+        projects: [makeManifestEntry({
+          cloudId: 'cloud-x',
+          storage: 'cloud',
+          serverVersion: 2,
+          cloudSavedAt: '2024-01-01T00:00:00Z',
+        })],
+      });
+      (apiListProjects as Mock).mockResolvedValue({
+        projects: [{
+          id: 'cloud-x',
+          title: 'Test Project',
+          visibility: 'private',
+          createdAt: '2024-01-01T00:00:00Z',
+          updatedAt: '2024-01-01T00:00:00Z',
+          version: 2,
+        }],
+      });
+    }
+
+    it('does not fire a no-op PUT after loading a clean owned cloud project (real mount ordering)', async () => {
+      vi.useFakeTimers();
+      try {
+        mockOwnedCleanCloudProject();
+        (apiUpdateProject as Mock).mockResolvedValue({
+          id: 'cloud-x', updatedAt: '2024-01-02T00:00:00Z', version: 3,
+        });
+
+        const { result } = renderWithMountInit('cloud-x', true, 'cloud', {
+          serverVersion: 2,
+          cloudSavedAt: '2024-01-01T00:00:00Z',
+          visibility: 'private',
+          hasUnsyncedChanges: false,
+        });
+
+        expect(result.current.state.cloudId).toBe('cloud-x');
+
+        // Advance well past the auto-sync debounce: a clean project must not save.
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(CLOUD_SYNC_DEBOUNCE_MS + 1000);
+        });
+
+        expect(apiUpdateProject).not.toHaveBeenCalled();
+        expect(apiCreateProject).not.toHaveBeenCalled();
+        expect(result.current.state.isDirty).toBe(false);
+        expect(result.current.state.syncStatus).toBe('saved');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('does not persist hasUnsyncedChanges: true when promoting a pristine share-link session', async () => {
+      // Share link opened as an unsaved workspace (activeLocalId null), the
+      // real Path A share-link shape. The server then confirms ownership.
+      (apiGetProject as Mock).mockResolvedValue({
+        isOwner: true,
+        version: 4,
+        updatedAt: '2024-08-01T00:00:00Z',
+        visibility: 'unlisted',
+      });
+      (createProjectInStorage as Mock).mockReturnValue('saved-from-link');
+      // Surface the promoted entry through the manifest so the switch-init
+      // guard sees the matching cloudId (same wiring as the promotion tests).
+      (updateProjectMetadata as Mock).mockImplementation((localId: string, updates: Partial<StoredLocalProject>) => {
+        (loadManifest as Mock).mockReturnValue({
+          version: 1,
+          projects: [makeManifestEntry({
+            localId,
+            cloudId: updates.cloudId ?? null,
+            storage: updates.storage ?? 'local',
+            serverVersion: updates.serverVersion ?? null,
+            cloudSavedAt: updates.cloudSavedAt ?? null,
+            visibility: updates.visibility ?? 'private',
+            hasUnsyncedChanges: updates.hasUnsyncedChanges,
+            cloudConflictVersion: updates.cloudConflictVersion,
+          })],
+        });
+        (loadProject as Mock).mockReturnValue(makeStoredProject({
+          localId,
+          cloudId: updates.cloudId ?? null,
+          storage: updates.storage ?? 'local',
+          serverVersion: updates.serverVersion ?? null,
+          cloudSavedAt: updates.cloudSavedAt ?? null,
+          visibility: updates.visibility ?? 'private',
+          hasUnsyncedChanges: updates.hasUnsyncedChanges,
+          cloudConflictVersion: updates.cloudConflictVersion,
+        }));
+        return writeOk(makeStoredProject({ localId, ...updates }));
+      });
+      const unsavedWrapper = ({ children }: { children: ReactNode }) => (
+        <AppProvider savedState={makeState({ registers: [makeRegister({ id: 'reg-1' })] })}>
+          <EditProvider>
+            <ProjectStorageProvider
+              initialLocalId={null}
+              initialUnsaved={{ name: 'Shared Cloud', source: 'cloud' }}
+            >
+              <CloudSyncProvider>{children}</CloudSyncProvider>
+            </ProjectStorageProvider>
+          </EditProvider>
+        </AppProvider>
+      );
+
+      const { result } = renderWithMountInit('cloud-shared', false, 'local', {
+        serverVersion: 4,
+        cloudSavedAt: '2024-08-01T00:00:00Z',
+        visibility: 'unlisted',
+        hasUnsyncedChanges: false,
+      }, unsavedWrapper);
+
+      // Flush the async ownership re-evaluation (getProject promise + dispatch).
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      await vi.waitFor(() => {
+        expect(result.current.state.isOwner).toBe(true);
+      });
+
+      // The pristine session has no local edits — promotion must not mark it
+      // unsynced (pre-BR-4 the skewed clean(0) baseline read as drifted).
+      expect(updateProjectMetadata).not.toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ hasUnsyncedChanges: true }),
+        expect.anything(),
+      );
+      expect(updateProjectMetadata).toHaveBeenCalledWith(
+        'saved-from-link',
+        expect.objectContaining({ hasUnsyncedChanges: false }),
+        expect.anything(),
+      );
+    });
+
+    it('still dirties on a real edit after the capture window and fires exactly one PUT', async () => {
+      vi.useFakeTimers();
+      try {
+        mockOwnedCleanCloudProject();
+        (apiUpdateProject as Mock).mockResolvedValue({
+          id: 'cloud-x', updatedAt: '2024-01-02T00:00:00Z', version: 3,
+        });
+
+        const { result } = renderWithMountInit('cloud-x', true, 'cloud', {
+          serverVersion: 2,
+          cloudSavedAt: '2024-01-01T00:00:00Z',
+          visibility: 'private',
+          hasUnsyncedChanges: false,
+        });
+
+        // Let the engine capture the baseline; no PUT may fire while clean.
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(CLOUD_SYNC_DEBOUNCE_MS + 1000);
+        });
+        expect(apiUpdateProject).not.toHaveBeenCalled();
+
+        // A real edit flips isDirty…
+        act(() => {
+          result.current.dispatch({
+            type: 'SET_REGISTER_VALUE', registerId: 'reg-1', value: 0x42n,
+          });
+        });
+        expect(result.current.state.isDirty).toBe(true);
+
+        // …and exactly one debounced auto-sync PUT follows.
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(CLOUD_SYNC_DEBOUNCE_MS + 1000);
+        });
+        expect(apiUpdateProject).toHaveBeenCalledTimes(1);
+        expect(result.current.state.isDirty).toBe(false);
+
+        // No churn afterwards.
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(CLOUD_SYNC_DEBOUNCE_MS * 4);
+        });
+        expect(apiUpdateProject).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });

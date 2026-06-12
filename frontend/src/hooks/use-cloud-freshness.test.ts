@@ -633,9 +633,11 @@ describe('checkAndPullFreshVersion — /meta probe', () => {
 // ── Project switch during the check (BR-3 identity gate) ────────────
 
 /**
- * Mirrors the real switch-to-B sequence: `cloudStateForEntry` seeds a CLEAN
- * baseline at the current generation synchronously at switch time, and the
- * active localId ref flips to the new project.
+ * Mirrors the real switch-to-B sequence: `cloudStateForEntry` seeds an
+ * UNTRACKED (awaiting-capture) baseline synchronously at switch time (BR-4)
+ * which the engine then captures into a clean baseline at the current
+ * generation — this helper models the post-capture state — and the active
+ * localId ref flips to the new project.
  */
 function switchLiveProject(ctx: FreshnessCheckContext, cloudId: string | null): void {
   ctx.internalRef.current = makeInternalState({

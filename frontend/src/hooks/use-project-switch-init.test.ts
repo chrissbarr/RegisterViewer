@@ -103,8 +103,9 @@ function buildDefaultDeps() {
   const internalRef = makeRef<InternalCloudSyncState>({ ...initialInternalState });
   const activeLocalIdRef = makeRef<string | null>(PROJECT_A_LOCAL_ID);
   // Cloud-sync reducer dispatch. The source itself writes `internalRef.current`
-  // synchronously for INIT_CLOUD (the same-commit guard device); REQUEST_BASELINE
-  // does NOT write the ref, so its effect is asserted via the dispatched action.
+  // synchronously for INIT_CLOUD (the same-commit guard device); the seed's
+  // baseline (untracked awaiting capture, or dirty — BR-4) is asserted via
+  // that ref write.
   const cloudDispatch = vi.fn<(action: CloudSyncAction) => void>();
 
   const projectA = makeProjectEntry({
@@ -543,7 +544,7 @@ describe('useProjectSwitchInit', () => {
   });
 
   describe('cloud state initialization', () => {
-    it('marks the incoming cloud project clean before running its freshness check', () => {
+    it('seeds the incoming clean cloud project as awaiting capture before running its freshness check', () => {
       const deps = buildDeps();
       deps.dataVersionRef.current = 4;
       const localProject = makeProjectEntry({
@@ -578,11 +579,13 @@ describe('useProjectSwitchInit', () => {
 
       rerender({ activeLocalId: PROJECT_B_LOCAL_ID });
 
-      // A clean incoming cloud project requests a baseline capture so the engine
-      // snapshots the generation into a clean baseline (replaces needsVersionSync).
-      // The awaiting-capture marker is `baseline:{untracked}` (S14a); REQUEST_BASELINE
-      // is dispatched (the engine resolves it to clean(4) on its next tick).
-      expect(deps.cloudDispatch).toHaveBeenCalledWith({ type: 'REQUEST_BASELINE' });
+      // A clean incoming cloud project is seeded directly as awaiting capture
+      // (baseline {untracked}, BR-4 — replaces the follow-up REQUEST_BASELINE
+      // dispatch). With cloudId set, the engine's capture branch converts it
+      // to a clean baseline at the current generation on its next effect tick
+      // (pinned in use-cloud-sync-engine.test.ts).
+      expect(deps.internalRef.current.cloudId).toBe(PROJECT_A_CLOUD_ID);
+      expect(deps.internalRef.current.baseline.kind).toBe('untracked');
       expect(checkAndPullFreshVersion).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({ knownVersion: 9 }),
@@ -667,8 +670,8 @@ describe('useProjectSwitchInit', () => {
       rerender({ activeLocalId: PROJECT_B_LOCAL_ID });
 
       // Stored unsynced changes stay dirty: the seed used a `dirty` baseline
-      // (written to internalRef by the source's INIT_CLOUD ref write) and no
-      // baseline-capture request (REQUEST_BASELINE → untracked) is made.
+      // (written to internalRef by the source's INIT_CLOUD ref write), not the
+      // untracked awaiting-capture marker — so the engine never captures over it.
       expect(deps.internalRef.current.baseline.kind).toBe('dirty');
       expect(deps.cloudDispatch).not.toHaveBeenCalledWith({ type: 'REQUEST_BASELINE' });
       expect(checkAndPullFreshVersion).not.toHaveBeenCalled();

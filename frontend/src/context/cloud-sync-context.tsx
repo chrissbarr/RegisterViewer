@@ -475,16 +475,21 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       } else {
         const hasStoredUnsyncedChanges = metadata.hasUnsyncedChanges === true;
         // Path A of the unified init (S10a / DESIGN §3a): build the flat INIT
-        // state via the shared pure `cloudStateForEntry`. The four divergences
-        // from Path B (`useProjectSwitchInit`) are explicit decisions here:
+        // state via the shared pure `cloudStateForEntry`. Baseline seeding is
+        // NOT a divergence (BR-4): both paths carry the clean/dirty split in
+        // the seed — `dirty` for stored unsynced changes, otherwise `untracked`
+        // (awaiting capture), which the engine resolves to a `clean` baseline
+        // at the real post-first-tick generation. Snapshotting
+        // `dataVersionRef.current` here raced the engine's first tick: this
+        // mount-effect init runs BEFORE the engine bumps the generation, so a
+        // clean owned cloud project read as dirty and fired a no-op load-time
+        // PUT. The three divergences from Path B (`useProjectSwitchInit`) are
+        // explicit decisions here:
         //   • lastCloudSavedAt — Path A threads `metadata.cloudSavedAt` (carried
         //     in the seed, vs Path B's hardcoded null).
         //   • setCloudUrl — DELIBERATELY OMITTED on Path A's cloud branch:
         //     initFromProject runs at startup where AppLoader already owns the
         //     URL, so it intentionally does not call setCloudUrl(cloudId).
-        //   • baseline seeding — Path A does NOT dispatch REQUEST_BASELINE; the
-        //     clean/dirty split is carried entirely by the seed's `baseline`
-        //     (a `dirty` baseline vs. a `clean` snapshot of the generation).
         //   • freshness kickoff — Path A does NOT kick off a freshness check.
         const seed = cloudStateForEntry({
           prev: internalRef.current,
@@ -497,7 +502,6 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
           serverVersion: normalizeServerVersion(metadata.serverVersion),
           conflictVersion: metadata.cloudConflictVersion ?? null,
           hasUnsyncedChanges: hasStoredUnsyncedChanges,
-          dataVersion: dataVersionRef.current,
         });
         // Synchronous ref write so the activeLocalId effect's guard
         // (cloudId === internalRef.current.cloudId) sees this in the same commit.
@@ -505,7 +509,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
         dispatch__internal({ type: 'INIT_CLOUD', seed });
       }
     },
-    [dataVersionRef],
+    [],
   );
 
   const dismissError = useCallback(() => {

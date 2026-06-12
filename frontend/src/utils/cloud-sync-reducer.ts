@@ -95,9 +95,10 @@ export function selectWasDirty(state: InternalCloudSyncState, dataVersion: numbe
  * S8 version-sync handshake (replaces `needsVersionSyncRef` — the three
  * true-writers + the engine reader). Operates on the `baseline` field (S14a):
  * - `REQUEST_BASELINE` → `{ ...prev, baseline:{kind:'untracked'} }`, the
- *   one-shot "awaiting capture" marker the writers (switch-init / load /
- *   freshness-pull) set after adopting a new cloud baseline. `{untracked}`
- *   doubles as the marker; the engine captures when `cloudId !== null`.
+ *   one-shot "awaiting capture" marker the writers (load / freshness-pull)
+ *   set after adopting a new cloud baseline; the INIT paths seed `{untracked}`
+ *   directly via `cloudStateForEntry` (BR-4). `{untracked}` doubles as the
+ *   marker; the engine captures when `cloudId !== null`.
  * - `CAPTURE_BASELINE { version }` → `{ ...prev, baseline:{kind:'clean',version} }`,
  *   dispatched by the engine at the post-increment effect tick with
  *   `dataVersionRef.current`
@@ -195,22 +196,22 @@ export interface CloudEntrySeed {
   conflictVersion: number | null;
   /**
    * Whether the stored payload already needs saving. Drives the `dirty` baseline
-   * vs. a `clean` snapshot of the current generation (the clean case the callers
-   * convert to "awaiting capture" via a follow-up `REQUEST_BASELINE`).
+   * vs. an `untracked` (awaiting-capture) baseline that the engine resolves to
+   * a `clean` snapshot of the post-first-tick generation (CAPTURE_BASELINE).
    */
   hasUnsyncedChanges: boolean;
-  /** The engine's current generation (`dataVersionRef.current`). */
-  dataVersion: number;
 }
 
 /**
  * Pure builder for the cloud INIT state, consumed by `INIT_CLOUD` from BOTH init
  * paths (`initFromProject` and `useProjectSwitchInit`). Returns an
  * `InternalCloudSyncState` (with the S14a `baseline` union) — the same state the
- * temporary inline seed builders produced. The four documented
- * divergences (`setCloudUrl`, baseline seeding, freshness kickoff,
- * `lastCloudSavedAt`) live in the callers as explicit post-steps; this builder
- * only owns the shape, with the `lastCloudSavedAt` divergence carried in the seed.
+ * temporary inline seed builders produced. The three documented
+ * divergences (`setCloudUrl`, freshness kickoff, `lastCloudSavedAt`) live in
+ * the callers as explicit post-steps; this builder only owns the shape, with
+ * the `lastCloudSavedAt` divergence carried in the seed. Baseline seeding is
+ * NOT a divergence (BR-4): both paths get the same `dirty`-or-`untracked`
+ * split from `hasUnsyncedChanges` below.
  */
 export function cloudStateForEntry(seed: CloudEntrySeed): InternalCloudSyncState {
   return {
@@ -220,10 +221,13 @@ export function cloudStateForEntry(seed: CloudEntrySeed): InternalCloudSyncState
     storage: seed.storage,
     shareUrl: seed.shareUrl,
     // A `dirty` baseline keeps a stored-unsynced payload dirty until the first
-    // save; otherwise snapshot the current generation as a `clean` baseline
-    // (the callers then dispatch REQUEST_BASELINE to await capture on the next
-    // engine tick — see DESIGN §3a).
-    baseline: seed.hasUnsyncedChanges ? dirtyBaseline() : cleanBaseline(seed.dataVersion),
+    // save; otherwise seed `untracked` — the awaiting-capture marker itself
+    // (BR-4). The engine snapshots the real post-first-tick generation into a
+    // `clean` baseline via CAPTURE_BASELINE; snapshotting the caller's current
+    // generation here would race the engine's unconditional first-tick bump
+    // (a pre-engine Path A init captured 0, read as dirty, and fired a no-op
+    // load-time PUT).
+    baseline: seed.hasUnsyncedChanges ? dirtyBaseline() : untrackedBaseline(),
     lastCloudSavedAt: seed.lastCloudSavedAt,
     // Reset the op lifecycle so a stale `status:'saving'` (or `'deleting'` etc.)
     // AND a stale `asyncTransient:'syncing'|'offline'` overlay from the departing

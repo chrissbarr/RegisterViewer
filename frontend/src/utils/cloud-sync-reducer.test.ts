@@ -537,7 +537,6 @@ describe('cloudSyncReducer', () => {
       serverVersion: 7,
       conflictVersion: null,
       hasUnsyncedChanges: false,
-      dataVersion: 4,
     };
 
     it('builds the flat cloud INIT state, spreading prev underneath', () => {
@@ -556,7 +555,7 @@ describe('cloudSyncReducer', () => {
         storage: 'cloud',
         status: 'idle',
         shareUrl: 'https://example/p/cloud123',
-        baseline: cleanBaseline(4),
+        baseline: untrackedBaseline(),
         lastCloudSavedAt: '2026-01-01T00:00:00Z',
         error: null,
         asyncTransient: null,
@@ -578,13 +577,19 @@ describe('cloudSyncReducer', () => {
       expect(next.asyncTransient).toBeNull();
     });
 
-    it('seeds a clean baseline at the current generation when there are no unsynced changes', () => {
-      const next = cloudStateForEntry({ ...base, hasUnsyncedChanges: false, dataVersion: 11 });
-      expect(next.baseline).toEqual(cleanBaseline(11));
+    it('seeds an untracked (awaiting-capture) baseline when there are no unsynced changes (BR-4)', () => {
+      // The clean seed must NOT snapshot the caller's generation (that raced
+      // the engine's first tick); it awaits the engine's capture instead.
+      const next = cloudStateForEntry({ ...base, hasUnsyncedChanges: false });
+      expect(next.baseline).toEqual(untrackedBaseline());
+      // …and the engine's CAPTURE_BASELINE resolves it to a clean baseline at
+      // the real post-first-tick generation.
+      const captured = cloudSyncReducer(next, { type: 'CAPTURE_BASELINE', version: 11 });
+      expect(captured.baseline).toEqual(cleanBaseline(11));
     });
 
     it('seeds a dirty baseline when stored unsynced changes exist', () => {
-      const next = cloudStateForEntry({ ...base, hasUnsyncedChanges: true, dataVersion: 11 });
+      const next = cloudStateForEntry({ ...base, hasUnsyncedChanges: true });
       expect(next.baseline).toEqual(dirtyBaseline());
     });
 
