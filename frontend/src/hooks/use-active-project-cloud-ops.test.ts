@@ -59,6 +59,7 @@ vi.mock('../utils/cloud-utils', async () => {
 vi.mock('../utils/project-storage', () => ({
   buildProjectUrl: vi.fn((id: string) => `https://example.com/#/p/${id}`),
   patchProjectState: vi.fn(() => ({ ok: true, status: 'ok', evictedLocalIds: [] })),
+  loadProject: vi.fn(),
 }));
 
 vi.mock('../utils/storage', () => ({
@@ -88,7 +89,7 @@ import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl
 import { setCloudUrl, clearCloudUrl } from '../utils/cloud-utils';
 import { checkAndPullFreshVersion } from './use-cloud-freshness';
 import { exportToObject } from '../utils/storage';
-import { patchProjectState } from '../utils/project-storage';
+import { patchProjectState, loadProject } from '../utils/project-storage';
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -333,9 +334,18 @@ describe('useActiveProjectCloudOps', () => {
         isOwner: true,
         storage: 'cloud',
       };
-      // Simulate project switch during the async save
+      // The departed record still matches the save-start snapshot (the
+      // serializeState mock returns this constant shape for every call).
+      (loadProject as Mock).mockReturnValue({
+        state: { registers: [], activeRegisterId: null, registerValues: {} },
+      });
+      // Simulate project switch during the async save: the active ref flips,
+      // the live app state now belongs to project B, and the switch bumps the
+      // edit generation (which poisons editedDuringSave for the departed project).
       (saveProjectToCloudImpl as Mock).mockImplementation(async () => {
         deps.activeLocalIdRef.current = 'switched-project';
+        deps.appStateRef.current = makeState({ project: { title: 'Project B' } });
+        deps.dataVersionRef.current += 1;
         return { kind: 'updated', cloudId: TEST_CLOUD_ID, timestamp: TEST_TIMESTAMP, version: 2 };
       });
 
@@ -345,7 +355,12 @@ describe('useActiveProjectCloudOps', () => {
         await result.current.saveToCloud();
       });
 
-      // updateCloudMetadata should target the original project, not the switched one
+      // No state write for the departed project (BR-2 gate): project B's live
+      // state must never be persisted into project A's record.
+      expect(patchProjectState).not.toHaveBeenCalled();
+      // updateCloudMetadata should target the original project, not the switched
+      // one — with fingerprint-driven hasUnsyncedChanges (record equals the
+      // save-start snapshot here, so it's clean).
       expect(deps.updateCloudMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, {
         cloudSavedAt: TEST_TIMESTAMP,
         serverVersion: 2,
@@ -802,6 +817,204 @@ describe('useActiveProjectCloudOps', () => {
         (state) => state.conflict === null && state.serverVersion === 10 && state.status === 'idle',
       );
       expect(hasConflictCleared).toBe(true);
+    });
+  });
+
+  describe('BR-2: late local persist gated on project identity', () => {
+    const SWITCHED_LOCAL_ID = 'switched-project';
+    // serializeState is mocked to a constant shape, so the save-start
+    // fingerprint is the JSON of this object: a departed record holding it is
+    // fingerprint-equal (clean); anything else models genuine flushed edits.
+    const SAVE_START_STATE = { registers: [], activeRegisterId: null, registerValues: {} };
+    const FLUSHED_EDITS_STATE = { registers: [], activeRegisterId: null, registerValues: { 'reg-1': '0xAB' } };
+
+    function makeCloudDeps() {
+      const deps = makeDefaultDeps();
+      deps.internalRef.current = {
+        ...INITIAL_INTERNAL_STATE,
+        cloudId: TEST_CLOUD_ID,
+        isOwner: true,
+        storage: 'cloud',
+        serverVersion: 2,
+        baseline: cleanBaseline(1),
+      };
+      deps.dataVersionRef.current = 1;
+      return deps;
+    }
+
+    // Models a real mid-save project switch: the active ref flips, the live
+    // app state now belongs to project B, and the switch bumps the edit
+    // generation (which poisons editedDuringSave for the departed project).
+    function switchToProjectB(deps: ReturnType<typeof makeDefaultDeps>) {
+      deps.activeLocalIdRef.current = SWITCHED_LOCAL_ID;
+      deps.appStateRef.current = makeState({
+        registers: [makeRegister({ id: 'reg-b' })],
+        registerValues: { 'reg-b': 0x1n },
+        project: { title: 'Project B' },
+      });
+      deps.dataVersionRef.current += 1;
+    }
+
+    describe('updated arm after a mid-save switch', () => {
+      function setupUpdatedSwitch(storedState: unknown) {
+        const deps = makeCloudDeps();
+        (loadProject as Mock).mockReturnValue({ state: storedState });
+        (saveProjectToCloudImpl as Mock).mockImplementation(async () => {
+          switchToProjectB(deps);
+          return { kind: 'updated', cloudId: TEST_CLOUD_ID, timestamp: TEST_TIMESTAMP, version: 3 };
+        });
+        return deps;
+      }
+
+      it('skips the state write and stamps clean metadata when the stored record equals the save-start snapshot', async () => {
+        const deps = setupUpdatedSwitch(SAVE_START_STATE);
+
+        const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
+        await act(async () => { await result.current.saveToCloud(); });
+
+        // The live state belongs to project B — it must never be persisted
+        // into the departed project's record.
+        expect(patchProjectState).not.toHaveBeenCalled();
+        expect(deps.updateCloudMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, {
+          cloudSavedAt: TEST_TIMESTAMP,
+          serverVersion: 3,
+          cloudConflictVersion: null,
+          hasUnsyncedChanges: false,
+        });
+      });
+
+      it('marks fingerprint-differing flushed edits as unsynced without touching the stored state', async () => {
+        const deps = setupUpdatedSwitch(FLUSHED_EDITS_STATE);
+
+        const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
+        await act(async () => { await result.current.saveToCloud(); });
+
+        expect(patchProjectState).not.toHaveBeenCalled();
+        expect(deps.updateCloudMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, {
+          cloudSavedAt: TEST_TIMESTAMP,
+          serverVersion: 3,
+          cloudConflictVersion: null,
+          hasUnsyncedChanges: true,
+        });
+      });
+    });
+
+    describe('conflict arm after a mid-save switch', () => {
+      function setupConflictSwitch(storedState: unknown) {
+        const deps = makeCloudDeps();
+        (loadProject as Mock).mockReturnValue({ state: storedState });
+        (saveProjectToCloudImpl as Mock).mockImplementation(async () => {
+          switchToProjectB(deps);
+          return { kind: 'conflict', serverVersion: 5 };
+        });
+        return deps;
+      }
+
+      it('writes conflict metadata only when genuine flushed edits exist (no state write)', async () => {
+        const deps = setupConflictSwitch(FLUSHED_EDITS_STATE);
+
+        const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
+        await act(async () => { await result.current.saveToCloud(); });
+
+        // B's live state must not become A's "local edits to keep".
+        expect(patchProjectState).not.toHaveBeenCalled();
+        expect(deps.updateCloudMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, {
+          serverVersion: 5,
+          cloudConflictVersion: 5,
+          hasUnsyncedChanges: true,
+        });
+        // No conflict banner for the now-active project B, no auto-pull.
+        expect(deps.cloudDispatch).not.toHaveBeenCalledWith({ type: 'CONFLICT_DIRTY', serverVersion: 5 });
+        expect(checkAndPullFreshVersion).not.toHaveBeenCalled();
+      });
+
+      it('stamps a clean (fingerprint-equal) post-switch 409 with hasUnsyncedChanges: false', async () => {
+        const deps = setupConflictSwitch(SAVE_START_STATE);
+
+        const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
+        await act(async () => { await result.current.saveToCloud(); });
+
+        expect(patchProjectState).not.toHaveBeenCalled();
+        expect(deps.updateCloudMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, {
+          serverVersion: 5,
+          cloudConflictVersion: 5,
+          hasUnsyncedChanges: false,
+        });
+        expect(checkAndPullFreshVersion).not.toHaveBeenCalled();
+      });
+    });
+
+    it("never overwrites the departed record's flushed edits in either arm (the gate is load-bearing)", async () => {
+      // The departed record holds flushed edits NEWER than the save-start
+      // snapshot (switchProject flushes BEFORE the ref flip). An unconditional
+      // save-start-snapshot persist — the rejected 06-branch-review fix —
+      // would clobber them; the gate must leave the stored state untouched.
+      const lateResults = [
+        { kind: 'updated', cloudId: TEST_CLOUD_ID, timestamp: TEST_TIMESTAMP, version: 3 },
+        { kind: 'conflict', serverVersion: 5 },
+      ];
+      for (const lateResult of lateResults) {
+        const deps = makeCloudDeps();
+        (loadProject as Mock).mockReturnValue({ state: FLUSHED_EDITS_STATE });
+        (saveProjectToCloudImpl as Mock).mockImplementation(async () => {
+          switchToProjectB(deps);
+          return lateResult;
+        });
+
+        const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
+        await act(async () => { await result.current.saveToCloud(); });
+      }
+      expect(patchProjectState).not.toHaveBeenCalled();
+    });
+
+    describe('same-project regression pins', () => {
+      it('updated arm with no switch still persists the live state with generation metadata', async () => {
+        const deps = makeCloudDeps();
+        (saveProjectToCloudImpl as Mock).mockResolvedValue({
+          kind: 'updated', cloudId: TEST_CLOUD_ID, timestamp: TEST_TIMESTAMP, version: 3,
+        });
+
+        const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
+        await act(async () => { await result.current.saveToCloud(); });
+
+        expect(patchProjectState).toHaveBeenCalledWith(
+          TEST_LOCAL_ID,
+          { registers: [], activeRegisterId: null, registerValues: {} },
+          { protectedLocalIds: [TEST_LOCAL_ID] },
+        );
+        expect(deps.updateCloudMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, {
+          cloudSavedAt: TEST_TIMESTAMP,
+          serverVersion: 3,
+          cloudConflictVersion: null,
+          hasUnsyncedChanges: false,
+        });
+        // The fingerprint compare stays off the common same-project path.
+        expect(loadProject).not.toHaveBeenCalled();
+      });
+
+      it('dirty 409 with no switch still persists local edits before the conflict banner', async () => {
+        const deps = makeCloudDeps();
+        (saveProjectToCloudImpl as Mock).mockImplementation(async () => {
+          deps.dataVersionRef.current = 2; // genuine in-flight edit, same project
+          return { kind: 'conflict', serverVersion: 5 };
+        });
+
+        const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
+        await act(async () => { await result.current.saveToCloud(); });
+
+        expect(patchProjectState).toHaveBeenCalledWith(
+          TEST_LOCAL_ID,
+          { registers: [], activeRegisterId: null, registerValues: {} },
+          { protectedLocalIds: [TEST_LOCAL_ID] },
+        );
+        expect(deps.updateCloudMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, {
+          serverVersion: 5,
+          cloudConflictVersion: 5,
+          hasUnsyncedChanges: true,
+        });
+        expect(deps.cloudDispatch).toHaveBeenCalledWith({ type: 'CONFLICT_DIRTY', serverVersion: 5 });
+        expect(loadProject).not.toHaveBeenCalled();
+      });
     });
   });
 

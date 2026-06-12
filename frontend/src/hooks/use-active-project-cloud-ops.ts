@@ -5,7 +5,7 @@ import { fetchAndParseCloudProject, decideStorageForFetched } from '../utils/clo
 import { checkAndPullFreshVersion, type FreshnessCheckContext } from './use-cloud-freshness';
 import { materializeCloudProject } from '../utils/cloud-materialize';
 import { friendlyErrorMessage } from '../utils/friendly-error';
-import { buildProjectUrl, patchProjectState, type ProjectStorageWriteResult } from '../utils/project-storage';
+import { buildProjectUrl, patchProjectState, loadProject, type ProjectStorageWriteResult } from '../utils/project-storage';
 import { setCloudUrl, clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock, requireJwt, applyVisibilityWrite } from '../utils/cloud-utils';
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl, type SaveConflictResult } from '../utils/cloud-operations';
 import { positiveVersion } from '../utils/cloud-sync';
@@ -20,6 +20,7 @@ interface ConflictHandlerParams {
   attempt: SaveAttemptSnapshot;
   dataVersionRef: MutableRefObject<number>;
   capturedLocalId: string | null;
+  savedFingerprint: string;
   existingCloudId: string | null;
   activeLocalIdRef: MutableRefObject<string | null>;
   internalRef: MutableRefObject<InternalCloudSyncState>;
@@ -35,6 +36,19 @@ interface SaveAttemptSnapshot {
   dataVersion: number;
   baseline: Baseline;
   serverVersion: number;
+}
+
+/**
+ * Opaque equality token for a serialized project state (BR-2). Used only for
+ * same/different comparisons between the save-start snapshot and the stored
+ * record of a departed project. Tolerates bigint values (decimal-stringified)
+ * so the token is total over any state shape; production serialized states
+ * are already JSON-safe (register values are hex strings), so the replacer
+ * does not change the comparison semantics.
+ */
+function stateFingerprint(state: unknown): string | undefined {
+  return JSON.stringify(state, (_key, value: unknown) =>
+    typeof value === 'bigint' ? value.toString() : value);
 }
 
 /**
@@ -102,6 +116,7 @@ interface UpdatedHandlerParams {
   capturedLocalId: string | null;
   stillOnSameProject: boolean;
   editedDuringSave: boolean;
+  savedFingerprint: string;
   activeLocalIdRef: MutableRefObject<string | null>;
   internalRef: MutableRefObject<InternalCloudSyncState>;
   updateCloudMetadata: (localId: string, updates: CloudMetadataUpdate) => ProjectStorageWriteResult;
@@ -111,7 +126,7 @@ interface UpdatedHandlerParams {
 
 function handleUpdatedResultImpl(params: UpdatedHandlerParams): SaveOutcome {
   const {
-    result, attempt, capturedLocalId, stillOnSameProject, editedDuringSave,
+    result, attempt, capturedLocalId, stillOnSameProject, editedDuringSave, savedFingerprint,
     activeLocalIdRef, internalRef, updateCloudMetadata, appStateRef, cloudDispatch,
   } = params;
 
@@ -126,17 +141,46 @@ function handleUpdatedResultImpl(params: UpdatedHandlerParams): SaveOutcome {
   if (capturedLocalId) {
     let persistError: string | null = null;
 
-    const stateResult = patchProjectState(capturedLocalId, serializeState(appStateRef.current), {
-      protectedLocalIds: [activeLocalIdRef.current],
-    });
-    if (!stateResult.ok) {
-      persistError = 'Project was saved to cloud, but the local copy could not be updated.';
+    if (stillOnSameProject) {
+      const stateResult = patchProjectState(capturedLocalId, serializeState(appStateRef.current), {
+        protectedLocalIds: [activeLocalIdRef.current],
+      });
+      if (!stateResult.ok) {
+        persistError = 'Project was saved to cloud, but the local copy could not be updated.';
+      } else {
+        const metadataResult = updateCloudMetadata(capturedLocalId, {
+          cloudSavedAt: result.timestamp,
+          serverVersion: result.version,
+          cloudConflictVersion: null,
+          hasUnsyncedChanges: editedDuringSave,
+        });
+        if (!metadataResult.ok) {
+          persistError = 'Project was saved to cloud, but local cloud metadata could not be persisted.';
+        }
+      }
     } else {
+      // BR-2 gate: the user switched projects while this save was in flight,
+      // so `appStateRef.current` now holds the NEW project's state — persisting
+      // it would corrupt the departed project's record (and rename it: the
+      // manifest name derives from `state.project.title`). Skipping the state
+      // write is safe because `switchProject` flushes the departing project
+      // synchronously BEFORE flipping `activeLocalIdRef`, so the departed
+      // record already holds its latest (≥ save-start) state whenever we get
+      // here. Metadata-only: stamp the confirmed server version (the departure
+      // save depends on reading it — see the invariant note below) and derive
+      // hasUnsyncedChanges by comparing the stored record against the
+      // save-start fingerprint, since `editedDuringSave` is poisoned by the
+      // switch-induced generation bump. (Extracting this reconcile idiom into
+      // a shared module is deferred to the consolidation backlog; note that
+      // `useProjectCloudOps.saveProjectToCloud` still hardcodes
+      // `hasUnsyncedChanges: false` without a fingerprint — the same latent
+      // bug in miniature.)
+      const fingerprintDiffers = stateFingerprint(loadProject(capturedLocalId)?.state) !== savedFingerprint;
       const metadataResult = updateCloudMetadata(capturedLocalId, {
         cloudSavedAt: result.timestamp,
         serverVersion: result.version,
         cloudConflictVersion: null,
-        hasUnsyncedChanges: editedDuringSave,
+        hasUnsyncedChanges: fingerprintDiffers,
       });
       if (!metadataResult.ok) {
         persistError = 'Project was saved to cloud, but local cloud metadata could not be persisted.';
@@ -167,7 +211,7 @@ function handleUpdatedResultImpl(params: UpdatedHandlerParams): SaveOutcome {
 
 async function handleConflictResult(params: ConflictHandlerParams): Promise<void> {
   const {
-    result, attempt, dataVersionRef, capturedLocalId, existingCloudId,
+    result, attempt, dataVersionRef, capturedLocalId, savedFingerprint, existingCloudId,
     activeLocalIdRef, internalRef, lastFreshnessCheckRef,
     updateCloudMetadata, appStateRef, cloudDispatch, dispatch, getJwt,
   } = params;
@@ -187,6 +231,30 @@ async function handleConflictResult(params: ConflictHandlerParams): Promise<void
     internalRef,
   );
 
+  if (!stillOnSameProject) {
+    // BR-2 gate (see handleUpdatedResultImpl): the user switched projects
+    // mid-save, so the live app state belongs to the NEW project — persisting
+    // it would make B's state the departed project's "local edits to keep"
+    // (and a force-Save would then push B over A's cloud copy). No state write
+    // is needed: `switchProject` flushes the departing project synchronously
+    // BEFORE flipping `activeLocalIdRef`, so the departed record already holds
+    // its latest state. Write the conflict metadata UNCONDITIONALLY — the
+    // dirtyAtSaveStart/editedDuringSave classification is switch-poisoned, so
+    // hasUnsyncedChanges is derived from the save-start fingerprint instead.
+    // This write MUST stay inside the held mutation-lock window (synchronous,
+    // before any await) so the departure-save retry's cloudConflictVersion
+    // check sees it before attempting its PUT.
+    if (capturedLocalId) {
+      const fingerprintDiffers = stateFingerprint(loadProject(capturedLocalId)?.state) !== savedFingerprint;
+      updateCloudMetadata(capturedLocalId, {
+        serverVersion: result.serverVersion,
+        cloudConflictVersion: result.serverVersion,
+        hasUnsyncedChanges: fingerprintDiffers,
+      });
+    }
+    return;
+  }
+
   if (dirtyAtSaveStart || editedDuringSave) {
     if (capturedLocalId) {
       const stateResult = patchProjectState(capturedLocalId, serializeState(appStateRef.current), {
@@ -200,13 +268,10 @@ async function handleConflictResult(params: ConflictHandlerParams): Promise<void
         });
       }
     }
-    if (!stillOnSameProject) return;
     // Dirty 409: preserve local edits and wait for explicit user action.
     cloudDispatch({ type: 'CONFLICT_DIRTY', serverVersion: result.serverVersion });
     return;
   }
-
-  if (!stillOnSameProject) return;
 
   // Clean 409: no local edits; pull server version silently unless a new edit appears.
   cloudDispatch({ type: 'CONFLICT_CLEAN', serverVersion: result.serverVersion });
@@ -397,7 +462,14 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
           baseline,
           serverVersion,
         };
-        const jsonPayload = exportToObject(appStateRef.current);
+        // Snapshot the save-start state ONCE, synchronously (pre-await): the
+        // PUT payload and the fingerprint must describe the same state. The
+        // fingerprint lets the late result handlers derive hasUnsyncedChanges
+        // for a departed project (the departure flush's changed-during-save
+        // idiom) without touching its stored state.
+        const stateAtSaveStart = appStateRef.current;
+        const jsonPayload = exportToObject(stateAtSaveStart);
+        const savedFingerprint = stateFingerprint(serializeState(stateAtSaveStart)) ?? '';
         const freshJwt = requireJwt(getJwt);
         const result = await saveProjectToCloudImpl(jsonPayload, existingCloudId, freshJwt, positiveVersion(serverVersion) ?? undefined);
         const editedDuringSave = dataVersionRef.current !== attempt.dataVersion;
@@ -417,7 +489,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
 
         if (result.kind === 'conflict') {
           await handleConflictResult({
-            result, attempt, dataVersionRef, capturedLocalId, existingCloudId,
+            result, attempt, dataVersionRef, capturedLocalId, savedFingerprint, existingCloudId,
             activeLocalIdRef, internalRef, lastFreshnessCheckRef,
             updateCloudMetadata, appStateRef, cloudDispatch, dispatch, getJwt,
           });
@@ -431,7 +503,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
           return 'created';
         } else {
           return handleUpdatedResultImpl({
-            result, attempt, capturedLocalId, stillOnSameProject, editedDuringSave,
+            result, attempt, capturedLocalId, stillOnSameProject, editedDuringSave, savedFingerprint,
             activeLocalIdRef, internalRef, updateCloudMetadata, appStateRef, cloudDispatch,
           });
         }
