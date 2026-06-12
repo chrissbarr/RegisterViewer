@@ -173,6 +173,9 @@ export function useCloudSyncEngine(deps: UseCloudSyncEngineDeps): UseCloudSyncEn
           case 'login-required':
           case 'not-found':
           case 'conflict':
+          case 'conflict-pending':
+            // 'conflict-pending' (BR-1): an open conflict refused the save. Do
+            // NOT retry — only the banner's explicit force may save.
             setAsyncOverride(null);
             return;
           default: {
@@ -210,7 +213,12 @@ export function useCloudSyncEngine(deps: UseCloudSyncEngineDeps): UseCloudSyncEn
     if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
     // Derive dirty status from refs so this callback is referentially stable
     // (isDirty in the dep array caused a stale-closure duplicate PUT).
-    const { cloudId, isOwner, baseline } = internalRef.current;
+    const { cloudId, isOwner, baseline, conflict } = internalRef.current;
+    // Conflict gate (BR-1, mirrors canAutoSync): during an open conflict the
+    // advanced serverVersion would let the PUT succeed and silently overwrite
+    // the other device. This in-memory guard is load-bearing — when the dirty-409
+    // local persist failed (quota), the manifest may lack cloudConflictVersion.
+    if (conflict !== null) return;
     if (!isOwner || !computeIsDirty(baseline, cloudId, dataVersionRef.current)) {
       return;
     }

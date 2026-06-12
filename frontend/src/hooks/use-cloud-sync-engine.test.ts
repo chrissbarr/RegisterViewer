@@ -672,6 +672,31 @@ describe('useCloudSyncEngine - auto-sync', () => {
     expect(saveToCloud).toHaveBeenCalledTimes(1);
   });
 
+  it('does not reschedule after a conflict-pending outcome', async () => {
+    const saveToCloud = vi.fn(async () => 'conflict-pending' as const);
+    const internal = makeInternal({ cloudId: 'cloud-1', baseline: cleanBaseline(0) });
+    const dataDeps = makeDataDeps();
+
+    const deps = makeDeps({
+      dataDeps,
+      internal,
+      canAutoSync: true,
+      saveToCloud,
+    });
+
+    const { rerender } = renderHook(
+      (props: UseCloudSyncEngineDeps) => useCloudSyncEngine(props),
+      { initialProps: deps },
+    );
+
+    // Make dirty
+    rerender({ ...deps, dataDeps: makeDataDeps({ registers: [{ id: 'r2' }] }) });
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(100); }); // first fire
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); }); // no further retry
+    expect(saveToCloud).toHaveBeenCalledTimes(1);
+  });
+
   it('skips save when no JWT available', async () => {
     const saveToCloud = vi.fn(() => Promise.resolve('saved' as const));
     const internal = makeInternal({ cloudId: 'cloud-1', baseline: cleanBaseline(0) });
@@ -850,6 +875,34 @@ describe('useCloudSyncEngine - auto-sync', () => {
       const deps = makeDeps({ internal, saveToCloud });
 
       const { result } = renderHook(() => useCloudSyncEngine(deps));
+
+      await act(async () => {
+        await result.current.flushCloudSync();
+      });
+
+      expect(saveToCloud).not.toHaveBeenCalled();
+    });
+
+    it('skips when a conflict is open even when dirty (BR-1)', async () => {
+      const saveToCloud = vi.fn(() => Promise.resolve('saved' as const));
+      const internal = makeInternal({
+        cloudId: 'cloud-abc',
+        isOwner: true,
+        baseline: cleanBaseline(0),
+        conflict: { serverVersion: 9 },
+      });
+
+      const deps = makeDeps({ internal, saveToCloud });
+
+      const { result, rerender } = renderHook(
+        (props: UseCloudSyncEngineDeps) => useCloudSyncEngine(props),
+        { initialProps: deps },
+      );
+
+      // Make dirty — the conflict gate must still refuse the flush (mirrors
+      // canAutoSync; covers the quota edge where only the in-memory conflict
+      // protects because the manifest persist of cloudConflictVersion failed).
+      rerender({ ...deps, dataDeps: makeDataDeps({ registers: [{ id: 'r2' }] }) });
 
       await act(async () => {
         await result.current.flushCloudSync();

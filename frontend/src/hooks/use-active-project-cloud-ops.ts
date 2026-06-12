@@ -256,7 +256,7 @@ interface ActiveProjectCloudOpsDeps {
 
 /** The memoized per-project cloud operations (stable reference across renders). */
 interface ActiveProjectOps {
-  saveToCloud: () => Promise<SaveOutcome>;
+  saveToCloud: (opts?: { force?: boolean }) => Promise<SaveOutcome>;
   fork: () => Promise<void>;
   deleteFromCloud: () => Promise<void>;
   setVisibility: (v: Visibility) => Promise<void>;
@@ -365,7 +365,7 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
     return 'created';
   }, [updateCloudMetadata, createNewProject, activeLocalIdRef, appStateRef, cloudDispatch]);
 
-  const saveToCloud = useCallback(async (): Promise<SaveOutcome> => {
+  const saveToCloud = useCallback(async (opts?: { force?: boolean }): Promise<SaveOutcome> => {
     if (!isCloudEnabled()) return 'noop';
 
     // JWT guard: defer to login dialog if not authenticated
@@ -377,6 +377,14 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
     }
 
     const lockResult = await withMutationLock(mutationLockRef, async () => {
+      // Conflict guard (BR-1): during an open conflict, CONFLICT_DIRTY advanced
+      // serverVersion to the server's version, so an unguarded PUT would succeed
+      // and silently overwrite the other device. Only the banner's explicit
+      // Save passes `force: true`; everything else refuses without touching
+      // the network (no BEGIN_SAVE — the refusal precedes any state transition).
+      if (internalRef.current.conflict && !opts?.force) {
+        return 'conflict-pending';
+      }
       const capturedLocalId = activeLocalIdRef.current;
       let existingCloudId: string | null = null;
       try {

@@ -383,6 +383,30 @@ describe('ShareDialog', () => {
       expect(mockSaveToCloud).toHaveBeenCalledOnce();
     });
 
+    it('shows the conflict message when the save resolves conflict-pending (BR-1)', async () => {
+      // During an open conflict the save refuses (resolves 'conflict-pending'
+      // instead of PUTting); the dialog must surface the descriptive message
+      // rather than silently doing nothing.
+      const mockSaveToCloud = vi.fn().mockResolvedValue('conflict-pending');
+      (useCloudSyncActions as Mock).mockReturnValue({
+        saveToCloud: mockSaveToCloud,
+        saveProjectToCloud: vi.fn(),
+        setVisibility: vi.fn(),
+        setProjectVisibility: vi.fn(),
+      });
+      renderShareDialog();
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Save to Cloud' }));
+      });
+
+      await waitFor(() => {
+        expect(
+          screen.getByText('This project has a cloud conflict. Open it and choose Save or Load before syncing.'),
+        ).toBeInTheDocument();
+      });
+    });
+
     it('calls doSave directly (skips first-time prompt) when cloud project already exists', () => {
       const mockSaveToCloud = vi.fn();
       (useCloudSync as Mock).mockReturnValue({

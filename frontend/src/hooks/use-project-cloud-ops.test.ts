@@ -53,7 +53,7 @@ function makeInitialState() {
   return { ...initialInternalState };
 }
 
-function makeProjectList(entries: Array<{ localId: string; cloudId?: string | null; serverVersion?: number | null; storage?: 'local' | 'cloud' }>): ProjectListEntry[] {
+function makeProjectList(entries: Array<{ localId: string; cloudId?: string | null; serverVersion?: number | null; cloudConflictVersion?: number | null; storage?: 'local' | 'cloud' }>): ProjectListEntry[] {
   return entries.map(p => ({
     localId: p.localId,
     cloudId: p.cloudId ?? null,
@@ -63,6 +63,7 @@ function makeProjectList(entries: Array<{ localId: string; cloudId?: string | nu
     localSavedAt: '2026-01-01T00:00:00Z',
     cloudSavedAt: null,
     serverVersion: p.serverVersion ?? null,
+    cloudConflictVersion: p.cloudConflictVersion ?? null,
     storage: p.storage ?? ((p.cloudId ?? null) !== null ? 'cloud' as const : 'local' as const),
   }));
 }
@@ -322,6 +323,73 @@ describe('useProjectCloudOps', () => {
           await result.current.saveProjectToCloud('local-1');
         }),
       ).rejects.toThrow('Another cloud operation is in progress');
+    });
+
+    it('rejects a by-localId save of a conflicted entry without touching the network (BR-1)', async () => {
+      const deps = makeDeps({
+        activeLocalId: 'other-local',
+        projects: makeProjectList([{ localId: 'local-1', cloudId: 'cloud-1', serverVersion: 9, cloudConflictVersion: 9 }]),
+      });
+      (loadProject as Mock).mockReturnValue({
+        state: '{}',
+        cloudId: 'cloud-1',
+        storage: 'cloud',
+        serverVersion: 9,
+        cloudConflictVersion: 9,
+      });
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      await expect(
+        act(async () => {
+          await result.current.saveProjectToCloud('local-1');
+        }),
+      ).rejects.toThrow('This project has a cloud conflict. Open it and choose Save or Load before syncing.');
+
+      // No PUT and no metadata write — the conflict evidence must be preserved
+      // so purgeCloudProjects demotes (not evicts) the entry on sign-out.
+      expect(saveProjectToCloudImpl).not.toHaveBeenCalled();
+      expect(deps.updateCloudMetadata).not.toHaveBeenCalled();
+    });
+
+    it('detects the conflict from the stored project when the manifest entry lacks it', async () => {
+      const deps = makeDeps({
+        activeLocalId: 'other-local',
+        projects: makeProjectList([{ localId: 'local-1', cloudId: 'cloud-1', serverVersion: 9 }]),
+      });
+      (loadProject as Mock).mockReturnValue({
+        state: '{}',
+        cloudId: 'cloud-1',
+        storage: 'cloud',
+        serverVersion: 9,
+        cloudConflictVersion: 9,
+      });
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      await expect(
+        act(async () => {
+          await result.current.saveProjectToCloud('local-1');
+        }),
+      ).rejects.toThrow(/cloud conflict/);
+
+      expect(saveProjectToCloudImpl).not.toHaveBeenCalled();
+      expect(deps.updateCloudMetadata).not.toHaveBeenCalled();
+    });
+
+    it('reports the conflict message when the active-project delegation returns conflict-pending', async () => {
+      const activeProjectSave = vi.fn(async () => 'conflict-pending' as const);
+      const deps = makeDeps({ activeProjectSave });
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      // Must surface the descriptive conflict message, not the misleading
+      // generic "Failed to save active project to cloud." (BR-1).
+      await expect(
+        act(async () => {
+          await result.current.saveProjectToCloud('local-1');
+        }),
+      ).rejects.toThrow(/cloud conflict/);
     });
 
     it('skips when cloud is not enabled', async () => {

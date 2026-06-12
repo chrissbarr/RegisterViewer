@@ -44,6 +44,14 @@ export function clearCloudUrl(): void {
   history.replaceState(null, '', window.location.pathname + window.location.search);
 }
 
+/**
+ * User-facing refusal message for saves blocked by an open conflict (BR-1).
+ * Shared by the by-localId refusal (thrown), the active-project delegation arm,
+ * and the share dialog so all surfaces report the same actionable message.
+ */
+export const CONFLICT_PENDING_MESSAGE =
+  'This project has a cloud conflict. Open it and choose Save or Load before syncing.';
+
 /** Metadata payload that fully unlinks a project from the cloud. */
 export const CLEARED_CLOUD_METADATA = {
   cloudId: null,

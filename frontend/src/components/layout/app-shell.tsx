@@ -208,7 +208,9 @@ function AppShellInner({ cloudInit }: AppShellProps) {
           <CloudConflictBanner
             serverVersion={cloud.conflict.serverVersion}
             onKeepLocalVersion={async () => {
-              const outcome = await cloudActions.saveToCloud();
+              // The banner's explicit Save is the ONLY path allowed to
+              // force-overwrite the server version during a conflict (BR-1).
+              const outcome = await cloudActions.saveToCloud({ force: true });
               if (!isSaveSuccess(outcome)) {
                 throw new Error('Could not save your changes. Please try again.');
               }

@@ -2459,6 +2459,250 @@ describe('CloudSyncProvider', () => {
       // is a no-op since the active project has no cloudId).
       void result; // suppress unused-var warning
     });
+
+    it('skips conflicted non-active owned cloud projects (left for demotion, evidence preserved)', async () => {
+      // Arrange: a dirty AND conflicted owned cloud project that is NOT active.
+      // Its manifest serverVersion was advanced to the server's version at
+      // conflict time, so an unguarded PUT would succeed (silent overwrite) and
+      // clear cloudConflictVersion — letting purge EVICT instead of demote.
+      const CONFLICTED_LOCAL_ID = 'conflicted-other-project';
+      const CONFLICTED_CLOUD_ID = 'cloud-conflicted-other';
+      (loadManifest as Mock).mockReturnValue({
+        version: 1,
+        projects: [
+          makeManifestEntry({ localId: TEST_LOCAL_ID, cloudId: null, storage: 'local' }),
+          makeManifestEntry({
+            localId: CONFLICTED_LOCAL_ID,
+            cloudId: CONFLICTED_CLOUD_ID,
+            storage: 'cloud',
+            hasUnsyncedChanges: true,
+            serverVersion: 9,
+            cloudConflictVersion: 9,
+          }),
+        ],
+      });
+      (loadProject as Mock).mockImplementation((id: string) => {
+        if (id === CONFLICTED_LOCAL_ID) {
+          return makeStoredProject({
+            localId: CONFLICTED_LOCAL_ID,
+            cloudId: CONFLICTED_CLOUD_ID,
+            storage: 'cloud',
+            serverVersion: 9,
+            cloudConflictVersion: 9,
+            hasUnsyncedChanges: true,
+          });
+        }
+        return null;
+      });
+      (apiUpdateProject as Mock).mockResolvedValue({
+        id: CONFLICTED_CLOUD_ID,
+        updatedAt: '2024-01-02T00:00:00Z',
+        version: 10,
+      });
+      // The project still exists on the server — otherwise the mount-time sync
+      // would treat it as server-deleted and clear its cloud metadata itself.
+      mockServerProjects(CONFLICTED_CLOUD_ID);
+
+      renderCloudSync();
+      await act(async () => {
+        await new Promise(r => setTimeout(r, 10));
+      });
+
+      const calls = (authMock.registerPreLogout as Mock).mock.calls as Array<[(() => Promise<void>) | null]>;
+      const preLogoutCb = [...calls].reverse().find(([cb]) => cb !== null)?.[0];
+      expect(preLogoutCb).toBeDefined();
+
+      await act(async () => {
+        await preLogoutCb!();
+      });
+
+      // No PUT for the conflicted project, and no metadata write may erase the
+      // conflict evidence — purgeCloudProjects then demotes rather than evicts.
+      expect(apiUpdateProject).not.toHaveBeenCalled();
+      expect(updateProjectMetadata).not.toHaveBeenCalledWith(
+        CONFLICTED_LOCAL_ID,
+        expect.objectContaining({ cloudConflictVersion: null }),
+        expect.anything(),
+      );
+    });
+
+    it('does not flush the active project while its conflict banner is open', async () => {
+      (loadManifest as Mock).mockReturnValue({
+        version: 1,
+        projects: [
+          makeManifestEntry({ localId: TEST_LOCAL_ID, cloudId: 'cloud-abc', storage: 'cloud', serverVersion: 1 }),
+        ],
+      });
+      // The project still exists on the server — otherwise the mount-time sync
+      // would treat it as server-deleted and reset the active cloud state.
+      mockServerProjects('cloud-abc');
+
+      const { result } = renderCloudSyncWithDispatch();
+
+      await act(async () => {
+        result.current.actions.initFromProject('cloud-abc', true, 'cloud', { serverVersion: 1 });
+      });
+
+      // Local edit, then an explicit save that hits a dirty 409 → open conflict.
+      act(() => {
+        result.current.dispatch({
+          type: 'SET_REGISTER_VALUE',
+          registerId: 'reg-1',
+          value: 0x42n,
+        });
+      });
+      (apiUpdateProject as Mock).mockRejectedValue(
+        new ApiError(409, { error: 'Project has been modified by another session', code: 'version_conflict', currentVersion: 9 }),
+      );
+      await act(async () => {
+        await result.current.actions.saveToCloud();
+      });
+      expect(result.current.state.conflict).toEqual({ serverVersion: 9 });
+
+      // CONFLICT_DIRTY advanced serverVersion to 9, so an unguarded flush PUT
+      // would now succeed and silently overwrite the other device.
+      (apiUpdateProject as Mock).mockClear();
+      (apiUpdateProject as Mock).mockResolvedValue({
+        id: 'cloud-abc',
+        updatedAt: '2024-01-02T00:00:00Z',
+        version: 10,
+      });
+
+      const calls = (authMock.registerPreLogout as Mock).mock.calls as Array<[(() => Promise<void>) | null]>;
+      const preLogoutCb = [...calls].reverse().find(([cb]) => cb !== null)?.[0];
+      expect(preLogoutCb).toBeDefined();
+
+      await act(async () => {
+        await preLogoutCb!();
+      });
+
+      expect(apiUpdateProject).not.toHaveBeenCalled();
+      expect(result.current.state.conflict).toEqual({ serverVersion: 9 });
+    });
+  });
+
+  describe('conflict-pending saves (BR-1: safe-by-default)', () => {
+    it('refuses a plain save during an open conflict but force-saves through the actions value', async () => {
+      (loadManifest as Mock).mockReturnValue({
+        version: 1,
+        projects: [
+          makeManifestEntry({ localId: TEST_LOCAL_ID, cloudId: 'cloud-abc', storage: 'cloud', serverVersion: 1 }),
+        ],
+      });
+      mockServerProjects('cloud-abc');
+
+      const { result } = renderCloudSyncWithDispatch();
+
+      await act(async () => {
+        result.current.actions.initFromProject('cloud-abc', true, 'cloud', { serverVersion: 1 });
+      });
+
+      // Local edit, then an explicit save that hits a dirty 409 → open conflict.
+      act(() => {
+        result.current.dispatch({
+          type: 'SET_REGISTER_VALUE',
+          registerId: 'reg-1',
+          value: 0x42n,
+        });
+      });
+      (apiUpdateProject as Mock).mockRejectedValue(
+        new ApiError(409, { error: 'Project has been modified by another session', code: 'version_conflict', currentVersion: 9 }),
+      );
+      await act(async () => {
+        await result.current.actions.saveToCloud();
+      });
+      expect(result.current.state.conflict).toEqual({ serverVersion: 9 });
+
+      (apiUpdateProject as Mock).mockClear();
+      (apiUpdateProject as Mock).mockResolvedValue({
+        id: 'cloud-abc',
+        updatedAt: '2024-01-02T00:00:00Z',
+        version: 10,
+      });
+
+      // A plain save through the context actions value refuses without a PUT.
+      let outcome: string | undefined;
+      await act(async () => {
+        outcome = await result.current.actions.saveToCloud();
+      });
+      expect(outcome).toBe('conflict-pending');
+      expect(apiUpdateProject).not.toHaveBeenCalled();
+      expect(result.current.state.conflict).toEqual({ serverVersion: 9 });
+
+      // The banner's Keep-local path passes force: true — the opts must survive
+      // the whole actions chain (the saveToCloudStable forwarding gotcha) so the
+      // PUT goes out with the advanced serverVersion and clears the conflict.
+      let forcedOutcome: string | undefined;
+      await act(async () => {
+        forcedOutcome = await result.current.actions.saveToCloud({ force: true });
+      });
+      expect(forcedOutcome).toBe('saved');
+      expect(apiUpdateProject).toHaveBeenCalledWith(
+        'cloud-abc',
+        expect.anything(),
+        'mock-jwt-token',
+        9,
+      );
+      expect(result.current.state.conflict).toBeNull();
+    });
+
+    it('post-login pendingOp retry during an open conflict resolves conflict-pending without a PUT', async () => {
+      // A signed-out user opens a project whose manifest recorded a conflict in
+      // a previous session; the seeded conflict must survive the retry.
+      authMock.user = null;
+      authMock.getJwt.mockReturnValue(null);
+      (loadManifest as Mock).mockReturnValue({
+        version: 1,
+        projects: [
+          makeManifestEntry({
+            localId: TEST_LOCAL_ID,
+            cloudId: 'cloud-abc',
+            storage: 'cloud',
+            serverVersion: 9,
+            cloudConflictVersion: 9,
+            hasUnsyncedChanges: true,
+          }),
+        ],
+      });
+
+      const { result, rerender } = renderCloudSync();
+
+      await act(async () => {
+        result.current.actions.initFromProject('cloud-abc', true, 'cloud', {
+          serverVersion: 9,
+          cloudConflictVersion: 9,
+          hasUnsyncedChanges: true,
+        });
+      });
+      expect(result.current.state.conflict).toEqual({ serverVersion: 9 });
+
+      // Save without a JWT — defers to the login dialog and stores the pending op.
+      await act(async () => {
+        await result.current.actions.saveToCloud();
+      });
+      expect(result.current.state.loginRequired).toBe(true);
+      expect(apiUpdateProject).not.toHaveBeenCalled();
+
+      // Simulate login. The auth-transition retry calls saveToCloud() WITHOUT
+      // force — the open conflict must refuse it (no silent overwrite).
+      (apiUpdateProject as Mock).mockResolvedValue({
+        id: 'cloud-abc',
+        updatedAt: '2024-01-02T00:00:00Z',
+        version: 10,
+      });
+      mockServerProjects('cloud-abc');
+      authMock.user = { id: 1, email: 'test@test.com' };
+      authMock.getJwt.mockReturnValue('mock-jwt-token');
+
+      await act(async () => {
+        rerender();
+      });
+
+      expect(result.current.state.loginRequired).toBe(false);
+      expect(apiUpdateProject).not.toHaveBeenCalled();
+      expect(apiCreateProject).not.toHaveBeenCalled();
+      expect(result.current.state.conflict).toEqual({ serverVersion: 9 });
+    });
   });
 
   describe('SEC-N02 regression: ownership inference', () => {

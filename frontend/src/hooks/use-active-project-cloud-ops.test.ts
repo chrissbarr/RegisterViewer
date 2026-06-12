@@ -738,6 +738,73 @@ describe('useActiveProjectCloudOps', () => {
     });
   });
 
+  describe('conflict guard (BR-1: safe-by-default save)', () => {
+    function makeConflictedDeps() {
+      const deps = makeDefaultDeps();
+      deps.internalRef.current = {
+        ...INITIAL_INTERNAL_STATE,
+        cloudId: TEST_CLOUD_ID,
+        isOwner: true,
+        storage: 'cloud',
+        // CONFLICT_DIRTY advanced serverVersion to the server's version, so an
+        // unguarded PUT would succeed and silently overwrite the other device.
+        serverVersion: 9,
+        conflict: { serverVersion: 9 },
+        baseline: cleanBaseline(0),
+      };
+      deps.dataVersionRef.current = 1; // local edits exist
+      return deps;
+    }
+
+    it('returns "conflict-pending" without any network call when a conflict is open', async () => {
+      const deps = makeConflictedDeps();
+
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
+
+      let outcome: string | undefined;
+      await act(async () => {
+        outcome = await result.current.saveToCloud();
+      });
+
+      expect(outcome).toBe('conflict-pending');
+      expect(saveProjectToCloudImpl).not.toHaveBeenCalled();
+      expect(deps.updateCloudMetadata).not.toHaveBeenCalled();
+      // No BEGIN_SAVE either — the refusal happens before any state transition.
+      expect(deps.cloudDispatch).not.toHaveBeenCalledWith({ type: 'BEGIN_SAVE' });
+    });
+
+    it('force: true bypasses the guard, PUTs with the advanced serverVersion, and clears the conflict', async () => {
+      const deps = makeConflictedDeps();
+      (saveProjectToCloudImpl as Mock).mockResolvedValue({
+        kind: 'updated',
+        cloudId: TEST_CLOUD_ID,
+        timestamp: TEST_TIMESTAMP,
+        version: 10,
+      });
+
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
+
+      let outcome: string | undefined;
+      await act(async () => {
+        outcome = await result.current.saveToCloud({ force: true });
+      });
+
+      expect(outcome).toBe('saved');
+      // The banner's force path keeps PUTting with the advanced serverVersion.
+      expect(saveProjectToCloudImpl).toHaveBeenCalledWith(
+        expect.anything(),
+        TEST_CLOUD_ID,
+        TEST_JWT,
+        9,
+      );
+      // MARK_SAVED clears the conflict.
+      const hasConflictCleared = dispatchedStates(deps, deps.internalRef.current).some(
+        (state) => state.conflict === null && state.serverVersion === 10 && state.status === 'idle',
+      );
+      expect(hasConflictCleared).toBe(true);
+    });
+  });
+
   describe('fork', () => {
     it('creates a new cloud copy with null existingCloudId', async () => {
       const deps = makeDefaultDeps();

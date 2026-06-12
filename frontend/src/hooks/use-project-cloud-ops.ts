@@ -2,7 +2,7 @@ import { useCallback, useMemo, type MutableRefObject } from 'react';
 import { exportToObject, deserializeState } from '../utils/storage';
 import { isCloudEnabled, ApiError } from '../utils/api-client';
 import { loadProject, type ProjectStorageWriteResult } from '../utils/project-storage';
-import { clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock, requireJwt, applyVisibilityWrite } from '../utils/cloud-utils';
+import { clearCloudUrl, CLEARED_CLOUD_METADATA, CONFLICT_PENDING_MESSAGE, withMutationLock, requireJwt, applyVisibilityWrite } from '../utils/cloud-utils';
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
 import { positiveVersion } from '../utils/cloud-sync';
 import type { Visibility, ProjectListEntry } from '../types/project';
@@ -41,6 +41,9 @@ export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
     // dirty tracking, status indicators, and reads fresh React state.
     if (localId === activeLocalIdRef.current) {
       const outcome = await activeProjectSave();
+      if (outcome === 'conflict-pending') {
+        throw new Error(CONFLICT_PENDING_MESSAGE);
+      }
       if (!isSaveSuccess(outcome)) {
         throw new Error('Failed to save active project to cloud.');
       }
@@ -58,6 +61,17 @@ export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
       const entry = projectsRef.current.find(p => p.localId === localId);
       const ownedEntry = entry && isOwnedCloudEntry(entry) ? entry : null;
       const ownedProject = isOwnedCloudEntry(project) ? project : null;
+
+      // Conflict guard (BR-1): the manifest serverVersion was advanced to the
+      // server's version at conflict time, so an unguarded PUT would succeed
+      // (silent overwrite) and the success path would write
+      // `cloudConflictVersion: null` — erasing the evidence purgeCloudProjects
+      // needs to demote (not evict) the entry. Refuse with NO network call and
+      // NO metadata write.
+      if ((ownedEntry?.cloudConflictVersion ?? ownedProject?.cloudConflictVersion) != null) {
+        throw new Error(CONFLICT_PENDING_MESSAGE);
+      }
+
       const existingCloudId = ownedEntry?.cloudId ?? ownedProject?.cloudId ?? null;
       const knownServerVersion = ownedEntry?.serverVersion ?? ownedProject?.serverVersion ?? undefined;
       const serverVersion = positiveVersion(knownServerVersion) ?? undefined;

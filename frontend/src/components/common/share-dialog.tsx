@@ -5,6 +5,7 @@ import { useAppState } from '../../context/app-context';
 import { buildSnapshotUrl } from '../../utils/snapshot-url';
 import { isCloudEnabled } from '../../utils/api-client';
 import { friendlyErrorMessage } from '../../utils/friendly-error';
+import { CONFLICT_PENDING_MESSAGE } from '../../utils/cloud-utils';
 import { useCloudSync, useCloudSyncActions } from '../../context/cloud-sync-context';
 import { useAuth } from '../../context/auth-context';
 import { useProjectStorage } from '../../context/project-storage-context';
@@ -105,8 +106,16 @@ export function ShareDialog({ open, onClose, projectLocalId }: ShareDialogProps)
         })
         .finally(() => setIsSavingByLocalId(false));
     } else {
-      // Error surfaced via cloud sync UI state; suppress rejection
-      cloudActions.saveToCloud().catch(() => {});
+      // Error surfaced via cloud sync UI state; suppress rejection. The
+      // conflict-pending refusal (BR-1) resolves rather than rejects, and the
+      // cloud sync UI state stays silent — surface it via the dialog's error.
+      cloudActions.saveToCloud()
+        .then((outcome) => {
+          if (outcome === 'conflict-pending') {
+            setSaveError(CONFLICT_PENDING_MESSAGE);
+          }
+        })
+        .catch(() => {});
     }
   }, [projectLocalId, cloudActions]);
 

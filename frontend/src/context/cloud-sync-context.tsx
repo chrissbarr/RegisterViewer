@@ -260,14 +260,19 @@ interface CloudSyncActions {
   /**
    * Save the active project to the cloud.
    *
+   * During an open conflict the save refuses with `conflict-pending` unless
+   * `force: true` is passed — only the conflict banner's explicit Save may
+   * force-overwrite the server version (BR-1).
+   *
    * Returns a `SaveOutcome` discriminated union:
    * - `saved`/`created`/`noop` — terminal success (or nothing to do).
    * - `login-required` — deferred to the login dialog.
    * - `lock-held` — mutation lock busy; safe to retry.
    * - `not-found`/`conflict` — server-side state handled (no retry).
    * - `local-persist-failed` — server write succeeded but the local write failed.
+   * - `conflict-pending` — open conflict; refused without `force: true`.
    */
-  saveToCloud: () => Promise<SaveOutcome>;
+  saveToCloud: (opts?: { force?: boolean }) => Promise<SaveOutcome>;
   saveProjectToCloud: (localId: string) => Promise<void>;
   deleteFromCloud: () => Promise<void>;
   deleteProjectFromCloud: (localId: string) => Promise<void>;
@@ -392,8 +397,10 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   // saveToCloud ref: breaks the circular dependency between useCloudSyncEngine
   // (needs saveToCloud) and useActiveProjectCloudOps (needs refs from the engine).
   // The engine only calls saveToCloud asynchronously (inside setTimeout), so a ref is safe.
-  const saveToCloudRef = useRef<() => Promise<SaveOutcome>>(() => Promise.resolve('lock-held' as SaveOutcome));
-  const saveToCloudStable = useCallback(() => saveToCloudRef.current(), []);
+  // The wrapper forwards `opts` (BR-1): a zero-arg wrapper would silently drop
+  // the banner's `force: true` and the forced save would refuse as conflict-pending.
+  const saveToCloudRef = useRef<(opts?: { force?: boolean }) => Promise<SaveOutcome>>(() => Promise.resolve('lock-held' as SaveOutcome));
+  const saveToCloudStable = useCallback((opts?: { force?: boolean }) => saveToCloudRef.current(opts), []);
 
   // Merged dirty tracking + auto-sync engine
   const canAutoSync = internal.storage === 'cloud' && internal.isOwner && !!authUser && !internal.conflict;
@@ -676,9 +683,14 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     registerPreLogout(async () => {
       // 1. Push the active project's pending changes (writes local + cloud).
       await flushCloudSync();
-      // 2. Best-effort save of other dirty owned cloud projects.
+      // 2. Best-effort save of other dirty owned cloud projects. Conflicted
+      //    entries are excluded (mirrors use-project-switch-init): flushing them
+      //    would force-overwrite the other device AND clear cloudConflictVersion,
+      //    letting purge EVICT instead of demote. They fall through to
+      //    purgeCloudProjects' demote branch with their local data kept.
       const dirty = loadManifest().projects.filter(
-        (p) => isOwnedCloudEntry(p) && p.hasUnsyncedChanges && p.localId !== activeLocalIdRef.current,
+        (p) => isOwnedCloudEntry(p) && p.hasUnsyncedChanges && p.cloudConflictVersion == null
+          && p.localId !== activeLocalIdRef.current,
       );
       for (const entry of dirty) {
         try {

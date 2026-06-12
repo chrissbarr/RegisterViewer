@@ -129,11 +129,13 @@ export interface CloudMetadataWriteOptions {
  * - `lock-held` — mutation lock busy; safe to retry.
  * - `not-found`/`conflict` — server-side state handled via dispatch (no retry).
  * - `local-persist-failed` — server write succeeded but the local write failed.
+ * - `conflict-pending` — open conflict; only the banner's explicit force may save.
  */
 export type SaveOutcome =
   | 'saved' | 'created' | 'noop'
   | 'login-required' | 'lock-held'
-  | 'not-found' | 'conflict' | 'local-persist-failed';
+  | 'not-found' | 'conflict' | 'local-persist-failed'
+  | 'conflict-pending';
 
 /** True when a save outcome means the data is safely on the server (or nothing to do). */
 export function isSaveSuccess(outcome: SaveOutcome): boolean {
