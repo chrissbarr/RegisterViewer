@@ -284,7 +284,7 @@ async function handleConflictResult(params: ConflictHandlerParams): Promise<void
     }
 
     const freshnessCtx: FreshnessCheckContext = {
-      internalRef, dataVersionRef, dispatch,
+      internalRef, activeLocalIdRef, dataVersionRef, dispatch,
       lastFreshnessCheckRef, updateCloudMetadata, cloudDispatch,
     };
     const pullResult = await checkAndPullFreshVersion(freshnessCtx, {
@@ -295,7 +295,10 @@ async function handleConflictResult(params: ConflictHandlerParams): Promise<void
       mode: 'pull-if-clean',
       expectedDataVersion: attempt.dataVersion,
     });
-    if (!pullResult.applied) {
+    // BR-3: a pull refused because the user switched projects mid-pull must
+    // not paint the departed project's conflict banner onto the new active
+    // project (mirrors the isSameActiveSaveTarget guard in the catch below).
+    if (!pullResult.applied && pullResult.reason !== 'switched-project') {
       cloudDispatch({ type: 'SET_CONFLICT', serverVersion: result.serverVersion });
     }
   } catch {

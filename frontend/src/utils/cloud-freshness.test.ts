@@ -31,13 +31,15 @@ const PARSED_DATA = {
   addressUnitBits: 8,
 };
 
-/** Baseline decision state: clean (dataVersion === baseline), never checked. */
+/** Baseline decision state: clean (dataVersion === baseline), never checked, identity matching. */
 function makeState(overrides: Partial<FreshnessDecisionState> = {}): FreshnessDecisionState {
   return {
     now: 1_000_000,
     lastCheck: 0,
     dataVersion: 5,
     baseline: cleanBaseline(5),
+    liveCloudId: TEST_CLOUD_ID,
+    liveLocalId: TEST_LOCAL_ID,
     ...overrides,
   };
 }
@@ -171,6 +173,102 @@ describe('decideFreshnessPull — post-fetch decision', () => {
     const call = makeCall({ knownVersion: 5, mode: 'pull-if-clean', expectedDataVersion: 5 });
     const decision = decideFreshnessPull(makeState(), call, makeServerResponse({ version: 3 }));
     expect(decision).toMatchObject({ kind: 'pull', serverVersion: 3 });
+  });
+});
+
+// ── Identity gate (BR-3) ─────────────────────────────────────────────
+
+describe('decideFreshnessPull — identity gate (BR-3)', () => {
+  describe('pre-fetch', () => {
+    it('refuses when the live cloudId no longer matches the call', () => {
+      const state = makeState({ liveCloudId: 'cloud-B' });
+      expect(decideFreshnessPull(state, makeCall())).toEqual({ kind: 'switched-project' });
+    });
+
+    it('refuses when the live localId no longer matches the captured localId', () => {
+      const state = makeState({ liveLocalId: 'local-B' });
+      expect(decideFreshnessPull(state, makeCall())).toEqual({ kind: 'switched-project' });
+    });
+
+    it('refuses after a cloud-to-local switch (live cloudId null)', () => {
+      const state = makeState({ liveCloudId: null, liveLocalId: 'local-B' });
+      expect(decideFreshnessPull(state, makeCall())).toEqual({ kind: 'switched-project' });
+    });
+
+    it('identity beats allowDirtyOverwrite: replace-with-server refuses on mismatch even when dirty', () => {
+      const state = makeState({ liveCloudId: 'cloud-B', liveLocalId: 'local-B', dataVersion: 10, baseline: cleanBaseline(5) });
+      const call = makeCall({ mode: 'replace-with-server' });
+      expect(decideFreshnessPull(state, call)).toEqual({ kind: 'switched-project' });
+    });
+
+    it('pull-if-clean refuses on identity mismatch', () => {
+      const state = makeState({ liveCloudId: 'cloud-B' });
+      const call = makeCall({ mode: 'pull-if-clean', expectedDataVersion: 5 });
+      expect(decideFreshnessPull(state, call)).toEqual({ kind: 'switched-project' });
+    });
+
+    it('null call.localId matches a null live localId (unsaved shared-project viewer)', () => {
+      const state = makeState({ liveLocalId: null });
+      expect(decideFreshnessPull(state, makeCall({ localId: null }))).toBeNull();
+    });
+
+    it('undefined call.localId also matches a null live localId', () => {
+      const state = makeState({ liveLocalId: null });
+      expect(decideFreshnessPull(state, makeCall({ localId: undefined }))).toBeNull();
+    });
+  });
+
+  describe('post-fetch', () => {
+    it('refuses on live cloudId mismatch but still carries the persist payload', () => {
+      const state = makeState({ liveCloudId: 'cloud-B', liveLocalId: 'local-B' });
+      const decision = decideFreshnessPull(state, makeCall(), makeServerResponse({ version: 3 }));
+      expect(decision).toEqual({
+        kind: 'switched-project',
+        serverVersion: 3,
+        cloudSavedAt: '2024-06-01T00:00:00Z',
+        visibility: 'private',
+        importPayload: PARSED_DATA,
+      });
+    });
+
+    it('refuses on live localId mismatch post-fetch', () => {
+      const state = makeState({ liveLocalId: 'local-B' });
+      const decision = decideFreshnessPull(state, makeCall(), makeServerResponse({ version: 3 }));
+      expect(decision).toMatchObject({ kind: 'switched-project', serverVersion: 3 });
+    });
+
+    it('identity beats allowDirtyOverwrite post-fetch: replace-with-server refuses on mismatch with a dirty baseline', () => {
+      // Pre-fix this returned 'pull' — the conflict-banner Load hole (worst BR-3 variant).
+      const state = makeState({ liveCloudId: 'cloud-B', liveLocalId: 'local-B', dataVersion: 10, baseline: cleanBaseline(5) });
+      const call = makeCall({ knownVersion: 5, mode: 'replace-with-server' });
+      const decision = decideFreshnessPull(state, call, makeServerResponse({ version: 3 }));
+      expect(decision).toMatchObject({ kind: 'switched-project', serverVersion: 3 });
+    });
+
+    it('pull-if-clean refuses on identity mismatch post-fetch', () => {
+      const state = makeState({ liveCloudId: 'cloud-B' });
+      const call = makeCall({ mode: 'pull-if-clean', expectedDataVersion: 5 });
+      const decision = decideFreshnessPull(state, call, makeServerResponse({ version: 3 }));
+      expect(decision).toMatchObject({ kind: 'switched-project', serverVersion: 3 });
+    });
+
+    it('reports parse-failed when the payload of a switched-project pull cannot be parsed', () => {
+      (parseProjectData as Mock).mockReturnValue(null);
+      const state = makeState({ liveCloudId: 'cloud-B' });
+      const decision = decideFreshnessPull(state, makeCall(), makeServerResponse({ version: 3 }));
+      expect(decision).toEqual({ kind: 'parse-failed', serverVersion: 3 });
+    });
+
+    it('matching identity still pulls (A-to-A re-init)', () => {
+      const decision = decideFreshnessPull(makeState(), makeCall(), makeServerResponse({ version: 3 }));
+      expect(decision).toMatchObject({ kind: 'pull', serverVersion: 3 });
+    });
+
+    it('null call.localId + null live localId still pulls (unsaved shared-project viewer)', () => {
+      const state = makeState({ liveLocalId: null });
+      const decision = decideFreshnessPull(state, makeCall({ localId: null }), makeServerResponse({ version: 3 }));
+      expect(decision).toMatchObject({ kind: 'pull', serverVersion: 3 });
+    });
   });
 });
 

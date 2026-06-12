@@ -18,6 +18,10 @@ export interface FreshnessDecisionState {
   dataVersion: number;
   /** Save baseline the data is compared against for dirtiness (S14a). */
   baseline: Baseline;
+  /** Cloud id of the LIVE active project (`internalRef.current.cloudId`); BR-3 identity gate. */
+  liveCloudId: string | null;
+  /** Local id of the LIVE active project (`activeLocalIdRef.current`); BR-3 identity gate. */
+  liveLocalId: string | null;
 }
 
 /**
@@ -31,6 +35,29 @@ export interface FreshnessDecisionState {
  */
 function baselineDirty(baseline: Baseline, dataVersion: number): boolean {
   return baseline.kind !== 'clean' || dataVersion !== baseline.version;
+}
+
+/**
+ * BR-3 identity gate: true when the active project is no longer the one this
+ * check was started for (the user switched projects while the check was
+ * queued or its fetch was in flight). Without this gate a stale pull would
+ * IMPORT_STATE the departed project's payload into the NEW project's live
+ * workspace, and APPLY_PULL would stamp the departed project's cloud metadata
+ * onto it. Identity is orthogonal to `allowDirtyOverwrite`, so the gate runs
+ * in ALL modes — including `replace-with-server`, which bypasses even the
+ * dirty gate.
+ *
+ * Null semantics: an absent `call.localId` (undefined or null) matches a null
+ * live localId, so the unsaved shared-project viewer keeps pulling; same
+ * localId + same cloudId always passes (A→A re-init).
+ *
+ * Reducer-level `ifCloudId` hardening for APPLY_PULL / SET_CONFLICT is a
+ * deliberate follow-up (it interacts with the engine's baseline-capture
+ * flow); this pure-core gate is the BR-3 fix proper.
+ */
+function switchedProject(state: FreshnessDecisionState, call: FreshnessCheckCall): boolean {
+  return state.liveCloudId !== call.cloudId
+    || state.liveLocalId !== (call.localId ?? null);
 }
 
 /** Per-call parameters that vary on each invocation. */
@@ -55,6 +82,19 @@ type FreshnessDecision =
   | { kind: 'changed-during-pull'; serverVersion?: number }
   | { kind: 'parse-failed'; serverVersion: number }
   | { kind: 'local-persist-failed'; serverVersion: number }
+  | {
+      kind: 'switched-project';
+      /**
+       * The payload fields are present post-fetch only (after a successful
+       * parse): the live-context apply is refused, but the shim still
+       * completes the persist keyed to the CAPTURED `call.localId` so the
+       * departed project's record and manifest stay consistent (BR-3).
+       */
+      serverVersion?: number;
+      cloudSavedAt?: string;
+      visibility?: Visibility;
+      importPayload?: ImportResult;
+    }
   | {
       kind: 'pull';
       serverVersion: number;
@@ -82,14 +122,14 @@ export function probeIndicatesFresh(probeVersion: number, knownVersion: number):
  * Called twice by the shim to preserve the original two-phase timing:
  *
  * 1. **Pre-fetch** (`serverResponse` omitted): runs the throttle gate and the
- *    pre-fetch dirty / changed-during-pull re-checks. Returns a blocking
- *    decision when one fires, or `null` to signal "proceed to the network
- *    fetch". (`now`/`lastCheck` only matter here.)
+ *    pre-fetch identity / dirty / changed-during-pull re-checks. Returns a
+ *    blocking decision when one fires, or `null` to signal "proceed to the
+ *    network fetch". (`now`/`lastCheck` only matter here.)
  * 2. **Post-fetch** (`serverResponse` provided): runs the version compare and
- *    the SAME dirty / changed-during-pull re-checks against the now-current
- *    `dataVersion`, then parses the payload. Always returns a terminal
- *    decision (`fresh` | `dirty` | `changed-during-pull` | `parse-failed` |
- *    `pull`).
+ *    the SAME identity / dirty / changed-during-pull re-checks against the
+ *    now-current live state, then parses the payload. Always returns a
+ *    terminal decision (`fresh` | `switched-project` | `dirty` |
+ *    `changed-during-pull` | `parse-failed` | `pull`).
  *
  * The two-phase dirty re-check (before AND after the fetch) is what prevents a
  * new local edit landing mid-fetch from being silently overwritten.
@@ -111,6 +151,11 @@ export function decideFreshnessPull(
     if (!bypassThrottle && now - lastCheck < FRESHNESS_CHECK_INTERVAL) {
       return { kind: 'throttled' };
     }
+    // BR-3 identity gate (all modes) — refuse a check for a project that is
+    // no longer active before the probe/GET round trips are paid.
+    if (switchedProject(state, call)) {
+      return { kind: 'switched-project' };
+    }
     if (!allowDirtyOverwrite && baselineDirty(baseline, dataVersion)) {
       return { kind: 'dirty' };
     }
@@ -126,6 +171,24 @@ export function decideFreshnessPull(
 
   if (!bypassVersionCheck && serverVersion <= knownVersion) {
     return { kind: 'fresh', serverVersion };
+  }
+
+  // BR-3 identity gate (re-check #2): the switch may land mid-fetch. Runs
+  // BEFORE the dirty / changed-during-pull gates — those read the NEW
+  // project's live baseline, which is meaningless for the departed call (a
+  // clean new project would otherwise let the stale pull through; in
+  // `replace-with-server` mode even a DIRTY one would). Parse first so the
+  // decision still carries the payload for the captured-localId persist.
+  if (switchedProject(state, call)) {
+    const parsed = parseProjectData(serverResponse.data);
+    if (!parsed) return { kind: 'parse-failed', serverVersion };
+    return {
+      kind: 'switched-project',
+      serverVersion,
+      cloudSavedAt: serverResponse.updatedAt,
+      visibility: serverResponse.visibility,
+      importPayload: parsed,
+    };
   }
 
   // Re-check after the network round-trip so a new edit cannot be overwritten.

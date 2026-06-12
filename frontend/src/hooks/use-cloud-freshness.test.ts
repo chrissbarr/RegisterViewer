@@ -58,6 +58,7 @@ function makeInternalState(overrides: Partial<InternalCloudSyncState> = {}): Int
 function makeCtx(overrides: Partial<FreshnessCheckContext> = {}): FreshnessCheckContext {
   return {
     internalRef: { current: makeInternalState() },
+    activeLocalIdRef: { current: TEST_LOCAL_ID }, // matches makeCall's localId => identity passes
     dataVersionRef: { current: 5 }, // matches clean baseline => not dirty
     dispatch: vi.fn(),
     lastFreshnessCheckRef: { current: 0 }, // never checked before
@@ -277,7 +278,9 @@ describe('checkAndPullFreshVersion (effectful shim)', () => {
   });
 
   it('pulls into memory without localStorage writes when no localId exists', async () => {
-    const ctx = makeCtx();
+    // Unsaved shared-project viewer: no active local project either (the
+    // BR-3 identity gate matches null call.localId against a null live localId).
+    const ctx = makeCtx({ activeLocalIdRef: { current: null } });
     const call = makeCall({ localId: null, mode: 'replace-with-server' });
     (getProject as Mock).mockResolvedValue({
       data: { version: 1, registers: [], registerValues: {} },
@@ -624,5 +627,122 @@ describe('checkAndPullFreshVersion — /meta probe', () => {
 
     await expect(checkAndPullFreshVersion(ctx, call)).rejects.toThrow('Server error');
     expect(getProject).not.toHaveBeenCalled();
+  });
+});
+
+// ── Project switch during the check (BR-3 identity gate) ────────────
+
+/**
+ * Mirrors the real switch-to-B sequence: `cloudStateForEntry` seeds a CLEAN
+ * baseline at the current generation synchronously at switch time, and the
+ * active localId ref flips to the new project.
+ */
+function switchLiveProject(ctx: FreshnessCheckContext, cloudId: string | null): void {
+  ctx.internalRef.current = makeInternalState({
+    cloudId,
+    baseline: cleanBaseline(ctx.dataVersionRef.current),
+  });
+  ctx.activeLocalIdRef.current = 'local-B';
+}
+
+describe('checkAndPullFreshVersion — project switch mid-check (BR-3)', () => {
+  const SERVER_RESPONSE = {
+    data: { version: 1, registers: [], registerValues: {} },
+    updatedAt: '2024-06-01T00:00:00Z',
+    visibility: 'private',
+    version: 3,
+  };
+
+  it('refuses the live import when the user switches to another cloud project mid-fetch, but persists to the captured localId', async () => {
+    const ctx = makeCtx();
+    const call = makeCall();
+    (getProject as Mock).mockImplementation(async () => {
+      switchLiveProject(ctx, 'cloud-B'); // clean baseline at current generation
+      return SERVER_RESPONSE;
+    });
+    (parseProjectData as Mock).mockReturnValue(PARSED_DATA);
+
+    const result = await checkAndPullFreshVersion(ctx, call);
+
+    expect(result).toEqual({ applied: false, reason: 'switched-project', serverVersion: 3 });
+    // No IMPORT_STATE into project B's live workspace…
+    expect(ctx.dispatch).not.toHaveBeenCalled();
+    // …and no REQUEST_BASELINE / APPLY_PULL onto B's cloud state.
+    expect(ctx.cloudDispatch).not.toHaveBeenCalled();
+    // The persist is still keyed to the CAPTURED A localId: A's record and
+    // manifest serverVersion stay consistent (switch-back won't re-pull).
+    expect(patchProjectState).toHaveBeenCalledWith(TEST_LOCAL_ID, expect.anything());
+    expect(ctx.updateCloudMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, {
+      cloudSavedAt: '2024-06-01T00:00:00Z',
+      visibility: 'private',
+      serverVersion: 3,
+      cloudConflictVersion: null,
+      hasUnsyncedChanges: false,
+    });
+  });
+
+  it('refuses the live import after a cloud-to-local switch mid-fetch', async () => {
+    const ctx = makeCtx();
+    const call = makeCall();
+    (getProject as Mock).mockImplementation(async () => {
+      switchLiveProject(ctx, null); // new active project is local-only
+      return SERVER_RESPONSE;
+    });
+    (parseProjectData as Mock).mockReturnValue(PARSED_DATA);
+
+    const result = await checkAndPullFreshVersion(ctx, call);
+
+    expect(result).toEqual({ applied: false, reason: 'switched-project', serverVersion: 3 });
+    expect(ctx.dispatch).not.toHaveBeenCalled();
+    expect(ctx.cloudDispatch).not.toHaveBeenCalled();
+    expect(ctx.updateCloudMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, expect.anything());
+  });
+
+  it('replace-with-server refuses when the project switches mid-fetch — even over a DIRTY new project (conflict-Load hole)', async () => {
+    const ctx = makeCtx();
+    const call = makeCall({ knownVersion: 5, mode: 'replace-with-server' });
+    (getProject as Mock).mockImplementation(async () => {
+      // Switch to a DIRTY project B: allowDirtyOverwrite would bypass the
+      // dirty gate, so only the identity gate stands between A's payload and
+      // B's workspace.
+      ctx.internalRef.current = makeInternalState({ cloudId: 'cloud-B', baseline: cleanBaseline(0) });
+      ctx.activeLocalIdRef.current = 'local-B';
+      ctx.dataVersionRef.current = 10; // diverged from baseline => dirty
+      return SERVER_RESPONSE;
+    });
+    (parseProjectData as Mock).mockReturnValue(PARSED_DATA);
+
+    const result = await checkAndPullFreshVersion(ctx, call);
+
+    expect(result).toEqual({ applied: false, reason: 'switched-project', serverVersion: 3 });
+    expect(ctx.dispatch).not.toHaveBeenCalled();
+    expect(ctx.cloudDispatch).not.toHaveBeenCalled();
+    expect(ctx.updateCloudMetadata).toHaveBeenCalledWith(TEST_LOCAL_ID, expect.anything());
+  });
+
+  it('refuses pre-fetch (no probe, no GET) when identity already mismatches at call time', async () => {
+    const ctx = makeCtx({ activeLocalIdRef: { current: 'local-B' } });
+    const call = makeCall();
+
+    const result = await checkAndPullFreshVersion(ctx, call);
+
+    expect(result).toEqual({ applied: false, reason: 'switched-project' });
+    expect(getProjectMeta).not.toHaveBeenCalled();
+    expect(getProject).not.toHaveBeenCalled();
+    expect(ctx.dispatch).not.toHaveBeenCalled();
+    expect(ctx.cloudDispatch).not.toHaveBeenCalled();
+    expect(ctx.updateCloudMetadata).not.toHaveBeenCalled();
+  });
+
+  it('same-project pull still applies when no switch happens (pin)', async () => {
+    const ctx = makeCtx();
+    const call = makeCall();
+    (getProject as Mock).mockResolvedValue(SERVER_RESPONSE);
+    (parseProjectData as Mock).mockReturnValue(PARSED_DATA);
+
+    const result = await checkAndPullFreshVersion(ctx, call);
+
+    expect(result).toEqual({ applied: true, serverVersion: 3 });
+    expect(ctx.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'IMPORT_STATE' }));
   });
 });

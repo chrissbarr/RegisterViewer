@@ -49,7 +49,7 @@ const MAX_DEPARTURE_SAVE_RETRIES = 8;
  */
 export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
   const {
-    core: { internalRef, dispatch: cloudDispatch },
+    core: { internalRef, activeLocalIdRef, dispatch: cloudDispatch },
     activeLocalId, projects,
     projectsRef, syncTimerRef,
     dataVersionRef, mutationLockRef, getJwt, lastFreshnessCheckRef, updateCloudMetadata, dispatch,
@@ -224,7 +224,7 @@ export function useProjectSwitchInit(deps: UseProjectSwitchInitDeps): void {
       const jwt = getJwt();
       if (jwt && isOwner && !conflictVersion && !hasStoredUnsyncedChanges) {
         const freshnessCtx: FreshnessCheckContext = {
-          internalRef, dataVersionRef, dispatch,
+          internalRef, activeLocalIdRef, dataVersionRef, dispatch,
           lastFreshnessCheckRef, updateCloudMetadata, cloudDispatch,
         };
         checkAndPullFreshVersion(freshnessCtx, {

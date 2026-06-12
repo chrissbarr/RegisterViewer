@@ -434,7 +434,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   // All items are refs or stable functions — empty deps array is correct.
   const freshnessCtx: FreshnessCheckContext = useMemo(
     () => ({
-      internalRef, dataVersionRef, dispatch,
+      internalRef, activeLocalIdRef, dataVersionRef, dispatch,
       lastFreshnessCheckRef, updateCloudMetadata, cloudDispatch: dispatch__internal,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -498,6 +498,42 @@ describe('useActiveProjectCloudOps', () => {
       );
     });
 
+    it('clean 409 whose pull refuses with switched-project does not paint the conflict (BR-3)', async () => {
+      const deps = makeDefaultDeps();
+      deps.internalRef.current = {
+        ...INITIAL_INTERNAL_STATE,
+        cloudId: TEST_CLOUD_ID,
+        isOwner: true,
+        serverVersion: 2,
+        baseline: cleanBaseline(1),
+      };
+      deps.dataVersionRef.current = 1;
+
+      (saveProjectToCloudImpl as Mock).mockResolvedValue({
+        kind: 'conflict',
+        serverVersion: 5,
+      });
+      // The user switched projects while the recovery pull was in flight — the
+      // pull was refused by the BR-3 identity gate.
+      (checkAndPullFreshVersion as Mock).mockResolvedValue({
+        applied: false,
+        reason: 'switched-project',
+        serverVersion: 5,
+      });
+
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps).ops);
+
+      await act(async () => {
+        await result.current.saveToCloud();
+      });
+
+      // CONFLICT_CLEAN still records the 409 serverVersion, but the refused
+      // pull must NOT paint the departed project's conflict banner onto the
+      // new active project.
+      const dispatchedTypes = deps.cloudDispatch.mock.calls.map((call) => (call[0] as CloudSyncAction).type);
+      expect(dispatchedTypes).not.toContain('SET_CONFLICT');
+    });
+
     it('already-dirty 409 shows conflict UX instead of auto-pulling server version', async () => {
       const deps = makeDefaultDeps();
       deps.internalRef.current = {
