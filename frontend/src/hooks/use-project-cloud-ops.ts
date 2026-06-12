@@ -2,7 +2,7 @@ import { useCallback, useMemo, type MutableRefObject } from 'react';
 import { exportToObject, deserializeState } from '../utils/storage';
 import { isCloudEnabled, ApiError } from '../utils/api-client';
 import { loadProject, type ProjectStorageWriteResult } from '../utils/project-storage';
-import { clearCloudUrl, CLEARED_CLOUD_METADATA, CONFLICT_PENDING_MESSAGE, withMutationLock, requireJwt, applyVisibilityWrite } from '../utils/cloud-utils';
+import { clearCloudUrl, CLEARED_CLOUD_METADATA, CONFLICT_PENDING_MESSAGE, SESSION_EXPIRED_MESSAGE, withMutationLock, requireJwt, applyVisibilityWrite } from '../utils/cloud-utils';
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
 import { positiveVersion } from '../utils/cloud-sync';
 import type { Visibility, ProjectListEntry } from '../types/project';
@@ -78,6 +78,13 @@ export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
 
       const jwt = requireJwt(getJwt);
       const result = await saveProjectToCloudImpl(jsonPayload, existingCloudId, jwt, serverVersion);
+
+      if (result.kind === 'auth-stale') {
+        // BR-6: dead token on the probe path — the uniform 404s proved nothing
+        // about the project, so fail WITHOUT any metadata write: the cloud
+        // link must survive a stale session.
+        throw new Error(SESSION_EXPIRED_MESSAGE);
+      }
 
       if (result.kind === 'not-found') {
         throw new Error('Cloud project not found on server.');

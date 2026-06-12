@@ -300,6 +300,13 @@ describe('useActiveProjectCloudOps', () => {
         storage: 'local',
       });
       expect(clearCloudUrl).toHaveBeenCalled();
+      // The not-found arm is reached only on server-verified deletion (BR-6:
+      // a dead-token double-404 returns auth-stale instead), so the banner
+      // copy states the deletion as fact.
+      expect(deps.cloudDispatch).toHaveBeenCalledWith({
+        type: 'NOT_FOUND_CLEARED',
+        error: 'Cloud project was deleted on the server. Use "Save to Cloud" to create a new copy.',
+      });
       // The last dispatched action (NOT_FOUND_CLEARED) resets cloud identity.
       const stateUpdate = dispatchedState(deps, deps.internalRef.current, deps.cloudDispatch.mock.calls.length - 1);
       expect(stateUpdate).toMatchObject({
@@ -308,6 +315,41 @@ describe('useActiveProjectCloudOps', () => {
         status: 'idle',
         shareUrl: null,
         visibility: 'private',
+      });
+    });
+
+    it('routes a dead-token auth-stale result through loginRequired without unlinking (BR-6)', async () => {
+      const deps = makeDefaultDeps();
+      deps.internalRef.current = {
+        ...INITIAL_INTERNAL_STATE,
+        cloudId: TEST_CLOUD_ID,
+        isOwner: true,
+        storage: 'cloud',
+        serverVersion: 0, // unknown — the save routes through the GET-then-PUT probe
+      };
+      // The probe + fallback GET both 404'd and /auth/me said 401: dead token.
+      (saveProjectToCloudImpl as Mock).mockResolvedValue({ kind: 'auth-stale' });
+
+      const { result } = renderHook(() => useActiveProjectCloudOps(deps));
+
+      let outcome: string | undefined;
+      await act(async () => {
+        outcome = await result.current.ops.saveToCloud();
+      });
+
+      expect(outcome).toBe('login-required');
+      // The pending-save retry machinery is armed: after re-login the
+      // auth-transition effect retries against the ORIGINAL cloudId.
+      expect(result.current.loginRequired).toBe(true);
+      expect(result.current.pendingOpRef.current).toBe('save');
+      // The cloud link must survive a stale session — no CLEARED_CLOUD_METADATA,
+      // no URL clear (pre-fix this path unlinked via the not-found arm).
+      expect(deps.updateCloudMetadata).not.toHaveBeenCalled();
+      expect(clearCloudUrl).not.toHaveBeenCalled();
+      // A session-expired message is surfaced (OP_FAILED returns status to idle).
+      expect(deps.cloudDispatch).toHaveBeenCalledWith({
+        type: 'OP_FAILED',
+        error: expect.stringContaining('session has expired'),
       });
     });
 

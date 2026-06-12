@@ -6,7 +6,7 @@ import { checkAndPullFreshVersion, type FreshnessCheckContext } from './use-clou
 import { materializeCloudProject } from '../utils/cloud-materialize';
 import { friendlyErrorMessage } from '../utils/friendly-error';
 import { buildProjectUrl, patchProjectState, loadProject, type ProjectStorageWriteResult } from '../utils/project-storage';
-import { setCloudUrl, clearCloudUrl, CLEARED_CLOUD_METADATA, withMutationLock, requireJwt, applyVisibilityWrite } from '../utils/cloud-utils';
+import { setCloudUrl, clearCloudUrl, CLEARED_CLOUD_METADATA, SESSION_EXPIRED_MESSAGE, withMutationLock, requireJwt, applyVisibilityWrite } from '../utils/cloud-utils';
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl, type SaveConflictResult } from '../utils/cloud-operations';
 import { positiveVersion } from '../utils/cloud-sync';
 import { cloudSyncReducer, type CloudSyncAction } from '../utils/cloud-sync-reducer';
@@ -104,7 +104,10 @@ function handleNotFoundResultImpl(params: NotFoundHandlerParams): SaveOutcome {
     clearCloudUrl();
     cloudDispatch({
       type: 'NOT_FOUND_CLEARED',
-      error: 'Cloud project not found. It may have been deleted. Use "Save to Cloud" to create a new copy.',
+      // Stated as fact: every `not-found` save result is now server-verified
+      // (direct PUT 404, or probe double-404 with a /auth/me-confirmed live
+      // token — a dead token returns `auth-stale` instead; BR-6).
+      error: 'Cloud project was deleted on the server. Use "Save to Cloud" to create a new copy.',
     });
   }
   return 'not-found';
@@ -484,6 +487,24 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
           internalRef,
         );
 
+        if (result.kind === 'auth-stale') {
+          // BR-6: the stored JWT is dead (revoked/expired/rotated secret) and
+          // the probe path's uniform 404s proved nothing about the project —
+          // do NOT unlink. A dead token ≙ a missing token, so route through
+          // the loginRequired pattern: the auth-transition effect retries this
+          // save after re-login, landing on the ORIGINAL cloudId (no duplicate).
+          // The dead JWT is intentionally NOT cleared here — to the sign-out
+          // cleanup effect `user → null` MEANS sign-out (it removes/demotes
+          // cloud projects); a dedicated session-invalidation seam is a
+          // consolidation-backlog item.
+          if (stillOnSameProject) {
+            cloudDispatch({ type: 'OP_FAILED', error: SESSION_EXPIRED_MESSAGE });
+          }
+          setLoginRequired(true);
+          pendingOpRef.current = 'save';
+          return 'login-required';
+        }
+
         if (result.kind === 'not-found') {
           return handleNotFoundResultImpl({
             capturedLocalId, stillOnSameProject, updateCloudMetadata, cloudDispatch,
@@ -542,6 +563,8 @@ export function useActiveProjectCloudOps(deps: ActiveProjectCloudOpsDeps): Activ
         const jsonPayload = exportToObject(appStateRef.current);
         const freshJwt = requireJwt(getJwt);
         const result = await saveProjectToCloudImpl(jsonPayload, null, freshJwt);
+        // POST-only (null cloudId) never probes, so `auth-stale` is unreachable
+        // here — the non-`created` guard absorbs it along with the other kinds.
         if (result.kind !== 'created') throw new Error('Failed to save copy.');
         applyCreatedResult(result, attemptDataVersion, dataVersionRef.current !== attemptDataVersion);
       } catch (err) {

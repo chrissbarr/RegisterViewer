@@ -299,6 +299,23 @@ describe('useProjectCloudOps', () => {
       ).rejects.toThrow('Cloud project not found on server.');
     });
 
+    it('throws a session-expired error on auth-stale without any metadata write (BR-6)', async () => {
+      const deps = makeDeps({ activeLocalId: 'other-local' });
+      // Dead token discovered by the probe path's /auth/me disambiguation.
+      (saveProjectToCloudImpl as Mock).mockResolvedValue({ kind: 'auth-stale' });
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      await expect(
+        act(async () => {
+          await result.current.saveProjectToCloud('local-1');
+        }),
+      ).rejects.toThrow(/session has expired/i);
+
+      // The cloud link must survive a stale session.
+      expect(deps.updateCloudMetadata).not.toHaveBeenCalled();
+    });
+
     it('throws "Authentication required" for non-active project when getJwt returns null', async () => {
       const deps = makeDeps({ activeLocalId: 'other-local', getJwt: () => null, projects: makeProjectList([{ localId: 'local-1', cloudId: null }]) });
       (loadProject as Mock).mockReturnValue({ state: '{}', cloudId: null });

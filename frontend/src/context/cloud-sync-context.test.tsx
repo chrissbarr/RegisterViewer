@@ -456,7 +456,8 @@ describe('CloudSyncProvider', () => {
       });
 
       expect(result.current.state.cloudId).toBeNull();
-      expect(result.current.state.error).toContain('Cloud project not found');
+      // BR-6 tightened copy: this arm is server-verified deletion, stated as fact.
+      expect(result.current.state.error).toContain('Cloud project was deleted on the server');
     });
 
     it('sets error state and re-throws on general failure', async () => {

@@ -23,9 +23,10 @@ vi.mock('./api-client', () => ({
   getProjectMeta: vi.fn(),
   patchProjectVisibility: vi.fn(),
   deleteProject: vi.fn(),
+  getAuthMe: vi.fn(),
 }));
 
-import { ApiError, createProject, updateProject, getProject, getProjectMeta, patchProjectVisibility, deleteProject } from './api-client';
+import { ApiError, createProject, updateProject, getProject, getProjectMeta, patchProjectVisibility, deleteProject, getAuthMe } from './api-client';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -81,6 +82,8 @@ describe('saveProjectToCloudImpl', () => {
     expect(getProject).not.toHaveBeenCalled();
     // The version fetched via the probe is what gets PUT — not a manufactured `1`.
     expect(updateProject).toHaveBeenCalledWith('cloud-abc', payload, jwt, 9);
+    // No double-404, so the /auth/me disambiguation never runs (BR-6).
+    expect(getAuthMe).not.toHaveBeenCalled();
   });
 
   it('probes-then-PUTs on explicit undefined serverVersion (no manufactured version 1)', async () => {
@@ -133,13 +136,39 @@ describe('saveProjectToCloudImpl', () => {
     expect(updateProject).toHaveBeenCalledWith('cloud-abc', payload, jwt, 9);
   });
 
-  it('returns not-found when both the probe and the fallback GET report 404', async () => {
+  it('returns not-found when both the probe and the fallback GET report 404 and /auth/me confirms a live token', async () => {
     (getProjectMeta as Mock).mockRejectedValue(new ApiError(404, { error: 'Not found' }));
     (getProject as Mock).mockRejectedValue(new ApiError(404, { error: 'Not found' }));
+    (getAuthMe as Mock).mockResolvedValue({ user: { id: 1, email: 'user@example.com' } });
 
     const result = await saveProjectToCloudImpl(payload, 'cloud-gone', jwt);
 
     expect(result).toEqual({ kind: 'not-found' });
+    expect(updateProject).not.toHaveBeenCalled();
+    // The double-404 is auth-ambiguous (uniform-404 IDOR defense), so not-found
+    // requires positive evidence of a live token (BR-6).
+    expect(getAuthMe).toHaveBeenCalledWith(jwt);
+  });
+
+  it('returns auth-stale when both report 404 and /auth/me rejects with 401 (dead token)', async () => {
+    (getProjectMeta as Mock).mockRejectedValue(new ApiError(404, { error: 'Not found' }));
+    (getProject as Mock).mockRejectedValue(new ApiError(404, { error: 'Not found' }));
+    (getAuthMe as Mock).mockRejectedValue(new ApiError(401, { error: 'Unauthorized' }));
+
+    const result = await saveProjectToCloudImpl(payload, 'cloud-gone', jwt);
+
+    expect(result).toEqual({ kind: 'auth-stale' });
+    expect(updateProject).not.toHaveBeenCalled();
+  });
+
+  it('rejects when both report 404 and the /auth/me check fails with a network error', async () => {
+    (getProjectMeta as Mock).mockRejectedValue(new ApiError(404, { error: 'Not found' }));
+    (getProject as Mock).mockRejectedValue(new ApiError(404, { error: 'Not found' }));
+    (getAuthMe as Mock).mockRejectedValue(new Error('Network error'));
+
+    // Conservative: the token could not be confirmed either way, so the save
+    // fails (link preserved) rather than reporting a deletion it cannot prove.
+    await expect(saveProjectToCloudImpl(payload, 'cloud-gone', jwt)).rejects.toThrow('Network error');
     expect(updateProject).not.toHaveBeenCalled();
   });
 
@@ -172,6 +201,9 @@ describe('saveProjectToCloudImpl', () => {
 
     expect(result).toEqual({ kind: 'not-found' });
     expect(updateProject).toHaveBeenCalledWith('cloud-gone', payload, jwt, 3);
+    // A known-version PUT 404 is server-verified (requireOwnership 401s a dead
+    // token before the project lookup) — no /auth/me disambiguation needed.
+    expect(getAuthMe).not.toHaveBeenCalled();
   });
 
   it('returns conflict with serverVersion when update gets 409', async () => {

@@ -52,6 +52,14 @@ export function clearCloudUrl(): void {
 export const CONFLICT_PENDING_MESSAGE =
   'This project has a cloud conflict. Open it and choose Save or Load before syncing.';
 
+/**
+ * User-facing message for a save refused because the stored JWT is dead
+ * (revoked/expired/rotated secret — the `auth-stale` save result, BR-6).
+ * Shared by the active-project arm (dispatched) and the by-localId arm (thrown).
+ */
+export const SESSION_EXPIRED_MESSAGE =
+  'Your session has expired. Please sign in again to save to the cloud.';
+
 /** Metadata payload that fully unlinks a project from the cloud. */
 export const CLEARED_CLOUD_METADATA = {
   cloudId: null,
