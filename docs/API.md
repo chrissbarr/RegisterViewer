@@ -10,6 +10,10 @@ Only documented routes under `/api/health`, `/api/health/email`, `/api/auth/*`, 
 
 All API timestamps are UTC and use ISO 8601 second precision: `YYYY-MM-DDTHH:mm:ssZ`. Responses do not include fractional seconds.
 
+## Caching
+
+Every API response is `Cache-Control: no-store` unless documented otherwise. The default is applied at the response exit point, so it covers error responses and the health endpoints too; handlers that set an explicit `Cache-Control` pass through untouched. The sole cacheable response is `GET /api/projects/{id}` for unlisted projects (`private, max-age=60`, with `Vary: Origin, Authorization` so caches key on the requester).
+
 ## Health Endpoints
 
 ### API Health

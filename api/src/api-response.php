@@ -12,6 +12,23 @@ final class ApiResponse
     ) {}
 }
 
+/**
+ * Apply the API-wide caching default: every response is `Cache-Control:
+ * no-store` unless a handler explicitly opted in (the key check is
+ * case-insensitive so an explicit header is never clobbered or duplicated).
+ */
+function withDefaultCacheControl(array $headers): array
+{
+    foreach (array_keys($headers) as $key) {
+        if (strcasecmp((string) $key, 'Cache-Control') === 0) {
+            return $headers;
+        }
+    }
+
+    $headers['Cache-Control'] = 'no-store';
+    return $headers;
+}
+
 function schemaNotReadyResponse(): ApiResponse
 {
     return new ApiResponse([

@@ -117,5 +117,9 @@ function handleAuthVerifyCode(PDO $db, array $config, array $body, ?array $serve
             'id'    => $userId,
             'email' => $email,
         ],
+    ], 200, [
+        // The success body carries the bearer token, so it must never be stored
+        // by any cache (RFC 6749 §5.1 norm; explicit despite POST being inert).
+        'Cache-Control' => 'private, no-store',
     ]);
 }

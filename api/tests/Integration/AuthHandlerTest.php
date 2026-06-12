@@ -571,6 +571,56 @@ final class AuthHandlerTest extends TestCase
         $this->assertArrayNotHasKey('refreshedToken', $response->body);
     }
 
+    #[Test]
+    public function authMeSendsPrivateNoStoreCacheControlAndVary(): void
+    {
+        $email = 'me-cache@example.com';
+        $userId = dbCreateUser(self::$db, $email);
+        // Far from expiry — no refreshedToken, but the body still varies by Authorization
+        $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => $email, 'exp' => time() + 20 * 3600];
+
+        $response = handleAuthMe(self::$db, self::JWT_CONFIG, $auth);
+
+        $this->assertSame(200, $response->status);
+        $this->assertSame('private, no-store', $response->headers['Cache-Control']);
+        $this->assertArrayHasKey('Vary', $response->headers);
+        $this->assertStringContainsString('Origin', $response->headers['Vary']);
+        $this->assertStringContainsString('Authorization', $response->headers['Vary']);
+    }
+
+    #[Test]
+    public function authMeSendsCacheHeadersWhenRefreshingToken(): void
+    {
+        $email = 'me-cache-refresh@example.com';
+        $userId = dbCreateUser(self::$db, $email);
+        // Near expiry — the response carries a fresh 24h bearer token and must never be cached
+        $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => $email, 'exp' => time() + 2 * 3600];
+
+        $response = handleAuthMe(self::$db, self::JWT_CONFIG, $auth);
+
+        $this->assertSame(200, $response->status);
+        $this->assertArrayHasKey('refreshedToken', $response->body);
+        $this->assertSame('private, no-store', $response->headers['Cache-Control']);
+        $this->assertArrayHasKey('Vary', $response->headers);
+        $this->assertStringContainsString('Origin', $response->headers['Vary']);
+        $this->assertStringContainsString('Authorization', $response->headers['Vary']);
+    }
+
+    #[Test]
+    public function verifyCodeSendsPrivateNoStoreCacheControlOnSuccess(): void
+    {
+        $email = 'verify-cache@example.com';
+        $this->createLoginCode($email, '123456');
+
+        $response = handleAuthVerifyCode(self::$db, self::JWT_CONFIG, [
+            'email' => $email,
+            'code'  => '123456',
+        ]);
+
+        $this->assertSame(200, $response->status);
+        $this->assertSame('private, no-store', $response->headers['Cache-Control']);
+    }
+
     // ---- handleAuthLogout ----
 
     #[Test]

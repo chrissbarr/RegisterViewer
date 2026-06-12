@@ -29,5 +29,13 @@ function handleAuthMe(PDO $db, array $config, array $auth): ApiResponse
         $body['refreshedToken'] = createJwt($config, (int) $user['id'], $user['email']);
     }
 
-    return new ApiResponse($body);
+    return new ApiResponse($body, 200, [
+        // The success body can carry a fresh 24h bearer token (refreshedToken),
+        // so it must never be stored by any cache (RFC 6749 §5.1 norm).
+        'Cache-Control' => 'private, no-store',
+        // The body varies by Authorization (user identity), so caches must key
+        // on it. Origin is included to keep the CORS layer's Vary (see
+        // get-project.php for the header-replacement rationale).
+        'Vary' => 'Origin, Authorization',
+    ]);
 }
