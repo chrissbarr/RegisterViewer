@@ -132,8 +132,8 @@ final class VersionedUpdateTest extends TestCase
         $this->createTestProject();
 
         // Create: version=1
-        $v = dbGetProjectVersion(self::$db, 'test_ver_001');
-        $this->assertSame(1, $v);
+        $created = dbGetProjectMeta(self::$db, 'test_ver_001');
+        $this->assertSame(1, (int) $created['version']);
 
         // Update 1: version 1->2
         $r1 = dbUpdateProjectVersioned(
@@ -152,8 +152,8 @@ final class VersionedUpdateTest extends TestCase
         $this->assertSame(3, $r2['version']);
 
         // GET: version=3
-        $v2 = dbGetProjectVersion(self::$db, 'test_ver_001');
-        $this->assertSame(3, $v2);
+        $final = dbGetProjectMeta(self::$db, 'test_ver_001');
+        $this->assertSame(3, (int) $final['version']);
     }
 
     #[Test]
@@ -178,9 +178,22 @@ final class VersionedUpdateTest extends TestCase
     }
 
     #[Test]
-    public function getProjectVersionFallsBackTo1ForMissingProject(): void
+    public function versionedUpdateReturnsNullVersionForConcurrentlyDeletedRow(): void
     {
-        $v = dbGetProjectVersion(self::$db, 'nonexistent_xx');
-        $this->assertSame(1, $v);
+        $this->createTestProject();
+
+        // Simulate a concurrent DELETE landing between ownership verification
+        // and the versioned UPDATE's WHERE evaluation.
+        dbDeleteProject(self::$db, 'test_ver_001');
+
+        $result = dbUpdateProjectVersioned(
+            self::$db, 'test_ver_001',
+            '{"registers":[],"registerValues":{}}',
+            'Gone', 1, self::$testUserId,
+        );
+
+        $this->assertFalse($result['updated']);
+        // version=null signals row-gone (404), not a fabricated version conflict.
+        $this->assertNull($result['version']);
     }
 }

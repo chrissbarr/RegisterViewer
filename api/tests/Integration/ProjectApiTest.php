@@ -862,6 +862,31 @@ final class ProjectApiTest extends TestCase
     }
 
     #[Test]
+    public function handleUpdateProjectReturns404ForConcurrentlyDeletedRow(): void
+    {
+        $userId = $this->createTestUser('race-deleted@example.com');
+        $id = generatePublicId();
+        dbCreateProject(self::$db, $id, 'private', self::validDataJson(), null, $userId);
+
+        // Simulate the project being deleted by a concurrent session before the
+        // versioned UPDATE lands. The handler must surface a 404 (row gone), not
+        // a fabricated 409 version_conflict with currentVersion:1.
+        dbDeleteProject(self::$db, $id);
+
+        $auth = ['kind' => 'jwt', 'userId' => $userId, 'email' => 'race-deleted@example.com'];
+        $response = handleUpdateProject(
+            self::$db,
+            $id,
+            $auth,
+            $this->makeParsedBody($this->updateDataWithRegister('RACE_DELETED'), null, 1),
+        );
+
+        $this->assertSame(404, $response->status);
+        $this->assertSame('Project not found', $response->body['error']);
+        $this->assertArrayNotHasKey('code', $response->body);
+    }
+
+    #[Test]
     public function handleUpdateProjectWithVisibilityRejects404ForWrongJwtUser(): void
     {
         $ownerId = $this->createTestUser('real@example.com');

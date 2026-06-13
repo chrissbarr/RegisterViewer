@@ -137,12 +137,14 @@ function dbUpdateProject(
 /**
  * Update a project's data and title with optimistic concurrency check.
  * Returns ['updated' => true, 'version' => int] on success,
- * or ['updated' => false, 'version' => int] on version conflict.
+ * ['updated' => false, 'version' => int] on a genuine version conflict, or
+ * ['updated' => false, 'version' => null] when the row no longer exists
+ * (concurrently deleted between ownership verification and the UPDATE).
  *
  * Version is in the request body (not ETag/If-Match) because this API
  * uses JSON-only request/response — simpler for the SPA client.
  *
- * @return array{updated: bool, version: int}
+ * @return array{updated: bool, version: int|null}
  */
 function dbUpdateProjectVersioned(
     PDO $db,
@@ -170,26 +172,19 @@ function dbUpdateProjectVersioned(
     ]);
 
     if ($stmt->rowCount() === 0) {
-        // requireOwnership() already verified ownership before this call,
-        // so rowCount=0 can only mean version conflict.
-        $current = dbGetProjectVersion($db, $publicId);
-        return ['updated' => false, 'version' => $current];
+        // rowCount=0 means either a genuine version conflict or that the row
+        // was deleted by a concurrent session between requireOwnership()'s
+        // SELECT and this UPDATE's WHERE evaluation. Re-probe to tell them
+        // apart: a missing row must surface as 404, not a fabricated conflict.
+        $meta = dbGetProjectMeta($db, $publicId);
+        if ($meta === null) {
+            return ['updated' => false, 'version' => null];
+        }
+        return ['updated' => false, 'version' => (int) $meta['version']];
     }
 
     // Version is deterministic: clientVersion + 1.
     return ['updated' => true, 'version' => $clientVersion + 1];
-}
-
-/**
- * Get the current version of a project.
- * Used in the 409 conflict response to tell the client the server's version.
- */
-function dbGetProjectVersion(PDO $db, string $publicId): int
-{
-    $stmt = $db->prepare('SELECT version FROM projects WHERE public_id = :id');
-    $stmt->execute(['id' => $publicId]);
-    $row = $stmt->fetch();
-    return $row ? (int) $row['version'] : 1;
 }
 
 /**

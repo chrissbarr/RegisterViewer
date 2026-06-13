@@ -53,6 +53,13 @@ function handleUpdateProject(PDO $db, string $id, array $auth, \stdClass|\Closur
         $auth['userId'],
     );
 
+    if (!$result['updated'] && $result['version'] === null) {
+        // The row was deleted by a concurrent session between ownership
+        // verification and the UPDATE. Surface a uniform 404 (matching
+        // requireReadableProject) rather than a fabricated version conflict.
+        return new ApiResponse(['error' => 'Project not found'], 404);
+    }
+
     if (!$result['updated']) {
         // Version conflict — log for observability
         error_log(sprintf(
