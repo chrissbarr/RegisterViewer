@@ -95,7 +95,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Verify PHP target
-        run: docker compose run --rm test php -r 'if (PHP_MAJOR_VERSION !== 8 || PHP_MINOR_VERSION !== 3) { fwrite(STDERR, "Expected PHP 8.3, got " . PHP_VERSION . PHP_EOL); exit(1); }'
+        run: docker compose run --rm test php -r 'if (PHP_MAJOR_VERSION !== 8 || PHP_MINOR_VERSION !== 5) { fwrite(STDERR, "Expected PHP 8.5, got " . PHP_VERSION . PHP_EOL); exit(1); }'
       - name: Validate Composer manifest
         run: docker compose run --rm test composer validate --strict --no-check-publish
       - name: Install PHP dependencies
@@ -119,10 +119,10 @@ jobs:
 
       - uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.3'
+          php-version: '8.5'
           tools: composer:v2
       - name: Verify PHP target
-        run: php -r 'if (PHP_MAJOR_VERSION !== 8 || PHP_MINOR_VERSION !== 3) { fwrite(STDERR, "Expected PHP 8.3, got " . PHP_VERSION . PHP_EOL); exit(1); }'
+        run: php -r 'if (PHP_MAJOR_VERSION !== 8 || PHP_MINOR_VERSION !== 5) { fwrite(STDERR, "Expected PHP 8.5, got " . PHP_VERSION . PHP_EOL); exit(1); }'
 
       - name: Download frontend dist
         uses: actions/download-artifact@v6
