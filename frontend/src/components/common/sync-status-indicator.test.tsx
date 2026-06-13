@@ -22,4 +22,12 @@ describe('SyncStatusIndicator', () => {
     render(<SyncStatusIndicator status="offline" />);
     expect(screen.getByTitle(/changes saved locally/i)).toBeInTheDocument();
   });
+
+  it('shows a distinct alert when the cloud rejected the last save', () => {
+    render(<SyncStatusIndicator status="rejected" />);
+    // Must NOT reuse the offline rendering — a deterministic rejection is not
+    // a connectivity problem.
+    expect(screen.getByTitle(/cloud rejected the last save/i)).toBeInTheDocument();
+    expect(screen.queryByTitle(/changes saved locally/i)).not.toBeInTheDocument();
+  });
 });

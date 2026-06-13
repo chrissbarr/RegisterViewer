@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vite
 import { useCloudSyncEngine, deriveSyncStatus, type UseCloudSyncEngineDeps } from './use-cloud-sync-engine';
 import { cleanBaseline, untrackedBaseline, cloudSyncReducer, type CloudSyncAction } from '../utils/cloud-sync-reducer';
 import { initialInternalState, type InternalCloudSyncState } from '../types/cloud-sync';
+import { ApiError } from '../utils/api-client';
 
 vi.mock('../constants', () => ({
   CLOUD_SYNC_DEBOUNCE_MS: 100, // fast for tests
@@ -110,6 +111,9 @@ describe('deriveSyncStatus', () => {
     [true, true, 'syncing' as const, 'syncing'],
     [true, false, 'syncing' as const, 'syncing'],
     [true, true, 'offline' as const, 'offline'],
+    [true, true, 'rejected' as const, 'rejected'],
+    [false, true, 'rejected' as const, 'local-only'],
+    [true, false, 'rejected' as const, 'saved'], // !isDirty overrides a stale 'rejected', same as stale 'offline'
     [true, true, null, 'saved'], // BP-4: isDirty during debounce window shows 'saved' (intentional UX choice)
   ] as const)(
     'deriveSyncStatus(%s, %s, %s) -> %s',
@@ -574,6 +578,66 @@ describe('useCloudSyncEngine - auto-sync', () => {
     );
 
     // Make dirty
+    rerenderProps({ dataDeps: makeDataDeps({ registers: [{ id: 'r2' }] }) });
+
+    await act(async () => {
+      vi.advanceTimersByTime(150);
+      await Promise.resolve();
+    });
+
+    expect(getInternal().asyncTransient).toBe('offline');
+    expect(result.current.syncStatus).toBe('offline');
+  });
+
+  it.each([400, 413, 422])(
+    'sets rejected status (asyncTransient) when save throws a deterministic ApiError %i',
+    async (status) => {
+      const saveToCloud = vi.fn(() => Promise.reject(new ApiError(status, { error: 'rejected by server' })));
+      // Live internal so the dispatched SET_ASYNC_TRANSIENT('rejected') flows back
+      // into deriveSyncStatus's third input.
+      const { result, rerenderProps, getInternal } = renderEngineWithLiveInternal(
+        makeInternal({ cloudId: 'cloud-1', baseline: cleanBaseline(0) }),
+        { dataDeps: makeDataDeps(), canAutoSync: true, saveToCloud },
+      );
+
+      // Make dirty
+      rerenderProps({ dataDeps: makeDataDeps({ registers: [{ id: 'r2' }] }) });
+
+      await act(async () => {
+        vi.advanceTimersByTime(150);
+        await Promise.resolve();
+      });
+
+      expect(getInternal().asyncTransient).toBe('rejected');
+      expect(result.current.syncStatus).toBe('rejected');
+    },
+  );
+
+  it('keeps offline status for non-deterministic ApiError statuses (500)', async () => {
+    const saveToCloud = vi.fn(() => Promise.reject(new ApiError(500, { error: 'server exploded' })));
+    const { result, getInternal, rerenderProps } = renderEngineWithLiveInternal(
+      makeInternal({ cloudId: 'cloud-1', baseline: cleanBaseline(0) }),
+      { dataDeps: makeDataDeps(), canAutoSync: true, saveToCloud },
+    );
+
+    rerenderProps({ dataDeps: makeDataDeps({ registers: [{ id: 'r2' }] }) });
+
+    await act(async () => {
+      vi.advanceTimersByTime(150);
+      await Promise.resolve();
+    });
+
+    expect(getInternal().asyncTransient).toBe('offline');
+    expect(result.current.syncStatus).toBe('offline');
+  });
+
+  it('keeps offline status when save throws a network TypeError', async () => {
+    const saveToCloud = vi.fn(() => Promise.reject(new TypeError('Failed to fetch')));
+    const { result, getInternal, rerenderProps } = renderEngineWithLiveInternal(
+      makeInternal({ cloudId: 'cloud-1', baseline: cleanBaseline(0) }),
+      { dataDeps: makeDataDeps(), canAutoSync: true, saveToCloud },
+    );
+
     rerenderProps({ dataDeps: makeDataDeps({ registers: [{ id: 'r2' }] }) });
 
     await act(async () => {

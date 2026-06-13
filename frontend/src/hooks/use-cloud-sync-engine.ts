@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type MutableRefObject } from 'react';
 import { CLOUD_SYNC_DEBOUNCE_MS } from '../constants';
+import { ApiError } from '../utils/api-client';
 import { isDirty as computeIsDirty, type CloudSyncAction } from '../utils/cloud-sync-reducer';
 import type { InternalCloudSyncState, SaveOutcome } from '../types/cloud-sync';
 
@@ -12,9 +13,15 @@ const MAX_AUTO_SYNC_RETRIES = 4;
  * - `offline`: last sync attempt failed (network/server error); also set when
  *   auto-sync gave up after repeated lock contention, or when the server write
  *   succeeded but the local write failed (local-persist-failed)
+ * - `rejected`: the server deterministically refused the last save
+ *   (400/413/422 — validation or payload size); retrying cannot fix it, only
+ *   editing the flagged data can (BR-7)
  * - `local-only`: project is not cloud-backed (no auto-sync)
  */
-export type SyncStatus = 'saved' | 'syncing' | 'offline' | 'local-only';
+export type SyncStatus = 'saved' | 'syncing' | 'offline' | 'rejected' | 'local-only';
+
+/** The async overlay values the engine dispatches via SET_ASYNC_TRANSIENT. */
+type AsyncOverride = 'syncing' | 'offline' | 'rejected' | null;
 
 interface DataDeps {
   registers: unknown;
@@ -45,17 +52,19 @@ interface UseCloudSyncEngineResult {
  * Derive sync status from inputs and an async override.
  *
  * Priority: `!canAutoSync` -> local-only; `syncing` always shows (active save);
- * `!isDirty` -> saved (overrides stale 'offline'); `isDirty + offline` -> offline.
+ * `!isDirty` -> saved (overrides stale 'offline'/'rejected'); `isDirty +
+ * rejected` -> rejected; `isDirty + offline` -> offline.
  *
  * Note (BP-4): During the debounce window (isDirty but timer hasn't fired),
  * this returns 'saved' rather than a 'pending' status. This is intentional:
  * showing "pending" for every keystroke during the 3s debounce would create
  * visual noise. The brief inaccuracy is acceptable UX.
  */
-export function deriveSyncStatus(canAutoSync: boolean, isDirty: boolean, asyncOverride: 'syncing' | 'offline' | null): SyncStatus {
+export function deriveSyncStatus(canAutoSync: boolean, isDirty: boolean, asyncOverride: AsyncOverride): SyncStatus {
   if (!canAutoSync) return 'local-only';
   if (asyncOverride === 'syncing') return 'syncing';
   if (!isDirty) return 'saved';
+  if (asyncOverride === 'rejected') return 'rejected';
   if (asyncOverride === 'offline') return 'offline';
   return 'saved';
 }
@@ -95,7 +104,7 @@ export function useCloudSyncEngine(deps: UseCloudSyncEngineDeps): UseCloudSyncEn
   // rule. `null` means "derive from canAutoSync/isDirty". Stale overrides are
   // handled by deriveSyncStatus priority (e.g., !isDirty overrides 'offline').
   const setAsyncOverride = useCallback(
-    (value: 'syncing' | 'offline' | null) => {
+    (value: AsyncOverride) => {
       dispatch({ type: 'SET_ASYNC_TRANSIENT', value });
     },
     [dispatch],
@@ -183,8 +192,15 @@ export function useCloudSyncEngine(deps: UseCloudSyncEngineDeps): UseCloudSyncEn
             setAsyncOverride(null);
           }
         }
-      } catch {
-        if (!cancelled) setAsyncOverride('offline');
+      } catch (err) {
+        if (cancelled) return;
+        // A deterministic server rejection (validation 400, payload-too-large
+        // 413, semantic 422) will fail identically on every retry — surface
+        // 'rejected' so the steady-state indicator points at the data, not the
+        // network. Everything else (network failure, 5xx) stays 'offline'.
+        const isRejected = err instanceof ApiError
+          && (err.status === 400 || err.status === 413 || err.status === 422);
+        setAsyncOverride(isRejected ? 'rejected' : 'offline');
         // Recovers via manual save, project switch, or auth change — further edits alone do not re-arm auto-sync.
       }
     };

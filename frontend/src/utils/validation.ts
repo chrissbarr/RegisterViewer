@@ -63,6 +63,18 @@ function validateField(field: Field): ValidationError[] {
     errors.push({ fieldId: id, message: `Flag field must be 1 bit wide (got ${bitWidth})` });
   }
 
+  if (field.type === 'enum') {
+    // Server parity: the API rejects enum entry names without a non-whitespace
+    // character (hasNonWhitespace); JS trim() is an acceptable mirror. Safe to
+    // block here ONLY because sanitizeField heals whitespace-only names on
+    // every load path before this validation runs.
+    for (const entry of field.enumEntries) {
+      if (!entry.name.trim()) {
+        errors.push({ fieldId: id, message: `Enum entry name for value ${entry.value} is required` });
+      }
+    }
+  }
+
   if (field.type === 'float') {
     const expectedWidth = field.floatType === 'half' ? 16 : field.floatType === 'double' ? 64 : 32;
     if (bitWidth !== expectedWidth) {

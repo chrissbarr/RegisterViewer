@@ -1,8 +1,20 @@
 import type { EnumEntry, Field, FlagField, IntegerField, FieldType, QFormat, RegisterDef, Signedness } from '../types/register';
+import { MAX_REGISTER_WIDTH } from './validation';
 
 const VALID_FIELD_TYPES: ReadonlySet<string> = new Set<FieldType>([
   'flag', 'enum', 'integer', 'float', 'fixed-point',
 ]);
+
+/**
+ * Clamp a bit index into the supported [0, MAX_REGISTER_WIDTH - 1] range.
+ * Legacy cloud rows can carry msb/lsb outside this range (production never
+ * enforced it); the server now rejects them, so heal silently on load —
+ * the same precedent as deserializeState's width clamp. Clamping is monotonic,
+ * so an msb >= lsb relationship is never reordered.
+ */
+function clampBitIndex(value: number): number {
+  return Math.min(Math.max(value, 0), MAX_REGISTER_WIDTH - 1);
+}
 
 const VALID_FLOAT_TYPES: ReadonlySet<string> = new Set(['half', 'single', 'double']);
 const VALID_SIGNEDNESS: ReadonlySet<string> = new Set<Signedness>(['unsigned', 'twos-complement', 'sign-magnitude']);
@@ -18,8 +30,8 @@ export function sanitizeField(raw: Record<string, unknown>): Field {
 
   const id = (typeof raw.id === 'string' && raw.id) ? raw.id : crypto.randomUUID();
   const name = typeof raw.name === 'string' ? raw.name : '';
-  const msb = Number.isInteger(raw.msb) ? raw.msb as number : 0;
-  const lsb = Number.isInteger(raw.lsb) ? raw.lsb as number : 0;
+  const msb = Number.isInteger(raw.msb) ? clampBitIndex(raw.msb as number) : 0;
+  const lsb = Number.isInteger(raw.lsb) ? clampBitIndex(raw.lsb as number) : 0;
   const base: { id: string; name: string; msb: number; lsb: number; description?: string } =
     { id, name, msb, lsb };
   if (typeof raw.description === 'string') {
@@ -45,7 +57,13 @@ export function sanitizeField(raw: Record<string, unknown>): Field {
             typeof e === 'object' && e !== null &&
             typeof (e as Record<string, unknown>).value === 'number' &&
             typeof (e as Record<string, unknown>).name === 'string'
-        ).map((e) => ({ value: e.value, name: e.name }));
+        ).map((e) => ({
+          value: e.value,
+          // Whitespace-only names are server-unacceptable (legacy rows predate
+          // the rule); heal silently with the deterministic fallback the field
+          // editor uses for new entries (field-definition-form's VALUE_<n>).
+          name: e.name.trim() === '' ? `VALUE_${e.value}` : e.name,
+        }));
       }
       return { ...base, type: 'enum', enumEntries };
     }

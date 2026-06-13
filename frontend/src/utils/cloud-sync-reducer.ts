@@ -107,8 +107,9 @@ export function selectWasDirty(state: InternalCloudSyncState, dataVersion: numbe
  * useState). Operates on the current flat shape via the transient
  * `asyncTransient` field:
  * - `SET_ASYNC_TRANSIENT { value }` → `{ ...prev, asyncTransient: value }`, the
- *   `'syncing'`/`'offline'`/`null` overlay the auto-sync engine sets from its
- *   async callbacks and microtask-clears on cleanup. Does NOT touch `status`
+ *   `'syncing'`/`'offline'`/`'rejected'`/`null` overlay the auto-sync engine
+ *   sets from its async callbacks and microtask-clears on cleanup (`'rejected'`
+ *   is BR-7's deterministic 400/413/422 rejection). Does NOT touch `status`
  *   (the underlying op lifecycle is independent).
  */
 export type CloudSyncAction =
@@ -168,7 +169,7 @@ export type CloudSyncAction =
   | { type: 'OP_FAILED'; error: string }
   | { type: 'REQUEST_BASELINE' }
   | { type: 'CAPTURE_BASELINE'; version: number }
-  | { type: 'SET_ASYNC_TRANSIENT'; value: 'syncing' | 'offline' | null };
+  | { type: 'SET_ASYNC_TRANSIENT'; value: 'syncing' | 'offline' | 'rejected' | null };
 
 /**
  * Inputs to {@link cloudStateForEntry}, the pure builder shared by both cloud
@@ -230,7 +231,7 @@ export function cloudStateForEntry(seed: CloudEntrySeed): InternalCloudSyncState
     baseline: seed.hasUnsyncedChanges ? dirtyBaseline() : untrackedBaseline(),
     lastCloudSavedAt: seed.lastCloudSavedAt,
     // Reset the op lifecycle so a stale `status:'saving'` (or `'deleting'` etc.)
-    // AND a stale `asyncTransient:'syncing'|'offline'` overlay from the departing
+    // AND a stale `asyncTransient:'syncing'|'offline'|'rejected'` overlay from the departing
     // project never leak into the freshly-entered cloud project — both INIT_CLOUD
     // callers (Path A startup + Path B switch) flow through this builder.
     status: 'idle',

@@ -44,15 +44,18 @@ export interface InternalCloudSyncState {
   serverVersion: number; // last known server version (0 = unknown)
   conflict: { serverVersion: number } | null; // non-null triggers conflict UX
   /**
-   * Async sync/offline overlay (S9). Set ONLY from the auto-sync engine's async
-   * callbacks (never synchronously in an effect body) and microtask-cleared on
-   * effect cleanup. Distinct from `status` because it overlays the op-status with
-   * a different lifecycle and is read as `deriveSyncStatus`'s third (transient)
-   * input. Optional/transient so white-box `makeInternal({...})` constructions
-   * stay valid without it (defaults to undefined === no overlay). Replaces the
-   * former engine-local `asyncOverride` useState.
+   * Async sync/offline/rejected overlay (S9). Set ONLY from the auto-sync
+   * engine's async callbacks (never synchronously in an effect body) and
+   * microtask-cleared on effect cleanup. Distinct from `status` because it
+   * overlays the op-status with a different lifecycle and is read as
+   * `deriveSyncStatus`'s third (transient) input. `'rejected'` (BR-7) marks a
+   * deterministic server rejection (400/413/422) that retrying cannot fix —
+   * distinct from `'offline'` connectivity failures. Optional/transient so
+   * white-box `makeInternal({...})` constructions stay valid without it
+   * (defaults to undefined === no overlay). Replaces the former engine-local
+   * `asyncOverride` useState.
    */
-  asyncTransient?: 'syncing' | 'offline' | null;
+  asyncTransient?: 'syncing' | 'offline' | 'rejected' | null;
 }
 
 export interface CloudInit {

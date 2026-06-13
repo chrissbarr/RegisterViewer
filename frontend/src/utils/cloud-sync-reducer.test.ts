@@ -654,6 +654,18 @@ describe('cloudSyncReducer', () => {
       expect(next.asyncTransient).toBe('offline');
     });
 
+    it('SET_ASYNC_TRANSIENT sets the rejected overlay (deterministic server rejection)', () => {
+      const prev: InternalCloudSyncState = {
+        ...initialInternalState,
+        cloudId: 'abc',
+        asyncTransient: 'syncing',
+      };
+      const next = cloudSyncReducer(prev, { type: 'SET_ASYNC_TRANSIENT', value: 'rejected' });
+      expect(next.asyncTransient).toBe('rejected');
+      // The overlay does NOT touch the underlying op status.
+      expect(next.status).toBe('idle');
+    });
+
     it('SET_ASYNC_TRANSIENT clears the overlay with null (microtask cleanup)', () => {
       const prev: InternalCloudSyncState = {
         ...initialInternalState,

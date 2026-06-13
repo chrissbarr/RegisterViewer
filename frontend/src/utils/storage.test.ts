@@ -6,6 +6,7 @@ import {
   importFromJson,
 } from './storage';
 import { makeState, makeRegister, makeField } from '../test/helpers';
+import type { EnumField } from '../types/register';
 
 describe('serializeState', () => {
   it('converts bigint values to hex strings with 0x prefix', () => {
@@ -322,6 +323,39 @@ describe('importFromJson', () => {
     expect(result!.warnings).toEqual([]);
     const regId = result!.registers[0].id;
     expect(result!.values[regId]).toBe(0n);
+  });
+
+  it('heals legacy server-invalid registers instead of dropping them (round-trip safety)', () => {
+    // Legacy cloud rows can carry msb>127 and whitespace-only enum entry names
+    // (rules production never enforced). The sanitize heal MUST run before
+    // validateRegisterDef on every load path — otherwise the register lands in
+    // warnings, is silently dropped, and the next save persists the loss.
+    const json = JSON.stringify({
+      version: 1,
+      registers: [{
+        name: 'LEGACY',
+        width: 128,
+        fields: [
+          { name: 'WIDE', msb: 500, lsb: 64, type: 'integer' },
+          {
+            name: 'MODE', msb: 1, lsb: 0, type: 'enum',
+            enumEntries: [{ value: 0, name: '  \t' }, { value: 1, name: 'ON' }],
+          },
+        ],
+      }],
+    });
+    const result = importFromJson(json);
+    expect(result).not.toBeNull();
+    expect(result!.warnings).toEqual([]);
+    expect(result!.registers).toHaveLength(1);
+    const [wide, mode] = result!.registers[0].fields;
+    // Server-valid form: msb clamped into [0, 127], whitespace name healed.
+    expect(wide.msb).toBe(127);
+    expect(wide.lsb).toBe(64);
+    expect((mode as EnumField).enumEntries).toEqual([
+      { value: 0, name: 'VALUE_0' },
+      { value: 1, name: 'ON' },
+    ]);
   });
 
   it('rejects register with width 0', () => {

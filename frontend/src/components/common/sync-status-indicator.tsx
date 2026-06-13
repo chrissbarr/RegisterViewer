@@ -1,4 +1,4 @@
-import { Check, Loader2, WifiOff } from 'lucide-react';
+import { AlertTriangle, Check, Loader2, WifiOff } from 'lucide-react';
 import type { SyncStatus } from '../../context/cloud-sync-context';
 
 export function SyncStatusIndicator({ status }: { status: SyncStatus }) {
@@ -19,6 +19,13 @@ export function SyncStatusIndicator({ status }: { status: SyncStatus }) {
       icon: <WifiOff size={16} aria-hidden="true" />,
       title: 'Offline — changes saved locally',
       className: 'text-amber-500 dark:text-amber-400',
+    },
+    rejected: {
+      // Deterministic server rejection (BR-7) — NOT a connectivity problem,
+      // so it must not reuse the WifiOff offline rendering.
+      icon: <AlertTriangle size={16} aria-hidden="true" />,
+      title: 'Cloud rejected the last save — open the register editor to fix the flagged field',
+      className: 'text-red-500 dark:text-red-400',
     },
   }[status];
 
