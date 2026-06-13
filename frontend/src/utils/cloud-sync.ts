@@ -187,7 +187,7 @@ export async function syncCloudProjectsFromServer(
   const staleReconcileFailedCloudIds: string[] = [];
   if (staleWriteOptions) {
     for (const staleProject of staleCloudProjects) {
-      let reconciled = false;
+      let reconciled: boolean;
       try {
         reconciled = await callbacks.reconcileStaleCloudProject(staleProject, staleWriteOptions);
       } catch {

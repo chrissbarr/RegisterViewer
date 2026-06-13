@@ -25,6 +25,15 @@ export default defineConfig([
         varsIgnorePattern: '^_',
         destructuredArrayIgnorePattern: '^_',
       }],
+      // React Compiler readiness rules, newly added to react-hooks'
+      // recommended config in v7.1. They flag deliberate, documented
+      // patterns in this codebase (render-time ref syncing, etc.) and were
+      // not active prior to the ESLint 10 upgrade. Deferred — adopting them
+      // is tracked as separate work; disabling here keeps lint behavior
+      // unchanged across the upgrade.
+      'react-hooks/refs': 'off',
+      'react-hooks/immutability': 'off',
+      'react-hooks/set-state-in-effect': 'off',
     },
   },
   {
