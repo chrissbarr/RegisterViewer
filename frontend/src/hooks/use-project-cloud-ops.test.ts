@@ -125,8 +125,68 @@ describe('useProjectCloudOps', () => {
       ).rejects.toThrow('Network failure');
     });
 
-    it('throws when activeProjectSave reports that the save did not complete', async () => {
+    it('resolves without throwing when the active save reports lock-held (auto-sync owns the retry)', async () => {
       const activeProjectSave = vi.fn(async () => 'lock-held' as const);
+      const deps = makeDeps({ activeProjectSave });
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      // The active auto-sync owns the in-flight save and retries — surfacing a
+      // hard "Failed to save" would double-signal a handled situation (BR-10).
+      await act(async () => {
+        await expect(result.current.saveProjectToCloud('local-1')).resolves.toBeUndefined();
+      });
+    });
+
+    it('resolves without throwing when the active save reports login-required (dialog already shown)', async () => {
+      const activeProjectSave = vi.fn(async () => 'login-required' as const);
+      const deps = makeDeps({ activeProjectSave });
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      await act(async () => {
+        await expect(result.current.saveProjectToCloud('local-1')).resolves.toBeUndefined();
+      });
+    });
+
+    it('resolves without throwing when the active save reports conflict (banner already dispatched)', async () => {
+      const activeProjectSave = vi.fn(async () => 'conflict' as const);
+      const deps = makeDeps({ activeProjectSave });
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      await act(async () => {
+        await expect(result.current.saveProjectToCloud('local-1')).resolves.toBeUndefined();
+      });
+    });
+
+    it('resolves without throwing when the active save reports not-found (unlink already dispatched)', async () => {
+      const activeProjectSave = vi.fn(async () => 'not-found' as const);
+      const deps = makeDeps({ activeProjectSave });
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      await act(async () => {
+        await expect(result.current.saveProjectToCloud('local-1')).resolves.toBeUndefined();
+      });
+    });
+
+    it('throws a specific persist-failed message (not the generic one) when the active save reports local-persist-failed', async () => {
+      const activeProjectSave = vi.fn(async () => 'local-persist-failed' as const);
+      const deps = makeDeps({ activeProjectSave });
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      await expect(
+        act(async () => {
+          await result.current.saveProjectToCloud('local-1');
+        }),
+      ).rejects.toThrow(/local cloud metadata could not be persisted/i);
+    });
+
+    it('keeps the generic safety-net throw for an unexpected non-success outcome', async () => {
+      // A future / unknown non-success outcome must never be silently swallowed.
+      const activeProjectSave = vi.fn(async () => 'some-future-outcome' as unknown as import('../types/cloud-sync').SaveOutcome);
       const deps = makeDeps({ activeProjectSave });
 
       const { result } = renderHook(() => useProjectCloudOps(deps));

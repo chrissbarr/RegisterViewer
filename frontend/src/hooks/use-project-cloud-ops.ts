@@ -6,7 +6,7 @@ import { clearCloudUrl, CLEARED_CLOUD_METADATA, CONFLICT_PENDING_MESSAGE, SESSIO
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
 import { positiveVersion } from '../utils/cloud-sync';
 import type { Visibility, ProjectListEntry } from '../types/project';
-import { type CloudSyncCore, type CloudMetadataUpdate, type SaveOutcome, isSaveSuccess } from '../types/cloud-sync';
+import { type CloudSyncCore, type CloudMetadataUpdate, type SaveOutcome } from '../types/cloud-sync';
 import { isOwnedCloudEntry } from '../utils/project-identity';
 
 interface ProjectCloudOpsDeps {
@@ -41,13 +41,47 @@ export function useProjectCloudOps(deps: ProjectCloudOpsDeps): ProjectCloudOps {
     // dirty tracking, status indicators, and reads fresh React state.
     if (localId === activeLocalIdRef.current) {
       const outcome = await activeProjectSave();
-      if (outcome === 'conflict-pending') {
-        throw new Error(CONFLICT_PENDING_MESSAGE);
+      // Map each non-success outcome to the right by-localId behavior (BR-10).
+      // The active `saveToCloud` already handles most situations via dispatch /
+      // dialog / retry; re-throwing a generic "Failed to save" here would
+      // double-signal a handled situation. A generic default throw is RETAINED
+      // so a future genuine-failure outcome can never be silently swallowed.
+      // (`auth-stale` is not reachable here — the active path collapses it to
+      // `login-required` before returning.)
+      switch (outcome) {
+        case 'saved':
+        case 'created':
+        case 'noop':
+          // Data is safely on the server (or nothing to do).
+          return;
+        case 'lock-held':
+          // The active auto-sync owns this in-flight save and retries; the
+          // by-localId caller's intent (the project is being saved) is met.
+          return;
+        case 'login-required':
+          // The login dialog is already shown and the pending op stored; the
+          // auth-transition effect retries after sign-in.
+          return;
+        case 'conflict':
+          // The conflict banner was already dispatched — the user resolves it
+          // via Save/Load there.
+          return;
+        case 'not-found':
+          // NOT_FOUND_CLEARED / OP_FAILED already dispatched and surfaced the
+          // unlink.
+          return;
+        case 'conflict-pending':
+          // BR-1: open conflict — refuse with the actionable message.
+          throw new Error(CONFLICT_PENDING_MESSAGE);
+        case 'local-persist-failed':
+          // Server write succeeded but the local write failed — keep this
+          // user-visible but described accurately (not the generic string).
+          throw new Error('Project was saved to cloud, but local cloud metadata could not be persisted.');
+        default:
+          // Safety net: any new/unexpected non-success outcome must not be
+          // silently swallowed.
+          throw new Error('Failed to save active project to cloud.');
       }
-      if (!isSaveSuccess(outcome)) {
-        throw new Error('Failed to save active project to cloud.');
-      }
-      return;
     }
 
     // Non-active project: read from localStorage
