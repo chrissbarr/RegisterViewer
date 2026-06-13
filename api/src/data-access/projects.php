@@ -13,7 +13,28 @@ declare(strict_types=1);
 function dbGetProject(PDO $db, string $id): ?array
 {
     $stmt = $db->prepare(
-        "SELECT public_id, visibility, data, title, user_id,
+        "SELECT public_id, visibility, data, title, user_id, version,
+                DATE_FORMAT(created_at, '%Y-%m-%dT%H:%i:%sZ') AS created_at_iso,
+                DATE_FORMAT(updated_at, '%Y-%m-%dT%H:%i:%sZ') AS updated_at_iso,
+                DATE_FORMAT(last_accessed_at, '%Y-%m-%dT%H:%i:%sZ') AS last_accessed_at_iso
+         FROM projects
+         WHERE public_id = :id
+         LIMIT 1"
+    );
+    $stmt->execute(['id' => $id]);
+    $row = $stmt->fetch();
+    return $row ?: null;
+}
+
+/**
+ * Get a project's metadata by its public_id — same row shape as dbGetProject
+ * but WITHOUT the data column, so the /meta freshness probe never transfers
+ * the payload blob. Returns timestamps in ISO 8601 format for API compatibility.
+ */
+function dbGetProjectMeta(PDO $db, string $id): ?array
+{
+    $stmt = $db->prepare(
+        "SELECT public_id, visibility, title, user_id, version,
                 DATE_FORMAT(created_at, '%Y-%m-%dT%H:%i:%sZ') AS created_at_iso,
                 DATE_FORMAT(updated_at, '%Y-%m-%dT%H:%i:%sZ') AS updated_at_iso,
                 DATE_FORMAT(last_accessed_at, '%Y-%m-%dT%H:%i:%sZ') AS last_accessed_at_iso
@@ -70,42 +91,100 @@ function dbCreateProject(
     ?string $title,
     int $userId,
 ): void {
+    $now = utcDbDateTime();
     $stmt = $db->prepare(
-        'INSERT INTO projects (public_id, visibility, data, title, user_id)
-         VALUES (:public_id, :visibility, :data, :title, :user_id)'
+        'INSERT INTO projects (public_id, visibility, data, title, user_id, created_at, updated_at, last_accessed_at)
+         VALUES (:public_id, :visibility, :data, :title, :user_id, :created_at, :updated_at, :last_accessed_at)'
     );
     $stmt->execute([
-        'public_id'  => $publicId,
-        'visibility' => $visibility,
-        'data'       => $data,
-        'title'      => $title,
-        'user_id'    => $userId,
+        'public_id'        => $publicId,
+        'visibility'       => $visibility,
+        'data'             => $data,
+        'title'            => $title,
+        'user_id'          => $userId,
+        'created_at'       => $now,
+        'updated_at'       => $now,
+        'last_accessed_at' => $now,
     ]);
 }
 
 /**
- * Full update of a project's data, visibility, and title.
+ * Full update of a project's data and title.
  * Explicitly sets updated_at and last_accessed_at to match previous API behavior.
  */
 function dbUpdateProject(
     PDO $db,
     string $publicId,
     string $data,
-    string $visibility,
     ?string $title,
 ): void {
+    $now = utcDbDateTime();
     $stmt = $db->prepare(
         'UPDATE projects
-         SET data = :data, visibility = :visibility, title = :title,
-             updated_at = NOW(), last_accessed_at = NOW()
+         SET data = :data, title = :title,
+             updated_at = :updated_at, last_accessed_at = :last_accessed_at
          WHERE public_id = :public_id'
     );
     $stmt->execute([
-        'data'       => $data,
-        'visibility' => $visibility,
-        'title'      => $title,
-        'public_id'  => $publicId,
+        'data'             => $data,
+        'title'            => $title,
+        'public_id'        => $publicId,
+        'updated_at'       => $now,
+        'last_accessed_at' => $now,
     ]);
+}
+
+/**
+ * Update a project's data and title with optimistic concurrency check.
+ * Returns ['updated' => true, 'version' => int] on success,
+ * ['updated' => false, 'version' => int] on a genuine version conflict, or
+ * ['updated' => false, 'version' => null] when the row no longer exists
+ * (concurrently deleted between ownership verification and the UPDATE).
+ *
+ * Version is in the request body (not ETag/If-Match) because this API
+ * uses JSON-only request/response — simpler for the SPA client.
+ *
+ * @return array{updated: bool, version: int|null}
+ */
+function dbUpdateProjectVersioned(
+    PDO $db,
+    string $publicId,
+    string $data,
+    ?string $title,
+    int $clientVersion,
+    int $userId,
+): array {
+    $now = utcDbDateTime();
+    $stmt = $db->prepare(
+        'UPDATE projects
+         SET data = :data, title = :title,
+             version = version + 1, updated_at = :updated_at, last_accessed_at = :last_accessed_at
+         WHERE public_id = :public_id AND version = :version AND user_id = :user_id'
+    );
+    $stmt->execute([
+        'data'             => $data,
+        'title'            => $title,
+        'public_id'        => $publicId,
+        'version'          => $clientVersion,
+        'user_id'          => $userId,
+        'updated_at'       => $now,
+        'last_accessed_at' => $now,
+    ]);
+
+    if ($stmt->rowCount() === 0) {
+        // rowCount=0 means either a genuine version conflict or that the row
+        // was deleted by a concurrent session between requireOwnership()'s
+        // SELECT and this UPDATE's WHERE evaluation. Re-probe to tell them
+        // apart: a missing row must surface as 404, not a fabricated conflict.
+        $meta = dbGetProjectMeta($db, $publicId);
+        if ($meta === null) {
+            return ['updated' => false, 'version' => null];
+        }
+        return ['updated' => false, 'version' => (int) $meta['version']];
+    }
+
+    // Version is deterministic: clientVersion + 1.
+    return ['updated' => true, 'version' => $clientVersion + 1];
 }
 
 /**
@@ -114,13 +193,15 @@ function dbUpdateProject(
  */
 function dbPatchVisibility(PDO $db, string $publicId, string $visibility): void
 {
+    $now = utcDbDateTime();
     $stmt = $db->prepare(
-        'UPDATE projects SET visibility = :visibility, updated_at = NOW()
+        'UPDATE projects SET visibility = :visibility, updated_at = :updated_at
          WHERE public_id = :public_id'
     );
     $stmt->execute([
         'visibility' => $visibility,
         'public_id'  => $publicId,
+        'updated_at' => $now,
     ]);
 }
 
@@ -151,13 +232,20 @@ function dbCountProjectsByUserId(PDO $db, int $userId): int
  */
 function dbTouchLastAccessed(PDO $db, string $publicId): void
 {
+    $now = utcDbDateTime();
+    $cutoff = utcDbDateTime(time() - 24 * 60 * 60);
     $stmt = $db->prepare(
         'UPDATE projects
-         SET last_accessed_at = NOW()
+         SET last_accessed_at = :last_accessed_at,
+             updated_at = updated_at
          WHERE public_id = :public_id
-           AND last_accessed_at < DATE_SUB(NOW(), INTERVAL 24 HOUR)'
+           AND last_accessed_at < :cutoff'
     );
-    $stmt->execute(['public_id' => $publicId]);
+    $stmt->execute([
+        'public_id' => $publicId,
+        'last_accessed_at' => $now,
+        'cutoff' => $cutoff,
+    ]);
 }
 
 /**
@@ -166,7 +254,7 @@ function dbTouchLastAccessed(PDO $db, string $publicId): void
 function dbListProjectsByUserId(PDO $db, int $userId): array
 {
     $stmt = $db->prepare(
-        "SELECT public_id, visibility, title,
+        "SELECT public_id, visibility, title, version,
                 DATE_FORMAT(created_at, '%Y-%m-%dT%H:%i:%sZ') AS created_at_iso,
                 DATE_FORMAT(updated_at, '%Y-%m-%dT%H:%i:%sZ') AS updated_at_iso
          FROM projects
@@ -177,4 +265,3 @@ function dbListProjectsByUserId(PDO $db, int $userId): array
     $stmt->execute(['user_id' => $userId]);
     return $stmt->fetchAll();
 }
-

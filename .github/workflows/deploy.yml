@@ -6,55 +6,281 @@ on:
     types: [completed]
     branches: [master]
   workflow_dispatch:
+    inputs:
+      ci_run_id:
+        description: "CI workflow run ID that produced the deploy artifact"
+        required: true
+        type: string
+      expected_sha:
+        description: "Commit SHA for the deploy artifact to download"
+        required: true
+        type: string
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   deploy:
     if: >
-      github.event_name == 'workflow_dispatch' ||
-      github.event.workflow_run.conclusion == 'success'
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master') ||
+      (
+        github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == 'master'
+      )
     runs-on: ubuntu-latest
     concurrency:
       group: cpanel-deploy
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v6
+      - name: Resolve deploy artifact
+        id: payload
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          AUTO_RUN_ID: ${{ github.event.workflow_run.id }}
+          AUTO_SHA: ${{ github.event.workflow_run.head_sha }}
+          INPUT_CI_RUN_ID: ${{ inputs.ci_run_id }}
+          INPUT_EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          if [ "${EVENT_NAME}" = "workflow_run" ]; then
+            echo "run_id=${AUTO_RUN_ID}" >> "${GITHUB_OUTPUT}"
+            echo "sha=${AUTO_SHA}" >> "${GITHUB_OUTPUT}"
+          else
+            if ! printf '%s' "${INPUT_CI_RUN_ID}" | grep -Eq '^[0-9]+$'; then
+              echo "::error::ci_run_id must be a numeric GitHub Actions run ID"
+              exit 1
+            fi
+            if ! printf '%s' "${INPUT_EXPECTED_SHA}" | grep -Eiq '^[0-9a-f]{40}$'; then
+              echo "::error::expected_sha must be a full 40-character commit SHA"
+              exit 1
+            fi
+            echo "run_id=${INPUT_CI_RUN_ID}" >> "${GITHUB_OUTPUT}"
+            echo "sha=${INPUT_EXPECTED_SHA,,}" >> "${GITHUB_OUTPUT}"
+          fi
 
-      - uses: actions/setup-node@v6
+      - name: Checkout workflow helpers
+        uses: actions/checkout@v6
         with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          sparse-checkout: |
+            .github/scripts/validate_vite_api_url.py
+          sparse-checkout-cone-mode: false
 
-      - uses: shivammathur/setup-php@v2
+      - name: Verify CI run provenance
+        env:
+          EXPECTED_RUN_ID: ${{ steps.payload.outputs.run_id }}
+          EXPECTED_SHA: ${{ steps.payload.outputs.sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          API_URL="${GITHUB_API_URL:-https://api.github.com}"
+          curl -fsSL \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "${API_URL}/repos/${GITHUB_REPOSITORY}/actions/runs/${EXPECTED_RUN_ID}" \
+            > workflow-run.json
+
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          run = json.loads(Path("workflow-run.json").read_text(encoding="utf-8"))
+          expected_run_id = os.environ["EXPECTED_RUN_ID"]
+          expected_sha = os.environ["EXPECTED_SHA"]
+          expected_repository = os.environ["GITHUB_REPOSITORY"]
+          errors = []
+
+          if str(run.get("id")) != expected_run_id:
+              errors.append("workflow run id does not match requested CI run")
+          if run.get("name") != "CI":
+              errors.append("workflow run is not the CI workflow")
+          if run.get("path") != ".github/workflows/ci.yml":
+              errors.append("workflow run path is not .github/workflows/ci.yml")
+          if run.get("event") != "push":
+              errors.append("workflow run event is not push")
+          if run.get("head_branch") != "master":
+              errors.append("workflow run branch is not master")
+          if run.get("head_sha") != expected_sha:
+              errors.append("workflow run head_sha does not match requested artifact SHA")
+          if run.get("status") != "completed":
+              errors.append("workflow run is not completed")
+          if run.get("conclusion") != "success":
+              errors.append("workflow run did not succeed")
+          if run.get("repository", {}).get("full_name") != expected_repository:
+              errors.append("workflow run repository does not match current repository")
+          if run.get("head_repository", {}).get("full_name") != expected_repository:
+              errors.append("workflow run head repository does not match current repository")
+
+          if errors:
+              for error in errors:
+                  print(f"::error::{error}")
+              sys.exit(1)
+          PY
+
+      - name: Download deploy payload
+        uses: actions/download-artifact@v6
         with:
-          php-version: '8.3'
-          tools: composer:v2
+          name: registerapptest-deploy-${{ steps.payload.outputs.sha }}
+          run-id: ${{ steps.payload.outputs.run_id }}
+          github-token: ${{ github.token }}
+          path: deploy
 
-      - run: npm ci
-        working-directory: frontend
-
-      - run: npm run build
-        working-directory: frontend
+      - name: Validate VITE_API_URL
+        id: vite_api_url
         env:
           VITE_API_URL: ${{ vars.VITE_API_URL }}
+        run: python3 .github/scripts/validate_vite_api_url.py
 
-      - name: Install PHP runtime dependencies
-        run: composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
-        working-directory: api
-
-      - name: Assemble deploy payload
+      - name: Verify deploy payload
+        env:
+          EXPECTED_SHA: ${{ steps.payload.outputs.sha }}
+          EXPECTED_RUN_ID: ${{ steps.payload.outputs.run_id }}
+          EXPECTED_VITE_API_URL: ${{ steps.vite_api_url.outputs.origin }}
         run: |
-          mkdir -p deploy/api/src/handlers deploy/api/database/migrations deploy/api/vendor
-          cp -R frontend/dist/* deploy/
-          cp -R api/src/* deploy/api/src/
-          cp -R api/database/* deploy/api/database/
-          cp -R api/vendor/* deploy/api/vendor/
-          cp api/index.php deploy/api/
-          cp api/config.php deploy/api/
-          cp api/.htaccess deploy/api/
+          set -euo pipefail
+          required_files=(
+            "deploy/index.html"
+            "deploy/api/index.php"
+            "deploy/api/config.php"
+            "deploy/api/.htaccess"
+            "deploy/api/vendor/autoload.php"
+            "deploy/api/database/migrate.php"
+            "deploy/release.json"
+            "deploy/SHA256SUMS"
+          )
+          for file in "${required_files[@]}"; do
+            if [ ! -f "${file}" ]; then
+              echo "::error::Missing required deploy file: ${file}"
+              exit 1
+            fi
+          done
+
+          if ! find deploy/api/database/migrations -maxdepth 1 -type f -name '[0-9]*_*.sql' -print -quit | grep -q .; then
+            echo "::error::Deploy payload must include numbered database migrations"
+            exit 1
+          fi
+
+          (cd deploy && sha256sum -c SHA256SUMS)
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import sys
+
+          root = Path("deploy")
+          manifest_path = root / "SHA256SUMS"
+          actual_files = {
+              "./" + path.relative_to(root).as_posix()
+              for path in root.rglob("*")
+              if path.is_file() and path.name != "SHA256SUMS"
+          }
+          manifest_files = set()
+          for line in manifest_path.read_text(encoding="utf-8").splitlines():
+              if not line.strip():
+                  continue
+              parts = line.split(maxsplit=1)
+              if len(parts) != 2:
+                  print(f"::error::Malformed SHA256SUMS line: {line}")
+                  sys.exit(1)
+              filename = parts[1].removeprefix("*")
+              manifest_files.add(filename)
+
+          missing = sorted(actual_files - manifest_files)
+          extra = sorted(manifest_files - actual_files)
+          if missing or extra:
+              for path in missing:
+                  print(f"::error::Deploy payload file is missing from SHA256SUMS: {path}")
+              for path in extra:
+                  print(f"::error::SHA256SUMS references absent deploy file: {path}")
+              sys.exit(1)
+
+          errors = []
+          forbidden_paths = [
+              "deploy/.github",
+              "deploy/docs",
+              "deploy/frontend",
+              "deploy/api/tests",
+              "deploy/api/.phpunit.cache",
+              "deploy/api/Dockerfile",
+              "deploy/api/docker-compose.yml",
+              "deploy/api/phpunit.xml",
+              "deploy/api/composer.json",
+              "deploy/api/composer.lock",
+              "deploy/api/config.production.php",
+              "deploy/node_modules",
+          ]
+          for path in forbidden_paths:
+              if Path(path).exists():
+                  errors.append(f"Forbidden deploy path present: {path}")
+
+          for path in root.rglob("*"):
+              if not path.is_file():
+                  continue
+              rel = path.relative_to(root).as_posix()
+              if any(part == ".git" for part in path.parts) or rel == ".env" or rel.startswith(".env."):
+                  errors.append(f"Forbidden VCS or env file found in deploy payload: {rel}")
+              if rel.startswith("api/"):
+                  allowed_api = (
+                      rel in {"api/index.php", "api/config.php", "api/.htaccess"}
+                      or rel.startswith("api/src/")
+                      or rel.startswith("api/database/")
+                      or rel.startswith("api/vendor/")
+                  )
+                  if not allowed_api:
+                      errors.append(f"Unexpected API payload file: {rel}")
+              elif rel.endswith(".php"):
+                  errors.append(f"Unexpected PHP file outside api: {rel}")
+
+          if errors:
+              for error in errors:
+                  print(f"::error::{error}")
+              sys.exit(1)
+          PY
+
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          sys.path.insert(0, ".github/scripts")
+          from validate_vite_api_url import validation_errors
+
+          metadata_path = Path("deploy/release.json")
+          metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+          errors = []
+          if metadata.get("application") != "RegisterAppTest":
+              errors.append("metadata application does not match RegisterAppTest")
+          if metadata.get("workflow") != "CI":
+              errors.append("metadata workflow does not match CI")
+          if metadata.get("event_name") != "push":
+              errors.append("metadata event_name does not match push")
+          if metadata.get("repository") != os.environ["GITHUB_REPOSITORY"]:
+              errors.append("metadata repository does not match current repository")
+          if metadata.get("ref") != "refs/heads/master":
+              errors.append("metadata ref does not match refs/heads/master")
+          if metadata.get("ref_name") != "master":
+              errors.append("metadata ref_name does not match master")
+          if metadata.get("sha") != os.environ["EXPECTED_SHA"]:
+              errors.append("metadata sha does not match requested artifact SHA")
+          if str(metadata.get("run_id")) != os.environ["EXPECTED_RUN_ID"]:
+              errors.append("metadata run_id does not match requested CI run ID")
+          if metadata.get("artifact") != f"registerapptest-deploy-{os.environ['EXPECTED_SHA']}":
+              errors.append("metadata artifact name does not match requested artifact")
+          if metadata.get("vite_api_url") != os.environ["EXPECTED_VITE_API_URL"]:
+              errors.append("metadata VITE_API_URL does not match current GitHub Actions variable")
+          for error in validation_errors(str(metadata.get("vite_api_url") or "")):
+              errors.append(f"metadata {error}")
+
+          if errors:
+              for error in errors:
+                  print(f"::error::{error}")
+              sys.exit(1)
+          PY
 
       - name: Deploy via FTPS
         uses: SamKirkland/FTP-Deploy-Action@v4.3.6
@@ -69,25 +295,121 @@ jobs:
           dangerous-clean-slate: false
 
       - name: Post-deploy smoke test
+        env:
+          EXPECTED_SHA: ${{ steps.payload.outputs.sha }}
+          VITE_API_URL: ${{ steps.vite_api_url.outputs.origin }}
         run: |
+          set -euo pipefail
           sleep 15
           echo "Checking frontend..."
-          curl -sf --retry 3 --retry-delay 5 ${{ vars.VITE_API_URL }}/ > /dev/null
+          curl -sf --retry 3 --retry-delay 5 "${VITE_API_URL}/" > /dev/null
           echo "Frontend OK"
+          echo "Checking release metadata..."
+          RELEASE_JSON=$(curl -sf --retry 3 --retry-delay 5 "${VITE_API_URL}/release.json")
+          RELEASE_JSON="${RELEASE_JSON}" python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          metadata = json.loads(os.environ["RELEASE_JSON"])
+          if metadata.get("sha") != os.environ["EXPECTED_SHA"]:
+              print("::error::Deployed release metadata SHA does not match requested artifact SHA")
+              sys.exit(1)
+          if metadata.get("vite_api_url") != os.environ["VITE_API_URL"]:
+              print("::error::Deployed release metadata VITE_API_URL does not match current GitHub Actions variable")
+              sys.exit(1)
+          PY
+          echo "Release metadata OK"
           echo "Checking API health..."
-          curl -sf --retry 3 --retry-delay 5 ${{ vars.VITE_API_URL }}/api/health
-          echo ""
+          HEALTH_JSON=$(curl -sf --retry 3 --retry-delay 5 "${VITE_API_URL}/api/health")
+          HEALTH_JSON="${HEALTH_JSON}" python3 - <<'PY'
+          import json
+          import os
+          import re
+          import sys
+          from pathlib import Path
+
+          health = json.loads(os.environ["HEALTH_JSON"])
+          errors = []
+          if health.get("status") != "ok":
+              errors.append("health status is not ok")
+          if health.get("database") != "ok":
+              errors.append("database readiness is not ok")
+          if health.get("migrations") != "ready":
+              errors.append("migrations are not ready")
+          if health.get("authConfig", {}).get("jwt_secret") is not True:
+              errors.append("jwt_secret auth config readiness is not confirmed")
+          if health.get("authConfig", {}).get("otp_hash_secret") is not True:
+              errors.append("otp_hash_secret auth config readiness is not confirmed")
+          if health.get("schema", {}).get("projects.version") is not True:
+              errors.append("projects.version schema readiness is not confirmed")
+          if health.get("schema", {}).get("login_codes.code_verifier") is not True:
+              errors.append("login_codes.code_verifier schema readiness is not confirmed")
+          if health.get("schema", {}).get("auth_rate_limits.scope") is not True:
+              errors.append("auth_rate_limits.scope schema readiness is not confirmed")
+          if health.get("pendingMigrations") != []:
+              errors.append("health reports pending migrations")
+
+          expected_versions = set()
+          migrations_dir = Path("deploy/api/database/migrations")
+          for path in migrations_dir.glob("*.sql"):
+              match = re.match(r"^(\d+)_", path.name)
+              if match:
+                  expected_versions.add(int(match.group(1)))
+
+          applied = set()
+          for version in health.get("appliedMigrations", []):
+              try:
+                  applied.add(int(version))
+              except (TypeError, ValueError):
+                  errors.append(f"invalid applied migration version: {version!r}")
+
+          missing = sorted(expected_versions - applied)
+          if missing:
+              errors.append(f"health is missing applied migration versions: {missing}")
+          extra = sorted(applied - expected_versions)
+          if extra:
+              errors.append(f"health reports applied migration versions not present in artifact: {extra}")
+
+          if errors:
+              for error in errors:
+                  print(f"::error::{error}")
+              sys.exit(1)
+          PY
           echo "API OK"
           echo "Checking auth endpoint..."
           AUTH_STATUS=$(curl -s -o /dev/null -w '%{http_code}' \
             -X POST -H 'Content-Type: application/json' \
             -d '{"email":""}' \
-            ${{ vars.VITE_API_URL }}/api/auth/send-code)
-          if [ "$AUTH_STATUS" = "400" ]; then
+            "${VITE_API_URL}/api/auth/send-code")
+          if [ "${AUTH_STATUS}" = "400" ]; then
             echo "Auth endpoint reachable (returned 400 for invalid input as expected)"
-          elif [ "$AUTH_STATUS" = "000" ]; then
+          elif [ "${AUTH_STATUS}" = "000" ]; then
             echo "::error::Auth endpoint unreachable"
             exit 1
           else
-            echo "::warning::Auth endpoint returned unexpected status $AUTH_STATUS (expected 400)"
+            echo "::error::Auth endpoint returned unexpected status ${AUTH_STATUS} (expected 400)"
+            exit 1
           fi
+          echo "Checking API internal paths are blocked..."
+          blocked_paths=(
+            "/api/config.php"
+            "/api/config.production.php"
+            "/api/vendor/composer/installed.json"
+            "/api/src/auth.php"
+            "/api/database/migrations/001_create_projects_table.sql"
+            "/api/tests/bootstrap.php"
+            "/api/vendor"
+            "/api/src"
+            "/api/database"
+            "/api/tests"
+          )
+          for path in "${blocked_paths[@]}"; do
+            status=$(curl -sS -o /dev/null -w '%{http_code}' --retry 3 --retry-delay 5 "${VITE_API_URL}${path}")
+            if [ "${status}" != "403" ]; then
+              echo "::error::Expected ${path} to be blocked with 403, got ${status}"
+              exit 1
+            fi
+            echo "Blocked ${path} (${status})"
+          done
+          echo "API internals blocked"

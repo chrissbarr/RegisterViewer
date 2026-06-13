@@ -9,7 +9,7 @@ This document covers local development setup, build commands, testing, and proje
 - **Tailwind CSS v4** for styling
 - **@dnd-kit** for drag-and-drop register reordering
 - **Vitest** for unit tests, **Playwright** for E2E tests
-- **PHP 8.3 + MySQL 8.0** for the cloud save/share backend (deployed on cPanel)
+- **PHP 8.3 + MySQL 8.0** for the cloud save/share backend (deployed on cPanel). Production requires PHP 8.3 or newer. CI validates API compatibility on PHP 8.3, the minimum supported production runtime.
 
 ## Getting Started
 
@@ -42,16 +42,19 @@ All frontend commands run from the `frontend/` directory:
 | Command | Description |
 |---------|-------------|
 | `cd api && docker compose up -d` | Start local API + MySQL (port 8080) |
-| `cd api && docker compose run --rm test bash -c "composer install -q && vendor/bin/phpunit"` | Run all API tests |
-| `cd api && docker compose run --rm test bash -c "composer install -q && vendor/bin/phpunit --testsuite Unit"` | Unit tests only |
-| `cd api && docker compose run --rm test bash -c "composer install -q && vendor/bin/phpunit --testsuite Integration"` | Integration tests only |
+| `cd api && docker compose run --rm test bash -c "composer install -q && php database/migrate.php && vendor/bin/phpunit"` | Run all API tests |
+| `cd api && docker compose run --rm test bash -c "composer install -q && php database/migrate.php && vendor/bin/phpunit --testsuite Unit"` | Unit tests only |
+| `cd api && docker compose run --rm test bash -c "composer install -q && php database/migrate.php && vendor/bin/phpunit --testsuite Integration"` | Integration tests only |
 | `cd api && docker compose down` | Stop containers |
 | `cd api && docker compose down -v` | Stop containers and reset database |
 
-The local Docker environment automatically runs migrations on startup via `docker-entrypoint-initdb.d/`:
-1. `001_create_projects_table.sql` — Full schema (users, projects, login_codes, revoked_tokens)
+The PHP migration runner owns local schema creation. The API runs pending numbered migrations before routing, and test commands run `php database/migrate.php` before PHPUnit. API code and tests run PHP/MySQL sessions in UTC; UTC regression tests intentionally switch PHP and MySQL sessions to non-UTC values before asserting API timestamps are emitted as `YYYY-MM-DDTHH:mm:ssZ`.
 
-To reset and re-run migrations: `cd api && docker compose down -v && docker compose up -d`
+The API and CLI migration runner both use `api/database/.migrate.lock`, so local runs need a writable `api/database` directory. Migration history is checksum-checked; add a new numbered migration for schema changes instead of editing an already-applied migration file.
+
+Composer uses `config.platform.php=8.3.0` so dependency updates continue to resolve against the production compatibility floor even when Composer is run from a newer PHP version. Do not introduce PHP 8.4+ language features or dependencies unless the production runtime, Docker image, Composer platform, CI checks, and deployment docs are raised together.
+
+To reset and re-run migrations: `cd api && docker compose down -v && docker compose up -d`, then request the API or run `php database/migrate.php` in the test container. Also delete `api/database/migrations/.ready-*` after `docker compose down -v` — the readiness sentinel lives on the host bind mount and survives the volume reset, so a stale sentinel would short-circuit the schema gate against the now-empty database.
 
 ### Local Frontend + API
 
@@ -60,6 +63,8 @@ To test cloud features locally:
 1. Start the API: `cd api && docker compose up -d`
 2. The `frontend/.env.development` file already sets `VITE_API_URL=http://localhost:8080`
 3. Start the frontend: `cd frontend && npm run dev`
+
+Production GitHub Actions validate `VITE_API_URL` as a canonical lowercase HTTPS origin on a public DNS host with no trailing slash or path. Local development intentionally uses the localhost HTTP origin above.
 
 ## Architecture
 
@@ -86,12 +91,12 @@ npm run test:e2e        # Playwright E2E tests
 
 Key test areas:
 
-- **Utilities** — bitwise, float, fixed-point, decode/encode, validation, storage, format, snapshot-url, owner-token, api-client, project-storage, cloud-project-loader, cloud-operations
+- **Utilities** — bitwise, float, fixed-point, decode/encode, validation, storage, format, snapshot-url, api-client, project-storage, cloud-project-loader, cloud-operations
 - **Context providers** — app-context (reducer), cloud-sync-context, project-storage-context, preferences-context, auth-context
 - **Components** — app-loader, share-dialog, my-projects-dialog, login-dialog
-- **Hooks** — use-dirty-tracking, use-my-projects-actions, use-project-cloud-ops
+- **Hooks** — use-cloud-sync-engine, use-my-projects-actions, use-project-cloud-ops, use-active-project-cloud-ops, use-auth-transition
 - **E2E (Playwright)** — project CRUD, cloud save/share/fork/delete, multi-tab, migration
-- **API Tests (PHPUnit)** — validation, ID generation, CORS, auth (extractAuth, isOwnerOrUser), JWT creation/verification, OTP send/verify flow, rate limiting, email sending
+- **API Tests (PHPUnit)** — validation, ID generation, CORS, auth (extractAuth, isProjectOwner), JWT creation/verification, OTP send/verify flow, rate limiting, email sending
 
 ### Dead Code Detection
 
@@ -120,13 +125,12 @@ frontend/                           # React SPA
     context/
       app-context.tsx             # React Context + useReducer state management
       auth-context.tsx            # Email OTP auth state, JWT storage
-      cloud-sync-context.tsx      # Cloud project state (save/share/dirty tracking)
+      cloud-sync-context.tsx      # Cloud project state and sync orchestration
       preferences-context.tsx     # Theme + sidebar preferences
       edit-context.tsx            # Register draft management
       project-storage-context.tsx # Multi-project localStorage manifest
     utils/
       api-client.ts               # Fetch wrapper for cloud API
-      owner-token.ts              # Anonymous owner token generation + hashing
       cloud-operations.ts         # Cloud save/delete/visibility operations
       snapshot-url.ts             # Compressed snapshot URL encode/decode
       bitwise.ts  decode.ts  encode.ts  float.ts  fixed-point.ts
@@ -141,9 +145,12 @@ api/                              # PHP API backend (cPanel)
   config.php                      # Configuration with getenv() fallbacks
   src/
     database.php                  # PDO singleton factory
-    data-access.php               # All DB queries
+    data-access.php               # Loads per-domain data access modules
+    data-access/                  # Auth, token, user, and project queries
     validation.php                # Payload structural validation
-    auth.php                      # Dual auth (JWT + token hash), ownership checks
+    request-body.php              # Request body size limits and JSON parsing
+    router.php                    # Route resolution, body policy, and dispatch
+    auth.php                      # JWT extraction and user_id ownership checks
     jwt.php                       # JWT creation/verification (firebase/php-jwt)
     email.php                     # OTP email sending via Resend API
     cors.php                      # CORS header computation

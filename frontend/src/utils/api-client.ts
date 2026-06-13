@@ -10,14 +10,21 @@ export function isCloudEnabled(): boolean {
 
 export class ApiError extends Error {
   status: number;
-  errorBody: { error: string };
+  readonly errorBody: Record<string, unknown>;
 
-  constructor(status: number, errorBody: { error: string }) {
-    super(errorBody.error);
+  constructor(status: number, errorBody: Record<string, unknown>) {
+    super(String(errorBody.error ?? 'Unknown error'));
     this.name = 'ApiError';
     this.status = status;
     this.errorBody = errorBody;
   }
+}
+
+/** Type guard for 409 conflict responses with version info. */
+export function isConflictError(err: unknown): err is ApiError & { errorBody: { currentVersion: number } } {
+  return err instanceof ApiError
+    && err.status === 409
+    && typeof (err.errorBody as Record<string, unknown>)?.currentVersion === 'number';
 }
 
 const API_TIMEOUT_MS = 15_000;
@@ -35,10 +42,13 @@ async function apiRequest(path: string, options?: RequestInit): Promise<Response
       ...options,
       signal: controller.signal,
       headers,
+      // Placed after the spread so no caller can re-enable HTTP caching: a
+      // cached GET body once fed stale `version`s into the sync layer (BR-5).
+      cache: 'no-store',
     });
 
     if (!res.ok) {
-      let errorBody: { error: string };
+      let errorBody: Record<string, unknown>;
       try {
         errorBody = await res.json();
       } catch {
@@ -66,6 +76,7 @@ interface CreateProjectResponse {
   id: string;
   shareUrl: string;
   createdAt: string;
+  version: number;
 }
 
 export async function createProject(
@@ -85,12 +96,16 @@ export async function createProject(
   });
 }
 
-interface GetProjectResponse {
+export interface GetProjectResponse {
   id: string;
   data: unknown;
   createdAt: string;
   updatedAt: string;
   isOwner: boolean;
+  /** True when the server verified a valid JWT on this request. Absent on older API responses. */
+  authenticated?: boolean;
+  visibility: Visibility;
+  version: number;
 }
 
 export async function getProject(id: string, jwt?: string): Promise<GetProjectResponse> {
@@ -103,37 +118,56 @@ export async function getProject(id: string, jwt?: string): Promise<GetProjectRe
   });
 }
 
+/**
+ * Lightweight metadata probe (P6): the full GET response minus the `data`
+ * payload. Used where only the version (plus metadata) is needed — the
+ * freshness check and the unknown-version GET-then-PUT save path — so the
+ * potentially large data blob is never transferred. Throws ApiError 404 on
+ * an old API without the /meta endpoint (callers fall back to getProject).
+ */
+export async function getProjectMeta(id: string, jwt?: string): Promise<Omit<GetProjectResponse, 'data'>> {
+  const headers: Record<string, string> = {};
+  if (jwt) {
+    headers['Authorization'] = `Bearer ${jwt}`;
+  }
+  return apiFetch<Omit<GetProjectResponse, 'data'>>(`/api/projects/${encodeURIComponent(id)}/meta`, {
+    headers,
+  });
+}
+
 interface UpdateProjectResponse {
   id: string;
   updatedAt: string;
+  version: number;
 }
 
 export async function updateProject(
   id: string,
   data: unknown,
   jwt: string,
-  visibility?: Visibility,
+  version: number,
 ): Promise<UpdateProjectResponse> {
-  const body: { data: unknown; visibility?: string } = { data };
-  if (visibility !== undefined) {
-    body.visibility = visibility;
-  }
   return apiFetch<UpdateProjectResponse>(
     `/api/projects/${encodeURIComponent(id)}`,
     {
       method: 'PUT',
       headers: { Authorization: `Bearer ${jwt}` },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ data, version }),
     },
   );
+}
+
+interface PatchVisibilityResponse {
+  id: string;
+  updatedAt: string;
 }
 
 export async function patchProjectVisibility(
   id: string,
   visibility: Visibility,
   jwt: string,
-): Promise<UpdateProjectResponse> {
-  return apiFetch<UpdateProjectResponse>(
+): Promise<PatchVisibilityResponse> {
+  return apiFetch<PatchVisibilityResponse>(
     `/api/projects/${encodeURIComponent(id)}`,
     {
       method: 'PATCH',
@@ -162,6 +196,7 @@ interface ProjectListItem {
   visibility: Visibility;
   createdAt: string;
   updatedAt: string;
+  version: number;
 }
 
 interface ListProjectsResponse {
@@ -213,6 +248,5 @@ export async function postAuthLogout(jwt: string): Promise<void> {
   await apiFetchVoid('/api/auth/logout', {
     method: 'POST',
     headers: { Authorization: `Bearer ${jwt}` },
-    body: JSON.stringify({}),
   });
 }

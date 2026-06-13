@@ -141,6 +141,13 @@ async function mockCloudApi(page: Page, options: {
   const cloudId = options.cloudId ?? 'mockCloud123';
   const now = new Date().toISOString();
 
+  // Stateful project list: starts empty; POST appends; DELETE removes.
+  // This mirrors the real API so that GET /api/projects list syncs (stale-
+  // reconciliation introduced in dec56c5) see the created project and don't
+  // demote it to local-only when My Projects is re-opened.
+  type ListEntry = { id: string; title: string; visibility: string; updatedAt: string; version: number };
+  const createdProjects: ListEntry[] = [];
+
   // Match any URL containing /api/projects (works with any VITE_API_URL origin)
   await page.route(
     /\/api\/projects/,
@@ -160,21 +167,36 @@ async function mockCloudApi(page: Page, options: {
 
       if (isCollectionEndpoint) {
         if (method === 'POST') {
-          const resp = options.createResponse ?? {
-            status: 200,
-            body: { id: cloudId, shareUrl: `${urlObj.origin}/#/p/${cloudId}`, createdAt: now },
-          };
+          const defaultBody = { id: cloudId, shareUrl: `${urlObj.origin}/#/p/${cloudId}`, createdAt: now, version: 1 };
+          const resp = options.createResponse ?? { status: 200, body: defaultBody };
           await route.fulfill({
             status: resp.status,
             contentType: 'application/json',
             body: JSON.stringify(resp.body),
           });
+          // Record the created project so the list endpoint reflects it.
+          // Only record on success (2xx) and when using the default response
+          // (caller-supplied createResponse may be an error stub).
+          if (resp.status >= 200 && resp.status < 300 && !options.createResponse) {
+            const postBody = body as Record<string, unknown> | null;
+            createdProjects.push({
+              id: cloudId,
+              title: (postBody?.data as Record<string, unknown> | null)?.project
+                ? ((postBody.data as Record<string, unknown>).project as Record<string, unknown>)?.title as string ?? 'Untitled'
+                : 'Untitled',
+              visibility: 'private',
+              updatedAt: now,
+              version: 1,
+            });
+          }
           return;
         }
         if (method === 'GET') {
+          // Use caller-supplied override when provided; otherwise return the
+          // stateful list so sync does not demote just-created cloud projects.
           const resp = options.listResponse ?? {
             status: 200,
-            body: { projects: [] },
+            body: { projects: createdProjects },
           };
           await route.fulfill({
             status: resp.status,
@@ -193,7 +215,7 @@ async function mockCloudApi(page: Page, options: {
         if (method === 'GET') {
           const resp = options.getResponse ?? {
             status: 200,
-            body: { id: projectId, data: MOCK_PROJECT_DATA, createdAt: now, updatedAt: now, isOwner: true },
+            body: { id: projectId, data: MOCK_PROJECT_DATA, createdAt: now, updatedAt: now, isOwner: true, version: 1 },
           };
           await route.fulfill({
             status: resp.status,
@@ -205,7 +227,7 @@ async function mockCloudApi(page: Page, options: {
         if (method === 'PUT') {
           const resp = options.updateResponse ?? {
             status: 200,
-            body: { id: projectId, updatedAt: new Date().toISOString() },
+            body: { id: projectId, updatedAt: new Date().toISOString(), version: 2 },
           };
           await route.fulfill({
             status: resp.status,
@@ -217,7 +239,7 @@ async function mockCloudApi(page: Page, options: {
         if (method === 'PATCH') {
           const resp = options.patchResponse ?? {
             status: 200,
-            body: { id: projectId, updatedAt: new Date().toISOString() },
+            body: { id: projectId, updatedAt: new Date().toISOString(), version: 2 },
           };
           await route.fulfill({
             status: resp.status,
@@ -233,6 +255,11 @@ async function mockCloudApi(page: Page, options: {
             contentType: 'application/json',
             body: status === 204 ? '' : JSON.stringify({ error: 'Not found' }),
           });
+          // Remove from the stateful list so post-delete syncs don't resurrect it.
+          if (status >= 200 && status < 300) {
+            const idx = createdProjects.findIndex(p => p.id === projectId);
+            if (idx !== -1) createdProjects.splice(idx, 1);
+          }
           return;
         }
       }
@@ -279,6 +306,7 @@ test.describe('Cloud: Open shared project', () => {
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
           isOwner: false,
+          version: 1,
         },
       },
     });
@@ -334,6 +362,7 @@ test.describe('Cloud: Fork shared project', () => {
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
           isOwner: false,
+          version: 1,
         },
       },
     });
@@ -466,7 +495,7 @@ test.describe('Cloud: Owner opens own project via URL', () => {
       // When reloading, the GET response should indicate the user is the owner
       getResponse: {
         status: 200,
-        body: { id: 'mockCloud123', data: MOCK_PROJECT_DATA, createdAt: now, updatedAt: now, isOwner: true },
+        body: { id: 'mockCloud123', data: MOCK_PROJECT_DATA, createdAt: now, updatedAt: now, isOwner: true, version: 1 },
       },
     });
     await resetApp(page);

@@ -1,26 +1,20 @@
-import { useEffect, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
+import { useEffect, useRef, type MutableRefObject } from 'react';
 import { purgeCloudProjects, getMostRecentProjectId, ACTIVE_PROJECT_SESSION_KEY } from '../utils/project-storage';
-import { clearCloudUrl } from '../utils/cloud-url';
-import type { InternalCloudSyncState, SyncResult } from '../context/cloud-sync-context';
+import { clearCloudUrl } from '../utils/cloud-utils';
+import { type CloudSyncCore, type SaveOutcome, type SyncResult } from '../types/cloud-sync';
 
 interface UseAuthTransitionDeps {
+  core: CloudSyncCore;
   authUser: { email: string } | null;
-  pendingCloudOpRef: MutableRefObject<'save' | 'fork' | null>;
-  setLoginRequired: (v: boolean) => void;
-  rawSave: () => Promise<boolean>;
-  rawFork: () => Promise<void>;
+  pendingOpRef: MutableRefObject<'save' | 'fork' | null>;
+  saveToCloud: () => Promise<SaveOutcome>;
+  fork: () => Promise<void>;
+  dismissLogin: () => void;
   syncCloudProjectsRef: MutableRefObject<(() => Promise<SyncResult>) | null>;
   syncTimerRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
-  activeLocalIdRef: MutableRefObject<string | null>;
-  setInternal: Dispatch<SetStateAction<InternalCloudSyncState>>;
-  initialInternalState: InternalCloudSyncState;
   refreshProjectList: () => void;
-  switchProject: (id: string) => void;
-  createNewProject: () => string;
-}
-
-interface UseAuthTransitionResult {
-  isSigningOutRef: MutableRefObject<boolean>;
+  switchProject: (id: string) => boolean;
+  createNewProject: () => string | null;
 }
 
 /**
@@ -31,21 +25,22 @@ interface UseAuthTransitionResult {
  * - Syncs cloud project metadata from the server.
  *
  * On sign-out (user→null):
- * - Purges all cloud-storage projects from localStorage.
- * - Switches to a remaining local project or creates a new one.
+ * - Removes clean (fully-synced) cloud projects from localStorage; demotes
+ *   dirty/conflicted ones to local projects so unsynced edits are never lost.
+ * - Re-homes to a remaining project (or creates one) only when the active
+ *   project was removed; a demoted active project stays put.
  * - Resets cloud sync state.
  */
-export function useAuthTransition(deps: UseAuthTransitionDeps): UseAuthTransitionResult {
+export function useAuthTransition(deps: UseAuthTransitionDeps): void {
   const {
-    authUser, pendingCloudOpRef, setLoginRequired, rawSave, rawFork,
-    syncCloudProjectsRef, syncTimerRef, activeLocalIdRef,
-    setInternal, initialInternalState,
+    core: { activeLocalIdRef, dispatch: cloudDispatch },
+    authUser, pendingOpRef, saveToCloud, fork, dismissLogin,
+    syncCloudProjectsRef, syncTimerRef,
     refreshProjectList, switchProject, createNewProject,
   } = deps;
 
   const prevAuthUserRef = useRef(authUser);
   const hasRunInitialSyncRef = useRef(false);
-  const isSigningOutRef = useRef(false);
 
   useEffect(() => {
     const wasNull = prevAuthUserRef.current === null;
@@ -58,46 +53,55 @@ export function useAuthTransition(deps: UseAuthTransitionDeps): UseAuthTransitio
     if (shouldSync) {
       hasRunInitialSyncRef.current = true;
       // Sign-in: retry any pending cloud operation that was deferred
-      if (pendingCloudOpRef.current) {
-        const op = pendingCloudOpRef.current;
-        pendingCloudOpRef.current = null;
-        setLoginRequired(false);
-        if (op === 'save') {
-          void rawSave();
-        } else if (op === 'fork') {
-          void rawFork();
+      const pendingOp = pendingOpRef.current;
+      if (pendingOp) {
+        pendingOpRef.current = null;
+        dismissLogin();
+        if (pendingOp === 'save') {
+          saveToCloud().catch((err) => {
+            if (import.meta.env.DEV) console.warn('Auto-retry save failed:', err);
+          });
+        } else if (pendingOp === 'fork') {
+          fork().catch((err) => {
+            if (import.meta.env.DEV) console.warn('Auto-retry fork failed:', err);
+          });
         }
       }
       // Sync cloud projects (pull metadata from server)
-      syncCloudProjectsRef.current?.().catch(() => { /* best-effort on mount/sign-in */ });
+      syncCloudProjectsRef.current?.()
+        .then((result) => {
+          if (result.placeholdersCreated > 0 || result.staleReconciledCloudIds.length > 0) {
+            refreshProjectList();
+          }
+        })
+        .catch(() => { /* best-effort on mount/sign-in */ });
     }
 
     if (wasLoggedIn && !authUser) {
       hasRunInitialSyncRef.current = false;
-      isSigningOutRef.current = true;
       // Sign-out: purge cloud projects from localStorage
-      const purgedIds = purgeCloudProjects();
+      const { removed } = purgeCloudProjects();
       refreshProjectList();
 
-      // If active project was purged, switch to a remaining project or create new
-      if (activeLocalIdRef.current && purgedIds.includes(activeLocalIdRef.current)) {
+      // Re-home only if the active project was actually removed (a demoted one
+      // stays put as a now-local project).
+      if (activeLocalIdRef.current && removed.includes(activeLocalIdRef.current)) {
         const remaining = getMostRecentProjectId();
         if (remaining) {
           switchProject(remaining);
         } else {
           const newId = createNewProject();
-          switchProject(newId);
+          if (newId) switchProject(newId);
         }
       }
 
-      // Reset cloud sync state
+      // Reset cloud sync state. LIFECYCLE_RESET returns the frozen
+      // initialInternalState by reference (same Object.is bail-out as the former
+      // value-form `setInternal(initialInternalState)` reset).
       if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
-      setInternal({ ...initialInternalState });
+      cloudDispatch({ type: 'LIFECYCLE_RESET' });
       clearCloudUrl();
       sessionStorage.removeItem(ACTIVE_PROJECT_SESSION_KEY);
-      isSigningOutRef.current = false;
     }
-  }, [authUser, rawSave, rawFork, pendingCloudOpRef, setLoginRequired, syncCloudProjectsRef, syncTimerRef, activeLocalIdRef, setInternal, initialInternalState, refreshProjectList, switchProject, createNewProject]);
-
-  return { isSigningOutRef };
+  }, [authUser, saveToCloud, fork, pendingOpRef, dismissLogin, syncCloudProjectsRef, syncTimerRef, activeLocalIdRef, cloudDispatch, refreshProjectList, switchProject, createNewProject]);
 }

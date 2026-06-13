@@ -19,6 +19,11 @@ frontend/test-results/
 frontend/playwright-report/
 frontend/blob-report/
 
+# Python test/cache artifacts
+__pycache__/
+/tmp*/
+.github/scripts/tmp*/
+
 # Claude Code
 .claude
 

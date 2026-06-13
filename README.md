@@ -18,7 +18,7 @@ An interactive web tool for decoding and encoding hardware register values. Defi
 
 ## Quick Start
 
-1. Visit **[registerviewer.com](https://www.registerviewer.com/)** — no install or account required
+1. Visit **[registerviewer.com](https://www.registerviewer.com/)** — no install or account required for local editing
 2. A sample 16-bit `STATUS_CTRL` register is pre-loaded so you can explore immediately
 3. Try clicking bits in the grid, changing the hex value, or editing field values in the table
 
@@ -51,7 +51,7 @@ All edits are bidirectional: changing the raw value updates the fields, and chan
 - **Register map view** — see all registers laid out by memory offset with configurable table widths
 - **Drag-and-drop reordering** — rearrange registers in the sidebar, or sort by offset
 - **GUI and JSON editor** — define fields via a visual form or edit raw JSON for power users
-- **Cloud save and share** — save projects to the cloud and share via short URLs, no account required
+- **Cloud save and share** — sign in by email to save projects to the cloud and publish unlisted short links
 - **Snapshot URLs** — share small projects as self-contained compressed URLs with no server dependency
 - **Import/export** — save and load register definitions as JSON files
 - **Multiple projects** — manage separate register sets as independent projects
@@ -83,7 +83,7 @@ Contributions are welcome! See the [Developer Guide](docs/DEVELOPMENT.md) for lo
 
 ## AI Content Disclosure
 
-This project has been developed with heavy use of AI coding tools (Anthropic's Claude Code in particular). I am an Electronics Engineer by trade, and though I have a solid amount of software development experience, none of that experience is in web-app / frontend / fullstack domains. 
+This project has been developed with heavy use of AI coding tools (Anthropic's Claude Code in particular). I am an Electronics Engineer by trade, and though I have a solid amount of software development experience, none of that experience is in web-app / frontend / fullstack domains.
 
 I started this project as a test to see how "vibe coding" or "agentic AI development" works, and deliberately picked something in a domain I have little familiarity with. When I was pleased with the initial results, I decided to polish it into something releasable. Almost all of the codebase has been developed, reviewed, and iterated on using AI tools. I have only given high-level direction - add this feature, fix that bug, and so on. While I have reviewed the content of most commits, and have a reasonable understanding of the codebase, I have written virtually zero code myself.
 

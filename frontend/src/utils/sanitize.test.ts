@@ -326,6 +326,43 @@ describe('sanitizeField', () => {
     }) as FixedPointField;
     expect(field.qFormat).toEqual({ m: 0, n: 0 });
   });
+
+  it('clamps msb and lsb above the supported bit range down to 127', () => {
+    const field = sanitizeField({ name: 'F', msb: 500, lsb: 130, type: 'integer' });
+    expect(field.msb).toBe(127);
+    expect(field.lsb).toBe(127);
+  });
+
+  it('clamps negative msb and lsb up to 0', () => {
+    const field = sanitizeField({ name: 'F', msb: -3, lsb: -7, type: 'integer' });
+    expect(field.msb).toBe(0);
+    expect(field.lsb).toBe(0);
+  });
+
+  it('leaves in-range msb and lsb untouched', () => {
+    const field = sanitizeField({ name: 'F', msb: 127, lsb: 0, type: 'integer' });
+    expect(field.msb).toBe(127);
+    expect(field.lsb).toBe(0);
+  });
+
+  it('replaces whitespace-only enum entry names with the VALUE_<value> fallback', () => {
+    const field = sanitizeField({
+      name: 'MODE',
+      msb: 1,
+      lsb: 0,
+      type: 'enum',
+      enumEntries: [
+        { value: 0, name: '  \t' },
+        { value: 1, name: '' },
+        { value: 2, name: 'ON' },
+      ],
+    }) as EnumField;
+    expect(field.enumEntries).toEqual([
+      { value: 0, name: 'VALUE_0' },
+      { value: 1, name: 'VALUE_1' },
+      { value: 2, name: 'ON' },
+    ]);
+  });
 });
 
 describe('sanitizeRegisterDef', () => {

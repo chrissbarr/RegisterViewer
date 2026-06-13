@@ -460,7 +460,6 @@ test.describe('Scenario 9: Legacy storage migration', () => {
         createdAt: new Date().toISOString(),
         localSavedAt: new Date().toISOString(),
         cloudSavedAt: null,
-        ownerToken: null,
         state: {
           registers: [{
             id: 'existing-reg',
@@ -490,6 +489,7 @@ test.describe('Scenario 9: Legacy storage migration', () => {
         registerValues: { 'legacy-reg': '0x00' },
       };
       localStorage.setItem('register-viewer-state', JSON.stringify(legacyState));
+      localStorage.setItem('register-viewer-owner-token', 'old-token');
     });
 
     await page.goto('/');
@@ -497,11 +497,12 @@ test.describe('Scenario 9: Legacy storage migration', () => {
     // The existing project should load, not the legacy one
     await expect(page.getByRole('heading', { name: 'EXISTING_REG' })).toBeVisible();
 
-    // Verify legacy key was cleaned up
-    const legacyGone = await page.evaluate(() =>
-      localStorage.getItem('register-viewer-state') === null,
-    );
-    expect(legacyGone).toBe(true);
+    // Verify legacy keys were cleaned up
+    const legacyKeysGone = await page.evaluate(() => ({
+      stateGone: localStorage.getItem('register-viewer-state') === null,
+      ownerTokenGone: localStorage.getItem('register-viewer-owner-token') === null,
+    }));
+    expect(legacyKeysGone).toEqual({ stateGone: true, ownerTokenGone: true });
 
     // Verify manifest still has only the existing project (no legacy migration)
     const manifest = await page.evaluate(() => {

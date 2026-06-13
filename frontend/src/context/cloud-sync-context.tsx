@@ -1,19 +1,18 @@
 /**
  * CloudSyncProvider — cloud save/load/fork/delete/sync for the active project.
  *
- * Cloud operations are split across six hooks:
+ * Cloud operations are split across four hooks:
  * - **Active-project ops** (`useActiveProjectCloudOps`): `saveToCloud`,
  *   `deleteFromCloud`, `setVisibility`, `fork`, `loadCloudProject` — operate
  *   on the currently-loaded project using in-memory `appState` via refs.
+ *   Also includes inline JWT guard (login state).
  * - **By-localId ops** (`useProjectCloudOps`): operates on any project by
  *   `localId`, reading state from localStorage. Used by the My Projects dialog.
- * - **Auto-sync** (`useAutoSync`): debounced dirty→save cycle with status
- *   tracking and `flushSync` for beforeunload.
- * - **Login guard** (`useLoginGuard`): JWT-guarded save/fork with deferred
- *   retry after login.
+ * - **Cloud sync engine** (`useCloudSyncEngine`): merged dirty tracking
+ *   (generation-counter `isDirty`) and auto-sync (debounced dirty→save cycle
+ *   with status tracking and `flushCloudSync` for beforeunload).
  * - **Auth transition** (`useAuthTransition`): sign-in retry, cloud project
  *   sync, and sign-out cleanup.
- * - **Dirty tracking** (`useDirtyTracking`): generation-counter `isDirty`.
  *
  * This provider orchestrates state, refs, and delegates to the hooks above.
  * Also owns `initFromProject`, `dismissError`, and `syncCloudProjects`.
@@ -26,29 +25,219 @@
  *   without needing the state in their dependency arrays.
  * - **Mutation lock**: `withMutationLock` prevents concurrent cloud operations.
  */
-import { createContext, useContext, useCallback, useState, useMemo, useRef, useEffect, type ReactNode } from 'react';
+import { createContext, useContext, useCallback, useReducer, useMemo, useRef, useEffect, type ReactNode, type MutableRefObject, type Dispatch } from 'react';
 import { useAppState, useAppDispatch } from './app-context';
+import type { AppState } from '../types/register';
 import { useProjectStorage, useProjectStorageActions } from './project-storage-context';
 import {
   isCloudEnabled,
-  listProjects,
   getProject,
 } from '../utils/api-client';
 import { useAuth, useAuthActions } from './auth-context';
-import { buildProjectUrl, createProject, evictProjectData } from '../utils/project-storage';
-import { EMPTY_SERIALIZED_STATE } from '../utils/storage';
-import { clearCloudUrl, setCloudUrl } from '../utils/cloud-url';
-import { useDirtyTracking } from '../hooks/use-dirty-tracking';
+import {
+  buildProjectUrl,
+  createProject,
+  deleteProject,
+  evictProjectData,
+  hasLocalData,
+  loadManifest,
+  patchProjectState,
+  toProjectListEntry,
+} from '../utils/project-storage';
+import { EMPTY_SERIALIZED_STATE, serializeState } from '../utils/storage';
+import { CLEARED_CLOUD_METADATA, clearCloudUrl, withMutationLock } from '../utils/cloud-utils';
 import { useActiveProjectCloudOps } from '../hooks/use-active-project-cloud-ops';
 import { useProjectCloudOps } from '../hooks/use-project-cloud-ops';
-import { useAutoSync, type SyncStatus } from '../hooks/use-auto-sync';
-import { useLoginGuard } from '../hooks/use-login-guard';
+import { useCloudSyncEngine, type SyncStatus } from '../hooks/use-cloud-sync-engine';
 import { useAuthTransition } from '../hooks/use-auth-transition';
-import { computeSyncPatches } from '../utils/cloud-sync';
-import { DEFAULT_PROJECT_NAME, type Visibility } from '../types/project';
-import type { AppState } from '../types/register';
+import { useProjectSwitchInit } from '../hooks/use-project-switch-init';
+import { syncCloudProjectsFromServer, positiveVersion, normalizeServerVersion } from '../utils/cloud-sync';
+import { cloudSyncReducer, cloudStateForEntry, selectWasDirty, type CloudSyncAction } from '../utils/cloud-sync-reducer';
+import { checkAndPullFreshVersion, type FreshnessCheckContext } from '../hooks/use-cloud-freshness';
+import { isOwnedCloudEntry } from '../utils/project-identity';
+import type { Visibility } from '../types/project';
+import { initialInternalState, type CloudInit, type CloudSyncCore, type InternalCloudSyncState, type SaveOutcome, type SyncResult } from '../types/cloud-sync';
 
 export type { SyncStatus };
+
+function uniqueProtectedLocalIds(ids: readonly (string | null | undefined)[]): string[] {
+  return Array.from(new Set(ids.filter((id): id is string => !!id)));
+}
+
+/**
+ * Ref/callback bag shared by the extracted stale-reconcile and placeholder
+ * `*Impl` functions. These mirror the `cloud-operations.ts` `*Impl` pattern:
+ * the side-effecting logic lives in a named function that closes over nothing
+ * itself; everything it touches is threaded in via this bag. Refs stay raw
+ * (reducer/actions conversion is a later slice).
+ */
+interface SyncReconcileDeps {
+  internalRef: MutableRefObject<InternalCloudSyncState>;
+  activeLocalIdRef: MutableRefObject<string | null>;
+  appStateRef: MutableRefObject<AppState>;
+  syncTimerRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
+  mutationLockRef: MutableRefObject<boolean>;
+  dispatchInternal: Dispatch<CloudSyncAction>;
+  updateCloudMetadata: ReturnType<typeof useProjectStorageActions>['updateCloudMetadata'];
+}
+
+/**
+ * Reconcile a single stale (server-deleted) owned cloud project: keep the local
+ * data, clear the cloud metadata, and — when it's the active project — reset
+ * active cloud state. Extracted from the inline `syncCloudProjects` closure
+ * (behavior identical). Returns the same boolean semantics that
+ * `syncCloudProjectsFromServer` consumes (true = reconciled / nothing to do,
+ * false = could not reconcile this round).
+ */
+async function reconcileStaleCloudProjectImpl(
+  deps: SyncReconcileDeps,
+  { localId, cloudId, cloudSavedAt, serverVersion }: {
+    localId: string;
+    cloudId: string;
+    cloudSavedAt: string | null;
+    serverVersion: number | null;
+  },
+  options: { protectedLocalIds: readonly string[] },
+): Promise<boolean> {
+  const {
+    internalRef, activeLocalIdRef, appStateRef, syncTimerRef,
+    mutationLockRef, dispatchInternal, updateCloudMetadata,
+  } = deps;
+
+  const lockResult = await withMutationLock(mutationLockRef, async () => {
+    const protectedLocalIds = uniqueProtectedLocalIds([
+      activeLocalIdRef.current,
+      ...options.protectedLocalIds,
+    ]);
+    const latestEntry = loadManifest().projects.find(p => p.localId === localId);
+    if (!latestEntry) return true;
+    if (!isOwnedCloudEntry(latestEntry) || latestEntry.cloudId !== cloudId) return true;
+    if (
+      (latestEntry.cloudSavedAt ?? null) !== cloudSavedAt ||
+      (latestEntry.serverVersion ?? null) !== serverVersion
+    ) {
+      return false;
+    }
+
+    const isActiveLocalProject = activeLocalIdRef.current === localId;
+    const isActiveCloudProject = isActiveLocalProject && internalRef.current.cloudId === cloudId;
+
+    if (!isActiveLocalProject && !hasLocalData(localId)) {
+      deleteProject(localId);
+      return true;
+    }
+
+    if (isActiveLocalProject) {
+      const stateWrite = patchProjectState(localId, serializeState(appStateRef.current), {
+        protectedLocalIds,
+      });
+      if (!stateWrite.ok) {
+        dispatchInternal({
+          type: 'SET_ERROR',
+          ifCloudId: cloudId,
+          error: 'Cloud project was deleted on the server, but local data could not be saved before unlinking.',
+        });
+        return false;
+      }
+    }
+
+    const metadataWrite = updateCloudMetadata(localId, CLEARED_CLOUD_METADATA, {
+      preserveLocalSavedAt: true,
+      protectedLocalIds,
+    });
+    if (!metadataWrite.ok) {
+      if (isActiveCloudProject) {
+        dispatchInternal({
+          type: 'SET_ERROR',
+          ifCloudId: cloudId,
+          error: 'Cloud project was deleted on the server, but local metadata could not be updated.',
+        });
+      }
+      return false;
+    }
+
+    if (isActiveCloudProject) {
+      if (syncTimerRef.current) {
+        clearTimeout(syncTimerRef.current);
+        syncTimerRef.current = null;
+      }
+      const error = 'Cloud project was deleted on the server. Local copy kept.';
+      const next = { ...initialInternalState, error };
+      // Synchronous ref write preceding the dispatch (same-commit ref visibility).
+      internalRef.current = next;
+      dispatchInternal({ type: 'RESET_WITH_ERROR', error });
+      clearCloudUrl();
+    }
+
+    return true;
+  });
+
+  if (!lockResult.executed) {
+    if (activeLocalIdRef.current === localId && internalRef.current.cloudId === cloudId) {
+      dispatchInternal({
+        type: 'SET_ERROR',
+        ifCloudId: cloudId,
+        error: 'Cloud project was deleted on the server, but another cloud operation is in progress.',
+      });
+    }
+    return false;
+  }
+  return lockResult.result;
+}
+
+/**
+ * Create a manifest-only local placeholder for a server-side cloud project that
+ * has no local counterpart. Extracted from the inline `syncCloudProjects`
+ * closure (behavior identical).
+ *
+ * AR-6: Uses the raw `createProject` utility (not the context action
+ * `createNewProject`) because this runs during async sync, not during a React
+ * render. The context action would trigger additional side effects (project
+ * switching) that are undesirable for background placeholder creation.
+ *
+ * Returns `false` when a placeholder already exists (active project or an owned
+ * manifest entry already references this cloudId) or creation failed.
+ */
+function createPlaceholderImpl(
+  deps: Pick<SyncReconcileDeps, 'internalRef' | 'activeLocalIdRef'>,
+  data: {
+    title: string;
+    cloudId: string;
+    visibility: Visibility;
+    cloudSavedAt: string;
+    serverVersion: number;
+  },
+  options?: { protectedLocalIds: readonly string[] },
+): boolean {
+  const { internalRef, activeLocalIdRef } = deps;
+  const latestManifest = loadManifest();
+  if (
+    internalRef.current.cloudId === data.cloudId ||
+    latestManifest.projects.filter(isOwnedCloudEntry).some(p => p.cloudId === data.cloudId)
+  ) {
+    return false;
+  }
+  try {
+    const localId = createProject(EMPTY_SERIALIZED_STATE, data.title, {
+      cloudId: data.cloudId,
+      visibility: data.visibility,
+      cloudSavedAt: data.cloudSavedAt,
+      serverVersion: data.serverVersion,
+      hasUnsyncedChanges: false,
+      storage: 'cloud',
+    }, {
+      protectedLocalIds: uniqueProtectedLocalIds([
+        activeLocalIdRef.current,
+        ...(options?.protectedLocalIds ?? []),
+      ]),
+    });
+    evictProjectData(localId);
+    return true;
+  } catch (err) {
+    console.warn('[cloud-sync] Failed to create placeholder for cloud project', data.cloudId, err);
+    return false;
+  }
+}
 
 interface CloudSyncState {
   cloudId: string | null;
@@ -63,62 +252,53 @@ interface CloudSyncState {
   loginRequired: boolean;
   /** Cloud auto-sync status indicator. */
   syncStatus: SyncStatus;
-}
-
-export interface SyncResult {
-  updatedCount: number;
-  staleCloudIds: string[];
-  /** Number of cloud-only projects that were added as local placeholders */
-  placeholdersCreated: number;
+  /** Non-null when a save conflict was detected (server version mismatch). */
+  conflict: { serverVersion: number } | null;
 }
 
 interface CloudSyncActions {
-  /** Returns false if the save was dropped because a mutation lock was held. */
-  saveToCloud: () => Promise<boolean | undefined>;
+  /**
+   * Save the active project to the cloud.
+   *
+   * During an open conflict the save refuses with `conflict-pending` unless
+   * `force: true` is passed — only the conflict banner's explicit Save may
+   * force-overwrite the server version (BR-1).
+   *
+   * Returns a `SaveOutcome` discriminated union:
+   * - `saved`/`created`/`noop` — terminal success (or nothing to do).
+   * - `login-required` — deferred to the login dialog.
+   * - `lock-held` — mutation lock busy; safe to retry.
+   * - `not-found`/`conflict` — server-side state handled (no retry).
+   * - `local-persist-failed` — server write succeeded but the local write failed.
+   * - `conflict-pending` — open conflict; refused without `force: true`.
+   */
+  saveToCloud: (opts?: { force?: boolean }) => Promise<SaveOutcome>;
   saveProjectToCloud: (localId: string) => Promise<void>;
   deleteFromCloud: () => Promise<void>;
-  deleteProjectFromCloud: (cloudId: string) => Promise<void>;
+  deleteProjectFromCloud: (localId: string) => Promise<void>;
   setVisibility: (v: Visibility) => Promise<void>;
   setProjectVisibility: (localId: string, v: Visibility) => Promise<void>;
   loadCloudProject: (cloudId: string) => Promise<void>;
   fork: () => Promise<void>;
   dismissError: () => void;
-  initFromProject: (cloudId: string | null, isOwner: boolean, storage?: 'local' | 'cloud') => void;
+  /** Dismiss the login dialog and cancel any pending cloud operation. */
+  dismissLogin: () => void;
+  initFromProject: (
+    cloudId: string | null,
+    isOwner: boolean,
+    storage?: 'local' | 'cloud',
+    metadata?: Pick<CloudInit, 'serverVersion' | 'cloudSavedAt' | 'visibility' | 'cloudConflictVersion' | 'hasUnsyncedChanges'>,
+  ) => void;
   syncCloudProjects: () => Promise<SyncResult>;
   unlinkCloudProject: (localId: string) => void;
-  /** Cancel pending cloud operation that was waiting for login. */
-  cancelPendingOp: () => void;
+  /** Pull the latest server version, replacing local state. Used by the conflict banner. */
+  loadServerVersion: () => Promise<void>;
   /** Flush any pending cloud sync immediately (best-effort, for beforeunload). */
-  flushSync: () => Promise<void>;
+  flushCloudSync: () => Promise<void>;
 }
 
 const CloudSyncStateContext = createContext<CloudSyncState | null>(null);
 const CloudSyncActionsContext = createContext<CloudSyncActions | null>(null);
-
-/** Shared with useActiveProjectCloudOps and useProjectCloudOps. */
-export interface InternalCloudSyncState {
-  cloudId: string | null;
-  isOwner: boolean;
-  storage: 'local' | 'cloud';
-  status: 'idle' | 'saving' | 'loading' | 'deleting';
-  error: string | null;
-  shareUrl: string | null;
-  lastCloudSavedAt: string | null;
-  lastSavedVersion: number;
-  visibility: Visibility;
-}
-
-const initialInternalState: InternalCloudSyncState = {
-  cloudId: null,
-  isOwner: false,
-  storage: 'local',
-  status: 'idle',
-  error: null,
-  shareUrl: null,
-  lastCloudSavedAt: null,
-  lastSavedVersion: -1,
-  visibility: 'private',
-};
 
 /**
  * Manages cloud synchronization state for the active project.
@@ -126,280 +306,303 @@ const initialInternalState: InternalCloudSyncState = {
  * Architecture: split into two contexts (state + actions) to avoid
  * re-rendering consumers that only need actions. Cloud state tracks
  * the active project's cloudId, ownership, dirty status (generation-
- * counter pattern via useDirtyTracking), and operation status.
+ * counter pattern via useCloudSyncEngine), and operation status.
  *
  * Refs (appStateRef, internalRef, activeLocalIdRef) are used to give
  * stable callbacks access to latest values without appearing in
  * dependency arrays — this keeps the actions object referentially
  * stable across renders. `initFromProject` additionally updates
- * `internalRef` synchronously (before `setInternal`) so that the
+ * `internalRef` synchronously (before the dispatch) so that the
  * `activeLocalId` effect's guard sees the cloudId immediately and
  * skips, preventing a race where both effects fire in the same commit.
  *
  * By-localId operations (saveProjectToCloud, deleteProjectFromCloud,
  * setProjectVisibility, unlinkCloudProject) are delegated to
  * useProjectCloudOps for use by the My Projects dialog.
+ *
+ * PERF-1: Decomposed hooks may trigger 2-4 extra renders per project switch
+ * via cascading dispatches. This is inherent to the hook-based architecture
+ * and is not user-visible (no layout thrashing). If profiling reveals jank,
+ * consolidate to useReducer. See .full-review/05-final-report.md.
  */
 export function CloudSyncProvider({ children }: { children: ReactNode }) {
   const appState = useAppState();
   const dispatch = useAppDispatch();
-  const { activeLocalId, projects } = useProjectStorage();
-  const { updateCloudMetadata, createNewProject, refreshProjectList, switchProject } = useProjectStorageActions();
+  const { activeLocalId, projects, lastDeparture, isUnsaved } = useProjectStorage();
+  const {
+    updateCloudMetadata,
+    createNewProject,
+    refreshProjectList,
+    switchProject,
+    registerDepartureSnapshotter,
+    loadAsUnsaved,
+    saveCurrentProject,
+  } = useProjectStorageActions();
   const { user: authUser } = useAuth();
-  const { getJwt } = useAuthActions();
+  const { getJwt, registerPreLogout } = useAuthActions();
 
-  const [internal, setInternal] = useState<InternalCloudSyncState>(initialInternalState);
+  // S14b: cloud-sync state lives behind a reducer (`cloudSyncReducer`). Every
+  // writer dispatches a named action directly; the temporary `__RAW` passthrough
+  // and the `setInternal` shim were removed at cleanup.
+  const [internal, dispatch__internal] = useReducer(cloudSyncReducer, initialInternalState);
 
   const activeLocalIdRef = useRef(activeLocalId);
   useEffect(() => {
     activeLocalIdRef.current = activeLocalId;
   }, [activeLocalId]);
 
+  const isUnsavedRef = useRef(isUnsaved);
+  useEffect(() => {
+    isUnsavedRef.current = isUnsaved;
+  }, [isUnsaved]);
+
   const projectsRef = useRef(projects);
   useEffect(() => {
     projectsRef.current = projects;
   }, [projects]);
-
-  // Dirty tracking (generation-counter pattern)
-  const { isDirty, dataVersionRef, needsVersionSyncRef, mutationLockRef } = useDirtyTracking(
-    appState,
-    internal,
-    setInternal,
-  );
 
   // IMPORTANT: Assigned during render (not in useEffect) so that initFromProject's
   // synchronous ref write in a child effect isn't clobbered by a parent sync effect
   // running later in the same commit — which also breaks under React StrictMode's
   // double-invocation of effects. Do not move to useEffect without verifying the
   // initFromProject race described in the CloudSyncProvider docstring.
+  // S3 landmine: the useState→useReducer swap does NOT change same-commit
+  // `.current` visibility. This render-time mirror, and the inline synchronous
+  // `internalRef.current = next` writes that precede a dispatch below, are
+  // correctness devices that MUST be retained — dispatching an action does
+  // not make the next state visible to refs within the same commit either.
   const internalRef = useRef(internal);
-  internalRef.current = internal;
+  internalRef.current = internal; // intentional render-time sync; see docstring above
 
-  // Ref to avoid stale closures in save/fork callbacks
+  // Shared refs + reducer dispatch passed to all cloud sync hooks (AR-1: reduces
+  // per-hook param count). All items are stable across renders (refs, and the
+  // reducer dispatch is referentially stable).
+  const core: CloudSyncCore = useMemo(
+    () => ({ internalRef, activeLocalIdRef, dispatch: dispatch__internal }),
+    [],
+  );
+
+  // Ref to avoid stale closures in save/fork callbacks.
+  // Synced via useEffect (not render-time assignment) because appStateRef doesn't
+  // need same-commit synchronous visibility — callbacks that read it run async.
+  // Compare: internalRef uses render-time sync for initFromProject's same-commit guard.
   const appStateRef = useRef(appState);
   useEffect(() => {
     appStateRef.current = appState;
   }, [appState]);
 
-  // Snapshot of the current project's latest app state, updated during render.
-  // When activeLocalId changes in the same commit as LOAD_STATE (both fired
-  // by switchProject), appStateRef already holds the *new* project's state by
-  // the time the project-switch effect runs. This ref preserves the *previous*
-  // project's last state so flush-before-evict saves the correct data.
-  const lastStableStateRef = useRef<{ localId: string | null; state: AppState }>({
-    localId: activeLocalId,
-    state: appState,
-  });
-  if (activeLocalId === lastStableStateRef.current.localId) {
-    // Still on the same project — keep the snapshot fresh
-    lastStableStateRef.current.state = appState;
-  }
-  // When activeLocalId changes, we intentionally do NOT update the snapshot
-  // here — it preserves the previous project's state for the effect to use.
+  // Freshness check throttle — reset on project switch
+  const lastFreshnessCheckRef = useRef(0);
 
-  // Active-project cloud operations (save, fork, delete, visibility, load)
-  const rawActiveOps = useActiveProjectCloudOps({
-    internalRef, appStateRef, activeLocalIdRef,
-    dataVersionRef, mutationLockRef, needsVersionSyncRef,
-    setInternal, updateCloudMetadata, createNewProject,
-    getJwt, dispatch, initialInternalState,
-  });
+  // saveToCloud ref: breaks the circular dependency between useCloudSyncEngine
+  // (needs saveToCloud) and useActiveProjectCloudOps (needs refs from the engine).
+  // The engine only calls saveToCloud asynchronously (inside setTimeout), so a ref is safe.
+  // The wrapper forwards `opts` (BR-1): a zero-arg wrapper would silently drop
+  // the banner's `force: true` and the forced save would refuse as conflict-pending.
+  const saveToCloudRef = useRef<(opts?: { force?: boolean }) => Promise<SaveOutcome>>(() => Promise.resolve('lock-held' as SaveOutcome));
+  const saveToCloudStable = useCallback((opts?: { force?: boolean }) => saveToCloudRef.current(opts), []);
 
-  // Login guard: JWT-guarded save/fork with deferred retry
-  const loginGuard = useLoginGuard({
-    getJwt,
-    rawSave: rawActiveOps.saveToCloud,
-    rawFork: rawActiveOps.fork,
-  });
-
-  // Auto-sync engine (debounced dirty→save)
-  const canAutoSync = internal.storage === 'cloud' && internal.isOwner && !!authUser;
-  const { syncStatus, flushSync, syncTimerRef } = useAutoSync({
-    isDirty,
-    internalRef,
-    dataVersionRef,
+  // Merged dirty tracking + auto-sync engine
+  const canAutoSync = internal.storage === 'cloud' && internal.isOwner && !!authUser && !internal.conflict;
+  const { isDirty, syncStatus, flushCloudSync, syncTimerRef, dataVersionRef, mutationLockRef } = useCloudSyncEngine({
+    dataDeps: appState,
+    internal,
+    dispatch: dispatch__internal,
     canAutoSync,
     getJwt,
-    saveToCloud: rawActiveOps.saveToCloud,
+    saveToCloud: saveToCloudStable,
   });
 
-  const activeOps = useMemo(() => ({
-    ...rawActiveOps,
-    saveToCloud: loginGuard.saveToCloud,
-    fork: loginGuard.fork,
-  }), [rawActiveOps, loginGuard.saveToCloud, loginGuard.fork]);
+  useEffect(() => {
+    registerDepartureSnapshotter((meta) => {
+      const current = internalRef.current;
+      const isDepartingActiveProject = activeLocalIdRef.current === meta.localId
+        && current.cloudId === meta.cloudId;
+      // selectWasDirty folds the former `cloudId !== null && dataVersion !==
+      // lastSavedVersion` dirty check onto the baseline union (DESIGN §5).
+      const wasDirty = isDepartingActiveProject
+        && selectWasDirty(current, dataVersionRef.current);
+      return {
+        wasDirty,
+        serverVersion: positiveVersion(current.serverVersion) ?? meta.serverVersion,
+      };
+    });
+    return () => registerDepartureSnapshotter(null);
+  }, [registerDepartureSnapshotter, dataVersionRef]);
 
+  // Shared freshness check context — stable refs and callbacks reused across all call sites.
+  // All items are refs or stable functions — empty deps array is correct.
+  const freshnessCtx: FreshnessCheckContext = useMemo(
+    () => ({
+      internalRef, activeLocalIdRef, dataVersionRef, dispatch,
+      lastFreshnessCheckRef, updateCloudMetadata, cloudDispatch: dispatch__internal,
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  // Active-project cloud operations (save, fork, delete, visibility, load)
+  // Login guard state (loginRequired, pendingOpRef, dismissLogin) is now
+  // absorbed into useActiveProjectCloudOps.
+  const { ops: activeOps, loginRequired, pendingOpRef, dismissLogin } = useActiveProjectCloudOps({
+    core, appStateRef,
+    dataVersionRef, mutationLockRef, lastFreshnessCheckRef,
+    updateCloudMetadata, createNewProject, loadAsUnsaved, getJwt, dispatch,
+  });
+  saveToCloudRef.current = activeOps.saveToCloud;
+
+  /**
+   * Initialize cloud state for a newly-switched project.
+   *
+   * @param cloudId - The project's cloud ID, or null for local-only projects.
+   * @param isOwner - Whether the current user owns this cloud project.
+   * @param storage - Storage type; defaults to 'cloud' if cloudId is present and owned,
+   *                  'local' otherwise. This default ensures owned cloud projects are
+   *                  automatically set up for auto-sync.
+   */
   const initFromProject = useCallback(
-    (cloudId: string | null, isOwner: boolean, storage: 'local' | 'cloud' = cloudId && isOwner ? 'cloud' : 'local') => {
+    (
+      cloudId: string | null,
+      isOwner: boolean,
+      storage: 'local' | 'cloud' = cloudId && isOwner ? 'cloud' : 'local',
+      metadata: Pick<CloudInit, 'serverVersion' | 'cloudSavedAt' | 'visibility' | 'cloudConflictVersion' | 'hasUnsyncedChanges'> = {},
+    ) => {
       if (cloudId === null) {
         const next = { ...initialInternalState, storage };
         internalRef.current = next;
-        setInternal(next);
+        dispatch__internal({ type: 'INIT_LOCAL', storage });
         clearCloudUrl();
       } else {
-        const next = {
-          ...internalRef.current,
+        const hasStoredUnsyncedChanges = metadata.hasUnsyncedChanges === true;
+        // Path A of the unified init (S10a / DESIGN §3a): build the flat INIT
+        // state via the shared pure `cloudStateForEntry`. Baseline seeding is
+        // NOT a divergence (BR-4): both paths carry the clean/dirty split in
+        // the seed — `dirty` for stored unsynced changes, otherwise `untracked`
+        // (awaiting capture), which the engine resolves to a `clean` baseline
+        // at the real post-first-tick generation. Snapshotting
+        // `dataVersionRef.current` here raced the engine's first tick: this
+        // mount-effect init runs BEFORE the engine bumps the generation, so a
+        // clean owned cloud project read as dirty and fired a no-op load-time
+        // PUT. The three divergences from Path B (`useProjectSwitchInit`) are
+        // explicit decisions here:
+        //   • lastCloudSavedAt — Path A threads `metadata.cloudSavedAt` (carried
+        //     in the seed, vs Path B's hardcoded null).
+        //   • setCloudUrl — DELIBERATELY OMITTED on Path A's cloud branch:
+        //     initFromProject runs at startup where AppLoader already owns the
+        //     URL, so it intentionally does not call setCloudUrl(cloudId).
+        //   • freshness kickoff — Path A does NOT kick off a freshness check.
+        const seed = cloudStateForEntry({
+          prev: internalRef.current,
           cloudId,
           isOwner,
           storage,
           shareUrl: buildProjectUrl(cloudId),
-          lastSavedVersion: dataVersionRef.current,
-          lastCloudSavedAt: null,
-          error: null,
-        };
+          lastCloudSavedAt: metadata.cloudSavedAt ?? null,
+          visibility: metadata.visibility ?? 'private',
+          serverVersion: normalizeServerVersion(metadata.serverVersion),
+          conflictVersion: metadata.cloudConflictVersion ?? null,
+          hasUnsyncedChanges: hasStoredUnsyncedChanges,
+        });
         // Synchronous ref write so the activeLocalId effect's guard
         // (cloudId === internalRef.current.cloudId) sees this in the same commit.
-        internalRef.current = next;
-        setInternal(next);
+        internalRef.current = seed;
+        dispatch__internal({ type: 'INIT_CLOUD', seed });
       }
     },
-    [dataVersionRef],
+    [],
   );
 
   const dismissError = useCallback(() => {
-    setInternal((prev) => ({ ...prev, error: null }));
+    dispatch__internal({ type: 'CLEAR_ERROR' });
   }, []);
 
   const syncCloudProjects = useCallback(async (): Promise<SyncResult> => {
-    const emptyResult: SyncResult = { updatedCount: 0, staleCloudIds: [], placeholdersCreated: 0 };
+    const emptyResult: SyncResult = {
+      updatedCount: 0,
+      staleCloudIds: [],
+      staleReconciledCloudIds: [],
+      staleReconcileFailedCloudIds: [],
+      placeholdersCreated: 0,
+    };
     if (!isCloudEnabled()) return emptyResult;
 
     const jwt = getJwt();
     if (!jwt) return emptyResult;
-    const response = await listProjects(jwt);
 
-    const { patches, staleCloudIds, cloudOnlyProjects } = computeSyncPatches(projectsRef.current, response.projects);
+    const reconcileDeps: SyncReconcileDeps = {
+      internalRef, activeLocalIdRef, appStateRef, syncTimerRef,
+      mutationLockRef, dispatchInternal: dispatch__internal, updateCloudMetadata,
+    };
 
-    for (const { localId, ...updates } of patches) {
-      updateCloudMetadata(localId, updates);
-    }
+    const latestProjects = loadManifest().projects.map(toProjectListEntry);
+    return syncCloudProjectsFromServer(jwt, latestProjects, {
+      updateCloudMetadata,
+      reconcileStaleCloudProject: (project, options) =>
+        reconcileStaleCloudProjectImpl(reconcileDeps, project, options),
+      createPlaceholder: (data, options) =>
+        createPlaceholderImpl(reconcileDeps, data, options),
+    });
+  }, [appStateRef, mutationLockRef, syncTimerRef, updateCloudMetadata, getJwt]);
 
-    // Create lightweight local placeholders for cloud-only projects so they
-    // appear in the project list with full cloud actions (share, visibility, delete).
-    // The actual project data is fetched lazily when the user opens the project.
-    for (const sp of cloudOnlyProjects) {
-      createProject(EMPTY_SERIALIZED_STATE, sp.title ?? DEFAULT_PROJECT_NAME, {
-        cloudId: sp.id,
-        visibility: sp.visibility,
-        cloudSavedAt: sp.updatedAt,
-        storage: 'cloud',
-      });
-    }
-
-    return { updatedCount: patches.length, staleCloudIds, placeholdersCreated: cloudOnlyProjects.length };
-  }, [updateCloudMetadata, getJwt]);
-
-  // Keep refs up-to-date for the auth-transition and eviction effects
+  // Callback ref: nullable because the callback references state/hooks defined below.
+  // Direct assignment in render (not useEffect) ensures it's fresh by the time
+  // effects in child hooks read it. The `| null` type forces consumers to use
+  // optional chaining, preventing calls before initialization.
   const syncCloudProjectsRef = useRef<(() => Promise<SyncResult>) | null>(null);
-  const flushSyncRef = useRef<((stateOverride?: AppState) => Promise<void>) | null>(null);
-  syncCloudProjectsRef.current = syncCloudProjects;
-  flushSyncRef.current = flushSync;
+  syncCloudProjectsRef.current = syncCloudProjects; // render-time sync for stable callback refs
 
   // Auth transition: sign-in retry, cloud sync, sign-out cleanup
-  const { isSigningOutRef } = useAuthTransition({
-    authUser,
-    pendingCloudOpRef: loginGuard.pendingCloudOpRef,
-    setLoginRequired: loginGuard.setLoginRequired,
-    rawSave: rawActiveOps.saveToCloud,
-    rawFork: rawActiveOps.fork,
-    syncCloudProjectsRef,
-    syncTimerRef,
-    activeLocalIdRef,
-    setInternal,
-    initialInternalState,
-    refreshProjectList,
-    switchProject,
-    createNewProject,
+  useAuthTransition({
+    core, authUser,
+    pendingOpRef,
+    saveToCloud: activeOps.saveToCloud,
+    fork: activeOps.fork,
+    dismissLogin,
+    syncCloudProjectsRef, syncTimerRef,
+    refreshProjectList, switchProject, createNewProject,
   });
 
-  // --- Active project switch: eviction + cloudId tracking ---
-  const prevActiveLocalIdRef = useRef<string | null>(null);
+  // --- Active project switch: cloud state init + best-effort save ---
+  useProjectSwitchInit({
+    core, activeLocalId, projects,
+    projectsRef, syncTimerRef,
+    dataVersionRef, mutationLockRef, getJwt, lastFreshnessCheckRef, updateCloudMetadata,
+    dispatch,
+    lastDeparture,
+  });
 
-  // Derive the active project's cloudId so the effect re-runs when it changes
-  // (e.g., after auto-upload sets a cloudId on a previously local-only project).
-  const activeCloudId = useMemo(
-    () => projects.find(p => p.localId === activeLocalId)?.cloudId ?? null,
-    [projects, activeLocalId],
-  );
-
+  // Freshness check when tab regains focus
   useEffect(() => {
-    // Evict previous cloud project's data from localStorage on switch
-    const prevLocalId = prevActiveLocalIdRef.current;
-    prevActiveLocalIdRef.current = activeLocalId;
-    if (prevLocalId && prevLocalId !== activeLocalId) {
-      // Grab the previous project's state snapshot before updating the ref.
-      // After switchProject, appStateRef already holds the *new* project's state,
-      // so we pass the snapshot to flushSync to save the correct data.
-      const prevState = lastStableStateRef.current.localId === prevLocalId
-        ? lastStableStateRef.current.state
-        : undefined;
-      // Update the snapshot ref for the new project
-      lastStableStateRef.current = { localId: activeLocalId, state: appState };
+    let cancelled = false;
 
-      const prevEntry = projectsRef.current.find(p => p.localId === prevLocalId);
-      if (prevEntry?.storage === 'cloud' && prevEntry.cloudId) {
-        // Flush pending sync first, then evict — only on success and only if
-        // the user hasn't navigated back to this project in the meantime.
-        // Skip during sign-out to avoid racing with purgeCloudProjects.
-        flushSyncRef.current?.(prevState).then(() => {
-          if (activeLocalIdRef.current === prevLocalId) return; // user navigated back
-          if (isSigningOutRef.current) return; // sign-out purge handles cleanup
-          evictProjectData(prevLocalId);
-        }).catch(() => {
-          // Flush failed — keep local data as safety net
-        });
-      }
-    }
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (cancelled) return;
 
-    if (!activeLocalId) {
-      // Reset cloud sync state when transitioning from a saved project to
-      // an unsaved one (e.g. New Project). This prevents stale cloud state
-      // from the previous project triggering auto-sync on the empty project.
-      // Skip on initial mount (prevLocalId is null) so that initFromProject
-      // can set up cloud state for shared projects loaded from #/p/{id} URLs.
-      if (prevLocalId) {
-        if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
-        loginGuard.pendingCloudOpRef.current = null;
-        loginGuard.setLoginRequired(false);
-        setInternal({ ...initialInternalState });
-        clearCloudUrl();
-      }
-      return;
-    }
+      const { cloudId, serverVersion } = internalRef.current;
+      if (!cloudId || serverVersion === 0) return;
+      const jwt = getJwt();
+      if (!jwt) return;
+      const localId = activeLocalIdRef.current;
 
-    const entry = projectsRef.current.find(p => p.localId === activeLocalId);
-    const cloudId = entry?.cloudId ?? null;
-    // Skip if cloudId hasn't changed (avoid redundant state updates)
-    if (cloudId === internalRef.current.cloudId) return;
-    // Clear any pending cloud operation from the previous project
-    loginGuard.pendingCloudOpRef.current = null;
-    loginGuard.setLoginRequired(false);
-    // Use storage === 'cloud' as an optimistic ownership hint — cloud-storage
-    // projects were uploaded by this user. The async re-evaluation effect below
-    // still confirms via a server round-trip, but this avoids flashing the
-    // "shared project" banner on owned projects during the async gap.
-    const isOwner = entry?.storage === 'cloud';
-    if (cloudId === null) {
-      setInternal({ ...initialInternalState });
-      clearCloudUrl();
-    } else {
-      // Signal dirty tracking to capture the version after its next bump,
-      // so that re-syncing from a freshly-uploaded project starts clean.
-      needsVersionSyncRef.current = true;
-      setCloudUrl(cloudId);
-      setInternal((prev) => ({
-        ...prev,
+      checkAndPullFreshVersion(freshnessCtx, {
         cloudId,
-        isOwner,
-        storage: entry?.storage ?? 'local',
-        shareUrl: buildProjectUrl(cloudId),
-        lastCloudSavedAt: null,
-        error: null,
-        visibility: entry?.visibility ?? 'private',
-      }));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- dataVersionRef is a ref (stable); activeCloudId triggers re-eval when cloudId changes after upload; appState is intentionally read only during project transitions (render-time ref handles steady-state updates)
-  }, [activeLocalId, activeCloudId]);
+        knownVersion: serverVersion,
+        localId,
+        jwt,
+      }).catch((err) => {
+        if (import.meta.env.DEV) console.warn('Freshness check failed:', err);
+      });
+    };
+
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  // All deps are refs or stable functions — empty array is correct
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Re-evaluate ownership when auth state changes or the active cloud project
   // changes while authenticated. Covers: (1) JWT validated after startup,
@@ -410,40 +613,129 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     const jwt = getJwt();
     if (!jwt) return;
 
+    const checkedCloudId = internal.cloudId;
     let cancelled = false;
-    getProject(internal.cloudId, jwt)
+    getProject(checkedCloudId, jwt)
       .then((res) => {
         // Verify user is still authenticated when response arrives (SEC-M3)
-        if (!cancelled && res.isOwner && getJwt()) {
-          setInternal((prev) => prev.cloudId === internal.cloudId ? { ...prev, isOwner: true } : prev);
+        if (cancelled || !res.isOwner || !getJwt()) return;
+
+        let promotedLocalId = activeLocalIdRef.current;
+        if (!promotedLocalId && isUnsavedRef.current) {
+          promotedLocalId = saveCurrentProject();
+          if (!promotedLocalId) {
+            dispatch__internal({
+              type: 'SET_ERROR',
+              ifCloudId: checkedCloudId,
+              error: 'Cloud ownership was confirmed, but the project could not be saved locally.',
+            });
+            return;
+          }
         }
+
+        // Reproduces the former `dataVersion !== lastSavedVersion`: a `clean`
+        // baseline has edits iff the generation drifted; `dirty`/`untracked`
+        // baselines (former MAX_SAFE_INTEGER/-1 sentinels) always count as edited.
+        const baseline = internalRef.current.baseline;
+        const hasLocalEdits = baseline.kind !== 'clean'
+          || dataVersionRef.current !== baseline.version;
+        const confirmedCloudSavedAt = res.updatedAt ?? internalRef.current.lastCloudSavedAt;
+        const confirmedVisibility = res.visibility ?? internalRef.current.visibility;
+        if (promotedLocalId) {
+          const metadataResult = updateCloudMetadata(promotedLocalId, {
+            cloudId: checkedCloudId,
+            storage: 'cloud',
+            serverVersion: res.version,
+            cloudSavedAt: confirmedCloudSavedAt,
+            visibility: confirmedVisibility,
+            cloudConflictVersion: null,
+            hasUnsyncedChanges: hasLocalEdits,
+          });
+          if (!metadataResult.ok) {
+            dispatch__internal({
+              type: 'SET_ERROR',
+              ifCloudId: checkedCloudId,
+              error: 'Cloud ownership was confirmed, but local cloud metadata could not be persisted.',
+            });
+            return;
+          }
+        }
+
+        dispatch__internal({
+          type: 'OWNERSHIP_CONFIRMED',
+          ifCloudId: checkedCloudId,
+          serverVersion: res.version,
+          cloudSavedAt: confirmedCloudSavedAt,
+          visibility: confirmedVisibility,
+        });
       })
       .catch(() => { /* best-effort; ownership stays false */ });
     return () => { cancelled = true; };
-  }, [authUser, getJwt, internal.cloudId, internal.isOwner]);
+  }, [authUser, getJwt, internal.cloudId, internal.isOwner, saveCurrentProject, updateCloudMetadata, dataVersionRef]);
 
   // By-localId cloud operations (used by My Projects dialog)
   const projectOps = useProjectCloudOps({
-    updateCloudMetadata,
-    projectsRef,
-    activeLocalIdRef,
-    dataVersionRef,
-    mutationLockRef,
-    internalRef,
-    setInternal,
-    initialInternalState,
-    getJwt,
+    core, updateCloudMetadata, projectsRef,
+    mutationLockRef, getJwt,
+    activeProjectSave: activeOps.saveToCloud,
   });
+
+  // Pre-logout flush: while the JWT is still valid, push the active project's
+  // pending changes and best-effort save other dirty owned cloud projects.
+  // Anything still dirty after the flush is demoted (not deleted) by purgeCloudProjects.
+  useEffect(() => {
+    registerPreLogout(async () => {
+      // 1. Push the active project's pending changes (writes local + cloud).
+      await flushCloudSync();
+      // 2. Best-effort save of other dirty owned cloud projects. Conflicted
+      //    entries are excluded (mirrors use-project-switch-init): flushing them
+      //    would force-overwrite the other device AND clear cloudConflictVersion,
+      //    letting purge EVICT instead of demote. They fall through to
+      //    purgeCloudProjects' demote branch with their local data kept.
+      const dirty = loadManifest().projects.filter(
+        (p) => isOwnedCloudEntry(p) && p.hasUnsyncedChanges && p.cloudConflictVersion == null
+          && p.localId !== activeLocalIdRef.current,
+      );
+      for (const entry of dirty) {
+        try {
+          await projectOps.saveProjectToCloud(entry.localId);
+        } catch {
+          // Best-effort; anything still dirty is demoted (not lost) by purge.
+        }
+      }
+    });
+    return () => registerPreLogout(null);
+  }, [registerPreLogout, flushCloudSync, projectOps]);
+
+  const loadServerVersion = useCallback(async () => {
+    const { cloudId } = internalRef.current;
+    if (!cloudId) return;
+    const jwt = getJwt();
+    if (!jwt) return;
+    const localId = activeLocalIdRef.current;
+
+    const pullResult = await checkAndPullFreshVersion(freshnessCtx, {
+      cloudId,
+      knownVersion: 0,
+      localId,
+      jwt,
+      mode: 'replace-with-server',
+    });
+
+    if (pullResult.applied) {
+      dispatch__internal({ type: 'CLEAR_CONFLICT' });
+    }
+  }, [freshnessCtx, getJwt]);
 
   const actions = useMemo(
     () => ({
       ...activeOps,
-      dismissError, initFromProject, syncCloudProjects,
-      cancelPendingOp: loginGuard.cancelPendingOp,
-      flushSync,
+      dismissError, dismissLogin, initFromProject, syncCloudProjects,
+      loadServerVersion,
+      flushCloudSync,
       ...projectOps,
     }),
-    [activeOps, dismissError, initFromProject, syncCloudProjects, loginGuard.cancelPendingOp, flushSync, projectOps],
+    [activeOps, dismissError, dismissLogin, initFromProject, syncCloudProjects, loadServerVersion, flushCloudSync, projectOps],
   );
 
   const providedState: CloudSyncState = useMemo(
@@ -456,8 +748,9 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       shareUrl: internal.shareUrl,
       lastCloudSavedAt: internal.lastCloudSavedAt,
       visibility: internal.visibility,
-      loginRequired: loginGuard.loginRequired,
+      loginRequired,
       syncStatus,
+      conflict: internal.conflict,
     }),
     [
       internal.cloudId,
@@ -468,8 +761,9 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       internal.shareUrl,
       internal.lastCloudSavedAt,
       internal.visibility,
-      loginGuard.loginRequired,
+      loginRequired,
       syncStatus,
+      internal.conflict,
     ],
   );
 

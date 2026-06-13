@@ -9,6 +9,14 @@ function isValidAddressUnitBits(n: number): n is AddressUnitBits {
 
 // --- Actions ---
 
+export type ImportStateAction = {
+  type: 'IMPORT_STATE';
+  registers: RegisterDef[];
+  values: Record<string, bigint>;
+  project?: ProjectMetadata;
+  addressUnitBits?: AddressUnitBits;
+};
+
 type Action =
   | { type: 'SET_REGISTER_VALUE'; registerId: string; value: bigint }
   | { type: 'TOGGLE_BIT'; registerId: string; bit: number }
@@ -17,7 +25,7 @@ type Action =
   | { type: 'UPDATE_REGISTER'; register: RegisterDef }
   | { type: 'DELETE_REGISTER'; registerId: string }
   | { type: 'SET_ACTIVE_REGISTER'; registerId: string }
-  | { type: 'IMPORT_STATE'; registers: RegisterDef[]; values: Record<string, bigint>; project?: ProjectMetadata; addressUnitBits?: AddressUnitBits }
+  | ImportStateAction
   | { type: 'LOAD_STATE'; state: AppState }
   | { type: 'REORDER_REGISTERS'; oldIndex: number; newIndex: number }
   | { type: 'SORT_REGISTERS_BY_OFFSET' }

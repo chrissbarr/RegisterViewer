@@ -8,6 +8,7 @@ import {
   type UnsavedProjectSource,
 } from '../types/project';
 import type { SerializedAppState } from '../types/register';
+import { isOwnedCloudEntry } from './project-identity';
 
 export function buildProjectUrl(cloudId: string): string {
   return `${window.location.href.split('#')[0]}#/p/${cloudId}`;
@@ -20,6 +21,28 @@ const LEGACY_PROJECTS_KEY = 'register-viewer-projects';
 export const ACTIVE_PROJECT_SESSION_KEY = 'register-viewer-active-project';
 const UNSAVED_PROJECT_KEY = 'register-viewer-unsaved';
 export const UNSAVED_SESSION_SENTINEL = '__unsaved__';
+const MAX_QUOTA_EVICTIONS = 3;
+
+export type ProjectStorageWriteStatus =
+  | 'ok'
+  | 'missing'
+  | 'corrupt'
+  | 'quota-exceeded'
+  | 'unknown-error';
+
+export interface ProjectStorageWriteResult {
+  ok: boolean;
+  status: ProjectStorageWriteStatus;
+  evictedLocalIds: string[];
+  error?: unknown;
+  project?: StoredLocalProject;
+  unchanged?: boolean;
+}
+
+interface ProjectStorageWriteOptions {
+  protectedLocalIds?: readonly (string | null | undefined)[];
+  preserveLocalSavedAt?: boolean;
+}
 
 /**
  * In-memory manifest cache to avoid repeated localStorage reads + JSON parses.
@@ -40,6 +63,196 @@ export function projectStorageKey(localId: string): string {
   return `${PROJECT_PREFIX}${localId}`;
 }
 
+function writeOk(
+  evictedLocalIds: string[] = [],
+  project?: StoredLocalProject,
+  unchanged = false,
+): ProjectStorageWriteResult {
+  return { ok: true, status: 'ok', evictedLocalIds, project, unchanged };
+}
+
+function writeFailed(
+  status: Exclude<ProjectStorageWriteStatus, 'ok'>,
+  evictedLocalIds: string[] = [],
+  error?: unknown,
+): ProjectStorageWriteResult {
+  return { ok: false, status, evictedLocalIds, error };
+}
+
+function isQuotaExceededError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const candidate = err as { name?: unknown; code?: unknown };
+  const name = typeof candidate.name === 'string' ? candidate.name : '';
+  const code = typeof candidate.code === 'number' ? candidate.code : undefined;
+  return (
+    name === 'QuotaExceededError' ||
+    name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+    code === 22 ||
+    code === 1014
+  );
+}
+
+type StoredProjectReadResult =
+  | { status: 'ok'; project: StoredLocalProject }
+  | { status: 'missing' | 'corrupt'; error?: unknown };
+
+function readStoredProjectRecord(localId: string): StoredProjectReadResult {
+  try {
+    const raw = localStorage.getItem(projectStorageKey(localId));
+    if (!raw) return { status: 'missing' };
+    const parsed = JSON.parse(raw);
+    if (!isValidStoredProject(parsed)) return { status: 'corrupt' };
+    if (parsed.storage !== 'local' && parsed.storage !== 'cloud') {
+      parsed.storage = 'local';
+    }
+    return { status: 'ok', project: sanitizeStoredProject(parsed) };
+  } catch (error) {
+    return { status: 'corrupt', error };
+  }
+}
+
+function protectedIdSet(targetLocalId: string | null, options?: ProjectStorageWriteOptions): Set<string> {
+  const ids = new Set<string>();
+  if (targetLocalId) ids.add(targetLocalId);
+  for (const id of options?.protectedLocalIds ?? []) {
+    if (id) ids.add(id);
+  }
+  return ids;
+}
+
+function quotaEvictionCandidate(excluded: Set<string>): ProjectManifestEntry | null {
+  const manifest = loadManifest();
+  const candidates = manifest.projects
+    .filter(p =>
+      p.storage === 'cloud' &&
+      !excluded.has(p.localId) &&
+      !p.cloudConflictVersion &&
+      isSafeCloudEvictionCandidate(p)
+    )
+    .sort((a, b) => (a.localSavedAt ?? '').localeCompare(b.localSavedAt ?? ''));
+  return candidates[0] ?? null;
+}
+
+function isSafeCloudEvictionCandidate(entry: ProjectManifestEntry): boolean {
+  const readResult = readStoredProjectRecord(entry.localId);
+  if (readResult.status !== 'ok') return false;
+
+  const project = readResult.project;
+  if (project.storage !== 'cloud' || project.cloudConflictVersion) return false;
+  return project.hasUnsyncedChanges === false;
+}
+
+function sanitizeStoredProject(project: StoredLocalProject): StoredLocalProject {
+  if (isOwnedCloudEntry(project)) {
+    return {
+      ...project,
+      storage: 'cloud',
+      cloudSavedAt: project.cloudSavedAt ?? null,
+      serverVersion: project.serverVersion ?? null,
+      cloudConflictVersion: project.cloudConflictVersion ?? null,
+    };
+  }
+
+  const hadCloudMetadata = project.storage === 'cloud' ||
+    project.cloudId !== null ||
+    project.cloudSavedAt !== null ||
+    project.serverVersion != null ||
+    project.cloudConflictVersion != null ||
+    project.hasUnsyncedChanges !== undefined;
+
+  return {
+    ...project,
+    cloudId: null,
+    visibility: hadCloudMetadata ? 'private' : project.visibility,
+    cloudSavedAt: null,
+    serverVersion: null,
+    cloudConflictVersion: null,
+    hasUnsyncedChanges: undefined,
+    storage: 'local',
+  };
+}
+
+function sanitizeManifestEntry(entry: ProjectManifestEntry): ProjectManifestEntry {
+  if (isOwnedCloudEntry(entry)) {
+    return {
+      ...entry,
+      storage: 'cloud',
+      cloudSavedAt: entry.cloudSavedAt ?? null,
+      serverVersion: entry.serverVersion ?? null,
+      cloudConflictVersion: entry.cloudConflictVersion ?? null,
+    };
+  }
+
+  const hadCloudMetadata = entry.storage === 'cloud' ||
+    entry.cloudId !== null ||
+    entry.cloudSavedAt !== null ||
+    entry.serverVersion != null ||
+    entry.cloudConflictVersion != null ||
+    entry.hasUnsyncedChanges !== undefined;
+
+  return {
+    ...entry,
+    cloudId: null,
+    visibility: hadCloudMetadata ? 'private' : entry.visibility,
+    cloudSavedAt: null,
+    serverVersion: null,
+    cloudConflictVersion: null,
+    hasUnsyncedChanges: undefined,
+    storage: 'local',
+  };
+}
+
+function normalizeManifest(manifest: ProjectManifest): ProjectManifest {
+  return {
+    version: 1,
+    projects: manifest.projects.map((entry) => sanitizeManifestEntry({
+      ...entry,
+      storage: entry.storage === 'cloud' ? 'cloud' : 'local',
+    })),
+  };
+}
+
+function evictCloudProjectForQuota(excluded: Set<string>): string | null {
+  const candidate = quotaEvictionCandidate(excluded);
+  if (!candidate) return null;
+  evictProjectData(candidate.localId);
+  return candidate.localId;
+}
+
+function writeWithQuotaRecovery(
+  targetLocalId: string | null,
+  write: () => StoredLocalProject | void,
+  options?: ProjectStorageWriteOptions,
+): ProjectStorageWriteResult {
+  const evictedLocalIds: string[] = [];
+  const excluded = protectedIdSet(targetLocalId, options);
+
+  while (true) {
+    try {
+      return writeOk(evictedLocalIds, write() ?? undefined);
+    } catch (error) {
+      if (!isQuotaExceededError(error)) {
+        return writeFailed('unknown-error', evictedLocalIds, error);
+      }
+      if (evictedLocalIds.length >= MAX_QUOTA_EVICTIONS) {
+        return writeFailed('quota-exceeded', evictedLocalIds, error);
+      }
+
+      const evicted = evictCloudProjectForQuota(excluded);
+      if (!evicted) {
+        return writeFailed('quota-exceeded', evictedLocalIds, error);
+      }
+      evictedLocalIds.push(evicted);
+      excluded.add(evicted);
+    }
+  }
+}
+
+function warnStorageWriteFailure(scope: string, result: ProjectStorageWriteResult, localId?: string): void {
+  if (result.ok || !import.meta.env.DEV) return;
+  console.warn(`[project-storage] ${scope} failed:`, localId, result.status, result.error);
+}
+
 /** Generate a UUID v4 using crypto.randomUUID() */
 function generateLocalId(): string {
   return crypto.randomUUID();
@@ -47,23 +260,25 @@ function generateLocalId(): string {
 
 /** Convert a StoredLocalProject to a ProjectManifestEntry */
 function toManifestEntry(project: StoredLocalProject): ProjectManifestEntry {
+  const sanitized = sanitizeStoredProject(project);
   return {
-    localId: project.localId,
-    cloudId: project.cloudId,
-    name: project.name,
-    visibility: project.visibility,
-    createdAt: project.createdAt,
-    localSavedAt: project.localSavedAt,
-    cloudSavedAt: project.cloudSavedAt,
-    storage: project.storage ?? 'local',
+    localId: sanitized.localId,
+    cloudId: sanitized.cloudId,
+    name: sanitized.name,
+    visibility: sanitized.visibility,
+    createdAt: sanitized.createdAt,
+    localSavedAt: sanitized.localSavedAt,
+    cloudSavedAt: sanitized.cloudSavedAt,
+    serverVersion: sanitized.serverVersion ?? null,
+    cloudConflictVersion: sanitized.cloudConflictVersion ?? null,
+    hasUnsyncedChanges: sanitized.hasUnsyncedChanges,
+    storage: sanitized.storage,
   };
 }
 
 /** Convert a ProjectManifestEntry to a ProjectListEntry (UI view, no secrets) */
 export function toProjectListEntry(entry: ProjectManifestEntry): ProjectListEntry {
-  return {
-    ...entry,
-  };
+  return sanitizeManifestEntry(entry);
 }
 
 
@@ -75,10 +290,16 @@ function recoverOrphanedProjects(manifest: ProjectManifest): ProjectManifest {
     if (!key?.startsWith(PROJECT_PREFIX)) continue;
     const localId = key.slice(PROJECT_PREFIX.length);
     if (knownIds.has(localId)) continue;
+
     const raw = localStorage.getItem(key);
     if (!raw) continue;
     try {
-      const record: StoredLocalProject = JSON.parse(raw);
+      const parsed = JSON.parse(raw);
+      if (parsed.storage !== 'local' && parsed.storage !== 'cloud') {
+        parsed.storage = 'local';
+      }
+      const record: StoredLocalProject = sanitizeStoredProject(parsed);
+      localStorage.setItem(projectStorageKey(localId), JSON.stringify(record));
       manifest.projects.push(toManifestEntry(record));
     } catch (err) {
       if (import.meta.env.DEV) {
@@ -102,7 +323,7 @@ export function loadManifest(): ProjectManifest {
         if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.projects)) {
           cachedManifest = { version: 1, projects: [] };
         } else {
-          cachedManifest = parsed;
+          cachedManifest = normalizeManifest(parsed);
         }
       }
     } catch (err) {
@@ -117,8 +338,9 @@ export function loadManifest(): ProjectManifest {
 
 /** Save the manifest to localStorage and update cache */
 export function saveManifest(manifest: ProjectManifest): void {
-  localStorage.setItem(MANIFEST_KEY, JSON.stringify(manifest));
-  cachedManifest = manifest;
+  const normalized = normalizeManifest(manifest);
+  localStorage.setItem(MANIFEST_KEY, JSON.stringify(normalized));
+  cachedManifest = normalized;
 }
 
 /** Validate that a parsed object has the minimum shape of a StoredLocalProject */
@@ -138,28 +360,20 @@ function isValidStoredProject(obj: unknown): obj is StoredLocalProject {
 
 /** Load a single project by localId */
 export function loadProject(localId: string): StoredLocalProject | null {
-  try {
-    const raw = localStorage.getItem(projectStorageKey(localId));
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!isValidStoredProject(parsed)) return null;
-    // Backfill or correct storage for pre-migration records
-    if (parsed.storage !== 'local' && parsed.storage !== 'cloud') {
-      parsed.storage = parsed.cloudId ? 'cloud' : 'local';
-    }
-    return parsed;
-  } catch (err) {
-    if (import.meta.env.DEV) {
-      console.warn('[project-storage] Failed to load project:', localId, err);
-    }
-    return null;
+  const result = readStoredProjectRecord(localId);
+  if (result.status === 'ok') return result.project;
+  if (result.status === 'corrupt' && import.meta.env.DEV) {
+    console.warn('[project-storage] Failed to load project:', localId, result.error);
   }
+  return null;
 }
 
-/** Save a project record. Writes project key first, then updates manifest. */
-export function saveProject(project: StoredLocalProject): void {
-  // Update timestamp without mutating input
-  const updated = { ...project, localSavedAt: new Date().toISOString() };
+function saveProjectRecord(project: StoredLocalProject, options?: ProjectStorageWriteOptions): StoredLocalProject {
+  project = sanitizeStoredProject(project);
+  // Update timestamp without mutating input unless this is metadata-only background sync.
+  const updated = options?.preserveLocalSavedAt
+    ? { ...project }
+    : { ...project, localSavedAt: new Date().toISOString() };
 
   // Step 1: Write project data first (safety: data is always reachable)
   localStorage.setItem(projectStorageKey(updated.localId), JSON.stringify(updated));
@@ -174,6 +388,58 @@ export function saveProject(project: StoredLocalProject): void {
     manifest.projects.push(entry);
   }
   saveManifest(manifest);
+  return updated;
+}
+
+function patchProjectStateRecord(localId: string, project: StoredLocalProject, state: SerializedAppState): StoredLocalProject {
+  const now = new Date().toISOString();
+  const name = state.project?.title?.trim() || project.name;
+  const changed = name !== project.name || JSON.stringify(state) !== JSON.stringify(project.state);
+  if (!changed) return project;
+
+  const updated: StoredLocalProject = {
+    ...project,
+    state,
+    name,
+    localSavedAt: now,
+    hasUnsyncedChanges: project.storage === 'cloud' ? true : project.hasUnsyncedChanges,
+  };
+
+  localStorage.setItem(projectStorageKey(localId), JSON.stringify(updated));
+
+  // Update manifest in cache
+  const manifest = loadManifest();
+  const idx = manifest.projects.findIndex(p => p.localId === localId);
+  if (idx >= 0) {
+    manifest.projects[idx].localSavedAt = now;
+    manifest.projects[idx].name = name;
+    manifest.projects[idx].hasUnsyncedChanges = updated.hasUnsyncedChanges;
+    saveManifest(manifest);
+  }
+  return updated;
+}
+
+function logWriteFailure(scope: string, result: ProjectStorageWriteResult, localId?: string): void {
+  if (result.ok) return;
+  warnStorageWriteFailure(scope, result, localId);
+}
+
+/** Save a project record. Writes project key first, then updates manifest. */
+export function saveProject(project: StoredLocalProject, options?: ProjectStorageWriteOptions): ProjectStorageWriteResult {
+  const result = writeWithQuotaRecovery(project.localId, () => saveProjectRecord(project, options), options);
+  logWriteFailure('Save project', result, project.localId);
+  return result;
+}
+
+function writeMissingOrCorrupt(result: StoredProjectReadResult): ProjectStorageWriteResult {
+  switch (result.status) {
+    case 'missing':
+      return writeFailed('missing');
+    case 'corrupt':
+      return writeFailed('corrupt', [], result.error);
+    case 'ok':
+      return writeOk([], result.project);
+  }
 }
 
 /**
@@ -186,11 +452,18 @@ interface CreateProjectCloudMeta {
   cloudId: string;
   visibility: import('../types/project').Visibility;
   cloudSavedAt: string;
+  serverVersion?: number | null;
+  hasUnsyncedChanges?: boolean;
   storage?: 'local' | 'cloud';
 }
 
 /** Create a new project with initial state, returns the localId */
-export function createProject(initialState: SerializedAppState, name?: string, cloudMeta?: CreateProjectCloudMeta): string {
+export function createProject(
+  initialState: SerializedAppState,
+  name?: string,
+  cloudMeta?: CreateProjectCloudMeta,
+  options?: ProjectStorageWriteOptions,
+): string {
   const localId = generateLocalId();
   const now = new Date().toISOString();
   const project: StoredLocalProject = {
@@ -201,10 +474,18 @@ export function createProject(initialState: SerializedAppState, name?: string, c
     createdAt: now,
     localSavedAt: now,
     cloudSavedAt: cloudMeta?.cloudSavedAt ?? null,
+    serverVersion: cloudMeta?.serverVersion ?? null,
+    cloudConflictVersion: null,
+    hasUnsyncedChanges: cloudMeta?.storage === 'cloud'
+      ? (cloudMeta.hasUnsyncedChanges ?? false)
+      : undefined,
     storage: cloudMeta?.storage ?? 'local',
     state: initialState,
   };
-  saveProject(project);
+  const result = saveProject(sanitizeStoredProject(project), options);
+  if (!result.ok) {
+    throw new Error(`Failed to create project: ${result.status}`);
+  }
   return localId;
 }
 
@@ -219,49 +500,81 @@ export function deleteProject(localId: string): void {
   saveManifest(manifest);
 }
 
-/** Patch the state of a project without a full read-parse cycle.
+/** Patch the state of a project.
  *  Derives the manifest name from state.project.title (single source of truth).
  *  Reads the raw JSON, patches state/name/timestamp, writes back, and updates manifest cache. */
-export function patchProjectState(localId: string, state: SerializedAppState): void {
-  const key = projectStorageKey(localId);
-  const raw = localStorage.getItem(key);
-  if (!raw) return;
-
-  try {
-    const project: StoredLocalProject = JSON.parse(raw);
-    const now = new Date().toISOString();
-    const name = state.project?.title?.trim() || project.name;
-    const updated: StoredLocalProject = {
-      ...project,
-      state,
-      name,
-      localSavedAt: now,
-    };
-    localStorage.setItem(key, JSON.stringify(updated));
-
-    // Update manifest in cache
-    const manifest = loadManifest();
-    const idx = manifest.projects.findIndex(p => p.localId === localId);
-    if (idx >= 0) {
-      manifest.projects[idx].localSavedAt = now;
-      manifest.projects[idx].name = name;
-      saveManifest(manifest);
-    }
-  } catch (err) {
-    if (import.meta.env.DEV) {
-      console.warn('[project-storage] Failed to patch project state:', localId, err);
-    }
+export function patchProjectState(
+  localId: string,
+  state: SerializedAppState,
+  options?: ProjectStorageWriteOptions,
+): ProjectStorageWriteResult {
+  const readResult = readStoredProjectRecord(localId);
+  if (readResult.status !== 'ok') {
+    const result = writeMissingOrCorrupt(readResult);
+    logWriteFailure('Patch project state', result, localId);
+    return result;
   }
+
+  const result = writeWithQuotaRecovery(
+    localId,
+    () => patchProjectStateRecord(localId, readResult.project, state),
+    options,
+  );
+  logWriteFailure('Patch project state', result, localId);
+  return result;
+}
+
+/**
+ * Persist a saved project's latest in-memory state through the full project
+ * record path so cloud metadata such as serverVersion is preserved.
+ */
+export function flushProjectState(
+  localId: string,
+  state: SerializedAppState,
+  options?: ProjectStorageWriteOptions,
+): ProjectStorageWriteResult {
+  const readResult = readStoredProjectRecord(localId);
+  if (readResult.status !== 'ok') {
+    const result = writeMissingOrCorrupt(readResult);
+    logWriteFailure('Flush project state', result, localId);
+    return result;
+  }
+  const project = readResult.project;
+
+  const name = state.project?.title?.trim() || project.name;
+  if (name === project.name && JSON.stringify(state) === JSON.stringify(project.state)) {
+    return writeOk([], project);
+  }
+
+  const updated: StoredLocalProject = {
+    ...project,
+    state,
+    name,
+    hasUnsyncedChanges: project.storage === 'cloud' ? true : project.hasUnsyncedChanges,
+  };
+  const result = saveProject(updated, options);
+  return result.ok ? { ...result, project: result.project ?? updated } : result;
 }
 
 /** Update metadata fields on a project (name, cloudId, visibility, etc.) */
 export function updateProjectMetadata(
   localId: string,
-  updates: Partial<Pick<StoredLocalProject, 'name' | 'cloudId' | 'visibility' | 'cloudSavedAt' | 'storage'>>,
-): void {
-  const project = loadProject(localId);
-  if (!project) return;
-  saveProject({ ...project, ...updates });
+  updates: Partial<Pick<StoredLocalProject, 'name' | 'cloudId' | 'visibility' | 'cloudSavedAt' | 'storage' | 'serverVersion' | 'cloudConflictVersion' | 'hasUnsyncedChanges'>>,
+  options?: ProjectStorageWriteOptions,
+): ProjectStorageWriteResult {
+  const readResult = readStoredProjectRecord(localId);
+  if (readResult.status !== 'ok') {
+    const result = writeMissingOrCorrupt(readResult);
+    logWriteFailure('Update project metadata', result, localId);
+    return result;
+  }
+  const current = sanitizeStoredProject(readResult.project);
+  const updated = sanitizeStoredProject({ ...readResult.project, ...updates });
+  const hasChanges = Object.entries(updates).some(([key]) =>
+    updated[key as keyof StoredLocalProject] !== current[key as keyof StoredLocalProject]
+  );
+  if (!hasChanges) return writeOk([], current, true);
+  return saveProject(updated, options);
 }
 
 /** Get the most recently saved project's localId.
@@ -275,23 +588,67 @@ export function getMostRecentProjectId(manifest?: ProjectManifest): string | nul
   return sorted[0].localId;
 }
 
-/** Purge all cloud-backed projects from localStorage. Returns purged localIds. */
-export function purgeCloudProjects(): string[] {
+/**
+ * Sign-out purge. Clean cloud projects are removed (the server has their data).
+ * Dirty or conflicted cloud projects are demoted to local projects — their data
+ * key is kept and cloud metadata is cleared — so unsynced edits are never lost.
+ *
+ * Invariant: abandoned post-sign-out saves cannot re-promote demoted entries
+ * because `updateProjectMetadata` writes pass through `sanitizeStoredProject`
+ * (cloudId stays null after demotion). This guarantee must not be weakened.
+ */
+export function purgeCloudProjects(): { removed: string[]; demoted: string[] } {
   const manifest = loadManifest();
-  const purged: string[] = [];
+  const removed: string[] = [];
+  const demoted: string[] = [];
   const kept: ProjectManifestEntry[] = [];
 
   for (const entry of manifest.projects) {
-    if (entry.storage === 'cloud') {
-      evictProjectData(entry.localId);
-      purged.push(entry.localId);
-    } else {
+    if (entry.storage !== 'cloud') {
       kept.push(entry);
+      continue;
+    }
+    const isDirty = entry.hasUnsyncedChanges === true || entry.cloudConflictVersion != null;
+    if (isDirty && hasLocalData(entry.localId)) {
+      const record = loadProject(entry.localId);
+      if (record) {
+        // preserveLocalSavedAt: demotion is a metadata-only op, not a user edit;
+        // keeping the original timestamp avoids most-recent-project ordering drift.
+        const result = saveProject(sanitizeStoredProject({
+          ...record,
+          storage: 'local',
+          cloudId: null,
+          cloudSavedAt: null,
+          serverVersion: null,
+          cloudConflictVersion: null,
+          hasUnsyncedChanges: false,
+        }), { preserveLocalSavedAt: true });
+
+        if (!result.ok) {
+          // Record write failed — keep the original manifest entry so the
+          // record and manifest stay consistent; startup migration will re-derive.
+          kept.push(entry);
+          continue;
+        }
+      }
+      kept.push(sanitizeManifestEntry({
+        ...entry,
+        storage: 'local',
+        cloudId: null,
+        cloudSavedAt: null,
+        serverVersion: null,
+        cloudConflictVersion: null,
+        hasUnsyncedChanges: false,
+      }));
+      demoted.push(entry.localId);
+    } else {
+      evictProjectData(entry.localId);
+      removed.push(entry.localId);
     }
   }
 
   saveManifest({ ...manifest, projects: kept });
-  return purged;
+  return { removed, demoted };
 }
 
 /** Check if a project has full data in localStorage (not just a manifest stub). */
@@ -302,6 +659,18 @@ export function hasLocalData(localId: string): boolean {
 /** Remove per-project localStorage key but keep manifest entry (convert to stub). */
 export function evictProjectData(localId: string): void {
   localStorage.removeItem(projectStorageKey(localId));
+}
+
+/**
+ * Evict the least-recently-used cloud project's data from localStorage.
+ * Used for quota pressure — only evicts storage:'cloud' projects (they can
+ * be re-fetched). Manifest entry stays so the project still appears in the list.
+ * Uses localSavedAt as LRU proxy (best available — no lastViewedAt field).
+ *
+ * Note: loadManifest() uses an in-memory cache — no JSON.parse on repeated calls.
+ */
+export function evictLeastRecentCloudProject(excludeLocalId: string | null): boolean {
+  return evictCloudProjectForQuota(protectedIdSet(excludeLocalId)) !== null;
 }
 
 /** Estimate localStorage usage */
@@ -333,14 +702,18 @@ export function saveUnsavedProjectState(
   state: SerializedAppState,
   source: UnsavedProjectSource = 'new',
   createdAt?: string,
-): void {
+): ProjectStorageWriteResult {
   const record: StoredUnsavedProject = {
     name,
     state,
     createdAt: createdAt ?? new Date().toISOString(),
     source,
   };
-  localStorage.setItem(UNSAVED_PROJECT_KEY, JSON.stringify(record));
+  const result = writeWithQuotaRecovery(null, () => {
+    localStorage.setItem(UNSAVED_PROJECT_KEY, JSON.stringify(record));
+  });
+  logWriteFailure('Save unsaved project', result);
+  return result;
 }
 
 /** Load the unsaved project from localStorage. Returns null if missing or corrupt. */
@@ -370,8 +743,21 @@ export function clearUnsavedProject(): void {
 
 /** Migrate legacy single-project state into a manifest project entry. */
 function migrateLegacyState(): void {
-  if (localStorage.getItem(MANIFEST_KEY)) return;
-  const legacyState = localStorage.getItem(LEGACY_STATE_KEY);
+  // Guard the first storage touch: a SecurityError here (site data/cookies
+  // disabled) must degrade to "no legacy state" rather than throw, matching
+  // loadManifest/getSessionActiveId which already swallow and return defaults.
+  let manifestRaw: string | null;
+  let legacyState: string | null;
+  try {
+    manifestRaw = localStorage.getItem(MANIFEST_KEY);
+    if (manifestRaw) return;
+    legacyState = localStorage.getItem(LEGACY_STATE_KEY);
+  } catch (err) {
+    if (import.meta.env.DEV) {
+      console.warn('[project-storage] Failed to read legacy state from localStorage:', err);
+    }
+    return;
+  }
   if (!legacyState) return;
   try {
     const parsed = JSON.parse(legacyState) as SerializedAppState;
@@ -390,10 +776,24 @@ function migrateLegacyState(): void {
  * 1. Convert legacy single-project state to manifest format
  * 2. Remove legacy localStorage keys
  * 3. Ensure manifest exists
- * 4. Backfill `storage` field for pre-existing manifest entries (cloud if cloudId, local otherwise)
+ * 4. Normalize saved project cloud identity so only owned cloud records carry cloud IDs
  * 5. Recover orphaned project keys not tracked in the manifest
  */
 export function runMigrationIfNeeded(): void {
+  try {
+    runMigrationUnguarded();
+  } catch (err) {
+    // Disabled storage (SecurityError) or quota on the first-run seed write
+    // must not throw — startup degrades to an in-memory empty manifest rather
+    // than a dead-end screen. saveManifest's throwing contract is preserved for
+    // its other callers; only this startup path swallows.
+    if (import.meta.env.DEV) {
+      console.warn('[project-storage] Migration skipped due to storage failure:', err);
+    }
+  }
+}
+
+function runMigrationUnguarded(): void {
   migrateLegacyState();
 
   // Clean up legacy keys unconditionally.
@@ -407,17 +807,53 @@ export function runMigrationIfNeeded(): void {
     saveManifest({ version: 1, projects: [] });
   }
 
-  // Backfill storage field for manifests created before this field existed
-  const preOrphanManifest = loadManifest();
+  // Normalize storage/cloud identity for manifests created before the current invariant.
+  // Read the persisted manifest directly so migration writes back records that
+  // loadManifest() would otherwise normalize only in memory.
+  let preOrphanManifest = loadManifest();
+  try {
+    const rawManifest = localStorage.getItem(MANIFEST_KEY);
+    if (rawManifest) {
+      const parsed = JSON.parse(rawManifest) as ProjectManifest;
+      if (parsed && parsed.version === 1 && Array.isArray(parsed.projects)) {
+        preOrphanManifest = { version: 1, projects: [...parsed.projects] };
+      }
+    }
+  } catch {
+    // Corrupt manifests are handled by loadManifest's fallback path.
+  }
   let needsSave = false;
-  for (const entry of preOrphanManifest.projects) {
-    // Cast to partial — old localStorage data may lack or have invalid `storage`
-    const s = (entry as Partial<ProjectManifestEntry>).storage;
-    if (s !== 'local' && s !== 'cloud') {
-      entry.storage = entry.cloudId !== null ? 'cloud' : 'local';
+  preOrphanManifest.projects = preOrphanManifest.projects.map((entry) => {
+    let sanitized = sanitizeManifestEntry({
+      ...entry,
+      storage: entry.storage === 'cloud' ? 'cloud' : 'local',
+    });
+
+    try {
+      const raw = localStorage.getItem(projectStorageKey(entry.localId));
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (isValidStoredProject(parsed)) {
+          if (parsed.storage !== 'local' && parsed.storage !== 'cloud') {
+            parsed.storage = 'local';
+          }
+          const sanitizedProject = sanitizeStoredProject(parsed);
+          sanitized = toManifestEntry(sanitizedProject);
+          if (JSON.stringify(sanitizedProject) !== JSON.stringify(parsed)) {
+            const writeResult = saveProject(sanitizedProject, { preserveLocalSavedAt: true });
+            sanitized = toManifestEntry(writeResult.project ?? sanitizedProject);
+          }
+        }
+      }
+    } catch {
+      // Corrupt project records are handled by normal loadProject callers.
+    }
+
+    if (JSON.stringify(sanitized) !== JSON.stringify(entry)) {
       needsSave = true;
     }
-  }
+    return sanitized;
+  });
   if (needsSave) saveManifest(preOrphanManifest);
 
   // Run orphan recovery once at startup (not on every loadManifest call)

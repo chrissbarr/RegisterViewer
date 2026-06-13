@@ -1,5 +1,5 @@
 import { validateRegisterDef, validateFieldInput, getFieldWarnings, getRegisterOverlapWarnings } from './validation';
-import { makeRegister, makeField, makeFlagField, makeFloatField, makeFixedPointField } from '../test/helpers';
+import { makeRegister, makeField, makeEnumField, makeFlagField, makeFloatField, makeFixedPointField } from '../test/helpers';
 
 describe('register-level validation', () => {
   it('returns empty errors for a valid register', () => {
@@ -76,6 +76,42 @@ describe('field-level validation', () => {
     expect(errors.some((e) => e.message.includes('LSB') && e.message.includes('negative'))).toBe(true);
   });
 
+  it('returns error when MSB is beyond the supported bit range', () => {
+    const reg = makeRegister({
+      width: 128,
+      fields: [makeField({ msb: 128, lsb: 0 })],
+    });
+    const errors = validateRegisterDef(reg);
+    expect(errors.some((e) => e.message.includes('MSB') && e.message.includes('127'))).toBe(true);
+  });
+
+  it('returns error when LSB is beyond the supported bit range', () => {
+    const reg = makeRegister({
+      width: 128,
+      fields: [makeField({ msb: 127, lsb: 128 })],
+    });
+    const errors = validateRegisterDef(reg);
+    expect(errors.some((e) => e.message.includes('LSB') && e.message.includes('127'))).toBe(true);
+  });
+
+  it('returns a blocking fieldId error for a whitespace-only enum entry name', () => {
+    const reg = makeRegister({
+      fields: [makeEnumField({ id: 'f-enum', enumEntries: [{ value: 0, name: '   ' }, { value: 1, name: 'ON' }] })],
+    });
+    const errors = validateRegisterDef(reg);
+    const err = errors.find((e) => e.message.includes('Enum entry'));
+    expect(err).toBeDefined();
+    expect(err!.fieldId).toBe('f-enum');
+  });
+
+  it('returns no enum entry errors when all entry names have non-whitespace characters', () => {
+    const reg = makeRegister({
+      fields: [makeEnumField({ enumEntries: [{ value: 0, name: 'OFF' }, { value: 1, name: 'ON' }] })],
+    });
+    const errors = validateRegisterDef(reg);
+    expect(errors.some((e) => e.message.includes('Enum entry'))).toBe(false);
+  });
+
   it('returns error for flag with bitWidth != 1', () => {
     const reg = makeRegister({
       fields: [makeFlagField({ msb: 3, lsb: 0 })],
@@ -130,6 +166,19 @@ describe('field-level validation', () => {
     });
     const errors = validateRegisterDef(reg);
     expect(errors.some((e) => e.message.includes('Q4.2') && e.message.includes('6'))).toBe(true);
+  });
+
+  it('returns error for fixed-point with negative q format values', () => {
+    const reg = makeRegister({
+      width: 32,
+      fields: [makeFixedPointField({
+        msb: 7,
+        lsb: 0,
+        qFormat: { m: -1, n: 9 },
+      })],
+    });
+    const errors = validateRegisterDef(reg);
+    expect(errors.some((e) => e.message.includes('Q format') && e.message.includes('negative'))).toBe(true);
   });
 
   it('no error for fixed-point with matching m+n', () => {

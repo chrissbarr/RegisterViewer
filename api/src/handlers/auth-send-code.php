@@ -2,8 +2,16 @@
 
 declare(strict_types=1);
 
-function handleAuthSendCode(PDO $db, array $config, array $body): ApiResponse
+function handleAuthSendCode(
+    PDO $db,
+    array $config,
+    array $body,
+    ?array $server = null,
+    ?callable $codeFactory = null,
+): ApiResponse
 {
+    $server ??= $_SERVER;
+
     $email = validateAndNormalizeEmail($body);
     if ($email instanceof ApiResponse) {
         return $email;
@@ -18,7 +26,7 @@ function handleAuthSendCode(PDO $db, array $config, array $body): ApiResponse
     // IP rate limit: max 5 OTP sends per IP per 15 minutes (PERF-15)
     // Note: on cPanel (no reverse proxy) REMOTE_ADDR is the real client IP.
     // Behind a reverse proxy, consider using X-Forwarded-For instead.
-    $clientIp = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+    $clientIp = authRateLimitClientIp($server);
     $ipCount = dbCountRecentLoginCodesByIp($db, $clientIp, 900);
     if ($ipCount >= 5) {
         return new ApiResponse(['error' => 'Too many requests. Please try again later.'], 429);
@@ -30,13 +38,30 @@ function handleAuthSendCode(PDO $db, array $config, array $body): ApiResponse
         return new ApiResponse(['error' => 'Too many login attempts. Please try again later.'], 429);
     }
 
-    // Generate 6-digit code
-    $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+    if (!isOtpHashSecretConfigured($config)) {
+        return new ApiResponse(['error' => 'Service temporarily unavailable. Please try again later.'], 503);
+    }
 
-    // Store hashed code with 10-minute expiry (SEC-04: never store plaintext OTP)
-    $codeHash = hash('sha256', $code);
-    $expiresAt = date('Y-m-d H:i:s', time() + OTP_EXPIRY_SECONDS);
-    dbCreateLoginCode($db, $email, $codeHash, $expiresAt, $clientIp);
+    // Generate 6-digit code
+    $code = $codeFactory === null
+        ? str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT)
+        : (string) $codeFactory();
+    if (!preg_match('/^\d{6}$/', $code)) {
+        throw new RuntimeException('OTP code factory must return a 6-digit string');
+    }
+
+    // Store a keyed verifier with 10-minute expiry (SEC-04: never store plaintext OTP)
+    $codeVerifier = createOtpVerifier($config, $email, $code);
+    $expiresAt = utcDbDateTime(time() + OTP_EXPIRY_SECONDS);
+    $db->beginTransaction();
+    try {
+        dbMarkActiveLoginCodesUsed($db, $email);
+        dbCreateLoginCode($db, $email, $codeVerifier, $expiresAt, $clientIp);
+        $db->commit();
+    } catch (\Throwable $e) {
+        $db->rollBack();
+        throw $e;
+    }
 
     // In development, log the OTP code so developers can complete the login
     // flow without a real Resend API key.
@@ -44,9 +69,13 @@ function handleAuthSendCode(PDO $db, array $config, array $body): ApiResponse
         error_log("DEV OTP for $email: $code");
     }
 
-    // Send email after response is flushed (PERF-05: avoid blocking the PHP
-    // worker for up to 10s while the Resend API completes).  The shutdown
-    // function runs after exit(), so the client gets the response immediately.
+    // Send email after response is flushed (PERF-05: avoid blocking the
+    // client for up to ~5s while the Resend API completes — CURLOPT_TIMEOUT=5
+    // is the total-operation cap).  The shutdown function runs after exit(),
+    // so the client gets the response immediately.  Early worker release
+    // requires fastcgi_finish_request (PHP-FPM) or litespeed_finish_request
+    // (LiteSpeed); on other SAPIs the response is sent but the worker is
+    // held until the send completes.
     register_shutdown_function(function () use ($config, $email, $code): void {
         sendLoginCode($config, $email, $code);
     });

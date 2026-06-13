@@ -3,17 +3,19 @@ import { AnimatePresence, motion } from 'motion/react';
 import { ChevronRight } from 'lucide-react';
 import { SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MAX, type AppState } from '../../types/register';
 import type { UnsavedProjectSource } from '../../types/project';
+import { isSaveSuccess, type CloudInit } from '../../types/cloud-sync';
 import { useAppState } from '../../context/app-context';
 import { EditProvider } from '../../context/edit-context';
 import { PreferencesProvider, usePreferences, usePreferencesActions } from '../../context/preferences-context';
 import { ProjectStorageProvider, useProjectStorage } from '../../context/project-storage-context';
 import { CloudSyncProvider, useCloudSync, useCloudSyncActions } from '../../context/cloud-sync-context';
 import { serializeState } from '../../utils/storage';
-import { patchProjectState, saveUnsavedProjectState } from '../../utils/project-storage';
+import { patchProjectState, saveUnsavedProjectState, type ProjectStorageWriteResult } from '../../utils/project-storage';
 import { Header } from './header';
 import { Sidebar } from './sidebar';
 import { MainPanel } from '../viewer/main-panel';
 import { Toast } from '../common/toast';
+import { CloudConflictBanner } from '../common/cloud-conflict-banner';
 import { LoginDialog } from '../auth/login-dialog';
 import { ToastPortalProvider } from '../../context/toast-portal-context';
 import { AuthProvider } from '../../context/auth-context';
@@ -28,66 +30,96 @@ import { SAVE_DEBOUNCE_MS } from '../../constants';
  * - `initialLocalId` is consumed by the outer `AppShell` and passed to `ProjectStorageProvider`
  */
 interface AppShellProps {
-  cloudInit?: { projectId: string; isOwner: boolean };
+  cloudInit?: CloudInit;
   initialLocalId?: string | null;
   initialUnsaved?: { name: string; source: UnsavedProjectSource } | null;
+}
+
+interface PendingLocalSave {
+  state: AppState;
+  localId: string | null;
+  isUnsaved: boolean;
+  unsavedName: string | null;
+  unsavedSource: UnsavedProjectSource;
+}
+
+function warnLocalSaveFailure(scope: string, result: ProjectStorageWriteResult): void {
+  if (result.ok || !import.meta.env.DEV) return;
+  console.warn(`[app-shell] ${scope} failed:`, result.status, result.error);
+}
+
+function localSaveOk(): ProjectStorageWriteResult {
+  return { ok: true, status: 'ok', evictedLocalIds: [] };
+}
+
+function persistPendingLocalSave(pending: PendingLocalSave): ProjectStorageWriteResult {
+  if (pending.isUnsaved) {
+    const name = pending.state.project?.title?.trim() || pending.unsavedName || 'Untitled Project';
+    const result = saveUnsavedProjectState(name, serializeState(pending.state), pending.unsavedSource);
+    warnLocalSaveFailure('Unsaved project local save', result);
+    return result;
+  }
+
+  if (!pending.localId) return localSaveOk();
+  const result = patchProjectState(pending.localId, serializeState(pending.state));
+  warnLocalSaveFailure('Saved project local save', result);
+  return result;
 }
 
 function AppShellInner({ cloudInit }: AppShellProps) {
   const state = useAppState();
   const preferences = usePreferences();
   const preferencesActions = usePreferencesActions();
-  const pendingStateRef = useRef<AppState | null>(null);
+  const pendingSaveRef = useRef<PendingLocalSave | null>(null);
+  const [localSaveError, setLocalSaveError] = useState<string | null>(null);
   const cloud = useCloudSync();
   const cloudActions = useCloudSyncActions();
-  const { activeLocalId, isUnsaved, unsavedName } = useProjectStorage();
+  const { activeLocalId, isUnsaved, unsavedName, unsavedSource } = useProjectStorage();
+
+  const activeLocalIdRef = useRef(activeLocalId);
+  useEffect(() => { activeLocalIdRef.current = activeLocalId; }, [activeLocalId]);
 
   // Initialize cloud state from props (when loaded from #/p/{id} URL)
   const cloudInitRef = useRef(cloudInit);
   useEffect(() => {
     const init = cloudInitRef.current;
     if (init) {
-      cloudActions.initFromProject(init.projectId, init.isOwner);
+      cloudActions.initFromProject(init.projectId, init.isOwner, init.storage, {
+        serverVersion: init.serverVersion,
+        cloudSavedAt: init.cloudSavedAt,
+        visibility: init.visibility,
+        cloudConflictVersion: init.cloudConflictVersion,
+        hasUnsyncedChanges: init.hasUnsyncedChanges,
+      });
       cloudInitRef.current = undefined;
     }
   }, [cloudActions]);
 
-  // Ref updates for debounced save/flush (avoids stale closures).
-  // Safe to use useEffect because the 300ms debounce timer ensures refs are
-  // updated before the timeout fires.
-  const activeLocalIdRef = useRef(activeLocalId);
-  useEffect(() => { activeLocalIdRef.current = activeLocalId; }, [activeLocalId]);
-
-  const isUnsavedRef = useRef(isUnsaved);
-  useEffect(() => { isUnsavedRef.current = isUnsaved; }, [isUnsaved]);
-
-  const unsavedNameRef = useRef(unsavedName);
-  useEffect(() => { unsavedNameRef.current = unsavedName; }, [unsavedName]);
-
   // Auto-save to localStorage (debounced). Branches on unsaved vs saved project.
   useEffect(() => {
     if (!activeLocalId && !isUnsaved) return;
-    pendingStateRef.current = state;
+    const pending: PendingLocalSave = {
+      state,
+      localId: activeLocalId,
+      isUnsaved,
+      unsavedName,
+      unsavedSource: unsavedSource ?? 'new',
+    };
+    pendingSaveRef.current = pending;
     const timer = setTimeout(() => {
-      if (isUnsavedRef.current) {
-        const name = state.project?.title?.trim() || unsavedNameRef.current || 'Untitled Project';
-        try {
-          saveUnsavedProjectState(name, serializeState(state));
-        } catch (err) {
-          if (import.meta.env.DEV) {
-            console.warn('[app-shell] Failed to save unsaved project:', err);
-          }
-        }
-      } else {
-        const id = activeLocalIdRef.current;
-        if (id) {
-          patchProjectState(id, serializeState(state));
-        }
+      // Defense-in-depth: if the active project changed since this save was
+      // scheduled, the in-memory state no longer belongs to pending.localId — skip.
+      if (!pending.isUnsaved && pending.localId !== activeLocalIdRef.current) return;
+      const result = persistPendingLocalSave(pending);
+      if (result.ok && pendingSaveRef.current === pending) {
+        pendingSaveRef.current = null;
+        setLocalSaveError(null);
+      } else if (!result.ok) {
+        setLocalSaveError('Local save failed. Keep this tab open and free browser storage before continuing.');
       }
-      pendingStateRef.current = null;
     }, SAVE_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [state, activeLocalId, isUnsaved]);
+  }, [state, activeLocalId, isUnsaved, unsavedName, unsavedSource]);
 
   // Flush any pending save on unmount or page unload.
   // Ref-based so the effect is set up once — avoids stale-closure flush
@@ -98,30 +130,27 @@ function AppShellInner({ cloudInit }: AppShellProps) {
   }, [cloudActions]);
 
   useEffect(() => {
-    const flush = () => {
-      if (pendingStateRef.current !== null) {
-        if (isUnsavedRef.current) {
-          const name = pendingStateRef.current.project?.title?.trim() || unsavedNameRef.current || 'Untitled Project';
-          try {
-            saveUnsavedProjectState(name, serializeState(pendingStateRef.current));
-          } catch { /* best effort */ }
-        } else {
-          const id = activeLocalIdRef.current;
-          if (id) {
-            patchProjectState(id, serializeState(pendingStateRef.current));
-          }
+    const flush = (showError: boolean) => {
+      const pending = pendingSaveRef.current;
+      if (pending !== null) {
+        const result = persistPendingLocalSave(pending);
+        if (result.ok) {
+          pendingSaveRef.current = null;
+          if (showError) setLocalSaveError(null);
+        } else if (showError) {
+          setLocalSaveError('Local save failed. Keep this tab open and free browser storage before continuing.');
         }
-        pendingStateRef.current = null;
       }
       // Best-effort cloud sync flush (fire-and-forget on unload).
-      cloudActionsRef.current.flushSync().catch(() => {});
+      cloudActionsRef.current.flushCloudSync().catch(() => {});
     };
-    window.addEventListener('beforeunload', flush);
-    window.addEventListener('pagehide', flush);
+    const flushWithError = () => flush(true);
+    window.addEventListener('beforeunload', flushWithError);
+    window.addEventListener('pagehide', flushWithError);
     return () => {
-      window.removeEventListener('beforeunload', flush);
-      window.removeEventListener('pagehide', flush);
-      flush();
+      window.removeEventListener('beforeunload', flushWithError);
+      window.removeEventListener('pagehide', flushWithError);
+      flush(false);
     };
   }, []);
 
@@ -174,7 +203,31 @@ function AppShellInner({ cloudInit }: AppShellProps) {
   return (
     <div className="h-screen flex flex-col bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100">
       <Header />
+      {cloud.conflict && (
+        <div className="mx-4 mt-3 shrink-0">
+          <CloudConflictBanner
+            serverVersion={cloud.conflict.serverVersion}
+            onKeepLocalVersion={async () => {
+              // The banner's explicit Save is the ONLY path allowed to
+              // force-overwrite the server version during a conflict (BR-1).
+              const outcome = await cloudActions.saveToCloud({ force: true });
+              if (!isSaveSuccess(outcome)) {
+                throw new Error('Could not save your changes. Please try again.');
+              }
+            }}
+            onLoadServerVersion={cloudActions.loadServerVersion}
+          />
+        </div>
+      )}
       <AnimatePresence>
+        {localSaveError && (
+          <Toast
+            message={localSaveError}
+            variant="error"
+            duration={8000}
+            onDismiss={() => setLocalSaveError(null)}
+          />
+        )}
         {cloud.error && (
           <Toast
             message={cloud.error}
@@ -235,7 +288,7 @@ function AppShellInner({ cloudInit }: AppShellProps) {
       </div>
 
       {/* Login dialog triggered by cloud ops when unauthenticated */}
-      <LoginDialog open={cloud.loginRequired} onClose={cloudActions.cancelPendingOp} />
+      <LoginDialog open={cloud.loginRequired} onClose={cloudActions.dismissLogin} />
     </div>
   );
 }

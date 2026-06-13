@@ -7,11 +7,25 @@ on:
     branches: [master]
   workflow_call:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  workflow-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Test workflow validators
+        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py'
+      - name: Validate PHP runtime contract
+        run: python3 .github/scripts/validate_php_runtime_contract.py
+      - name: Validate migration runtime contract
+        run: python3 .github/scripts/validate_migration_runtime_contract.py
+
   frontend:
     runs-on: ubuntu-latest
     defaults:
@@ -34,10 +48,25 @@ jobs:
         run: npm run knip
       - name: Unit tests with coverage
         run: npm run test:coverage
-      - name: Build
+      - name: Validate production VITE_API_URL
+        id: vite_api_url
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         env:
           VITE_API_URL: ${{ vars.VITE_API_URL }}
+        run: python3 ../.github/scripts/validate_vite_api_url.py
+      - name: Build
+        env:
+          VITE_API_URL: ${{ steps.vite_api_url.outputs.origin || vars.VITE_API_URL }}
         run: npm run build
+      - name: Upload frontend dist
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        uses: actions/upload-artifact@v6
+        with:
+          name: registerapptest-frontend-dist-${{ github.sha }}
+          path: frontend/dist
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 30
 
   e2e:
     runs-on: ubuntu-latest
@@ -65,8 +94,180 @@ jobs:
         working-directory: api
     steps:
       - uses: actions/checkout@v6
-      - name: Build and run tests
-        run: docker compose run --rm test bash -c "composer install -q && composer audit --no-dev && vendor/bin/phpunit"
+      - name: Verify PHP target
+        run: docker compose run --rm test php -r 'if (PHP_MAJOR_VERSION !== 8 || PHP_MINOR_VERSION !== 3) { fwrite(STDERR, "Expected PHP 8.3, got " . PHP_VERSION . PHP_EOL); exit(1); }'
+      - name: Validate Composer manifest
+        run: docker compose run --rm test composer validate --strict --no-check-publish
+      - name: Install PHP dependencies
+        run: docker compose run --rm test composer install --no-interaction --prefer-dist
+      - name: Check PHP platform requirements
+        run: docker compose run --rm test composer check-platform-reqs --lock
+      - name: Audit runtime dependencies
+        run: docker compose run --rm test composer audit --no-dev
+      - name: Run migrations and tests
+        run: docker compose run --rm test bash -c "php database/migrate.php && vendor/bin/phpunit"
       - name: Stop containers
         if: always()
         run: docker compose down -v
+
+  deploy-payload:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    needs: [workflow-config, frontend, e2e, api]
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: composer:v2
+      - name: Verify PHP target
+        run: php -r 'if (PHP_MAJOR_VERSION !== 8 || PHP_MINOR_VERSION !== 3) { fwrite(STDERR, "Expected PHP 8.3, got " . PHP_VERSION . PHP_EOL); exit(1); }'
+
+      - name: Download frontend dist
+        uses: actions/download-artifact@v6
+        with:
+          name: registerapptest-frontend-dist-${{ github.sha }}
+          path: frontend-dist
+
+      - name: Validate VITE_API_URL
+        id: vite_api_url
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+        run: python3 .github/scripts/validate_vite_api_url.py
+
+      - name: Install PHP runtime dependencies
+        run: |
+          composer validate --strict --no-check-publish
+          composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
+          composer check-platform-reqs --lock --no-dev
+        working-directory: api
+
+      - name: Assemble deploy payload
+        env:
+          VITE_API_URL: ${{ steps.vite_api_url.outputs.origin }}
+        run: |
+          set -euo pipefail
+          rm -rf deploy
+          mkdir -p deploy/api/src deploy/api/database
+
+          cp -R frontend-dist/. deploy/
+          cp -R api/src/* deploy/api/src/
+          cp -R api/database/* deploy/api/database/
+          cp -R api/vendor deploy/api/
+          cp api/index.php deploy/api/
+          cp api/config.php deploy/api/
+          cp api/.htaccess deploy/api/
+
+          python3 - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          metadata = {
+              "application": "RegisterAppTest",
+              "artifact": f"registerapptest-deploy-{os.environ['GITHUB_SHA']}",
+              "event_name": os.environ["GITHUB_EVENT_NAME"],
+              "ref": os.environ["GITHUB_REF"],
+              "ref_name": os.environ["GITHUB_REF_NAME"],
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "sha": os.environ["GITHUB_SHA"],
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "workflow": os.environ["GITHUB_WORKFLOW"],
+              "built_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+              "vite_api_url": os.environ["VITE_API_URL"],
+          }
+          Path("deploy/release.json").write_text(
+              json.dumps(metadata, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Validate deploy payload
+        env:
+          VITE_API_URL: ${{ steps.vite_api_url.outputs.origin }}
+        run: |
+          set -euo pipefail
+          required_files=(
+            "deploy/index.html"
+            "deploy/api/index.php"
+            "deploy/api/config.php"
+            "deploy/api/.htaccess"
+            "deploy/api/vendor/autoload.php"
+            "deploy/api/database/migrate.php"
+            "deploy/release.json"
+          )
+          for file in "${required_files[@]}"; do
+            if [ ! -f "${file}" ]; then
+              echo "::error::Missing required deploy file: ${file}"
+              exit 1
+            fi
+          done
+
+          forbidden_paths=(
+            "deploy/.github"
+            "deploy/docs"
+            "deploy/frontend"
+            "deploy/api/tests"
+            "deploy/api/.phpunit.cache"
+            "deploy/api/Dockerfile"
+            "deploy/api/docker-compose.yml"
+            "deploy/api/phpunit.xml"
+            "deploy/api/composer.json"
+            "deploy/api/composer.lock"
+            "deploy/api/config.production.php"
+            "deploy/node_modules"
+          )
+          for path in "${forbidden_paths[@]}"; do
+            if [ -e "${path}" ]; then
+              echo "::error::Forbidden deploy path present: ${path}"
+              exit 1
+            fi
+          done
+
+          if find deploy \( -name .git -o -path '*/.git/*' -o -name '.env' -o -name '.env.*' \) -print -quit | grep -q .; then
+            echo "::error::Forbidden VCS or env file found in deploy payload"
+            exit 1
+          fi
+
+          if ! find deploy/api/database/migrations -maxdepth 1 -type f -name '[0-9]*_*.sql' -print -quit | grep -q .; then
+            echo "::error::Deploy payload must include numbered database migrations"
+            exit 1
+          fi
+
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          sys.path.insert(0, ".github/scripts")
+          from validate_vite_api_url import validation_errors
+
+          metadata = json.loads(Path("deploy/release.json").read_text(encoding="utf-8"))
+          errors = []
+          metadata_url = metadata.get("vite_api_url")
+          if metadata_url != os.environ["VITE_API_URL"]:
+              errors.append("release metadata VITE_API_URL does not match validated GitHub Actions variable")
+          for error in validation_errors(str(metadata_url or "")):
+              errors.append(f"release metadata {error}")
+
+          if errors:
+              for error in errors:
+                  print(f"::error::{error}")
+              sys.exit(1)
+          PY
+
+          (cd deploy && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
+          (cd deploy && sha256sum -c SHA256SUMS)
+
+      - name: Upload deploy payload
+        uses: actions/upload-artifact@v6
+        with:
+          name: registerapptest-deploy-${{ github.sha }}
+          path: deploy/
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 30

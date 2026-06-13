@@ -7,7 +7,9 @@ import { useAnnounce } from '../components/common/announcer';
 import { isCloudEnabled } from '../utils/api-client';
 import { friendlyErrorMessage } from '../utils/friendly-error';
 import { loadProject, saveProject, hasLocalData } from '../utils/project-storage';
+import { isOwnedCloudEntry } from '../utils/project-identity';
 import { fetchAndParseCloudProject } from '../utils/cloud-project-loader';
+import { materializeCloudProject } from '../utils/cloud-materialize';
 import { sanitizeProjectMetadata } from '../utils/storage';
 import type { ProjectSettingsData } from '../components/common/project-settings-dialog';
 import type { Visibility } from '../types/project';
@@ -17,7 +19,7 @@ export function useMyProjectsActions(
   open: boolean,
   onClose: () => void,
   onBeforeNewProject?: () => void,
-  onSwitchProject?: (localId: string) => void,
+  onSwitchProject?: (localId: string) => boolean | void,
 ) {
   const { activeLocalId, projects } = useProjectStorage();
   const { createNewProject, switchProject, deleteLocalProject, renameProject, refreshProjectList } = useProjectStorageActions();
@@ -38,7 +40,9 @@ export function useMyProjectsActions(
     refreshProjectList();
     if (isCloudEnabled()) {
       syncCloudProjects().then((result) => {
-        if (result.placeholdersCreated > 0) refreshProjectList();
+        if (result.placeholdersCreated > 0 || result.staleReconciledCloudIds.length > 0) {
+          refreshProjectList();
+        }
       }).catch((err) => {
         setCloudError(friendlyErrorMessage(err, 'Failed to sync cloud projects.'));
       });
@@ -51,6 +55,10 @@ export function useMyProjectsActions(
 
   const handleNewProject = useCallback(() => {
     const localId = createNewProject();
+    if (!localId) {
+      setCloudError('Failed to create project. Local storage may be full.');
+      return;
+    }
     switchProject(localId);
     announce('New project created');
     onBeforeNewProject?.();
@@ -68,27 +76,40 @@ export function useMyProjectsActions(
         // JWT is optional — unauthenticated users can open shared projects
         const jwt = getJwt();
         const result = await fetchAndParseCloudProject(project.cloudId, jwt ?? undefined);
-        const serializedValues: Record<string, string> = {};
-        for (const [id, value] of Object.entries(result.values)) {
-          serializedValues[id] = '0x' + value.toString(16);
-        }
-        saveProject({
+        // P6 — `replace`: overwrite the local record straight from the import
+        // result, dropping local-only UI fields (same pattern as P1). This site
+        // makes no storage decision; it keeps the manifest's storage class.
+        let writeStatus = '';
+        const { persisted } = materializeCloudProject({
+          writeMode: 'replace',
           localId,
           cloudId: project.cloudId,
-          name: project.name,
-          visibility: project.visibility,
-          createdAt: project.createdAt,
-          localSavedAt: new Date().toISOString(),
-          cloudSavedAt: project.cloudSavedAt,
-          storage: project.storage,
-          state: {
-            registers: result.registers,
-            activeRegisterId: result.registers[0]?.id ?? null,
-            registerValues: serializedValues,
-            project: result.project,
-            addressUnitBits: result.addressUnitBits,
+          importResult: result,
+          callbacks: {
+            persist: (serialized) => {
+              const saveResult = saveProject({
+                localId,
+                cloudId: project.cloudId,
+                name: project.name,
+                visibility: project.visibility,
+                createdAt: project.createdAt,
+                localSavedAt: new Date().toISOString(),
+                cloudSavedAt: result.updatedAt,
+                storage: project.storage,
+                serverVersion: result.version,
+                hasUnsyncedChanges: false,
+                state: serialized,
+              }, { protectedLocalIds: [activeLocalId] });
+              writeStatus = saveResult.status;
+              return saveResult.ok;
+            },
+            loadExistingState: () => null,
           },
         });
+        if (!persisted) {
+          throw new Error(`Failed to persist downloaded project: ${writeStatus}`);
+        }
+        refreshProjectList();
       } catch (err) {
         setDownloadingLocalId(null);
         setCloudError(friendlyErrorMessage(err, 'Failed to download project from cloud.'));
@@ -99,27 +120,31 @@ export function useMyProjectsActions(
 
     // Use guarded switch if provided (handles unsaved project prompt)
     if (onSwitchProject) {
-      onSwitchProject(localId);
+      const switched = onSwitchProject(localId);
+      if (switched === false) return;
     } else {
-      switchProject(localId);
+      if (!switchProject(localId)) return;
       onClose();
     }
     announce('Project opened');
-  }, [projects, switchProject, announce, onClose, getJwt, setCloudError, onSwitchProject]);
+  }, [projects, switchProject, announce, onClose, getJwt, setCloudError, onSwitchProject, refreshProjectList, activeLocalId]);
 
   const handleDelete = useCallback(async (localId: string) => {
     const project = projects.find(p => p.localId === localId);
-    // Delete from cloud first if cloud-backed
-    if (project?.cloudId) {
+    // Delete from cloud first if cloud-backed. If that fails, keep BOTH copies
+    // so the user can retry — deleting locally now would leave an orphaned server
+    // copy that resurrects as a placeholder on the next sync.
+    if (project && isOwnedCloudEntry(project)) {
       try {
-        await deleteProjectFromCloud(project.cloudId);
-      } catch {
-        // Best-effort — delete locally regardless
+        await deleteProjectFromCloud(localId);
+      } catch (err) {
+        setCloudError(friendlyErrorMessage(err, 'Failed to remove project from cloud. Please try again.'));
+        return;
       }
     }
     deleteLocalProject(localId);
     announce(`Project "${projectDisplayName(project?.name)}" deleted`);
-  }, [deleteLocalProject, deleteProjectFromCloud, announce, projects]);
+  }, [deleteLocalProject, deleteProjectFromCloud, announce, projects, setCloudError]);
 
   const handleRename = useCallback((localId: string, name: string) => {
     renameProject(localId, name);
@@ -165,15 +190,20 @@ export function useMyProjectsActions(
 
     const sanitized = sanitizeProjectMetadata(data.metadata);
     // Title from settings overrides the manifest name; if cleared, keep existing name
-    saveProject({
+    const saveResult = saveProject({
       ...project,
       name: sanitized?.title ?? project.name,
+      hasUnsyncedChanges: project.storage === 'cloud' ? true : project.hasUnsyncedChanges,
       state: {
         ...project.state,
         project: sanitized,
         addressUnitBits: data.addressUnitBits,
       },
-    });
+    }, { protectedLocalIds: [activeLocalId] });
+    if (!saveResult.ok) {
+      setCloudError('Failed to save project settings. Local storage may be full.');
+      return;
+    }
 
     // If editing the active project, also update AppState
     if (settingsLocalId === activeLocalId) {
@@ -203,9 +233,9 @@ export function useMyProjectsActions(
 
   const handleRemoveFromCloud = useCallback(async (localId: string) => {
     const project = projects.find(p => p.localId === localId);
-    if (!project?.cloudId) return;
+    if (!project || !isOwnedCloudEntry(project)) return;
     try {
-      await deleteProjectFromCloud(project.cloudId);
+      await deleteProjectFromCloud(localId);
       refreshProjectList();
       announce('Project removed from cloud');
     } catch (err) {

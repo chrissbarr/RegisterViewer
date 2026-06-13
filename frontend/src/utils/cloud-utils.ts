@@ -1,4 +1,7 @@
 import type { MutableRefObject } from 'react';
+import type { CloudMetadataUpdate } from '../types/cloud-sync';
+import type { ProjectStorageWriteResult } from './project-storage';
+import type { Visibility } from '../types/project';
 
 /**
  * Retrieve the JWT from the auth provider, throwing if unavailable.
@@ -8,6 +11,27 @@ export function requireJwt(getJwt: () => string | null): string {
   const jwt = getJwt();
   if (!jwt) throw new Error('Authentication required. Please sign in.');
   return jwt;
+}
+
+/**
+ * Persist a visibility change's local cloud metadata, advancing `cloudSavedAt`
+ * to the server `updatedAt` returned by the visibility PATCH.
+ *
+ * Shared by BOTH the active-project path (`useActiveProjectCloudOps.setVisibility`)
+ * and the by-localId path (`useProjectCloudOps.setProjectVisibility`) so the two
+ * cannot re-diverge on the `{ visibility, cloudSavedAt }` write shape — a
+ * visibility PATCH advances the server's `updated_at` (without bumping version),
+ * so local `cloudSavedAt` must track it immediately rather than waiting for the
+ * next LIST sync (A-9 parity). Each path keeps its own internal-state mirror /
+ * error-revert handling; this owns only the metadata write.
+ */
+export function applyVisibilityWrite(
+  updateCloudMetadata: (localId: string, updates: CloudMetadataUpdate) => ProjectStorageWriteResult,
+  localId: string,
+  visibility: Visibility,
+  updatedAt: string,
+): ProjectStorageWriteResult {
+  return updateCloudMetadata(localId, { visibility, cloudSavedAt: updatedAt });
 }
 
 /** Navigate the browser hash to a cloud project URL without a page reload. */
@@ -20,11 +44,30 @@ export function clearCloudUrl(): void {
   history.replaceState(null, '', window.location.pathname + window.location.search);
 }
 
+/**
+ * User-facing refusal message for saves blocked by an open conflict (BR-1).
+ * Shared by the by-localId refusal (thrown), the active-project delegation arm,
+ * and the share dialog so all surfaces report the same actionable message.
+ */
+export const CONFLICT_PENDING_MESSAGE =
+  'This project has a cloud conflict. Open it and choose Save or Load before syncing.';
+
+/**
+ * User-facing message for a save refused because the stored JWT is dead
+ * (revoked/expired/rotated secret — the `auth-stale` save result, BR-6).
+ * Shared by the active-project arm (dispatched) and the by-localId arm (thrown).
+ */
+export const SESSION_EXPIRED_MESSAGE =
+  'Your session has expired. Please sign in again to save to the cloud.';
+
 /** Metadata payload that fully unlinks a project from the cloud. */
 export const CLEARED_CLOUD_METADATA = {
   cloudId: null,
   visibility: 'private' as const,
   cloudSavedAt: null,
+  serverVersion: null,
+  cloudConflictVersion: null,
+  hasUnsyncedChanges: undefined,
   storage: 'local' as const,
 };
 

@@ -39,7 +39,7 @@ final class CorsTest extends TestCase
         $headers = computeCorsHeaders($this->productionConfig());
 
         $this->assertSame('https://www.registerviewer.com', $headers['Access-Control-Allow-Origin']);
-        $this->assertArrayHasKey('Access-Control-Allow-Methods', $headers);
+        $this->assertSame('GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS', $headers['Access-Control-Allow-Methods']);
         $this->assertArrayHasKey('Access-Control-Allow-Headers', $headers);
         $this->assertSame('Origin', $headers['Vary']);
     }

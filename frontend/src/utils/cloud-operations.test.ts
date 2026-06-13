@@ -4,21 +4,29 @@ import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl
 vi.mock('./api-client', () => ({
   ApiError: class ApiError extends Error {
     status: number;
-    errorBody: { error: string };
-    constructor(status: number, errorBody: { error: string }) {
-      super(errorBody.error);
+    errorBody: Record<string, unknown>;
+    constructor(status: number, errorBody: Record<string, unknown>) {
+      super(String(errorBody.error));
       this.name = 'ApiError';
       this.status = status;
       this.errorBody = errorBody;
     }
   },
+  isConflictError: (err: unknown): boolean => {
+    if (!(err instanceof Error) || !('status' in err) || !('errorBody' in err)) return false;
+    const e = err as Error & { status: number; errorBody: Record<string, unknown> };
+    return e.status === 409 && typeof e.errorBody?.currentVersion === 'number';
+  },
   createProject: vi.fn(),
   updateProject: vi.fn(),
+  getProject: vi.fn(),
+  getProjectMeta: vi.fn(),
   patchProjectVisibility: vi.fn(),
   deleteProject: vi.fn(),
+  getAuthMe: vi.fn(),
 }));
 
-import { ApiError, createProject, updateProject, patchProjectVisibility, deleteProject } from './api-client';
+import { ApiError, createProject, updateProject, getProject, getProjectMeta, patchProjectVisibility, deleteProject, getAuthMe } from './api-client';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -32,6 +40,7 @@ describe('saveProjectToCloudImpl', () => {
     (createProject as Mock).mockResolvedValue({
       id: 'cloud-new',
       createdAt: '2024-01-01T00:00:00Z',
+      version: 7,
     });
 
     const result = await saveProjectToCloudImpl(payload, null, jwt);
@@ -40,14 +49,24 @@ describe('saveProjectToCloudImpl', () => {
       kind: 'created',
       cloudId: 'cloud-new',
       timestamp: '2024-01-01T00:00:00Z',
+      version: 7,
     });
     expect(createProject).toHaveBeenCalledWith(payload, jwt);
   });
 
-  it('updates existing project when existingCloudId provided', async () => {
+  it('GETs the current server version via /meta then PUTs with it when version is unknown', async () => {
+    (getProjectMeta as Mock).mockResolvedValue({
+      id: 'cloud-abc',
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+      isOwner: true,
+      visibility: 'private',
+      version: 9,
+    });
     (updateProject as Mock).mockResolvedValue({
       id: 'cloud-abc',
       updatedAt: '2024-01-02T00:00:00Z',
+      version: 10,
     });
 
     const result = await saveProjectToCloudImpl(payload, 'cloud-abc', jwt);
@@ -56,8 +75,121 @@ describe('saveProjectToCloudImpl', () => {
       kind: 'updated',
       cloudId: 'cloud-abc',
       timestamp: '2024-01-02T00:00:00Z',
+      version: 10,
     });
-    expect(updateProject).toHaveBeenCalledWith('cloud-abc', payload, jwt);
+    expect(getProjectMeta).toHaveBeenCalledWith('cloud-abc', jwt);
+    // The lightweight probe replaces the full GET — the payload is never fetched.
+    expect(getProject).not.toHaveBeenCalled();
+    // The version fetched via the probe is what gets PUT — not a manufactured `1`.
+    expect(updateProject).toHaveBeenCalledWith('cloud-abc', payload, jwt, 9);
+    // No double-404, so the /auth/me disambiguation never runs (BR-6).
+    expect(getAuthMe).not.toHaveBeenCalled();
+  });
+
+  it('probes-then-PUTs on explicit undefined serverVersion (no manufactured version 1)', async () => {
+    (getProjectMeta as Mock).mockResolvedValue({
+      id: 'cloud-abc',
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+      isOwner: true,
+      visibility: 'private',
+      version: 4,
+    });
+    (updateProject as Mock).mockResolvedValue({
+      id: 'cloud-abc',
+      updatedAt: '2024-01-02T00:00:00Z',
+      version: 5,
+    });
+
+    await saveProjectToCloudImpl(payload, 'cloud-abc', jwt, undefined);
+
+    expect(getProjectMeta).toHaveBeenCalledWith('cloud-abc', jwt);
+    expect(updateProject).toHaveBeenCalledWith('cloud-abc', payload, jwt, 4);
+  });
+
+  it('falls back to the full GET when the probe 404s (deploy-skew funnel)', async () => {
+    (getProjectMeta as Mock).mockRejectedValue(new ApiError(404, { error: 'Not found' }));
+    (getProject as Mock).mockResolvedValue({
+      id: 'cloud-abc',
+      data: {},
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+      isOwner: true,
+      visibility: 'private',
+      version: 9,
+    });
+    (updateProject as Mock).mockResolvedValue({
+      id: 'cloud-abc',
+      updatedAt: '2024-01-02T00:00:00Z',
+      version: 10,
+    });
+
+    const result = await saveProjectToCloudImpl(payload, 'cloud-abc', jwt);
+
+    expect(result).toEqual({
+      kind: 'updated',
+      cloudId: 'cloud-abc',
+      timestamp: '2024-01-02T00:00:00Z',
+      version: 10,
+    });
+    expect(getProject).toHaveBeenCalledWith('cloud-abc', jwt);
+    expect(updateProject).toHaveBeenCalledWith('cloud-abc', payload, jwt, 9);
+  });
+
+  it('returns not-found when both the probe and the fallback GET report 404 and /auth/me confirms a live token', async () => {
+    (getProjectMeta as Mock).mockRejectedValue(new ApiError(404, { error: 'Not found' }));
+    (getProject as Mock).mockRejectedValue(new ApiError(404, { error: 'Not found' }));
+    (getAuthMe as Mock).mockResolvedValue({ user: { id: 1, email: 'user@example.com' } });
+
+    const result = await saveProjectToCloudImpl(payload, 'cloud-gone', jwt);
+
+    expect(result).toEqual({ kind: 'not-found' });
+    expect(updateProject).not.toHaveBeenCalled();
+    // The double-404 is auth-ambiguous (uniform-404 IDOR defense), so not-found
+    // requires positive evidence of a live token (BR-6).
+    expect(getAuthMe).toHaveBeenCalledWith(jwt);
+  });
+
+  it('returns auth-stale when both report 404 and /auth/me rejects with 401 (dead token)', async () => {
+    (getProjectMeta as Mock).mockRejectedValue(new ApiError(404, { error: 'Not found' }));
+    (getProject as Mock).mockRejectedValue(new ApiError(404, { error: 'Not found' }));
+    (getAuthMe as Mock).mockRejectedValue(new ApiError(401, { error: 'Unauthorized' }));
+
+    const result = await saveProjectToCloudImpl(payload, 'cloud-gone', jwt);
+
+    expect(result).toEqual({ kind: 'auth-stale' });
+    expect(updateProject).not.toHaveBeenCalled();
+  });
+
+  it('rejects when both report 404 and the /auth/me check fails with a network error', async () => {
+    (getProjectMeta as Mock).mockRejectedValue(new ApiError(404, { error: 'Not found' }));
+    (getProject as Mock).mockRejectedValue(new ApiError(404, { error: 'Not found' }));
+    (getAuthMe as Mock).mockRejectedValue(new Error('Network error'));
+
+    // Conservative: the token could not be confirmed either way, so the save
+    // fails (link preserved) rather than reporting a deletion it cannot prove.
+    await expect(saveProjectToCloudImpl(payload, 'cloud-gone', jwt)).rejects.toThrow('Network error');
+    expect(updateProject).not.toHaveBeenCalled();
+  });
+
+  it('propagates a non-404 failure from the pre-PUT probe', async () => {
+    (getProjectMeta as Mock).mockRejectedValue(new Error('Network error'));
+
+    await expect(saveProjectToCloudImpl(payload, 'cloud-abc', jwt)).rejects.toThrow('Network error');
+    expect(getProject).not.toHaveBeenCalled();
+    expect(updateProject).not.toHaveBeenCalled();
+  });
+
+  it('passes explicit serverVersion when provided', async () => {
+    (updateProject as Mock).mockResolvedValue({
+      id: 'cloud-abc',
+      updatedAt: '2024-01-02T00:00:00Z',
+      version: 4,
+    });
+
+    await saveProjectToCloudImpl(payload, 'cloud-abc', jwt, 3);
+
+    expect(updateProject).toHaveBeenCalledWith('cloud-abc', payload, jwt, 3);
   });
 
   it('returns not-found when update gets 404', async () => {
@@ -65,15 +197,43 @@ describe('saveProjectToCloudImpl', () => {
       new ApiError(404, { error: 'Not found' }),
     );
 
-    const result = await saveProjectToCloudImpl(payload, 'cloud-gone', jwt);
+    const result = await saveProjectToCloudImpl(payload, 'cloud-gone', jwt, 3);
 
     expect(result).toEqual({ kind: 'not-found' });
+    expect(updateProject).toHaveBeenCalledWith('cloud-gone', payload, jwt, 3);
+    // A known-version PUT 404 is server-verified (requireOwnership 401s a dead
+    // token before the project lookup) — no /auth/me disambiguation needed.
+    expect(getAuthMe).not.toHaveBeenCalled();
+  });
+
+  it('returns conflict with serverVersion when update gets 409', async () => {
+    const err = new ApiError(409, { error: 'Conflict', currentVersion: 5 });
+    (updateProject as Mock).mockRejectedValue(err);
+
+    const result = await saveProjectToCloudImpl(payload, 'cloud-abc', jwt, 3);
+
+    expect(result).toEqual({ kind: 'conflict', serverVersion: 5 });
+  });
+
+  it('intercepts the new server 409 envelope on currentVersion, not the code/error token', async () => {
+    // Mirrors the exact body update-project.php now returns: `error` is human,
+    // the machine token lives in `code`. Interception must key on `currentVersion`.
+    const err = new ApiError(409, {
+      error: 'Project has been modified by another session',
+      code: 'version_conflict',
+      currentVersion: 7,
+    });
+    (updateProject as Mock).mockRejectedValue(err);
+
+    const result = await saveProjectToCloudImpl(payload, 'cloud-abc', jwt, 3);
+
+    expect(result).toEqual({ kind: 'conflict', serverVersion: 7 });
   });
 
   it('throws on network error during update', async () => {
     (updateProject as Mock).mockRejectedValue(new Error('Network error'));
 
-    await expect(saveProjectToCloudImpl(payload, 'cloud-abc', jwt)).rejects.toThrow('Network error');
+    await expect(saveProjectToCloudImpl(payload, 'cloud-abc', jwt, 3)).rejects.toThrow('Network error');
   });
 
   it('throws on network error during create', async () => {
@@ -104,15 +264,16 @@ describe('deleteProjectFromCloudImpl', () => {
 describe('patchVisibilityImpl', () => {
   const jwt = 'test-jwt-token';
 
-  it('patches visibility via PATCH endpoint', async () => {
+  it('patches visibility via PATCH endpoint and returns the server updatedAt', async () => {
     (patchProjectVisibility as Mock).mockResolvedValue({
       id: 'cloud-vis',
       updatedAt: '2024-01-03T00:00:00Z',
     });
 
-    await patchVisibilityImpl('cloud-vis', 'unlisted', jwt);
+    const updatedAt = await patchVisibilityImpl('cloud-vis', 'unlisted', jwt);
 
     expect(patchProjectVisibility).toHaveBeenCalledWith('cloud-vis', 'unlisted', jwt);
+    expect(updatedAt).toBe('2024-01-03T00:00:00Z');
   });
 
   it('propagates API errors', async () => {

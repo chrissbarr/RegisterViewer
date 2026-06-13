@@ -13,10 +13,15 @@ export interface ProjectManifestEntry {
   createdAt: string;        // ISO 8601
   localSavedAt: string;     // ISO 8601
   cloudSavedAt: string | null;
+  serverVersion?: number | null; // null/undefined for local-only projects
+  cloudConflictVersion?: number | null; // non-null when local data needs conflict recovery
+  hasUnsyncedChanges?: boolean; // true when cached cloud data is not safe to evict
   /**
-   * Persistence strategy. `'local'` = local-only or shared/non-owned cloud project.
+   * Persistence strategy. `'local'` = local-only saved project.
    * `'cloud'` = user-owned cloud-backed project (eligible for auto-sync, eviction, sign-out purge).
    * Only set to `'cloud'` when the user explicitly saves to cloud AND owns the project.
+   * Shared/non-owned cloud links are represented as unsaved forkable workspaces,
+   * not saved manifest entries.
    */
   storage: 'local' | 'cloud';
 }
@@ -36,6 +41,9 @@ export interface StoredLocalProject {
   createdAt: string;
   localSavedAt: string;
   cloudSavedAt: string | null;
+  serverVersion?: number | null;
+  cloudConflictVersion?: number | null;
+  hasUnsyncedChanges?: boolean;
   storage: 'local' | 'cloud';
   state: import('./register').SerializedAppState;
 }
@@ -44,7 +52,7 @@ export interface StoredLocalProject {
 export type ProjectListEntry = ProjectManifestEntry;
 
 /** How an unsaved project was created */
-export type UnsavedProjectSource = 'seed' | 'example' | 'import' | 'new';
+export type UnsavedProjectSource = 'seed' | 'example' | 'import' | 'cloud' | 'new';
 
 /** Data stored at `register-viewer-unsaved` for a project not yet in My Projects */
 export interface StoredUnsavedProject {

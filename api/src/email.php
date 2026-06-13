@@ -136,3 +136,62 @@ function checkEmailHealth(array $config): array
 
     return ['ok' => false, 'error' => "Email provider returned HTTP $status"];
 }
+
+/**
+ * TTL for the email health cache: at most one live Resend call per window.
+ */
+const EMAIL_HEALTH_CACHE_TTL_SECONDS = 300;
+
+/**
+ * TTL-cached wrapper around checkEmailHealth() (S-1).
+ *
+ * The email health endpoint is unauthenticated; without a cache every
+ * anonymous request pins a PHP worker for up to ~3s on a blocking Resend
+ * call and burns provider quota. Caching the result — failures included —
+ * bounds the worst case to one live call per TTL window.
+ *
+ * - Empty/missing resend_api_key short-circuits without touching the cache
+ *   or invoking the checker (same semantics as checkEmailHealth()).
+ * - Corrupt/unreadable cache files are treated as stale: live check + rewrite.
+ * - An unwritable cache path degrades gracefully to a live check per request.
+ * - No locking: concurrent expiry-window probes each making one live call
+ *   is an accepted bounded burst.
+ *
+ * @param ?callable $checker Health probe override for tests (default: checkEmailHealth).
+ * @return array{ok: bool, error?: string} Health status.
+ */
+function checkEmailHealthCached(array $config, string $cacheFile, int $ttlSeconds, ?callable $checker = null): array
+{
+    $apiKey = $config['resend_api_key'] ?? '';
+    if ($apiKey === '') {
+        return ['ok' => false, 'error' => 'resend_api_key not configured'];
+    }
+
+    if (is_file($cacheFile)) {
+        $mtime = @filemtime($cacheFile);
+        if ($mtime !== false && (time() - $mtime) <= $ttlSeconds) {
+            $raw = @file_get_contents($cacheFile);
+            if ($raw !== false) {
+                $cached = json_decode($raw, true);
+                if (is_array($cached) && isset($cached['ok']) && is_bool($cached['ok'])) {
+                    return $cached;
+                }
+            }
+        }
+    }
+
+    $checker ??= 'checkEmailHealth';
+    $result = $checker($config);
+
+    // Atomic write: tmp file in the same dir + rename, so concurrent readers
+    // never observe a partial file. Write failures are swallowed — the cache
+    // degrades to live-check-per-request rather than erroring the response.
+    $tmpFile = $cacheFile . '.tmp-' . bin2hex(random_bytes(6));
+    if (@file_put_contents($tmpFile, json_encode($result)) !== false) {
+        if (!@rename($tmpFile, $cacheFile)) {
+            @unlink($tmpFile);
+        }
+    }
+
+    return $result;
+}

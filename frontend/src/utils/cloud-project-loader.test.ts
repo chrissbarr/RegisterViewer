@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { fetchAndParseCloudProject } from './cloud-project-loader';
+import { fetchAndParseCloudProject, isConfirmedNonOwner, decideStorageForFetched } from './cloud-project-loader';
 import * as apiClient from './api-client';
 import * as storage from './storage';
 
@@ -31,6 +31,8 @@ function makeGetProjectResponse(dataOverride?: unknown) {
     createdAt: '2024-01-01T00:00:00Z',
     updatedAt: '2024-06-15T12:00:00Z',
     isOwner: false,
+    visibility: 'private',
+    version: 1,
   };
 }
 
@@ -76,6 +78,17 @@ describe('fetchAndParseCloudProject', () => {
     expect(result.updatedAt).toBe('2024-06-15T12:00:00Z');
   });
 
+  it('threads version from the API response', async () => {
+    const apiResponse = { ...makeGetProjectResponse(), version: 3 };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockGetProject.mockResolvedValue(apiResponse as any);
+    mockImportFromObject.mockRestore();
+
+    const result = await fetchAndParseCloudProject('ABC123DEF456');
+
+    expect(result.version).toBe(3);
+  });
+
   it('threads isOwner from the API response', async () => {
     const apiResponse = { ...makeGetProjectResponse(), isOwner: true };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -85,6 +98,17 @@ describe('fetchAndParseCloudProject', () => {
     const result = await fetchAndParseCloudProject('ABC123DEF456');
 
     expect(result.isOwner).toBe(true);
+  });
+
+  it('threads visibility from the API response', async () => {
+    const apiResponse = { ...makeGetProjectResponse(), visibility: 'unlisted' as const };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockGetProject.mockResolvedValue(apiResponse as any);
+    mockImportFromObject.mockRestore();
+
+    const result = await fetchAndParseCloudProject('ABC123DEF456');
+
+    expect(result.visibility).toBe('unlisted');
   });
 
   it('passes jwt parameter through to getProject', async () => {
@@ -128,5 +152,56 @@ describe('fetchAndParseCloudProject', () => {
     mockGetProject.mockRejectedValue(new apiClient.ApiError(404, { error: 'Project not found' }));
 
     await expect(fetchAndParseCloudProject('NONEXISTENT')).rejects.toThrow('Project not found');
+  });
+
+  it('threads authenticated from the API response', async () => {
+    const apiResponse = { ...makeGetProjectResponse(), authenticated: true };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockGetProject.mockResolvedValue(apiResponse as any);
+    mockImportFromObject.mockRestore();
+
+    const result = await fetchAndParseCloudProject('ABC123DEF456');
+
+    expect(result.authenticated).toBe(true);
+  });
+
+  it('leaves authenticated undefined when the API response omits it (old API)', async () => {
+    const apiResponse = makeGetProjectResponse();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockGetProject.mockResolvedValue(apiResponse as any);
+    mockImportFromObject.mockRestore();
+
+    const result = await fetchAndParseCloudProject('ABC123DEF456');
+
+    expect(result.authenticated).toBeUndefined();
+  });
+});
+
+describe('isConfirmedNonOwner', () => {
+  it('is true only on positive evidence: authenticated:true with isOwner:false', () => {
+    expect(isConfirmedNonOwner({ isOwner: false, authenticated: true })).toBe(true);
+    expect(isConfirmedNonOwner({ isOwner: true, authenticated: true })).toBe(false);
+    expect(isConfirmedNonOwner({ isOwner: false, authenticated: false })).toBe(false);
+    expect(isConfirmedNonOwner({ isOwner: false, authenticated: undefined })).toBe(false);
+    expect(isConfirmedNonOwner({ isOwner: false })).toBe(false);
+  });
+});
+
+describe('decideStorageForFetched', () => {
+  it('demotes to local only on confirmed non-ownership (authenticated:true, isOwner:false)', () => {
+    expect(decideStorageForFetched({ isOwner: false, authenticated: true }, 'cloud')).toBe('local');
+    expect(decideStorageForFetched({ isOwner: false, authenticated: true }, 'local')).toBe('local');
+  });
+
+  it('keeps the manifest storage class when ownership is confirmed (isOwner:true)', () => {
+    expect(decideStorageForFetched({ isOwner: true, authenticated: true }, 'cloud')).toBe('cloud');
+    expect(decideStorageForFetched({ isOwner: true, authenticated: true }, 'local')).toBe('local');
+  });
+
+  it('keeps the manifest storage class when ownership is unknown (authenticated missing/false)', () => {
+    expect(decideStorageForFetched({ isOwner: false, authenticated: false }, 'cloud')).toBe('cloud');
+    expect(decideStorageForFetched({ isOwner: false, authenticated: undefined }, 'cloud')).toBe('cloud');
+    expect(decideStorageForFetched({ isOwner: false }, 'cloud')).toBe('cloud');
+    expect(decideStorageForFetched({ isOwner: false }, 'local')).toBe('local');
   });
 });

@@ -20,8 +20,9 @@ export function UnsavedPromptDialog({
   const saveButtonRef = useRef<HTMLButtonElement>(null);
 
   function handleSave() {
-    saveCurrentProject();
-    onSaveAndContinue();
+    if (saveCurrentProject()) {
+      onSaveAndContinue();
+    }
   }
 
   function handleDiscard() {

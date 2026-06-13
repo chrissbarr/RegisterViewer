@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
-function handleAuthVerifyCode(PDO $db, array $config, array $body): ApiResponse
+function handleAuthVerifyCode(PDO $db, array $config, array $body, ?array $server = null): ApiResponse
 {
+    $server ??= $_SERVER;
+
     // Validate email
     $email = validateAndNormalizeEmail($body);
     if ($email instanceof ApiResponse) {
@@ -16,20 +18,52 @@ function handleAuthVerifyCode(PDO $db, array $config, array $body): ApiResponse
         return new ApiResponse(['error' => 'code must be a 6-digit string'], 400);
     }
 
-    // Global rate limit: max 100 verify attempts per minute across all users (PERF-15)
-    $globalAttempts = dbCountAllRecentVerifyAttempts($db, 60);
-    if ($globalAttempts >= 100) {
+    if (!isOtpHashSecretConfigured($config)) {
         return new ApiResponse(['error' => 'Service temporarily unavailable. Please try again later.'], 503);
     }
 
-    // Per-email rate limit: max 10 total verification attempts per email per 10-minute window
-    $recentAttempts = dbCountRecentVerifyAttempts($db, $email);
-    if ($recentAttempts >= 10) {
-        return new ApiResponse(['error' => 'Too many verification attempts. Please request a new code.'], 429);
+    $clientIp = authRateLimitClientIp($server);
+
+    if (random_int(1, 50) === 1) {
+        try {
+            dbPurgeExpiredAuthRateLimitBuckets($db);
+        } catch (\Throwable $e) {
+            error_log('auth_rate_limits purge failed: ' . $e->getMessage());
+        }
     }
 
-    // Hash the submitted code to match stored hash (SEC-04)
-    $codeHash = hash('sha256', $code);
+    $globalLimit = dbConsumeAuthRateLimit(
+        $db,
+        'verify.global',
+        'global',
+        AUTH_VERIFY_GLOBAL_LIMIT,
+        AUTH_VERIFY_GLOBAL_WINDOW_SECONDS,
+    );
+    if (!$globalLimit['allowed']) {
+        return new ApiResponse(['error' => 'Service temporarily unavailable. Please try again later.'], 503);
+    }
+
+    $ipLimit = dbConsumeAuthRateLimit(
+        $db,
+        'verify.ip',
+        $clientIp,
+        AUTH_VERIFY_IP_LIMIT,
+        AUTH_VERIFY_IP_WINDOW_SECONDS,
+    );
+    if (!$ipLimit['allowed']) {
+        return new ApiResponse(['error' => 'Too many verification attempts. Please try again later.'], 429);
+    }
+
+    $emailLimit = dbConsumeAuthRateLimit(
+        $db,
+        'verify.email',
+        $email,
+        AUTH_VERIFY_EMAIL_LIMIT,
+        AUTH_VERIFY_EMAIL_WINDOW_SECONDS,
+    );
+    if (!$emailLimit['allowed']) {
+        return new ApiResponse(['error' => 'Too many verification attempts. Please try again later.'], 429);
+    }
 
     // Begin transaction to prevent race conditions (SEC-N01):
     // Without isolation, two concurrent requests with the same OTP can both
@@ -37,18 +71,29 @@ function handleAuthVerifyCode(PDO $db, array $config, array $body): ApiResponse
     // duplicate user creation attempts and double JWT issuance.
     $db->beginTransaction();
     try {
-        // Look up active code with exclusive row lock
-        $codeRow = dbGetActiveLoginCodeForUpdate($db, $email, $codeHash);
+        // Lock the latest issued code for this email. Newer codes supersede
+        // older ones even after the newest code is used or locked.
+        $codeRow = dbGetLatestLoginCodeForUpdate($db, $email);
         if ($codeRow === null) {
-            $db->rollBack();
-            // Increment attempts on the most recent code for this email (if any),
-            // so that failed guesses count against the per-code and global rate limits
-            dbIncrementMostRecentLoginCodeAttempts($db, $email);
+            $db->commit();
+            return new ApiResponse(['error' => 'Invalid or expired code'], 401);
+        }
+        $expiresAt = parseUtcDbDateTime((string) $codeRow['expires_at']);
+        if ((int) $codeRow['used'] === 1 || $expiresAt === null || $expiresAt <= time()) {
+            $db->commit();
+            return new ApiResponse(['error' => 'Invalid or expired code'], 401);
+        }
+        if ((int) $codeRow['attempts'] >= OTP_MAX_ATTEMPTS) {
+            $db->commit();
             return new ApiResponse(['error' => 'Invalid or expired code'], 401);
         }
 
-        // Increment attempts (even on success, to track usage)
         dbIncrementLoginCodeAttempts($db, (int) $codeRow['id']);
+
+        if (!verifyOtpCode($config, $email, $code, (string) $codeRow['code_verifier'])) {
+            $db->commit();
+            return new ApiResponse(['error' => 'Invalid or expired code'], 401);
+        }
 
         // Mark code as used
         dbMarkLoginCodeUsed($db, (int) $codeRow['id']);
@@ -72,5 +117,9 @@ function handleAuthVerifyCode(PDO $db, array $config, array $body): ApiResponse
             'id'    => $userId,
             'email' => $email,
         ],
+    ], 200, [
+        // The success body carries the bearer token, so it must never be stored
+        // by any cache (RFC 6749 §5.1 norm; explicit despite POST being inert).
+        'Cache-Control' => 'private, no-store',
     ]);
 }

@@ -45,14 +45,34 @@ function validateField(field: Field): ValidationError[] {
     errors.push({ fieldId: id, message: `MSB (${field.msb}) must be >= LSB (${field.lsb})` });
   }
 
+  if (field.msb < 0) {
+    errors.push({ fieldId: id, message: 'MSB cannot be negative' });
+  } else if (field.msb >= MAX_REGISTER_WIDTH) {
+    errors.push({ fieldId: id, message: `MSB must be at most ${MAX_REGISTER_WIDTH - 1}` });
+  }
+
   if (field.lsb < 0) {
-    errors.push({ fieldId: id, message: `LSB cannot be negative` });
+    errors.push({ fieldId: id, message: 'LSB cannot be negative' });
+  } else if (field.lsb >= MAX_REGISTER_WIDTH) {
+    errors.push({ fieldId: id, message: `LSB must be at most ${MAX_REGISTER_WIDTH - 1}` });
   }
 
   const bitWidth = field.msb - field.lsb + 1;
 
   if (field.type === 'flag' && bitWidth !== 1) {
     errors.push({ fieldId: id, message: `Flag field must be 1 bit wide (got ${bitWidth})` });
+  }
+
+  if (field.type === 'enum') {
+    // Server parity: the API rejects enum entry names without a non-whitespace
+    // character (hasNonWhitespace); JS trim() is an acceptable mirror. Safe to
+    // block here ONLY because sanitizeField heals whitespace-only names on
+    // every load path before this validation runs.
+    for (const entry of field.enumEntries) {
+      if (!entry.name.trim()) {
+        errors.push({ fieldId: id, message: `Enum entry name for value ${entry.value} is required` });
+      }
+    }
   }
 
   if (field.type === 'float') {
@@ -63,6 +83,9 @@ function validateField(field: Field): ValidationError[] {
   }
 
   if (field.type === 'fixed-point') {
+    if (field.qFormat.m < 0 || field.qFormat.n < 0) {
+      errors.push({ fieldId: id, message: 'Q format values cannot be negative' });
+    }
     const expectedWidth = field.qFormat.m + field.qFormat.n;
     if (bitWidth !== expectedWidth) {
       errors.push({ fieldId: id, message: `Q${field.qFormat.m}.${field.qFormat.n} requires ${expectedWidth} bits (got ${bitWidth})` });

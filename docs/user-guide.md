@@ -24,7 +24,7 @@ A complete guide to using [Register Viewer](https://www.registerviewer.com/) —
 
 ## Getting Started
 
-Visit **[registerviewer.com](https://www.registerviewer.com/)** — no install or account required.
+Visit **[registerviewer.com](https://www.registerviewer.com/)** — no install or account required for local editing.
 
 A sample 32-bit `STATUS_REG` register is pre-loaded with the value `0xDEADBEEF` so you can explore immediately. Try:
 
@@ -278,16 +278,16 @@ All projects are saved automatically to your browser's local storage. A storage 
 
 ## Cloud Save and Share
 
-Save your project to the cloud to get a shareable link. No account is required — ownership is tracked by an anonymous token stored in your browser.
+Save your project to the cloud to get a cloud URL. Cloud projects require email sign-in: enter your email, confirm the 6-digit code, and the project is tied to that signed-in account. You can still use the editor, local projects, exports, and snapshot URLs without an account.
 
 ### Saving to the cloud
 
-Click the **Save** button in the header (cloud icon). On first save, a brief explanation of cloud features appears. Your project is uploaded and you receive a shareable URL.
+Click the **Save** button in the header (cloud icon). If you are not signed in, Register Viewer prompts you to sign in by email first. After sign-in, your project is uploaded and you receive a cloud URL. Make the project unlisted before sharing that URL publicly.
 
 ### Visibility
 
-- **Private** (default) — only accessible from your browser with your owner token
-- **Unlisted** — anyone with the link can view the project. Change visibility in the Share dialog or My Projects.
+- **Private** (default) — only accessible when you are signed in as the project owner
+- **Unlisted** — anyone with the link can view the project. Only the signed-in owner can edit, delete, or change visibility. Change visibility in the Share dialog or My Projects.
 
 ### Sharing
 
@@ -372,7 +372,7 @@ This means the current raw bit value doesn't match any of the enum entries you'v
 
 ### I lost my cloud projects
 
-Cloud project ownership is tied to an anonymous token in your browser. You can download a **recovery key** from the My Projects dialog footer. Keep this key safe — it's the only way to prove ownership if you've cleared your browser's data.
+Sign in with the same email address you used when saving to the cloud. Cloud projects are tied to that account. Local-only projects are stored in your browser and can be lost if browser data is cleared, so use **Cloud Save** or **Export** to back up important work.
 
 ### Field validation errors
 

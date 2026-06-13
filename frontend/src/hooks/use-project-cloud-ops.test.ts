@@ -9,6 +9,16 @@ vi.mock('../utils/storage', () => ({
 
 vi.mock('../utils/api-client', () => ({
   isCloudEnabled: vi.fn(() => true),
+  ApiError: class ApiError extends Error {
+    status: number;
+    errorBody: { error: string };
+    constructor(status: number, errorBody: { error: string }) {
+      super(errorBody.error);
+      this.name = 'ApiError';
+      this.status = status;
+      this.errorBody = errorBody;
+    }
+  },
 }));
 
 vi.mock('../utils/project-storage', () => ({
@@ -16,12 +26,14 @@ vi.mock('../utils/project-storage', () => ({
   buildProjectUrl: vi.fn((id: string) => `https://app/#/p/${id}`),
 }));
 
-vi.mock('../utils/cloud-url', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../utils/cloud-url')>()),
-  setCloudUrl: vi.fn(),
-  clearCloudUrl: vi.fn(),
-  withMutationLock: vi.fn(async (_ref: unknown, fn: () => Promise<unknown>) => fn()),
-}));
+vi.mock('../utils/cloud-utils', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../utils/cloud-utils')>();
+  return {
+    ...actual,
+    setCloudUrl: vi.fn(),
+    clearCloudUrl: vi.fn(),
+  };
+});
 
 vi.mock('../utils/cloud-operations', () => ({
   saveProjectToCloudImpl: vi.fn(),
@@ -29,27 +41,19 @@ vi.mock('../utils/cloud-operations', () => ({
   patchVisibilityImpl: vi.fn(),
 }));
 
-import { isCloudEnabled } from '../utils/api-client';
+import { isCloudEnabled, ApiError } from '../utils/api-client';
 import { loadProject } from '../utils/project-storage';
-import { setCloudUrl, clearCloudUrl } from '../utils/cloud-url';
+import { setCloudUrl, clearCloudUrl } from '../utils/cloud-utils';
 import { saveProjectToCloudImpl, deleteProjectFromCloudImpl, patchVisibilityImpl } from '../utils/cloud-operations';
 import type { ProjectListEntry } from '../types/project';
+import { initialInternalState } from '../types/cloud-sync';
+import { cloudSyncReducer, type CloudSyncAction } from '../utils/cloud-sync-reducer';
 
 function makeInitialState() {
-  return {
-    cloudId: null as string | null,
-    isOwner: false,
-    storage: 'local' as const,
-    status: 'idle' as const,
-    error: null as string | null,
-    shareUrl: null as string | null,
-    lastCloudSavedAt: null as string | null,
-    lastSavedVersion: -1,
-    visibility: 'private' as const,
-  };
+  return { ...initialInternalState };
 }
 
-function makeProjectList(entries: Array<{ localId: string; cloudId?: string | null }>): ProjectListEntry[] {
+function makeProjectList(entries: Array<{ localId: string; cloudId?: string | null; serverVersion?: number | null; cloudConflictVersion?: number | null; storage?: 'local' | 'cloud' }>): ProjectListEntry[] {
   return entries.map(p => ({
     localId: p.localId,
     cloudId: p.cloudId ?? null,
@@ -58,24 +62,29 @@ function makeProjectList(entries: Array<{ localId: string; cloudId?: string | nu
     createdAt: '2026-01-01T00:00:00Z',
     localSavedAt: '2026-01-01T00:00:00Z',
     cloudSavedAt: null,
-    storage: (p.cloudId ?? null) !== null ? 'cloud' as const : 'local' as const,
+    serverVersion: p.serverVersion ?? null,
+    cloudConflictVersion: p.cloudConflictVersion ?? null,
+    storage: p.storage ?? ((p.cloudId ?? null) !== null ? 'cloud' as const : 'local' as const),
   }));
 }
 
 function makeDeps(overrides: Record<string, unknown> = {}) {
   const initial = makeInitialState();
   const internalRef = { current: overrides.internalState as typeof initial ?? initial };
+  const activeLocalIdRef = { current: (overrides.activeLocalId as string) ?? 'local-1' };
+  const cloudDispatch = vi.fn<(action: CloudSyncAction) => void>();
   const projects = (overrides.projects as ProjectListEntry[]) ?? makeProjectList([{ localId: 'local-1', cloudId: 'cloud-1' }]);
   return {
-    updateCloudMetadata: vi.fn() as Mock,
-    projectsRef: { current: projects },
-    activeLocalIdRef: { current: (overrides.activeLocalId as string) ?? 'local-1' },
-    dataVersionRef: { current: 1 },
-    mutationLockRef: { current: false },
+    core: { internalRef, activeLocalIdRef, dispatch: cloudDispatch },
+    // Expose core fields at top level for test assertions
     internalRef,
-    setInternal: vi.fn() as Mock,
-    initialInternalState: initial,
+    activeLocalIdRef,
+    cloudDispatch,
+    updateCloudMetadata: vi.fn(() => ({ ok: true, status: 'ok', evictedLocalIds: [] })) as Mock,
+    projectsRef: { current: projects },
+    mutationLockRef: { current: false },
     getJwt: (overrides.getJwt as (() => string | null)) ?? (() => 'mock-jwt'),
+    activeProjectSave: (overrides.activeProjectSave as (() => Promise<import('../types/cloud-sync').SaveOutcome>)) ?? vi.fn(async () => 'saved' as const),
   };
 }
 
@@ -87,13 +96,116 @@ beforeEach(() => {
 
 describe('useProjectCloudOps', () => {
   describe('saveProjectToCloud', () => {
-    it('creates a new cloud project when no existing cloudId', async () => {
-      const deps = makeDeps({ projects: makeProjectList([{ localId: 'local-1', cloudId: null }]) });
+    it('delegates to activeProjectSave when localId is the active project', async () => {
+      const activeProjectSave = vi.fn(async () => 'saved' as const);
+      const deps = makeDeps({ activeProjectSave });
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      await act(async () => {
+        await result.current.saveProjectToCloud('local-1');
+      });
+
+      expect(activeProjectSave).toHaveBeenCalledOnce();
+      // Should NOT read from localStorage or call the cloud API directly
+      expect(loadProject).not.toHaveBeenCalled();
+      expect(saveProjectToCloudImpl).not.toHaveBeenCalled();
+    });
+
+    it('propagates errors thrown by activeProjectSave', async () => {
+      const activeProjectSave = vi.fn().mockRejectedValue(new Error('Network failure'));
+      const deps = makeDeps({ activeProjectSave });
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      await expect(
+        act(async () => {
+          await result.current.saveProjectToCloud('local-1');
+        }),
+      ).rejects.toThrow('Network failure');
+    });
+
+    it('resolves without throwing when the active save reports lock-held (auto-sync owns the retry)', async () => {
+      const activeProjectSave = vi.fn(async () => 'lock-held' as const);
+      const deps = makeDeps({ activeProjectSave });
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      // The active auto-sync owns the in-flight save and retries — surfacing a
+      // hard "Failed to save" would double-signal a handled situation (BR-10).
+      await act(async () => {
+        await expect(result.current.saveProjectToCloud('local-1')).resolves.toBeUndefined();
+      });
+    });
+
+    it('resolves without throwing when the active save reports login-required (dialog already shown)', async () => {
+      const activeProjectSave = vi.fn(async () => 'login-required' as const);
+      const deps = makeDeps({ activeProjectSave });
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      await act(async () => {
+        await expect(result.current.saveProjectToCloud('local-1')).resolves.toBeUndefined();
+      });
+    });
+
+    it('resolves without throwing when the active save reports conflict (banner already dispatched)', async () => {
+      const activeProjectSave = vi.fn(async () => 'conflict' as const);
+      const deps = makeDeps({ activeProjectSave });
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      await act(async () => {
+        await expect(result.current.saveProjectToCloud('local-1')).resolves.toBeUndefined();
+      });
+    });
+
+    it('resolves without throwing when the active save reports not-found (unlink already dispatched)', async () => {
+      const activeProjectSave = vi.fn(async () => 'not-found' as const);
+      const deps = makeDeps({ activeProjectSave });
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      await act(async () => {
+        await expect(result.current.saveProjectToCloud('local-1')).resolves.toBeUndefined();
+      });
+    });
+
+    it('throws a specific persist-failed message (not the generic one) when the active save reports local-persist-failed', async () => {
+      const activeProjectSave = vi.fn(async () => 'local-persist-failed' as const);
+      const deps = makeDeps({ activeProjectSave });
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      await expect(
+        act(async () => {
+          await result.current.saveProjectToCloud('local-1');
+        }),
+      ).rejects.toThrow(/local cloud metadata could not be persisted/i);
+    });
+
+    it('keeps the generic safety-net throw for an unexpected non-success outcome', async () => {
+      // A future / unknown non-success outcome must never be silently swallowed.
+      const activeProjectSave = vi.fn(async () => 'some-future-outcome' as unknown as import('../types/cloud-sync').SaveOutcome);
+      const deps = makeDeps({ activeProjectSave });
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      await expect(
+        act(async () => {
+          await result.current.saveProjectToCloud('local-1');
+        }),
+      ).rejects.toThrow('Failed to save active project to cloud.');
+    });
+
+    it('creates a new cloud project for non-active project', async () => {
+      const deps = makeDeps({ activeLocalId: 'other-local', projects: makeProjectList([{ localId: 'local-1', cloudId: null }]) });
       (loadProject as Mock).mockReturnValue({ state: '{}', cloudId: null });
       (saveProjectToCloudImpl as Mock).mockResolvedValue({
         kind: 'created',
         cloudId: 'new-cloud',
         timestamp: '2026-01-01T00:00:00Z',
+        version: 1,
       });
 
       const { result } = renderHook(() => useProjectCloudOps(deps));
@@ -106,16 +218,25 @@ describe('useProjectCloudOps', () => {
         cloudId: 'new-cloud',
         cloudSavedAt: '2026-01-01T00:00:00Z',
         storage: 'cloud',
+        serverVersion: 1,
+        cloudConflictVersion: null,
+        hasUnsyncedChanges: false,
       });
-      expect(setCloudUrl).toHaveBeenCalledWith('new-cloud');
-      expect(deps.setInternal).toHaveBeenCalled();
+      // Should NOT update active project cloud state
+      expect(setCloudUrl).not.toHaveBeenCalled();
+      expect(deps.cloudDispatch).not.toHaveBeenCalled();
     });
 
-    it('updates an existing cloud project', async () => {
-      const deps = makeDeps();
+    it('updates an existing non-active cloud project', async () => {
+      const deps = makeDeps({
+        activeLocalId: 'other-local',
+        projects: makeProjectList([{ localId: 'local-1', cloudId: 'cloud-1', serverVersion: 8 }]),
+      });
+      (loadProject as Mock).mockReturnValue({ state: '{}', cloudId: 'cloud-1', serverVersion: 7 });
       (saveProjectToCloudImpl as Mock).mockResolvedValue({
         kind: 'updated',
         timestamp: '2026-01-02T00:00:00Z',
+        version: 9,
       });
 
       const { result } = renderHook(() => useProjectCloudOps(deps));
@@ -124,16 +245,96 @@ describe('useProjectCloudOps', () => {
         await result.current.saveProjectToCloud('local-1');
       });
 
+      expect(saveProjectToCloudImpl).toHaveBeenCalledWith(
+        { version: 1, registers: [] },
+        'cloud-1',
+        'mock-jwt',
+        8,
+      );
       expect(deps.updateCloudMetadata).toHaveBeenCalledWith('local-1', {
         cloudSavedAt: '2026-01-02T00:00:00Z',
         storage: 'cloud',
+        serverVersion: 9,
+        cloudConflictVersion: null,
+        hasUnsyncedChanges: false,
       });
-      // Should NOT set cloud URL for updates
       expect(setCloudUrl).not.toHaveBeenCalled();
     });
 
-    it('throws when project not found locally', async () => {
-      const deps = makeDeps();
+    it('creates a new cloud project instead of updating a saved local cloud-linked fork', async () => {
+      const localForkEntry: ProjectListEntry = {
+        ...makeProjectList([{ localId: 'local-1', cloudId: null }])[0],
+        cloudId: 'shared-cloud',
+        storage: 'local',
+        serverVersion: 8,
+      };
+      const deps = makeDeps({
+        activeLocalId: 'other-local',
+        projects: [localForkEntry],
+      });
+      (loadProject as Mock).mockReturnValue({
+        state: '{}',
+        cloudId: 'shared-cloud',
+        storage: 'local',
+        serverVersion: 8,
+      });
+      (saveProjectToCloudImpl as Mock).mockResolvedValue({
+        kind: 'created',
+        cloudId: 'new-owned-cloud',
+        timestamp: '2026-01-03T00:00:00Z',
+        version: 1,
+      });
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      await act(async () => {
+        await result.current.saveProjectToCloud('local-1');
+      });
+
+      expect(saveProjectToCloudImpl).toHaveBeenCalledWith(
+        { version: 1, registers: [] },
+        null,
+        'mock-jwt',
+        undefined,
+      );
+      expect(deps.updateCloudMetadata).toHaveBeenCalledWith('local-1', {
+        cloudId: 'new-owned-cloud',
+        cloudSavedAt: '2026-01-03T00:00:00Z',
+        storage: 'cloud',
+        serverVersion: 1,
+        cloudConflictVersion: null,
+        hasUnsyncedChanges: false,
+      });
+    });
+
+    it('uses stored serverVersion when manifest version is missing for non-active save', async () => {
+      const deps = makeDeps({
+        activeLocalId: 'other-local',
+        projects: makeProjectList([{ localId: 'local-1', cloudId: 'cloud-1', serverVersion: null }]),
+      });
+      (loadProject as Mock).mockReturnValue({ state: '{}', cloudId: 'cloud-1', storage: 'cloud', serverVersion: 6 });
+      (saveProjectToCloudImpl as Mock).mockResolvedValue({
+        kind: 'updated',
+        timestamp: '2026-01-02T00:00:00Z',
+        version: 7,
+      });
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      await act(async () => {
+        await result.current.saveProjectToCloud('local-1');
+      });
+
+      expect(saveProjectToCloudImpl).toHaveBeenCalledWith(
+        { version: 1, registers: [] },
+        'cloud-1',
+        'mock-jwt',
+        6,
+      );
+    });
+
+    it('throws when non-active project not found locally', async () => {
+      const deps = makeDeps({ activeLocalId: 'other-local' });
       (loadProject as Mock).mockReturnValue(null);
 
       const { result } = renderHook(() => useProjectCloudOps(deps));
@@ -145,8 +346,8 @@ describe('useProjectCloudOps', () => {
       ).rejects.toThrow('Project not found.');
     });
 
-    it('throws when cloud returns not-found', async () => {
-      const deps = makeDeps();
+    it('throws when cloud returns not-found for non-active project', async () => {
+      const deps = makeDeps({ activeLocalId: 'other-local' });
       (saveProjectToCloudImpl as Mock).mockResolvedValue({ kind: 'not-found' });
 
       const { result } = renderHook(() => useProjectCloudOps(deps));
@@ -158,8 +359,25 @@ describe('useProjectCloudOps', () => {
       ).rejects.toThrow('Cloud project not found on server.');
     });
 
-    it('throws "Authentication required" when getJwt returns null', async () => {
-      const deps = makeDeps({ getJwt: () => null, projects: makeProjectList([{ localId: 'local-1', cloudId: null }]) });
+    it('throws a session-expired error on auth-stale without any metadata write (BR-6)', async () => {
+      const deps = makeDeps({ activeLocalId: 'other-local' });
+      // Dead token discovered by the probe path's /auth/me disambiguation.
+      (saveProjectToCloudImpl as Mock).mockResolvedValue({ kind: 'auth-stale' });
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      await expect(
+        act(async () => {
+          await result.current.saveProjectToCloud('local-1');
+        }),
+      ).rejects.toThrow(/session has expired/i);
+
+      // The cloud link must survive a stale session.
+      expect(deps.updateCloudMetadata).not.toHaveBeenCalled();
+    });
+
+    it('throws "Authentication required" for non-active project when getJwt returns null', async () => {
+      const deps = makeDeps({ activeLocalId: 'other-local', getJwt: () => null, projects: makeProjectList([{ localId: 'local-1', cloudId: null }]) });
       (loadProject as Mock).mockReturnValue({ state: '{}', cloudId: null });
 
       const { result } = renderHook(() => useProjectCloudOps(deps));
@@ -169,6 +387,86 @@ describe('useProjectCloudOps', () => {
           await result.current.saveProjectToCloud('local-1');
         }),
       ).rejects.toThrow('Authentication required. Please sign in.');
+    });
+
+    it('throws when mutation lock is held for non-active save', async () => {
+      const deps = makeDeps({ activeLocalId: 'other-local' });
+      deps.mutationLockRef.current = true; // lock already held
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      await expect(
+        act(async () => {
+          await result.current.saveProjectToCloud('local-1');
+        }),
+      ).rejects.toThrow('Another cloud operation is in progress');
+    });
+
+    it('rejects a by-localId save of a conflicted entry without touching the network (BR-1)', async () => {
+      const deps = makeDeps({
+        activeLocalId: 'other-local',
+        projects: makeProjectList([{ localId: 'local-1', cloudId: 'cloud-1', serverVersion: 9, cloudConflictVersion: 9 }]),
+      });
+      (loadProject as Mock).mockReturnValue({
+        state: '{}',
+        cloudId: 'cloud-1',
+        storage: 'cloud',
+        serverVersion: 9,
+        cloudConflictVersion: 9,
+      });
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      await expect(
+        act(async () => {
+          await result.current.saveProjectToCloud('local-1');
+        }),
+      ).rejects.toThrow('This project has a cloud conflict. Open it and choose Save or Load before syncing.');
+
+      // No PUT and no metadata write — the conflict evidence must be preserved
+      // so purgeCloudProjects demotes (not evicts) the entry on sign-out.
+      expect(saveProjectToCloudImpl).not.toHaveBeenCalled();
+      expect(deps.updateCloudMetadata).not.toHaveBeenCalled();
+    });
+
+    it('detects the conflict from the stored project when the manifest entry lacks it', async () => {
+      const deps = makeDeps({
+        activeLocalId: 'other-local',
+        projects: makeProjectList([{ localId: 'local-1', cloudId: 'cloud-1', serverVersion: 9 }]),
+      });
+      (loadProject as Mock).mockReturnValue({
+        state: '{}',
+        cloudId: 'cloud-1',
+        storage: 'cloud',
+        serverVersion: 9,
+        cloudConflictVersion: 9,
+      });
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      await expect(
+        act(async () => {
+          await result.current.saveProjectToCloud('local-1');
+        }),
+      ).rejects.toThrow(/cloud conflict/);
+
+      expect(saveProjectToCloudImpl).not.toHaveBeenCalled();
+      expect(deps.updateCloudMetadata).not.toHaveBeenCalled();
+    });
+
+    it('reports the conflict message when the active-project delegation returns conflict-pending', async () => {
+      const activeProjectSave = vi.fn(async () => 'conflict-pending' as const);
+      const deps = makeDeps({ activeProjectSave });
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      // Must surface the descriptive conflict message, not the misleading
+      // generic "Failed to save active project to cloud." (BR-1).
+      await expect(
+        act(async () => {
+          await result.current.saveProjectToCloud('local-1');
+        }),
+      ).rejects.toThrow(/cloud conflict/);
     });
 
     it('skips when cloud is not enabled', async () => {
@@ -182,26 +480,7 @@ describe('useProjectCloudOps', () => {
       });
 
       expect(saveProjectToCloudImpl).not.toHaveBeenCalled();
-    });
-
-    it('does not update cloud state for non-active project on create', async () => {
-      const deps = makeDeps({ activeLocalId: 'other-local', projects: makeProjectList([{ localId: 'local-1', cloudId: null }]) });
-      (loadProject as Mock).mockReturnValue({ state: '{}', cloudId: null });
-      (saveProjectToCloudImpl as Mock).mockResolvedValue({
-        kind: 'created',
-        cloudId: 'new-cloud',
-        timestamp: '2026-01-01T00:00:00Z',
-      });
-
-      const { result } = renderHook(() => useProjectCloudOps(deps));
-
-      await act(async () => {
-        await result.current.saveProjectToCloud('local-1');
-      });
-
-      expect(deps.updateCloudMetadata).toHaveBeenCalled();
-      expect(setCloudUrl).not.toHaveBeenCalled();
-      expect(deps.setInternal).not.toHaveBeenCalled();
+      expect(deps.activeProjectSave).not.toHaveBeenCalled();
     });
   });
 
@@ -213,7 +492,7 @@ describe('useProjectCloudOps', () => {
       const { result } = renderHook(() => useProjectCloudOps(deps));
 
       await act(async () => {
-        await result.current.deleteProjectFromCloud('cloud-1');
+        await result.current.deleteProjectFromCloud('local-1');
       });
 
       expect(deleteProjectFromCloudImpl).toHaveBeenCalledWith('cloud-1', 'mock-jwt');
@@ -221,6 +500,9 @@ describe('useProjectCloudOps', () => {
         cloudId: null,
         visibility: 'private',
         cloudSavedAt: null,
+        serverVersion: null,
+        cloudConflictVersion: null,
+        hasUnsyncedChanges: undefined,
         storage: 'local',
       });
     });
@@ -233,11 +515,14 @@ describe('useProjectCloudOps', () => {
       const { result } = renderHook(() => useProjectCloudOps(deps));
 
       await act(async () => {
-        await result.current.deleteProjectFromCloud('cloud-1');
+        await result.current.deleteProjectFromCloud('local-1');
       });
 
       expect(clearCloudUrl).toHaveBeenCalled();
-      expect(deps.setInternal).toHaveBeenCalled();
+      // LIFECYCLE_RESET resets to the frozen initial state (cloudId null, local).
+      expect(deps.cloudDispatch).toHaveBeenCalledWith({ type: 'LIFECYCLE_RESET' });
+      const resetState = cloudSyncReducer(deps.internalRef.current, deps.cloudDispatch.mock.calls.at(-1)![0]);
+      expect(resetState).toMatchObject({ cloudId: null, isOwner: false, storage: 'local' });
     });
 
     it('does not clear cloud state when deleting non-active project', async () => {
@@ -247,17 +532,80 @@ describe('useProjectCloudOps', () => {
       const { result } = renderHook(() => useProjectCloudOps(deps));
 
       await act(async () => {
-        await result.current.deleteProjectFromCloud('cloud-1');
+        await result.current.deleteProjectFromCloud('local-1');
       });
 
       expect(clearCloudUrl).not.toHaveBeenCalled();
     });
+
+    it('throws when the mutation lock is held', async () => {
+      const deps = makeDeps();
+      deps.mutationLockRef.current = true;
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      await expect(
+        act(async () => { await result.current.deleteProjectFromCloud('local-1'); }),
+      ).rejects.toThrow(/in progress/i);
+
+      expect(deleteProjectFromCloudImpl).not.toHaveBeenCalled();
+    });
+
+    it('treats DELETE 404 as already-deleted and clears local cloud metadata', async () => {
+      const deps = makeDeps();
+      (deleteProjectFromCloudImpl as Mock).mockRejectedValue(new ApiError(404, { error: 'Project not found' }));
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      // must NOT throw
+      await act(async () => { await result.current.deleteProjectFromCloud('local-1'); });
+
+      expect(deps.updateCloudMetadata).toHaveBeenCalledWith('local-1', expect.objectContaining({ cloudId: null, storage: 'local' }));
+    });
+
+    it('propagates non-404 ApiErrors from deleteProjectFromCloudImpl', async () => {
+      const deps = makeDeps();
+      (deleteProjectFromCloudImpl as Mock).mockRejectedValue(new ApiError(500, { error: 'Internal server error' }));
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      await expect(
+        act(async () => { await result.current.deleteProjectFromCloud('local-1'); }),
+      ).rejects.toThrow('Internal server error');
+
+      expect(deps.updateCloudMetadata).not.toHaveBeenCalled();
+    });
+
+    it('does not delete a saved local cloud-linked fork even when an owned placeholder has the same cloudId', async () => {
+      const deps = makeDeps({
+        activeLocalId: 'other-local',
+        projects: makeProjectList([
+          { localId: 'local-fork', cloudId: 'cloud-1', storage: 'local' },
+          { localId: 'owned-placeholder', cloudId: 'cloud-1', storage: 'cloud' },
+        ]),
+      });
+      (deleteProjectFromCloudImpl as Mock).mockResolvedValue(undefined);
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      await act(async () => {
+        await result.current.deleteProjectFromCloud('local-fork');
+      });
+
+      expect(deleteProjectFromCloudImpl).not.toHaveBeenCalled();
+      expect(deps.updateCloudMetadata).not.toHaveBeenCalled();
+    });
   });
 
   describe('setProjectVisibility', () => {
-    it('patches visibility and updates metadata', async () => {
+    const PATCH_UPDATED_AT = '2024-09-09T09:09:09Z';
+
+    it('patches visibility and advances cloudSavedAt to the PATCH updatedAt', async () => {
       const deps = makeDeps();
-      (patchVisibilityImpl as Mock).mockResolvedValue(undefined);
+      // A visibility PATCH advances the server's updated_at; the by-localId path
+      // must persist it immediately (A-9 parity with the active path) instead of
+      // leaving cloudSavedAt stale until the next LIST sync.
+      (patchVisibilityImpl as Mock).mockResolvedValue(PATCH_UPDATED_AT);
 
       const { result } = renderHook(() => useProjectCloudOps(deps));
 
@@ -266,12 +614,15 @@ describe('useProjectCloudOps', () => {
       });
 
       expect(patchVisibilityImpl).toHaveBeenCalledWith('cloud-1', 'unlisted', 'mock-jwt');
-      expect(deps.updateCloudMetadata).toHaveBeenCalledWith('local-1', { visibility: 'unlisted' });
+      expect(deps.updateCloudMetadata).toHaveBeenCalledWith('local-1', {
+        visibility: 'unlisted',
+        cloudSavedAt: PATCH_UPDATED_AT,
+      });
     });
 
-    it('updates internal state when targeting active project', async () => {
+    it('updates internal state and advances cloudSavedAt when targeting active project', async () => {
       const deps = makeDeps({ activeLocalId: 'local-1' });
-      (patchVisibilityImpl as Mock).mockResolvedValue(undefined);
+      (patchVisibilityImpl as Mock).mockResolvedValue(PATCH_UPDATED_AT);
 
       const { result } = renderHook(() => useProjectCloudOps(deps));
 
@@ -279,7 +630,18 @@ describe('useProjectCloudOps', () => {
         await result.current.setProjectVisibility('local-1', 'unlisted');
       });
 
-      expect(deps.setInternal).toHaveBeenCalled();
+      // SET_VISIBILITY is dispatched with the advanced cloudSavedAt (active mirror
+      // parity with the by-localId write).
+      expect(deps.cloudDispatch).toHaveBeenCalledWith({
+        type: 'SET_VISIBILITY',
+        visibility: 'unlisted',
+        cloudSavedAt: PATCH_UPDATED_AT,
+      });
+      const next = cloudSyncReducer(makeInitialState(), deps.cloudDispatch.mock.calls[0][0]);
+      expect(next).toMatchObject({
+        visibility: 'unlisted',
+        lastCloudSavedAt: PATCH_UPDATED_AT,
+      });
     });
 
     it('returns early when project has no cloudId', async () => {
@@ -292,6 +654,24 @@ describe('useProjectCloudOps', () => {
       });
 
       expect(patchVisibilityImpl).not.toHaveBeenCalled();
+    });
+
+    it('returns early for saved local cloud-linked forks', async () => {
+      const localForkEntry: ProjectListEntry = {
+        ...makeProjectList([{ localId: 'local-1', cloudId: null }])[0],
+        cloudId: 'shared-cloud',
+        storage: 'local',
+      };
+      const deps = makeDeps({ projects: [localForkEntry] });
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      await act(async () => {
+        await result.current.setProjectVisibility('local-1', 'unlisted');
+      });
+
+      expect(patchVisibilityImpl).not.toHaveBeenCalled();
+      expect(deps.updateCloudMetadata).not.toHaveBeenCalled();
     });
   });
 
@@ -309,6 +689,9 @@ describe('useProjectCloudOps', () => {
         cloudId: null,
         visibility: 'private',
         cloudSavedAt: null,
+        serverVersion: null,
+        cloudConflictVersion: null,
+        hasUnsyncedChanges: undefined,
         storage: 'local',
       });
     });
@@ -324,7 +707,9 @@ describe('useProjectCloudOps', () => {
       });
 
       expect(clearCloudUrl).toHaveBeenCalled();
-      expect(deps.setInternal).toHaveBeenCalled();
+      expect(deps.cloudDispatch).toHaveBeenCalledWith({ type: 'LIFECYCLE_RESET' });
+      const resetState = cloudSyncReducer(deps.internalRef.current, deps.cloudDispatch.mock.calls.at(-1)![0]);
+      expect(resetState).toMatchObject({ cloudId: null, isOwner: false, storage: 'local' });
     });
 
     it('does nothing when project has no cloudId', () => {
@@ -337,6 +722,24 @@ describe('useProjectCloudOps', () => {
       });
 
       expect(deps.updateCloudMetadata).not.toHaveBeenCalled();
+    });
+
+    it('does nothing for saved local cloud-linked forks', () => {
+      const localForkEntry: ProjectListEntry = {
+        ...makeProjectList([{ localId: 'local-1', cloudId: null }])[0],
+        cloudId: 'shared-cloud',
+        storage: 'local',
+      };
+      const deps = makeDeps({ projects: [localForkEntry] });
+
+      const { result } = renderHook(() => useProjectCloudOps(deps));
+
+      act(() => {
+        result.current.unlinkCloudProject('local-1');
+      });
+
+      expect(deps.updateCloudMetadata).not.toHaveBeenCalled();
+      expect(clearCloudUrl).not.toHaveBeenCalled();
     });
 
     it('does nothing when project not found in manifest', () => {

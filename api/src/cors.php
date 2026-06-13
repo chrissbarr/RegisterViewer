@@ -29,7 +29,7 @@ function computeCorsHeaders(array $config): array
 
     return [
         'Access-Control-Allow-Origin'  => $matchedOrigin,
-        'Access-Control-Allow-Methods' => 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+        'Access-Control-Allow-Methods' => 'GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS',
         'Access-Control-Allow-Headers' => 'Content-Type, Authorization',
         'Access-Control-Max-Age'       => '86400',
         'Vary'                         => 'Origin',

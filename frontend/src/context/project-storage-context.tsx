@@ -7,11 +7,13 @@ import {
   createProject as createProjectInStorage,
   deleteProject,
   updateProjectMetadata,
+  flushProjectState,
   toProjectListEntry,
   getMostRecentProjectId,
   ACTIVE_PROJECT_SESSION_KEY,
   UNSAVED_SESSION_SENTINEL,
   clearUnsavedProject,
+  type ProjectStorageWriteResult,
 } from '../utils/project-storage';
 import type { ProjectListEntry, StoredLocalProject, UnsavedProjectSource } from '../types/project';
 import type { SerializedAppState } from '../types/register';
@@ -23,6 +25,8 @@ interface ProjectStorageState {
   projects: ProjectListEntry[];
   isUnsaved: boolean;
   unsavedName: string | null;
+  unsavedSource: UnsavedProjectSource | null;
+  lastDeparture: ProjectDepartureSnapshot | null;
 }
 
 interface CloudMetadataUpdates {
@@ -30,23 +34,57 @@ interface CloudMetadataUpdates {
   cloudSavedAt?: string | null;
   visibility?: 'private' | 'unlisted';
   storage?: 'local' | 'cloud';
+  serverVersion?: number | null;
+  cloudConflictVersion?: number | null;
+  hasUnsyncedChanges?: boolean;
+}
+
+interface CloudMetadataWriteOptions {
+  preserveLocalSavedAt?: boolean;
+  protectedLocalIds?: readonly (string | null | undefined)[];
 }
 
 interface ProjectStorageActions {
-  createNewProject: (name?: string, initialState?: SerializedAppState) => string;
-  switchProject: (localId: string) => void;
+  createNewProject: (name?: string, initialState?: SerializedAppState) => string | null;
+  switchProject: (localId: string) => boolean;
   deleteLocalProject: (localId: string) => void;
   renameProject: (localId: string, name: string) => void;
   refreshProjectList: () => void;
   getActiveProject: () => StoredLocalProject | null;
-  updateCloudMetadata: (localId: string, updates: CloudMetadataUpdates) => void;
-  loadAsUnsaved: (result: ImportResult, name: string, source?: UnsavedProjectSource) => void;
-  saveCurrentProject: (name?: string) => string;
+  updateCloudMetadata: (localId: string, updates: CloudMetadataUpdates, options?: CloudMetadataWriteOptions) => ProjectStorageWriteResult;
+  loadAsUnsaved: (result: ImportResult, name: string, source?: UnsavedProjectSource) => boolean;
+  saveCurrentProject: (name?: string) => string | null;
   discardUnsavedProject: () => void;
+  registerDepartureSnapshotter: (snapshotter: DepartureSnapshotter | null) => void;
 }
+
+interface ProjectDepartureMeta {
+  localId: string;
+  cloudId: string | null;
+  storage: 'local' | 'cloud';
+  serverVersion: number | null;
+  cloudConflictVersion: number | null;
+  cloudSavedAt: string | null;
+  visibility: 'private' | 'unlisted';
+}
+
+export interface ProjectDepartureSnapshot extends ProjectDepartureMeta {
+  sequence: number;
+  wasDirty: boolean;
+}
+
+type DepartureSnapshotter = (meta: ProjectDepartureMeta) => Pick<ProjectDepartureSnapshot, 'wasDirty' | 'serverVersion'> | null;
+
+type DepartureFlushResult =
+  | { ok: true; departure: ProjectDepartureSnapshot | null }
+  | { ok: false; result: ProjectStorageWriteResult };
 
 const ProjectStorageStateContext = createContext<ProjectStorageState | null>(null);
 const ProjectStorageActionsContext = createContext<ProjectStorageActions | null>(null);
+
+function uniqueLocalIds(ids: readonly (string | null | undefined)[]): string[] {
+  return Array.from(new Set(ids.filter((id): id is string => !!id)));
+}
 
 interface ProjectStorageProviderProps {
   children: ReactNode;
@@ -62,16 +100,7 @@ export function ProjectStorageProvider({ children, initialLocalId, initialUnsave
   const [activeLocalId, setActiveLocalId] = useState<string | null>(() => {
     // Unsaved projects have no localId
     if (initialUnsaved) return null;
-    // Try initialLocalId first, then sessionStorage
-    if (initialLocalId) return initialLocalId;
-    try {
-      const sessionId = sessionStorage.getItem(ACTIVE_PROJECT_SESSION_KEY);
-      // Don't restore the unsaved sentinel as a localId
-      if (sessionId === UNSAVED_SESSION_SENTINEL) return null;
-      return sessionId;
-    } catch {
-      return null;
-    }
+    return initialLocalId;
   });
 
   const [projects, setProjects] = useState<ProjectListEntry[]>(() => {
@@ -81,7 +110,18 @@ export function ProjectStorageProvider({ children, initialLocalId, initialUnsave
 
   const [isUnsaved, setIsUnsaved] = useState<boolean>(() => !!initialUnsaved);
   const [unsavedName, setUnsavedName] = useState<string | null>(() => initialUnsaved?.name ?? null);
-  const unsavedSourceRef = useRef<UnsavedProjectSource>(initialUnsaved?.source ?? 'new');
+  const [unsavedSource, setUnsavedSource] = useState<UnsavedProjectSource | null>(() => initialUnsaved?.source ?? null);
+  const [lastDeparture, setLastDeparture] = useState<ProjectDepartureSnapshot | null>(null);
+  const departureSequenceRef = useRef(0);
+  const departureSnapshotterRef = useRef<DepartureSnapshotter | null>(null);
+
+  const activeLocalIdRef = useRef(activeLocalId);
+  const isUnsavedRef = useRef(isUnsaved);
+  const appStateRef = useRef(appState);
+
+  useEffect(() => { activeLocalIdRef.current = activeLocalId; }, [activeLocalId]);
+  useEffect(() => { isUnsavedRef.current = isUnsaved; }, [isUnsaved]);
+  useEffect(() => { appStateRef.current = appState; }, [appState]);
 
   const refreshProjectList = useCallback(() => {
     const manifest = loadManifest();
@@ -89,6 +129,7 @@ export function ProjectStorageProvider({ children, initialLocalId, initialUnsave
   }, []);
 
   const setActiveAndPersist = useCallback((localId: string | null, sentinel?: string) => {
+    activeLocalIdRef.current = localId;
     setActiveLocalId(localId);
     try {
       if (sentinel) {
@@ -103,41 +144,111 @@ export function ProjectStorageProvider({ children, initialLocalId, initialUnsave
     }
   }, []);
 
+  const flushDepartingSavedProject = useCallback((protectedLocalIds: readonly (string | null | undefined)[] = []): DepartureFlushResult => {
+    const departingLocalId = activeLocalIdRef.current;
+    if (!departingLocalId || isUnsavedRef.current) return { ok: true, departure: null };
+
+    const flushOptions = protectedLocalIds.some(Boolean) ? { protectedLocalIds } : undefined;
+    const flushResult = flushProjectState(departingLocalId, serializeState(appStateRef.current), flushOptions);
+    if (!flushResult.ok || !flushResult.project) {
+      if (flushResult.status === 'missing') {
+        const stillManifested = loadManifest().projects.some(p => p.localId === departingLocalId);
+        if (!stillManifested) {
+          setLastDeparture(null);
+          return { ok: true, departure: null };
+        }
+      }
+      if (import.meta.env.DEV) {
+        console.warn('[project-storage-context] Failed to flush departing project:', departingLocalId, flushResult.status, flushResult.error);
+      }
+      return { ok: false, result: flushResult };
+    }
+    const flushed = flushResult.project;
+
+    const meta: ProjectDepartureMeta = {
+      localId: flushed.localId,
+      cloudId: flushed.cloudId,
+      storage: flushed.storage,
+      serverVersion: flushed.serverVersion ?? null,
+      cloudConflictVersion: flushed.cloudConflictVersion ?? null,
+      cloudSavedAt: flushed.cloudSavedAt,
+      visibility: flushed.visibility,
+    };
+    const snapshot = departureSnapshotterRef.current?.(meta);
+    const departure: ProjectDepartureSnapshot = {
+      ...meta,
+      sequence: ++departureSequenceRef.current,
+      wasDirty: snapshot?.wasDirty ?? false,
+      serverVersion: snapshot?.serverVersion ?? meta.serverVersion,
+    };
+    setLastDeparture(departure);
+    return { ok: true, departure };
+  }, []);
+
   const createNewProject = useCallback((name?: string, initialState?: SerializedAppState) => {
+    const departure = flushDepartingSavedProject();
+    if (!departure.ok) return null;
     let state = initialState ?? EMPTY_SERIALIZED_STATE;
     // Autofill date to today if not already set
     if (!state.project?.date) {
       const today = new Date().toISOString().slice(0, 10);
       state = { ...state, project: { ...state.project, date: today } };
     }
-    const localId = createProjectInStorage(state, name);
+    let localId: string;
+    try {
+      localId = createProjectInStorage(state, name, undefined, {
+        protectedLocalIds: [activeLocalIdRef.current],
+      });
+    } catch (err) {
+      if (import.meta.env.DEV) {
+        console.warn('[project-storage-context] Failed to create project:', err);
+      }
+      return null;
+    }
     setActiveAndPersist(localId);
     refreshProjectList();
     return localId;
-  }, [setActiveAndPersist, refreshProjectList]);
+  }, [flushDepartingSavedProject, setActiveAndPersist, refreshProjectList]);
 
-  const switchProject = useCallback((localId: string) => {
+  const switchProject = useCallback((localId: string): boolean => {
     const project = loadProject(localId);
-    if (!project) return;
+    if (!project) return false;
+
+    if (localId !== activeLocalIdRef.current) {
+      const departure = flushDepartingSavedProject([localId]);
+      if (!departure.ok) return false;
+    }
 
     dispatch({ type: 'LOAD_STATE', state: deserializeState(project.state) });
     setActiveAndPersist(localId);
 
     // Clear unsaved state when switching to a saved project
     setIsUnsaved(false);
+    isUnsavedRef.current = false;
     setUnsavedName(null);
-  }, [dispatch, setActiveAndPersist]);
+    setUnsavedSource(null);
+    return true;
+  }, [dispatch, flushDepartingSavedProject, setActiveAndPersist]);
 
   const deleteLocalProject = useCallback((localId: string) => {
+    const wasActive = localId === activeLocalIdRef.current;
     deleteProject(localId);
 
-    // If we just deleted the active project, switch to most recent remaining
-    if (localId === activeLocalId) {
-      setActiveAndPersist(getMostRecentProjectId());
+    if (wasActive) {
+      // Load the fallback's state via the normal switch path so the in-memory
+      // AppState no longer belongs to the deleted project (prevents the debounced
+      // autosave from writing deleted-project state over the fallback's record).
+      const fallback = getMostRecentProjectId();
+      // Fall through to creating a fresh project when there is no fallback or the
+      // fallback record is unloadable (e.g. a quota-evicted cloud stub).
+      if (!fallback || !switchProject(fallback)) {
+        const newId = createNewProject();
+        if (newId) switchProject(newId);
+      }
     }
 
     refreshProjectList();
-  }, [activeLocalId, setActiveAndPersist, refreshProjectList]);
+  }, [switchProject, createNewProject, refreshProjectList]);
 
   const projectRef = useRef(appState.project);
   useEffect(() => {
@@ -147,27 +258,43 @@ export function ProjectStorageProvider({ children, initialLocalId, initialUnsave
   const renameProject = useCallback((localId: string, name: string) => {
     // Update both manifest name and state.project.title in one write
     const project = loadProject(localId);
+    let saved = false;
     if (project) {
-      saveProject({
+      const result = saveProject({
         ...project,
         name,
+        hasUnsyncedChanges: project.storage === 'cloud' ? true : project.hasUnsyncedChanges,
         state: {
           ...project.state,
           project: { ...project.state.project, title: name },
         },
-      });
+      }, { protectedLocalIds: [activeLocalIdRef.current] });
+      saved = result.ok;
     }
-    // If renaming the active project, also update in-memory AppState
-    if (localId === activeLocalId) {
+    // If renaming the active project, also update in-memory AppState after durable write.
+    if (saved && localId === activeLocalId) {
       dispatch({ type: 'SET_PROJECT_METADATA', project: { ...projectRef.current, title: name } });
     }
-    refreshProjectList();
+    if (saved) refreshProjectList();
   }, [activeLocalId, dispatch, refreshProjectList]);
 
-  const updateCloudMetadata = useCallback((localId: string, updates: CloudMetadataUpdates) => {
+  const updateCloudMetadata = useCallback((
+    localId: string,
+    updates: CloudMetadataUpdates,
+    options?: CloudMetadataWriteOptions,
+  ): ProjectStorageWriteResult => {
     // updateProjectMetadata saves the project record and updates the manifest in one pass
-    updateProjectMetadata(localId, updates);
-    refreshProjectList();
+    const storageOptions = {
+      protectedLocalIds: uniqueLocalIds([activeLocalIdRef.current, ...(options?.protectedLocalIds ?? [])]),
+      ...(options?.preserveLocalSavedAt ? { preserveLocalSavedAt: true } : {}),
+    };
+    const result = updateProjectMetadata(localId, updates, {
+      ...storageOptions,
+    });
+    if (result.ok && !result.unchanged) {
+      refreshProjectList();
+    }
+    return result;
   }, [refreshProjectList]);
 
   const getActiveProject = useCallback((): StoredLocalProject | null => {
@@ -175,10 +302,7 @@ export function ProjectStorageProvider({ children, initialLocalId, initialUnsave
     return loadProject(activeLocalId);
   }, [activeLocalId]);
 
-  // Refs for appState/unsavedName so saveCurrentProject can access current state
-  const appStateRef = useRef(appState);
-  useEffect(() => { appStateRef.current = appState; }, [appState]);
-
+  // Ref for unsavedName so saveCurrentProject can access current state.
   const unsavedNameRef = useRef(unsavedName);
   useEffect(() => { unsavedNameRef.current = unsavedName; }, [unsavedName]);
 
@@ -188,6 +312,8 @@ export function ProjectStorageProvider({ children, initialLocalId, initialUnsave
     source: UnsavedProjectSource = 'new',
   ) => {
     exitEditMode();
+    const departure = flushDepartingSavedProject();
+    if (!departure.ok) return false;
     dispatch({
       type: 'IMPORT_STATE',
       registers: result.registers,
@@ -198,12 +324,14 @@ export function ProjectStorageProvider({ children, initialLocalId, initialUnsave
 
     setActiveAndPersist(null, UNSAVED_SESSION_SENTINEL);
     setIsUnsaved(true);
+    isUnsavedRef.current = true;
     setUnsavedName(name);
-    unsavedSourceRef.current = source;
+    setUnsavedSource(source);
     // Auto-save effect will persist to register-viewer-unsaved on next tick
-  }, [dispatch, exitEditMode, setActiveAndPersist]);
+    return true;
+  }, [dispatch, exitEditMode, flushDepartingSavedProject, setActiveAndPersist]);
 
-  const saveCurrentProject = useCallback((name?: string): string => {
+  const saveCurrentProject = useCallback((name?: string): string | null => {
     const serialized = serializeState(appStateRef.current);
     const projectName = name ?? unsavedNameRef.current ?? 'Untitled Project';
 
@@ -214,11 +342,23 @@ export function ProjectStorageProvider({ children, initialLocalId, initialUnsave
       state = { ...state, project: { ...state.project, date: today } };
     }
 
-    const localId = createProjectInStorage(state, projectName);
+    let localId: string;
+    try {
+      localId = createProjectInStorage(state, projectName, undefined, {
+        protectedLocalIds: [activeLocalIdRef.current],
+      });
+    } catch (err) {
+      if (import.meta.env.DEV) {
+        console.warn('[project-storage-context] Failed to save current project:', err);
+      }
+      return null;
+    }
     clearUnsavedProject();
     setActiveAndPersist(localId);
     setIsUnsaved(false);
+    isUnsavedRef.current = false;
     setUnsavedName(null);
+    setUnsavedSource(null);
     refreshProjectList();
     return localId;
   }, [setActiveAndPersist, refreshProjectList]);
@@ -226,7 +366,9 @@ export function ProjectStorageProvider({ children, initialLocalId, initialUnsave
   const discardUnsavedProject = useCallback(() => {
     clearUnsavedProject();
     setIsUnsaved(false);
+    isUnsavedRef.current = false;
     setUnsavedName(null);
+    setUnsavedSource(null);
 
     const mostRecentId = getMostRecentProjectId();
     if (mostRecentId) {
@@ -236,14 +378,18 @@ export function ProjectStorageProvider({ children, initialLocalId, initialUnsave
     // (e.g., the guard's pending action will create a new unsaved project)
   }, [switchProject]);
 
+  const registerDepartureSnapshotter = useCallback((snapshotter: DepartureSnapshotter | null) => {
+    departureSnapshotterRef.current = snapshotter;
+  }, []);
+
   const state = useMemo<ProjectStorageState>(
-    () => ({ activeLocalId, projects, isUnsaved, unsavedName }),
-    [activeLocalId, projects, isUnsaved, unsavedName],
+    () => ({ activeLocalId, projects, isUnsaved, unsavedName, unsavedSource: isUnsaved ? unsavedSource : null, lastDeparture }),
+    [activeLocalId, projects, isUnsaved, unsavedName, unsavedSource, lastDeparture],
   );
 
   const actions = useMemo<ProjectStorageActions>(
-    () => ({ createNewProject, switchProject, deleteLocalProject, renameProject, refreshProjectList, getActiveProject, updateCloudMetadata, loadAsUnsaved, saveCurrentProject, discardUnsavedProject }),
-    [createNewProject, switchProject, deleteLocalProject, renameProject, refreshProjectList, getActiveProject, updateCloudMetadata, loadAsUnsaved, saveCurrentProject, discardUnsavedProject],
+    () => ({ createNewProject, switchProject, deleteLocalProject, renameProject, refreshProjectList, getActiveProject, updateCloudMetadata, loadAsUnsaved, saveCurrentProject, discardUnsavedProject, registerDepartureSnapshotter }),
+    [createNewProject, switchProject, deleteLocalProject, renameProject, refreshProjectList, getActiveProject, updateCloudMetadata, loadAsUnsaved, saveCurrentProject, discardUnsavedProject, registerDepartureSnapshotter],
   );
 
   return (
@@ -266,4 +412,3 @@ export function useProjectStorageActions(): ProjectStorageActions {
   if (!ctx) throw new Error('useProjectStorageActions must be used within ProjectStorageProvider');
   return ctx;
 }
-

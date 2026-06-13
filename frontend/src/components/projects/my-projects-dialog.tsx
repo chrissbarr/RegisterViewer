@@ -20,7 +20,7 @@ interface MyProjectsDialogProps {
   open: boolean;
   onClose: () => void;
   /** Optional guarded switch callback. When provided, handleOpen uses this instead of the default switchProject. */
-  onSwitchProject?: (localId: string) => void;
+  onSwitchProject?: (localId: string) => boolean | void;
   /** Guarded new-project callback. Creates an unsaved project, showing the unsaved prompt if needed. */
   onNewProject?: () => void;
   /** Callback to save the current unsaved project. Only provided when current project is unsaved. */

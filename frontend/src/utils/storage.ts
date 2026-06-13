@@ -146,6 +146,20 @@ export interface ImportResult {
   addressUnitBits?: AddressUnitBits;
 }
 
+export function serializeImportResult(result: Pick<ImportResult, 'registers' | 'values' | 'project' | 'addressUnitBits'>): SerializedAppState {
+  const registerValues: Record<string, string> = {};
+  for (const [id, value] of Object.entries(result.values)) {
+    registerValues[id] = '0x' + value.toString(16);
+  }
+  return {
+    registers: result.registers,
+    activeRegisterId: result.registers[0]?.id ?? null,
+    registerValues,
+    project: result.project,
+    addressUnitBits: result.addressUnitBits,
+  };
+}
+
 export function importFromObject(data: Record<string, unknown>): ImportResult | null {
   try {
     if (!data.registers || !Array.isArray(data.registers)) return null;

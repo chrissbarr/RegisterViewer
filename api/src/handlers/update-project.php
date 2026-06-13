@@ -2,52 +2,82 @@
 
 declare(strict_types=1);
 
-function handleUpdateProject(PDO $db, string $id, array $auth, array $parsed): ApiResponse
+function handleUpdateProject(PDO $db, string $id, array $auth, \stdClass|\Closure $bodySource): ApiResponse
 {
     $existing = requireOwnership($db, $id, $auth);
     if ($existing instanceof ApiResponse) {
         return $existing;
     }
 
-    $body = $parsed['assoc'];
+    $body = resolveParsedBody($bodySource);
+    if ($body instanceof ApiResponse) {
+        return $body;
+    }
 
-    $validation = validateProjectData($body['data'] ?? null);
+    if (property_exists($body, 'visibility')) {
+        return new ApiResponse(['error' => 'visibility cannot be updated via PUT; use PATCH /api/projects/{id}'], 400);
+    }
+
+    // Validate the required top-level version field for optimistic concurrency.
+    // Only clients bundled before the version contract omit it, so the message
+    // tells the user to reload (mirrors the 409's stable `code` pattern).
+    $clientVersion = $body->version ?? null;
+    if (!is_int($clientVersion) || $clientVersion < 1) {
+        return new ApiResponse([
+            'error' => 'Your app version is out of date — reload the page to continue cloud sync.',
+            'code'  => 'client_version_required',
+        ], 400);
+    }
+
+    $validation = validateProjectData($body->data ?? null);
     if (!$validation['valid']) {
         return new ApiResponse(['error' => $validation['error']], 400);
     }
 
-    // Visibility (optional, keeps existing if not provided)
-    $visibility = $existing['visibility'];
-    if (isset($body['visibility'])) {
-        if (!isValidVisibility($body['visibility'])) {
-            return new ApiResponse(['error' => 'visibility must be "private" or "unlisted"'], 400);
-        }
-        $visibility = $body['visibility'];
-    }
-
-    $title = $body['data']['project']['title'] ?? null;
+    $title = $body->data->project->title ?? null;
     if ($title !== null) {
         $title = mb_substr($title, 0, 500);
     }
 
-    $dataJson = extractDataJson($parsed['object']);
+    $dataJson = extractDataJson($body);
     if ($dataJson instanceof ApiResponse) {
         return $dataJson;
     }
 
-    dbUpdateProject(
+    $result = dbUpdateProjectVersioned(
         $db,
         $id,
         $dataJson,
-        $visibility,
         $title,
+        $clientVersion,
+        $auth['userId'],
     );
 
-    // Fetch timestamps only (lightweight query)
+    if (!$result['updated'] && $result['version'] === null) {
+        // The row was deleted by a concurrent session between ownership
+        // verification and the UPDATE. Surface a uniform 404 (matching
+        // requireReadableProject) rather than a fabricated version conflict.
+        return new ApiResponse(['error' => 'Project not found'], 404);
+    }
+
+    if (!$result['updated']) {
+        // Version conflict — log for observability
+        error_log(sprintf(
+            'INFO 409 conflict: project=%s client_version=%d server_version=%d',
+            $id, $clientVersion, $result['version']
+        ));
+        return new ApiResponse([
+            'error'          => 'Project has been modified by another session',
+            'code'           => 'version_conflict',
+            'currentVersion' => $result['version'],
+        ], 409);
+    }
+
     $timestamps = dbGetProjectTimestamps($db, $id);
 
     return new ApiResponse([
         'id'        => $id,
         'updatedAt' => $timestamps['updated_at_iso'],
+        'version'   => $result['version'],
     ]);
 }
