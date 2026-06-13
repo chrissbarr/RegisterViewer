@@ -8,15 +8,15 @@ from pathlib import Path
 from typing import Any
 
 
-EXPECTED_PHP_MINOR = "8.3"
-EXPECTED_PLATFORM_PHP = "8.3.0"
-EXPECTED_PHPUNIT_MAJOR = "^12.0"
+EXPECTED_PHP_MINOR = "8.5"
+EXPECTED_PLATFORM_PHP = "8.5.0"
+EXPECTED_PHPUNIT_MAJOR = "^13.0"
 REQUIRED_EXTENSIONS = ("curl", "json", "mbstring", "pdo", "pdo_mysql")
 DOC_CONTRACT = (
-    "Production requires PHP 8.3 or newer. CI validates API compatibility on PHP 8.3, "
+    "Production requires PHP 8.5 or newer. CI validates API compatibility on PHP 8.5, "
     "the minimum supported production runtime."
 )
-TARGET_PHP_VERSION = (8, 3, 0)
+TARGET_PHP_VERSION = (8, 5, 0)
 VERSION_RE = re.compile(r"^(0|[1-9]\d*)(?:\.(0|[1-9]\d*|x|\*))(?:\.(0|[1-9]\d*|x|\*))?")
 
 
@@ -126,8 +126,8 @@ def php_requirement_allows_target(requirement: Any) -> bool:
 
 def validate_dockerfile(root: Path, errors: list[str]) -> None:
     dockerfile = read_text(root / "api" / "Dockerfile", errors)
-    if "FROM php:8.3-apache AS base" not in dockerfile:
-        errors.append("api/Dockerfile must use php:8.3-apache as the base API runtime")
+    if "FROM php:8.5-apache AS base" not in dockerfile:
+        errors.append("api/Dockerfile must use php:8.5-apache as the base API runtime")
     for extension in ("curl", "mbstring", "pdo_mysql"):
         if extension not in dockerfile:
             errors.append(f"api/Dockerfile must install the {extension} PHP extension")
@@ -140,8 +140,8 @@ def validate_composer_json(root: Path, errors: list[str]) -> None:
     config = composer.get("config", {})
     platform = config.get("platform", {}) if isinstance(config, dict) else {}
 
-    if require.get("php") != "^8.3":
-        errors.append("api/composer.json must require php ^8.3")
+    if require.get("php") != "^8.5":
+        errors.append("api/composer.json must require php ^8.5")
     for extension in REQUIRED_EXTENSIONS:
         if require.get(f"ext-{extension}") != "*":
             errors.append(f"api/composer.json must require ext-{extension}")
@@ -156,8 +156,8 @@ def validate_composer_lock(root: Path, errors: list[str]) -> None:
     platform = lock.get("platform", {})
     platform_overrides = lock.get("platform-overrides", {})
 
-    if platform.get("php") != "^8.3":
-        errors.append("api/composer.lock platform must include php ^8.3; regenerate the lockfile")
+    if platform.get("php") != "^8.5":
+        errors.append("api/composer.lock platform must include php ^8.5; regenerate the lockfile")
     for extension in REQUIRED_EXTENSIONS:
         if platform.get(f"ext-{extension}") != "*":
             errors.append(f"api/composer.lock platform must include ext-{extension}; regenerate the lockfile")
@@ -206,8 +206,8 @@ def validate_workflow(root: Path, errors: list[str]) -> None:
     )
     require_pattern(
         api,
-        r"^\s*(?:-\s*)?run:\s*docker compose run --rm test php -r .*Expected PHP 8\.3",
-        "api job PHP 8.3 runtime assertion",
+        r"^\s*(?:-\s*)?run:\s*docker compose run --rm test php -r .*Expected PHP 8\.5",
+        "api job PHP 8.5 runtime assertion",
         errors,
     )
     require_pattern(
@@ -224,14 +224,14 @@ def validate_workflow(root: Path, errors: list[str]) -> None:
     )
     require_pattern(
         deploy_payload,
-        r"^\s*php-version:\s*'8\.3'\s*$",
-        "deploy-payload PHP 8.3 setup",
+        r"^\s*php-version:\s*'8\.5'\s*$",
+        "deploy-payload PHP 8.5 setup",
         errors,
     )
     require_pattern(
         deploy_payload,
-        r"^\s*(?:-\s*)?run:\s*php -r .*Expected PHP 8\.3",
-        "deploy-payload PHP 8.3 runtime assertion",
+        r"^\s*(?:-\s*)?run:\s*php -r .*Expected PHP 8\.5",
+        "deploy-payload PHP 8.5 runtime assertion",
         errors,
     )
     require_pattern(
@@ -246,7 +246,7 @@ def validate_docs(root: Path, errors: list[str]) -> None:
     for relative in ("docs/DEVELOPMENT.md", "docs/DEPLOYMENT.md"):
         text = read_text(root / relative, errors)
         if DOC_CONTRACT not in text:
-            errors.append(f"{relative} must state the PHP 8.3 production compatibility contract")
+            errors.append(f"{relative} must state the PHP 8.5 production compatibility contract")
 
 
 def validation_errors(root: Path) -> list[str]:
