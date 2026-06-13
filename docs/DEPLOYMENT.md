@@ -165,6 +165,16 @@ Every push to `master` automatically:
     - Uploads the verified payload via FTPS and runs smoke tests against `VITE_API_URL`
     - Proves API readiness through `/api/health`, which checks DB connectivity, applied migrations, and required schema shape before normal routing is allowed
 
+> **API-breaking deploys: open tabs must reload.** A deploy that changes the API contract takes
+> effect immediately for every browser tab, including tabs that loaded the frontend *before* the
+> deploy. Those stale tabs keep running the old bundle and may send requests the new API rejects.
+> This is safe — the app is local-first, so edits stay in localStorage — but cloud saves from a
+> stale tab fail with an actionable error telling the user to reload (e.g. the PUT version
+> contract returns `400 client_version_required`: "Your app version is out of date — reload the
+> page to continue cloud sync."). After any API-breaking deploy, expect reload prompts from
+> pre-deploy tabs until they are refreshed; no data is lost. The required top-level `version`
+> field on PUT was the first such contract change.
+
 ### Manual Trigger
 
 To manually deploy an existing CI artifact without rebuilding:

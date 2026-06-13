@@ -429,6 +429,18 @@ The `version` must match the server's current version. On success, the server in
 }
 ```
 
+**Response `400 Bad Request`** (missing or invalid `version`):
+
+```json
+{
+  "error": "Your app version is out of date — reload the page to continue cloud sync.",
+  "code": "client_version_required"
+}
+```
+
+Only client bundles built before the version contract omit `version`, so the
+message asks the user to reload the page to pick up the current bundle.
+
 **Response `409 Conflict`** (version mismatch):
 
 ```json
@@ -619,6 +631,7 @@ as part of the API contract; new codes are added here when introduced.
 | `code` | HTTP status | Where | Meaning |
 |---|---|---|---|
 | `version_conflict` | 409 | Update Project (PUT) | The project was modified by another session; `currentVersion` holds the server's current data version. |
+| `client_version_required` | 400 | Update Project (PUT) | The request omitted (or sent an invalid) top-level `version`; the client bundle predates the version contract and must be reloaded. |
 | `schema_not_ready` | 503 | Any route (readiness gate) | Database migrations are not fully applied; the API is not yet serving. |
 | `config_not_ready` | 503 | Any route (readiness gate) | Required auth configuration (`jwt_secret` / `otp_hash_secret`) is missing or invalid. |
 

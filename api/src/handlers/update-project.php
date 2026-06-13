@@ -19,9 +19,14 @@ function handleUpdateProject(PDO $db, string $id, array $auth, \stdClass|\Closur
     }
 
     // Validate the required top-level version field for optimistic concurrency.
+    // Only clients bundled before the version contract omit it, so the message
+    // tells the user to reload (mirrors the 409's stable `code` pattern).
     $clientVersion = $body->version ?? null;
     if (!is_int($clientVersion) || $clientVersion < 1) {
-        return new ApiResponse(['error' => 'version must be a positive integer'], 400);
+        return new ApiResponse([
+            'error' => 'Your app version is out of date — reload the page to continue cloud sync.',
+            'code'  => 'client_version_required',
+        ], 400);
     }
 
     $validation = validateProjectData($body->data ?? null);

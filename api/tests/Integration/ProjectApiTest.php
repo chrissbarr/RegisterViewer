@@ -604,6 +604,7 @@ final class ProjectApiTest extends TestCase
         $this->assertSame($id, $response->body['id']);
         $this->assertArrayHasKey('updatedAt', $response->body);
         $this->assertSame(2, $response->body['version']);
+        $this->assertArrayNotHasKey('code', $response->body);
 
         // Verify data was actually updated
         $project = dbGetProject(self::$db, $id);
@@ -760,7 +761,8 @@ final class ProjectApiTest extends TestCase
         $response = handleUpdateProject(self::$db, $id, $auth, $parsed);
 
         $this->assertSame(400, $response->status);
-        $this->assertSame('version must be a positive integer', $response->body['error']);
+        $this->assertSame('Your app version is out of date — reload the page to continue cloud sync.', $response->body['error']);
+        $this->assertSame('client_version_required', $response->body['code']);
         $this->assertProjectStorageUnchanged($id, $originalData);
     }
 
@@ -782,7 +784,8 @@ final class ProjectApiTest extends TestCase
         $response = handleUpdateProject(self::$db, $id, $auth, $parsed);
 
         $this->assertSame(400, $response->status);
-        $this->assertSame('version must be a positive integer', $response->body['error']);
+        $this->assertSame('Your app version is out of date — reload the page to continue cloud sync.', $response->body['error']);
+        $this->assertSame('client_version_required', $response->body['code']);
         $this->assertProjectStorageUnchanged($id, $originalData);
     }
 
@@ -815,7 +818,8 @@ final class ProjectApiTest extends TestCase
         $response = handleUpdateProject(self::$db, $id, $auth, $parsed);
 
         $this->assertSame(400, $response->status);
-        $this->assertSame('version must be a positive integer', $response->body['error']);
+        $this->assertSame('Your app version is out of date — reload the page to continue cloud sync.', $response->body['error']);
+        $this->assertSame('client_version_required', $response->body['code']);
         $this->assertProjectStorageUnchanged($id, $originalData);
     }
 
