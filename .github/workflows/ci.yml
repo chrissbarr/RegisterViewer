@@ -125,7 +125,7 @@ jobs:
         run: php -r 'if (PHP_MAJOR_VERSION !== 8 || PHP_MINOR_VERSION !== 5) { fwrite(STDERR, "Expected PHP 8.5, got " . PHP_VERSION . PHP_EOL); exit(1); }'
 
       - name: Download frontend dist
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v8
         with:
           name: registerapptest-frontend-dist-${{ github.sha }}
           path: frontend-dist
