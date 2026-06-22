@@ -18,7 +18,7 @@ jobs:
   workflow-config:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Test workflow validators
         run: python3 -m unittest discover -s .github/scripts -p 'test_*.py'
       - name: Validate PHP runtime contract
@@ -32,7 +32,7 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: 22
@@ -74,7 +74,7 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: 22
@@ -93,7 +93,7 @@ jobs:
       run:
         working-directory: api
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Verify PHP target
         run: docker compose run --rm test php -r 'if (PHP_MAJOR_VERSION !== 8 || PHP_MINOR_VERSION !== 5) { fwrite(STDERR, "Expected PHP 8.5, got " . PHP_VERSION . PHP_EOL); exit(1); }'
       - name: Validate Composer manifest
@@ -115,7 +115,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [workflow-config, frontend, e2e, api]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: shivammathur/setup-php@v2
         with:
