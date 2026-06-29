@@ -62,7 +62,7 @@ jobs:
           fi
 
       - name: Checkout workflow helpers
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           sparse-checkout: |
             .github/scripts/validate_vite_api_url.py
