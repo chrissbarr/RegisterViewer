@@ -60,7 +60,7 @@ jobs:
         run: npm run build
       - name: Upload frontend dist
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: registerapptest-frontend-dist-${{ github.sha }}
           path: frontend/dist
@@ -264,7 +264,7 @@ jobs:
           (cd deploy && sha256sum -c SHA256SUMS)
 
       - name: Upload deploy payload
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: registerapptest-deploy-${{ github.sha }}
           path: deploy/
