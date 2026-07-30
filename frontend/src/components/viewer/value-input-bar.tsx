@@ -4,6 +4,7 @@ import type { RegisterDef } from '../../types/register';
 import { clampToWidth } from '../../utils/bitwise';
 import { formatBinary } from '../../utils/format';
 import { CopyButton } from '../common/copy-button';
+import { PerfProfiler } from '../../utils/perf-profiler';
 
 interface Props {
   register: RegisterDef;
@@ -254,7 +255,8 @@ export function ValueInputBar({ register }: Props) {
     'text-sm font-semibold text-gray-500 dark:text-gray-400 w-10 shrink-0';
 
   return (
-    <div className="flex flex-col gap-3">
+    <PerfProfiler id="ValueInputBar">
+      <div className="flex flex-col gap-3">
       {/* PRIMARY: HEX input — larger text, bolder presence */}
       <label className="flex items-center gap-2">
         <span className={labelClass}>HEX</span>
@@ -372,6 +374,7 @@ export function ValueInputBar({ register }: Props) {
           </div>
         </label>
       </div>
-    </div>
+      </div>
+    </PerfProfiler>
   );
 }

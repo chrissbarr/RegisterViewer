@@ -19,6 +19,7 @@ export default defineConfig({
     __GIT_HASH__: JSON.stringify(git('rev-parse --short HEAD')),
     __GIT_TAG__: JSON.stringify(git('describe --tags --abbrev=0')),
     __BUILD_DATE__: JSON.stringify(new Date().toISOString().split('T')[0]),
+    __PERF_PROFILING__: JSON.stringify(!!process.env.VITE_PERF_PROFILING),
   },
   test: {
     globals: true,
