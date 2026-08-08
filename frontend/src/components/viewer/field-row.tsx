@@ -37,7 +37,7 @@ export function FieldRow({ field, fieldIndex, registerId, registerValue, registe
   const [inputText, setInputText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const displayStr = formatDecodedValue(decoded);
-
+  const rawValue = (registerValue >> BigInt(field.lsb)) & (mask>>BigInt(field.lsb));
   // Sync input text from external changes (bit grid, hex input, field definition edits)
   // but only when this input is not focused — same pattern as ValueInputBar.
   useEffect(() => {
@@ -197,6 +197,9 @@ export function FieldRow({ field, fieldIndex, registerId, registerValue, registe
       </td>
       <td className="px-3 py-2 text-sm font-mono text-gray-600 dark:text-gray-300 truncate" title={binaryStr}>
         {binaryStr}
+      </td>
+      <td className="px-3 py-2 text-sm font-mono text-purple-600 dark:text-purple-400">
+        {`0x${rawValue.toString(16).toUpperCase()}`}
       </td>
       <td className="px-3 py-2 text-sm overflow-visible">
         {renderValueControl()}
